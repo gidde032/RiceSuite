@@ -1,0 +1,11 @@
+# RiceClipper — core dependencies (v1).
+# Versions are intentionally unpinned here; pin exact versions at the start of
+# the implementation phase. ffmpeg is a SYSTEM dependency (with libass), not pip.
+
+fastapi
+uvicorn[standard]
+python-multipart        # file uploads in the review UI
+faster-whisper          # word-level transcription
+
+# Deferred — enable when the Wave-1 auto-header is built:
+# anthropic             # Sonnet vision agent for auto-generated headers
