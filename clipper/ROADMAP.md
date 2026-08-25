@@ -6,12 +6,10 @@ v1: ship a clean, provable render chassis first, then add features on top of it.
 
 ## Immediate next step
 
-The v1 hardening pass is complete and under review in draft PR #1. The next
-session begins with a visual render-tuning discovery pass: header typography,
-header plate/box and placement, caption font treatment, and text-highlight color
-and behavior. First decide the intended look and whether each change belongs in
-the default preset or in future UI customization; no visual implementation
-scope is ratified yet.
+The v1 hardening pass is complete. The approved visual render-tuning pass is
+implemented: seven built-in caption presets, three compact header treatments,
+and preserved color-emoji rendering through the existing Pillow overlay
+fallback.
 
 ## v1 (current — see SPEC.md)
 
@@ -33,9 +31,9 @@ human-in-the-loop gate. One clip at a time. Single Tier-1 caption preset.
 
 ## Wave 2 — early additions
 
-- **Caption style/position configuration** — expose the Tier-1 knobs (font,
-  color, highlight color, position) in the review UI. Cheap because the v1 ASS
-  template is already parameterized.
+- **User-authored caption presets and finer controls** — custom font/color
+  entry, arbitrary position controls, and persistent saved presets remain
+  deferred until the bounded built-in choices prove insufficient.
 
 ## Deferred — longer-term
 

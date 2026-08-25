@@ -13,6 +13,18 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 
+CaptionStyle = Literal[
+    "classic",
+    "clean",
+    "punch",
+    "friendly",
+    "sunset",
+    "mono",
+    "editorial",
+]
+HeaderStyle = Literal["plain", "black_plate", "white_plate"]
+
+
 class Word(BaseModel):
     """A single transcript token with locked timing (seconds)."""
 
@@ -37,6 +49,8 @@ class RenderRequest(BaseModel):
     words: list[Word] = Field(default_factory=list)
     header: str = ""
     captions_on: bool = True
+    caption_style: CaptionStyle = "classic"
+    header_style: HeaderStyle = "plain"
     music: MusicSettings = Field(default_factory=MusicSettings)
 
 

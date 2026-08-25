@@ -12,12 +12,11 @@ memory or chat — read the spec.
 
 ## Current status
 
-**v1 vertical slice implemented; hardening pass complete.** The ratified design
-and the reviewed correctness/performance/cleanup repairs are implemented on
-`review/v1-slice` and submitted as draft PR #1. Further changes still require
-explicit approval and must remain within the active phase. The next planned
-session is a visual render-tuning discovery pass; no visual customization scope
-has been ratified yet.
+**v1 vertical slice and hardening pass complete; bounded visual follow-up
+implemented.** The reviewed correctness/performance/cleanup repairs are merged
+to `main`, and the approved visual preset work is implemented on the
+`visual-presets` branch. Further changes still require explicit approval and
+must remain within the active phase.
 
 The **color-emoji burn-in spike** (`docs/spikes/emoji-burn-in.md`) passed via the
 PNG-overlay fallback. The Wave-1 auto-header remains deferred product scope,

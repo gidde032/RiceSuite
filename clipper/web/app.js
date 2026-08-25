@@ -231,6 +231,8 @@ $("render-btn").addEventListener("click", async () => {
       words: collectWords(),
       header: $("header-input").value,
       captions_on: $("captions-toggle").checked,
+      caption_style: $("caption-style").value,
+      header_style: $("header-style").value,
       music: { mode: musicFile ? mode : "none", volume: Number($("music-volume").value), filename },
     };
     const res = await fetch(`/api/jobs/${job.id}/render`, {
@@ -314,6 +316,8 @@ function resetClientState() {
   $("file-input").value = "";
   $("music-input").value = "";
   $("header-input").value = "";
+  $("header-style").value = "plain";
+  $("caption-style").value = "classic";
   $("captions-toggle").checked = true;
   $("music-mode").value = "none";
   $("music-volume").value = "0.35";

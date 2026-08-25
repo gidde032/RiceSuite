@@ -19,7 +19,7 @@ from app.process import ProcessTimeoutError, run_owned
 from app.models import RenderRequest
 from app.probe import MediaInfo
 from render import geometry
-from render.ass import StyleConfig, build_ass
+from render.ass import StyleConfig, build_ass, style_for_presets
 from render.header_image import has_emoji, render_header_png
 
 ASS_NAME = "captions.ass"
@@ -171,7 +171,7 @@ def render(
     # ASS then omits the header. Text-only headers stay on the libass path. If the
     # image render fails for any reason, degrade to the libass header rather than
     # failing the whole render (text shows; emoji may box).
-    style = style or StyleConfig()
+    style = style or style_for_presets(req.caption_style, req.header_style)
     overlay_header = bool(req.header.strip()) and has_emoji(req.header)
     if overlay_header:
         try:

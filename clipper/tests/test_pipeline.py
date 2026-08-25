@@ -133,6 +133,31 @@ def test_render_launch_error_is_converted_to_render_error(monkeypatch, tmp_path)
         )
 
 
+def test_render_resolves_request_visual_presets(monkeypatch, tmp_path):
+    class Completed:
+        returncode = 0
+        stderr = ""
+
+    monkeypatch.setattr("render.pipeline.run_owned", lambda *args, **kwargs: Completed())
+    request = RenderRequest(
+        header="A compact header",
+        caption_style="punch",
+        header_style="white_plate",
+    )
+
+    render(
+        tmp_path,
+        tmp_path / "source.mp4",
+        MediaInfo(width=1080, height=1920, duration=15.0, has_audio=False),
+        request,
+    )
+
+    ass = (tmp_path / "captions.ass").read_text()
+    assert "Style: Caption,Impact,92" in ass
+    assert "Style: Header,Arial,42" in ass
+    assert ",3,16,0,8,80,80,120,1" in ass
+
+
 def test_render_rejects_non_finite_duration(tmp_path):
     with pytest.raises(RenderError, match="invalid video duration"):
         render(

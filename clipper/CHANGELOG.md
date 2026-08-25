@@ -8,6 +8,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- **Visual preset follow-up.** Added seven selectable caption appearances
+  (including the original Classic default) and three compact header treatments:
+  plain text, black plate, and white plate. The default header is now a
+  reference-matched 42px plain overlay with no plate.
 - **v1 hardening.** Added manual media-cache clearing, bounded Whisper/ffmpeg
   threading, owned subprocess timeouts and shutdown cleanup, explicit model
   disposal, and stricter job/API error handling.
@@ -33,7 +37,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   macOS/CoreText toolchain, so headers containing emoji are rendered to a
   transparent PNG (`render/header_image.py`, Pillow + Apple Color Emoji) and
   composited via ffmpeg `overlay`; text-only headers stay on the libass path.
-  Degrades to the libass header if image rendering fails.
+  The PNG path now applies the selected plain/black-plate/white-plate
+  treatment and degrades to the libass header if image rendering fails.
 
 ### Fixed
 - **Replace-mode duration.** Short replacement music is padded instead of

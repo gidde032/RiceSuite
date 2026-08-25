@@ -6,6 +6,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi import UploadFile
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from app import jobs
 from app import main
@@ -148,3 +149,10 @@ def test_failed_render_can_be_retried(monkeypatch, isolated_jobs):
 
     assert result.status == "done"
     assert result.error is None
+
+
+def test_render_request_rejects_unknown_visual_presets():
+    with pytest.raises(ValidationError):
+        RenderRequest(caption_style="not-a-style")
+    with pytest.raises(ValidationError):
+        RenderRequest(header_style="not-a-header")
