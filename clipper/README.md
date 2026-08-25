@@ -8,10 +8,11 @@ It is the render chassis for a larger clipping concept ("Path 3"): no clip
 It is a standalone project, distinct from **RicePoster** (the posting harness),
 built to an output contract that lets its clips drop into RicePoster later.
 
-> **Status: v1 slice implemented; end-to-end render verified with a libass-enabled ffmpeg.**
-> The design is locked in [`SPEC.md`](./SPEC.md). The full v1 vertical slice is
-> built and the pure-Python core is unit-tested. Burn-in requires an ffmpeg with
-> libass (see setup) — the stock Homebrew formula omits it.
+> **Status: v1 slice implemented; hardening pass complete and under review in
+> PR #1.** End-to-end rendering and shutdown cleanup are verified with a
+> libass-enabled ffmpeg. The design is recorded in [`SPEC.md`](./SPEC.md).
+> Burn-in requires an ffmpeg with libass (see setup) — the stock Homebrew formula
+> omits it.
 
 ## What it does (v1)
 
@@ -120,6 +121,9 @@ CHANGELOG.md      release history
 Color-emoji burn-in is resolved through the PNG-overlay fallback documented in
 [`docs/spikes/emoji-burn-in.md`](./docs/spikes/emoji-burn-in.md). The Wave-1
 auto-header remains deferred roadmap scope, rather than an unresolved v1 block.
+The v1 hardening pass also adds short-music replace-mode duration protection,
+bounded Whisper/ffmpeg threading, owned subprocess cleanup, manual media-cache
+clearing, API error-state cleanup, and semaphore-free transcription shutdown.
 
 ## Docs
 

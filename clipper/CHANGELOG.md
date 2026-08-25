@@ -36,6 +36,12 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   Degrades to the libass header if image rendering fails.
 
 ### Fixed
+- **Replace-mode duration.** Short replacement music is padded instead of
+  allowing ffmpeg's `-shortest` path to truncate the video; regression coverage
+  covers music shorter than the source clip.
+- **Transcription semaphore cleanup.** faster-whisper's tqdm progress lock now
+  uses a thread-only lock, preventing the Conda/uvicorn reload shutdown warning
+  about leaked multiprocessing semaphores.
 - **Rendered-clip playback.** Output audio is resampled to **48 kHz** — 44.1 kHz
   content against a 48 kHz macOS output device triggered Chrome
   `AUDIO_RENDERER_ERROR`. (Root cause of the remaining no-sound case was a local

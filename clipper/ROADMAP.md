@@ -4,6 +4,15 @@ The `SPEC.md` governs **v1**. This document owns everything after it, so the spe
 can stay stable while the roadmap churns. Ordering reflects the principle behind
 v1: ship a clean, provable render chassis first, then add features on top of it.
 
+## Immediate next step
+
+The v1 hardening pass is complete and under review in draft PR #1. The next
+session begins with a visual render-tuning discovery pass: header typography,
+header plate/box and placement, caption font treatment, and text-highlight color
+and behavior. First decide the intended look and whether each change belongs in
+the default preset or in future UI customization; no visual implementation
+scope is ratified yet.
+
 ## v1 (current — see SPEC.md)
 
 Decode → transcribe (word-level) → word-highlight captions → manual on-screen

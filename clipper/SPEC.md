@@ -1,8 +1,9 @@
 # RiceClipper — v1 Specification
 
-> Status: **Ratified** (design locked via decision-challenge session). Not yet in
-> implementation. This document is the source of truth for v1 scope and the
-> deferred roadmap.
+> Status: **Ratified and implemented** (design locked via decision-challenge
+> session). The v1 hardening pass is complete on `review/v1-slice` and under
+> review in draft PR #1. This document remains the source of truth for v1 scope
+> and the deferred roadmap.
 >
 > Project: **RiceClipper** — a standalone short-form video captioning tool.
 > Distinct repo/project from **RicePoster** (the posting harness).
