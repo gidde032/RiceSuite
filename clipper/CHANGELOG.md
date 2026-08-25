@@ -7,6 +7,13 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **v1 hardening.** Added manual media-cache clearing, bounded Whisper/ffmpeg
+  threading, owned subprocess timeouts and shutdown cleanup, explicit model
+  disposal, and stricter job/API error handling.
+- Updated project documentation to reflect the implemented v1 slice and the
+  resolved color-emoji PNG-overlay path.
+
 ### Added
 - **v1 vertical slice — initial implementation.** End-to-end pipeline from the
   ratified design (SPEC.md D1–D13):

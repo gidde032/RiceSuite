@@ -44,7 +44,6 @@ class StyleConfig:
     header_font: str = "Arial"
     header_font_size: int = 66
     header_color: str = "FFFFFF"
-    header_outline_color: str = "000000"
     header_plate_color: str = "000000"
     header_plate_alpha: int = 90       # ASS alpha: 0 opaque .. 255 transparent
     header_padding: int = 14           # opaque-box padding around the text

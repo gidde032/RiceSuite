@@ -19,7 +19,8 @@ human-in-the-loop gate. One clip at a time. Single Tier-1 caption preset.
    A/V in sync and smooth the jump cuts.
 3. **Auto-header** — Sonnet vision agent: early-frame snapshot + transcript +
    optional user description → ≤2-line hook, with the manual header as fallback.
-   **Blocked by the emoji spike** (`docs/spikes/emoji-burn-in.md`).
+   The emoji spike is resolved in v1 via the PNG-overlay fallback
+   (`docs/spikes/emoji-burn-in.md`).
 
 ## Wave 2 — early additions
 

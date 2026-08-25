@@ -11,9 +11,12 @@ producing a caption-less clip.
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import subprocess
 from dataclasses import dataclass
+
+from app.process import ProcessTimeoutError, run_owned
 
 
 class ProbeError(RuntimeError):
@@ -28,6 +31,11 @@ class MediaInfo:
     has_audio: bool
 
 
+def _probe_timeout() -> float:
+    """Return the bounded timeout for ffprobe and capability checks."""
+    return 30.0
+
+
 def ffmpeg_available() -> bool:
     return shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None
 
@@ -37,12 +45,17 @@ def has_libass() -> bool:
     if shutil.which("ffmpeg") is None:
         return False
     try:
-        out = subprocess.run(
+        out = run_owned(
             ["ffmpeg", "-hide_banner", "-filters"],
             capture_output=True,
             text=True,
+            timeout=_probe_timeout(),
             check=True,
         ).stdout
+    except ProcessTimeoutError as exc:
+        raise ProbeError(
+            f"ffmpeg libass probe timed out after {_probe_timeout():g} seconds"
+        ) from exc
     except (subprocess.CalledProcessError, OSError):
         return False
     return any(line.split()[1:2] == ["subtitles"] for line in out.splitlines() if line.strip())
@@ -61,7 +74,7 @@ def _pick_duration(video: dict, fmt: dict) -> float:
 def probe(path: str) -> MediaInfo:
     """Return dimensions, duration and audio presence for ``path``."""
     try:
-        out = subprocess.run(
+        out = run_owned(
             [
                 "ffprobe",
                 "-v",
@@ -74,8 +87,11 @@ def probe(path: str) -> MediaInfo:
             ],
             capture_output=True,
             text=True,
+            timeout=_probe_timeout(),
             check=True,
         ).stdout
+    except ProcessTimeoutError as exc:
+        raise ProbeError(f"ffprobe timed out after {_probe_timeout():g} seconds") from exc
     except subprocess.CalledProcessError as exc:  # pragma: no cover - passthrough
         raise ProbeError(exc.stderr.strip() or "ffprobe failed") from exc
 
@@ -87,8 +103,8 @@ def probe(path: str) -> MediaInfo:
     has_audio = any(s.get("codec_type") == "audio" for s in streams)
 
     duration = _pick_duration(video, data.get("format", {}))
-    if duration <= 0.0:
-        # A 0-duration would make the header a zero-length (invisible) event.
+    if not math.isfinite(duration) or duration <= 0.0:
+        # A non-positive/non-finite duration cannot safely bound a render.
         raise ProbeError("could not determine video duration")
 
     return MediaInfo(

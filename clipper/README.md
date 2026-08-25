@@ -8,7 +8,7 @@ It is the render chassis for a larger clipping concept ("Path 3"): no clip
 It is a standalone project, distinct from **RicePoster** (the posting harness),
 built to an output contract that lets its clips drop into RicePoster later.
 
-> **Status: v1 slice implemented; end-to-end render pending a libass ffmpeg.**
+> **Status: v1 slice implemented; end-to-end render verified with a libass-enabled ffmpeg.**
 > The design is locked in [`SPEC.md`](./SPEC.md). The full v1 vertical slice is
 > built and the pure-Python core is unit-tested. Burn-in requires an ffmpeg with
 > libass (see setup) — the stock Homebrew formula omits it.
@@ -70,6 +70,25 @@ Open `localhost:8000`, upload a vertical clip, edit the transcript / type a
 header / (optionally) add music, then render and download. `GET /api/health`
 reports whether ffmpeg + libass are present.
 
+Rendered sources and intermediate files remain in the local `.riceclipper_work/`
+cache until you explicitly clear them with the **Clear media cache** button in
+the UI. Clearing is disabled while a transcription or render is active; it
+does not remove the original files selected in your browser or the Whisper
+model cache. For a gentle default on an 8-core machine, transcription and
+encoding use four worker threads. Override them when needed with, for example:
+
+```bash
+export RICECLIPPER_WHISPER_CPU_THREADS=4
+export RICECLIPPER_FFMPEG_THREADS=4
+```
+
+The Whisper tokenizer safeguard can also be made explicit in the shell before
+launching the server:
+
+```bash
+export TOKENIZERS_PARALLELISM=false
+```
+
 ## Test
 
 ```bash
@@ -86,7 +105,7 @@ render/           ffmpeg + ASS rendering (captions, header, audio mix)
   templates/      ASS caption/header templates
 web/              static HTML/JS review UI
 tests/            unit tests (phrasing + ASS generation)
-outputs/          rendered clips (gitignored)
+.riceclipper_work/ app-owned uploaded sources, intermediates, and outputs (gitignored)
 docs/
   spikes/         de-risking investigations (see emoji-burn-in)
   adr/            architecture decision records (optional, future)
@@ -96,11 +115,11 @@ CLAUDE.md         operating context for AI agent sessions
 CHANGELOG.md      release history
 ```
 
-## Open item before Wave 1
+## Current implementation notes
 
-**Color-emoji burn-in** must be verified — libass can render color emoji as
-monochrome or empty boxes without the right font. It's header-critical and blocks
-the auto-header. See [`docs/spikes/emoji-burn-in.md`](./docs/spikes/emoji-burn-in.md).
+Color-emoji burn-in is resolved through the PNG-overlay fallback documented in
+[`docs/spikes/emoji-burn-in.md`](./docs/spikes/emoji-burn-in.md). The Wave-1
+auto-header remains deferred roadmap scope, rather than an unresolved v1 block.
 
 ## Docs
 

@@ -4,7 +4,8 @@ Why this exists: libass on the macOS/CoreText toolchain cannot render color
 emoji — it falls back to empty ".LastResort" boxes (see
 docs/spikes/emoji-burn-in.md). So when a header contains emoji we bypass libass
 for the header and burn it via an image ``overlay`` instead. Pillow renders the
-text and the color emoji (Noto Color Emoji), which ffmpeg then composites.
+text and color emoji (preferring Apple Color Emoji on macOS), which ffmpeg then
+composites.
 
 Headers with no emoji never touch this module — they stay on the libass path.
 Captions always stay on libass (they carry no emoji).

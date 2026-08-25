@@ -11,9 +11,11 @@ filename, which sidesteps the notoriously fragile ``subtitles`` path escaping.
 
 from __future__ import annotations
 
-import subprocess
+import math
+import os
 from pathlib import Path
 
+from app.process import ProcessTimeoutError, run_owned
 from app.models import RenderRequest
 from app.probe import MediaInfo
 from render import geometry
@@ -29,27 +31,67 @@ class RenderError(RuntimeError):
     pass
 
 
-def _audio_graph(req: RenderRequest, has_audio: bool, has_music: bool):
+def _encode_threads() -> int:
+    """Return the conservative ffmpeg thread cap, with an environment override."""
+    default = max(1, (os.cpu_count() or 1) // 2)
+    override = os.environ.get("RICECLIPPER_FFMPEG_THREADS")
+    if override is None:
+        return default
+
+    try:
+        configured = int(override)
+    except (TypeError, ValueError):
+        return default
+    return configured if configured > 0 else default
+
+
+def _render_timeout(duration: float) -> float:
+    """Allow at least two minutes and otherwise ten times the video duration."""
+    if not math.isfinite(duration) or duration <= 0:
+        raise ValueError(f"invalid media duration: {duration!r}")
+    return max(120.0, duration * 10.0)
+
+
+def _duration_arg(duration: float) -> str:
+    """Format a positive media duration for ffmpeg without needless rounding."""
+    return str(float(duration))
+
+
+def _audio_graph(
+    req: RenderRequest,
+    has_audio: bool,
+    has_music: bool,
+    duration: float | None = None,
+):
     """Return (statements, map_target). map_target is None for no audio.
 
-    Music-only branches are `apad`-ed so a music track shorter than the video
-    doesn't truncate the clip via `-shortest` — `-shortest` then bounds the output
-    to the (finite) video stream. `mix` with original audio is already bounded by
-    `amix=duration=first`.
+    When ``duration`` is supplied, every audio branch is padded and explicitly
+    trimmed to the probed video duration. This keeps a short source or music
+    stream from deciding the output length.
     """
     mode = req.music.mode if has_music else "none"
     vol = req.music.volume
+    duration_filter = ""
+    if duration is not None:
+        duration_filter = f",atrim=duration={_duration_arg(duration)}"
 
     if mode == "replace":
-        return [f"[1:a]volume={vol},apad[aout]"], "[aout]"
+        return [f"[1:a]volume={vol},apad{duration_filter}[aout]"], "[aout]"
     if mode == "mix" and has_audio:
         return (
-            [f"[1:a]volume={vol}[m]", "[0:a][m]amix=inputs=2:duration=first:normalize=0[aout]"],
+            [
+                f"[0:a]apad{duration_filter}[orig]",
+                f"[1:a]volume={vol},apad{duration_filter}[m]",
+                "[orig][m]amix=inputs=2:duration=first:normalize=0"
+                f"{duration_filter}[aout]",
+            ],
             "[aout]",
         )
     if mode == "mix":  # music but original is silent
-        return [f"[1:a]volume={vol},apad[aout]"], "[aout]"
+        return [f"[1:a]volume={vol},apad{duration_filter}[aout]"], "[aout]"
     # none
+    if has_audio and duration is not None:
+        return [f"[0:a]apad{duration_filter}[aout]"], "[aout]"
     return [], ("0:a" if has_audio else None)
 
 
@@ -62,6 +104,55 @@ def _job_child(job_dir: Path, filename: str) -> Path:
     return Path(job_dir) / Path(filename).name
 
 
+def _ffmpeg_command(
+    source_path: Path,
+    music_path: Path | None,
+    overlay_header: bool,
+    filter_complex: str,
+    audio_map: str | None,
+    duration: float,
+) -> list[str]:
+    """Build the ffmpeg command independently of process execution."""
+    cmd = ["ffmpeg", "-y", "-i", str(source_path)]
+    if music_path is not None:
+        cmd += ["-i", str(music_path)]
+    if overlay_header:
+        cmd += ["-i", HEADER_PNG]
+    filter_threads = _encode_threads()
+    cmd += [
+        "-filter_threads", str(filter_threads),
+        "-filter_complex_threads", str(filter_threads),
+        "-filter_complex", filter_complex,
+        "-map", "[vout]",
+    ]
+    if audio_map is not None:
+        cmd += ["-map", audio_map]
+    else:
+        cmd += ["-an"]
+    cmd += [
+        "-threads", str(_encode_threads()),
+        "-c:v", "libx264",
+        "-preset", "medium",
+        "-crf", "20",
+        "-pix_fmt", "yuv420p",
+        "-profile:v", "high",
+    ]
+    if audio_map is not None:
+        # Resample audio to 48 kHz stereo. Many macOS audio output devices run at
+        # 48 kHz, and Chrome throws an "audio render error" on 44.1 kHz content
+        # against a 48 kHz device (phone/social sources are usually 44.1 kHz).
+        # 48 kHz is also the standard rate for video deliverables.
+        cmd += ["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"]
+    # This is an explicit output bound. Audio filters also trim to this same
+    # duration, so output length does not depend on whichever input ends first.
+    cmd += [
+        "-t", _duration_arg(duration),
+        "-shortest",
+        "-movflags", "+faststart", OUTPUT_NAME,
+    ]
+    return cmd
+
+
 def render(
     job_dir: str | Path,
     source_path: str | Path,
@@ -72,6 +163,8 @@ def render(
     """Render one clip; returns the output mp4 path. Raises RenderError."""
     job_dir = Path(job_dir)
     source_path = Path(source_path)
+    if not math.isfinite(info.duration) or info.duration <= 0:
+        raise RenderError(f"invalid video duration: {info.duration!r}")
 
     # 1. Header routing. libass can't render color emoji on this toolchain, so a
     # header containing emoji is drawn to a PNG and composited via `overlay`; the
@@ -103,7 +196,7 @@ def render(
     music_path = _job_child(job_dir, req.music.filename) if has_music else None
     if has_music and not music_path.exists():
         raise RenderError(f"music file not found: {req.music.filename}")
-    audio_stmts, audio_map = _audio_graph(req, info.has_audio, has_music)
+    audio_stmts, audio_map = _audio_graph(req, info.has_audio, has_music, info.duration)
 
     # 3. Video graph: blur-pad (if needed) → burn subtitles → optional header overlay.
     sub_out = "[subbed]" if overlay_header else "[vout]"
@@ -120,34 +213,30 @@ def render(
     filter_complex = ";".join(video_stmts + audio_stmts)
 
     # 4. Assemble and run ffmpeg.
-    cmd = ["ffmpeg", "-y", "-i", str(source_path)]
-    if has_music:
-        cmd += ["-i", str(music_path)]
-    if overlay_header:
-        cmd += ["-i", HEADER_PNG]
-    cmd += ["-filter_complex", filter_complex, "-map", "[vout]"]
-    if audio_map is not None:
-        cmd += ["-map", audio_map]
-    else:
-        cmd += ["-an"]
-    cmd += [
-        "-c:v", "libx264",
-        "-preset", "medium",
-        "-crf", "20",
-        "-pix_fmt", "yuv420p",
-        "-profile:v", "high",
-    ]
-    if audio_map is not None:
-        # Resample audio to 48 kHz stereo. Many macOS audio output devices run at
-        # 48 kHz, and Chrome throws an "audio render error" on 44.1 kHz content
-        # against a 48 kHz device (phone/social sources are usually 44.1 kHz).
-        # 48 kHz is also the standard rate for video deliverables.
-        cmd += ["-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"]
-    cmd += ["-movflags", "+faststart", "-shortest", OUTPUT_NAME]
-
-    proc = subprocess.run(cmd, cwd=str(job_dir), capture_output=True, text=True)
+    cmd = _ffmpeg_command(
+        source_path,
+        music_path if has_music else None,
+        overlay_header,
+        filter_complex,
+        audio_map,
+        info.duration,
+    )
+    try:
+        proc = run_owned(
+            cmd,
+            cwd=job_dir,
+            capture_output=True,
+            text=True,
+            timeout=_render_timeout(info.duration),
+        )
+    except ProcessTimeoutError as exc:
+        raise RenderError(
+            f"ffmpeg timed out after {_render_timeout(info.duration):g} seconds"
+        ) from exc
+    except OSError as exc:
+        raise RenderError(f"could not start ffmpeg: {exc}") from exc
     if proc.returncode != 0:
-        tail = "\n".join(proc.stderr.strip().splitlines()[-15:])
+        tail = "\n".join((proc.stderr or "").strip().splitlines()[-15:])
         raise RenderError(f"ffmpeg failed:\n{tail}")
 
     return job_dir / OUTPUT_NAME

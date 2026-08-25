@@ -18,10 +18,10 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import jobs, probe
+from app.process import terminate_all_owned_processes
 from app.models import JobState, RenderRequest
-from render.pipeline import RenderError, render
+from render.pipeline import render
 from transcribe import whisper
-from transcribe.whisper import transcribe
 
 logger = logging.getLogger("riceclipper")
 
@@ -41,10 +41,17 @@ async def lifespan(_app: FastAPI):
             "  brew unlink ffmpeg && "
             "brew install homebrew-ffmpeg/ffmpeg/ffmpeg"
         )
-    yield
-    # Shutdown: release the transcription model so ctranslate2 resources are torn
-    # down deterministically (avoids leaked-semaphore warnings at exit).
-    whisper.dispose()
+    try:
+        yield
+    finally:
+        # Stop owned media children before releasing the transcription model.
+        # This covers a graceful server shutdown while a synchronous render is
+        # still in flight; request-local timeouts use the same process-group
+        # mechanism.
+        terminate_all_owned_processes()
+        # Shutdown: release the transcription model so ctranslate2 resources are
+        # torn down deterministically (avoids leaked-semaphore warnings at exit).
+        whisper.dispose()
 
 
 app = FastAPI(title="RiceClipper", version="0.1.0", lifespan=lifespan)
@@ -58,8 +65,23 @@ def health() -> dict:
     }
 
 
+@app.get("/api/media-info")
+def media_info() -> dict[str, int]:
+    """Return the size of the server-side working-media cache."""
+    return jobs.cache_info()
+
+
+@app.post("/api/media/clear")
+def clear_media() -> dict[str, int]:
+    """Clear app-owned working media, but never while a job is active."""
+    try:
+        return jobs.clear_cache()
+    except jobs.ActiveJobsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @app.post("/api/upload", response_model=JobState)
-async def upload(file: UploadFile = File(...)) -> JobState:
+def upload(file: UploadFile = File(...)) -> JobState:
     # Keep this request short: save the file and probe geometry, then return.
     # Transcription is a separate call (/transcribe) so the client's File handle
     # is released immediately and the local blob preview doesn't contend with a
@@ -67,38 +89,50 @@ async def upload(file: UploadFile = File(...)) -> JobState:
     job = jobs.create_job()
     suffix = Path(file.filename or "clip.mp4").suffix or ".mp4"
     source = job.dir / f"source{suffix}"
-    with source.open("wb") as fh:
-        shutil.copyfileobj(file.file, fh)
-    job.source_path = source
-
     try:
-        job.info = probe.probe(str(source))
+        with jobs.job_operation_lock():
+            with source.open("wb") as fh:
+                shutil.copyfileobj(file.file, fh)
+            job.source_path = source
+            job.info = probe.probe(str(source))
+            # Transcription is a separate request; do not call an idle upload
+            # "active" forever if the client disconnects between requests.
+            job.status = "ready"
     except probe.ProbeError as exc:
+        logger.warning("uploaded file could not be probed: %s", exc)
         job.status = "error"
-        job.error = f"could not read video: {exc}"
-        return job.state()
-
-    job.status = "transcribing"
+        job.error = "could not read video"
+        raise HTTPException(status_code=400, detail=job.error) from exc
+    except Exception as exc:  # noqa: BLE001 - surface upload failures cleanly
+        logger.exception("upload failed")
+        job.status = "error"
+        job.error = "upload failed"
+        raise HTTPException(status_code=500, detail=job.error) from exc
     return job.state()
 
 
 @app.post("/api/jobs/{job_id}/transcribe", response_model=JobState)
 def transcribe_job(job_id: str) -> JobState:
-    job = jobs.get_job(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="job not found")
-    if job.source_path is None:
-        raise HTTPException(status_code=409, detail="no source uploaded")
+    with jobs.job_operation_lock():
+        job = jobs.get_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        if job.source_path is None:
+            raise HTTPException(status_code=409, detail="no source uploaded")
+        if job.status in {"transcribing", "rendering"}:
+            raise HTTPException(status_code=409, detail="job is already active")
 
-    try:
-        job.words = transcribe(str(job.source_path))
-        job.status = "ready"
-    except Exception as exc:  # noqa: BLE001 - surface any transcription failure
-        logger.exception("transcription failed")
-        job.status = "error"
-        job.error = f"transcription failed: {exc}"
-        raise HTTPException(status_code=500, detail=job.error)
-    return job.state()
+        job.status = "transcribing"
+        job.error = None
+        try:
+            job.words = whisper.transcribe(str(job.source_path))
+            job.status = "ready"
+        except Exception as exc:  # noqa: BLE001 - surface any transcription failure
+            logger.exception("transcription failed")
+            job.status = "error"
+            job.error = "transcription failed"
+            raise HTTPException(status_code=500, detail=job.error)
+        return job.state()
 
 
 @app.get("/api/jobs/{job_id}", response_model=JobState)
@@ -118,35 +152,48 @@ def get_source(job_id: str) -> FileResponse:
 
 
 @app.post("/api/jobs/{job_id}/music")
-async def upload_music(job_id: str, file: UploadFile = File(...)) -> dict:
-    job = jobs.get_job(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="job not found")
-    suffix = Path(file.filename or "music.mp3").suffix or ".mp3"
-    dest = job.dir / f"music{suffix}"
-    with dest.open("wb") as fh:
-        shutil.copyfileobj(file.file, fh)
-    return {"ok": True, "filename": dest.name}
+def upload_music(job_id: str, file: UploadFile = File(...)) -> dict:
+    with jobs.job_operation_lock():
+        job = jobs.get_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        suffix = Path(file.filename or "music.mp3").suffix or ".mp3"
+        dest = job.dir / f"music{suffix}"
+        try:
+            with dest.open("wb") as fh:
+                shutil.copyfileobj(file.file, fh)
+        except Exception as exc:  # noqa: BLE001 - keep local paths private
+            logger.exception("music upload failed")
+            raise HTTPException(status_code=500, detail="music upload failed") from exc
+        return {"ok": True, "filename": dest.name}
 
 
 @app.post("/api/jobs/{job_id}/render", response_model=JobState)
 def render_job(job_id: str, req: RenderRequest) -> JobState:
-    job = jobs.get_job(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="job not found")
-    if job.source_path is None or job.info is None:
-        raise HTTPException(status_code=409, detail="job not ready to render")
+    with jobs.job_operation_lock():
+        job = jobs.get_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        if job.source_path is None or job.info is None:
+            raise HTTPException(status_code=409, detail="job not ready to render")
+        if job.status not in {"ready", "done", "error"}:
+            raise HTTPException(status_code=409, detail="job is not ready to render")
 
-    job.status = "rendering"
-    try:
-        out = render(job.dir, job.source_path, job.info, req)
-        job.output_path = out
-        job.status = "done"
-    except RenderError as exc:
-        job.status = "error"
-        job.error = str(exc)
-        raise HTTPException(status_code=500, detail=str(exc))
-    return job.state()
+        job.status = "rendering"
+        job.error = None
+        try:
+            if job.output_path is not None:
+                job.output_path.unlink(missing_ok=True)
+                job.output_path = None
+            out = render(job.dir, job.source_path, job.info, req)
+            job.output_path = out
+            job.status = "done"
+        except Exception as exc:  # noqa: BLE001 - keep failed jobs clearable
+            logger.exception("render failed")
+            job.status = "error"
+            job.error = "render failed"
+            raise HTTPException(status_code=500, detail=job.error) from exc
+        return job.state()
 
 
 @app.get("/api/jobs/{job_id}/output")

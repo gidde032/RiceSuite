@@ -12,11 +12,13 @@ memory or chat — read the spec.
 
 ## Current status
 
-**Design ratified, pre-implementation.** The v1 design is locked. No application
-code exists yet. Implementation has **not** been authorized.
+**v1 vertical slice implemented.** The ratified design is implemented on the
+current review branch. Further changes still require explicit approval and must
+remain within the active phase.
 
-One open item blocks a future feature: the **color-emoji burn-in spike**
-(`docs/spikes/emoji-burn-in.md`) must pass before the Wave-1 auto-header ships.
+The **color-emoji burn-in spike** (`docs/spikes/emoji-burn-in.md`) passed via the
+PNG-overlay fallback. The Wave-1 auto-header remains deferred product scope,
+but is no longer blocked by that spike.
 
 ## Hard rules
 

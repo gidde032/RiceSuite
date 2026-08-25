@@ -12,6 +12,11 @@ let job = null; // { id, words: [...], ... }
 let selectedFile = null; // the uploaded source File, for local preview
 let sourceUrl = null; // active object URLs, revoked on replace/restart
 let outputUrl = null;
+let operationBusy = false;
+let clearInProgress = false;
+
+const MEDIA_CACHE_INFO_ENDPOINT = "/api/media-info";
+const ACTIVE_JOB_STATUSES = new Set(["transcribing", "rendering"]);
 
 function mediaErrText(video) {
   const e = video.error;
@@ -43,12 +48,54 @@ async function checkHealth() {
   }
 }
 
+// --- media cache ------------------------------------------------------------
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 0) return "unknown size";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function renderCacheInfo(info) {
+  const jobDirs = Number(info.job_dirs ?? 0);
+  const files = Number(info.files ?? 0);
+  const totalBytes = Number(info.total_bytes ?? 0);
+  const jobLabel = jobDirs === 1 ? "job directory" : "job directories";
+  const fileLabel = files === 1 ? "file" : "files";
+  $("cache-info").textContent =
+    `Media cache: ${jobDirs} ${jobLabel}, ${files} ${fileLabel}, ${formatBytes(totalBytes)}`;
+}
+
+async function refreshCacheInfo() {
+  try {
+    const response = await fetch(MEDIA_CACHE_INFO_ENDPOINT);
+    if (!response.ok) throw new Error(`cache info unavailable (${response.status})`);
+    renderCacheInfo(await response.json());
+  } catch {
+    // Cache info is optional; an unavailable read must not block the review UI.
+    $("cache-info").textContent = "Media cache info unavailable";
+  }
+}
+
+function updateCacheControls() {
+  const button = $("clear-cache-btn");
+  const activeJob = job && ACTIVE_JOB_STATUSES.has(job.status);
+  button.disabled = operationBusy || clearInProgress || activeJob;
+  button.title = activeJob
+    ? "Wait for the current transcription or render to finish"
+    : "Remove server-side media cache files";
+}
+
 // --- upload + transcribe ----------------------------------------------------
 
 $("file-input").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   if (!file) return;
   selectedFile = file;
+  operationBusy = true;
+  updateCacheControls();
 
   // Preview immediately from the File (RicePoster's blob pattern).
   showSourcePreview(file);
@@ -81,6 +128,10 @@ $("file-input").addEventListener("change", async (e) => {
     const status = $("upload-status");
     status.className = "status error";
     status.textContent = err.message;
+  } finally {
+    operationBusy = false;
+    updateCacheControls();
+    await refreshCacheInfo();
   }
 });
 
@@ -157,6 +208,8 @@ $("music-volume").addEventListener("input", (e) => {
 $("render-btn").addEventListener("click", async () => {
   const status = $("render-status");
   status.className = "status";
+  operationBusy = true;
+  updateCacheControls();
 
   const mode = $("music-mode").value;
   const musicFile = $("music-input").files[0];
@@ -193,6 +246,10 @@ $("render-btn").addEventListener("click", async () => {
   } catch (err) {
     status.className = "status error";
     status.textContent = err.message;
+  } finally {
+    operationBusy = false;
+    updateCacheControls();
+    await refreshCacheInfo();
   }
 });
 
@@ -232,6 +289,10 @@ async function showResult() {
 }
 
 $("restart-btn").addEventListener("click", () => {
+  resetClientState();
+});
+
+function resetClientState() {
   // Stop playback — hiding the panel doesn't pause the media element.
   ["source-video", "output-video"].forEach((id) => {
     const v = $(id);
@@ -246,10 +307,60 @@ $("restart-btn").addEventListener("click", () => {
   sourceUrl = outputUrl = null;
   job = null;
   selectedFile = null;
+  operationBusy = false;
   $("result-panel").classList.add("hidden");
+  $("review-panel").classList.add("hidden");
   $("upload-panel").classList.remove("hidden");
   $("file-input").value = "";
+  $("music-input").value = "";
+  $("header-input").value = "";
+  $("captions-toggle").checked = true;
+  $("music-mode").value = "none";
+  $("music-volume").value = "0.35";
+  $("vol-label").textContent = "0.35";
+  $("transcript").innerHTML = "";
   $("upload-status").textContent = "";
+  $("preview-status").textContent = "";
+  $("render-status").textContent = "";
+  $("result-status").textContent = "";
+  updateCacheControls();
+}
+
+$("clear-cache-btn").addEventListener("click", async () => {
+  if (!window.confirm("Clear all server-side media cache files? Your original browser file will not be affected.")) {
+    return;
+  }
+
+  const status = $("cache-status");
+  status.className = "status";
+  status.textContent = "Clearing media cache…";
+  clearInProgress = true;
+  updateCacheControls();
+
+  try {
+    const response = await fetch("/api/media/clear", { method: "POST" });
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 409) {
+      status.className = "status error";
+      status.textContent = "The cache is busy; wait for transcription or rendering to finish, then try again.";
+      return;
+    }
+    if (!response.ok) {
+      throw new Error(data.detail || data.error || `cache clear failed (${response.status})`);
+    }
+
+    resetClientState();
+    await refreshCacheInfo();
+    status.className = "status";
+    status.textContent = "Media cache cleared.";
+  } catch (err) {
+    status.className = "status error";
+    status.textContent = err.message;
+  } finally {
+    clearInProgress = false;
+    updateCacheControls();
+  }
 });
 
 checkHealth();
+refreshCacheInfo();
