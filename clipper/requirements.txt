@@ -1,11 +1,13 @@
 # RiceClipper — core dependencies (v1).
-# Versions are intentionally unpinned here; pin exact versions at the start of
-# the implementation phase. ffmpeg is a SYSTEM dependency (with libass), not pip.
+# ffmpeg is a SYSTEM dependency and MUST include libass (the `subtitles` filter).
+# Homebrew's stock `ffmpeg` formula does NOT bundle libass; install a libass build:
+#   brew unlink ffmpeg && brew install homebrew-ffmpeg/ffmpeg/ffmpeg
 
-fastapi
-uvicorn[standard]
-python-multipart        # file uploads in the review UI
-faster-whisper          # word-level transcription
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20  # file uploads in the review UI
+faster-whisper==1.1.1     # word-level transcription
+Pillow==12.3.0            # emoji header image (libass can't burn color emoji)
 
 # Deferred — enable when the Wave-1 auto-header is built:
-# anthropic             # Sonnet vision agent for auto-generated headers
+# anthropic               # Sonnet vision agent for auto-generated headers

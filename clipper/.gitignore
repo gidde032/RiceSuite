@@ -19,6 +19,12 @@ models/
 outputs/*
 !outputs/.gitkeep
 
+# Per-job work dirs (uploads, generated ASS, renders)
+.riceclipper_work/
+
+# Session-continuity handoff (not part of a fresh clone)
+internal/
+
 # OS / editor
 .DS_Store
 Thumbs.db

@@ -8,10 +8,10 @@ It is the render chassis for a larger clipping concept ("Path 3"): no clip
 It is a standalone project, distinct from **RicePoster** (the posting harness),
 built to an output contract that lets its clips drop into RicePoster later.
 
-> **Status: design ratified, pre-implementation.** The design is locked in
-> [`SPEC.md`](./SPEC.md). No application code is written yet. The setup/run
-> sections below describe the *intended* v1 and are not runnable until the build
-> phase is authorized.
+> **Status: v1 slice implemented; end-to-end render pending a libass ffmpeg.**
+> The design is locked in [`SPEC.md`](./SPEC.md). The full v1 vertical slice is
+> built and the pure-Python core is unit-tested. Burn-in requires an ffmpeg with
+> libass (see setup) — the stock Homebrew formula omits it.
 
 ## What it does (v1)
 
@@ -41,19 +41,41 @@ RicePoster, at the future integration point. See `SPEC.md` §3.
 Prerequisites:
 
 - Python 3.11+
-- **ffmpeg** available on `PATH` (must include libass; a color-emoji font is
-  needed for emoji headers — see the open spike below)
+- **ffmpeg with libass** on `PATH`. The stock Homebrew `ffmpeg` formula does
+  **not** include libass (no `subtitles` filter). Install the libass-enabled tap
+  build (unlink core first so the binary doesn't conflict):
+  ```bash
+  brew unlink ffmpeg
+  brew install homebrew-ffmpeg/ffmpeg/ffmpeg   # builds from source (~10-20 min)
+  ```
+  Verify: `ffmpeg -hide_banner -filters | grep -w subtitles`.
+- **Color emoji in headers** works out of the box on macOS. libass can't burn
+  color emoji, so headers containing emoji are rendered to an image (Pillow +
+  Apple Color Emoji, built into macOS) and composited via ffmpeg `overlay`;
+  text-only headers use libass directly. See `docs/spikes/emoji-burn-in.md`.
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt        # add -dev variant for tests
 # faster-whisper downloads its model on first run
 ```
 
-## Run (forthcoming)
+## Run
 
-Not yet implemented. The intended entry point is a local FastAPI server hosting
-the review UI at `localhost:8000`, mirroring RicePoster's setup.
+```bash
+uvicorn app.main:app --reload          # serves the review UI at localhost:8000
+```
+
+Open `localhost:8000`, upload a vertical clip, edit the transcript / type a
+header / (optionally) add music, then render and download. `GET /api/health`
+reports whether ffmpeg + libass are present.
+
+## Test
+
+```bash
+pip install -r requirements-dev.txt
+pytest -q                              # pure-Python core; no ffmpeg needed
+```
 
 ## Repo layout
 
@@ -63,6 +85,7 @@ transcribe/       faster-whisper wrapper → word-level caption lines
 render/           ffmpeg + ASS rendering (captions, header, audio mix)
   templates/      ASS caption/header templates
 web/              static HTML/JS review UI
+tests/            unit tests (phrasing + ASS generation)
 outputs/          rendered clips (gitignored)
 docs/
   spikes/         de-risking investigations (see emoji-burn-in)
