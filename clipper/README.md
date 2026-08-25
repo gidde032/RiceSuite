@@ -8,10 +8,10 @@ It is the render chassis for a larger clipping concept ("Path 3"): no clip
 It is a standalone project, distinct from **RicePoster** (the posting harness),
 built to an output contract that lets its clips drop into RicePoster later.
 
-> **Status: design ratified, pre-implementation.** The design is locked in
-> [`SPEC.md`](./SPEC.md). No application code is written yet. The setup/run
-> sections below describe the *intended* v1 and are not runnable until the build
-> phase is authorized.
+> **Status: v1 slice implemented; end-to-end render verified with a libass-enabled ffmpeg.**
+> The design is locked in [`SPEC.md`](./SPEC.md). The full v1 vertical slice is
+> built and the pure-Python core is unit-tested. Burn-in requires an ffmpeg with
+> libass (see setup) — the stock Homebrew formula omits it.
 
 ## What it does (v1)
 
@@ -41,19 +41,60 @@ RicePoster, at the future integration point. See `SPEC.md` §3.
 Prerequisites:
 
 - Python 3.11+
-- **ffmpeg** available on `PATH` (must include libass; a color-emoji font is
-  needed for emoji headers — see the open spike below)
+- **ffmpeg with libass** on `PATH`. The stock Homebrew `ffmpeg` formula does
+  **not** include libass (no `subtitles` filter). Install the libass-enabled tap
+  build (unlink core first so the binary doesn't conflict):
+  ```bash
+  brew unlink ffmpeg
+  brew install homebrew-ffmpeg/ffmpeg/ffmpeg   # builds from source (~10-20 min)
+  ```
+  Verify: `ffmpeg -hide_banner -filters | grep -w subtitles`.
+- **Color emoji in headers** works out of the box on macOS. libass can't burn
+  color emoji, so headers containing emoji are rendered to an image (Pillow +
+  Apple Color Emoji, built into macOS) and composited via ffmpeg `overlay`;
+  text-only headers use libass directly. See `docs/spikes/emoji-burn-in.md`.
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt        # add -dev variant for tests
 # faster-whisper downloads its model on first run
 ```
 
-## Run (forthcoming)
+## Run
 
-Not yet implemented. The intended entry point is a local FastAPI server hosting
-the review UI at `localhost:8000`, mirroring RicePoster's setup.
+```bash
+uvicorn app.main:app --reload          # serves the review UI at localhost:8000
+```
+
+Open `localhost:8000`, upload a vertical clip, edit the transcript / type a
+header / (optionally) add music, then render and download. `GET /api/health`
+reports whether ffmpeg + libass are present.
+
+Rendered sources and intermediate files remain in the local `.riceclipper_work/`
+cache until you explicitly clear them with the **Clear media cache** button in
+the UI. Clearing is disabled while a transcription or render is active; it
+does not remove the original files selected in your browser or the Whisper
+model cache. For a gentle default on an 8-core machine, transcription and
+encoding use four worker threads. Override them when needed with, for example:
+
+```bash
+export RICECLIPPER_WHISPER_CPU_THREADS=4
+export RICECLIPPER_FFMPEG_THREADS=4
+```
+
+The Whisper tokenizer safeguard can also be made explicit in the shell before
+launching the server:
+
+```bash
+export TOKENIZERS_PARALLELISM=false
+```
+
+## Test
+
+```bash
+pip install -r requirements-dev.txt
+pytest -q                              # pure-Python core; no ffmpeg needed
+```
 
 ## Repo layout
 
@@ -63,7 +104,8 @@ transcribe/       faster-whisper wrapper → word-level caption lines
 render/           ffmpeg + ASS rendering (captions, header, audio mix)
   templates/      ASS caption/header templates
 web/              static HTML/JS review UI
-outputs/          rendered clips (gitignored)
+tests/            unit tests (phrasing + ASS generation)
+.riceclipper_work/ app-owned uploaded sources, intermediates, and outputs (gitignored)
 docs/
   spikes/         de-risking investigations (see emoji-burn-in)
   adr/            architecture decision records (optional, future)
@@ -73,11 +115,11 @@ CLAUDE.md         operating context for AI agent sessions
 CHANGELOG.md      release history
 ```
 
-## Open item before Wave 1
+## Current implementation notes
 
-**Color-emoji burn-in** must be verified — libass can render color emoji as
-monochrome or empty boxes without the right font. It's header-critical and blocks
-the auto-header. See [`docs/spikes/emoji-burn-in.md`](./docs/spikes/emoji-burn-in.md).
+Color-emoji burn-in is resolved through the PNG-overlay fallback documented in
+[`docs/spikes/emoji-burn-in.md`](./docs/spikes/emoji-burn-in.md). The Wave-1
+auto-header remains deferred roadmap scope, rather than an unresolved v1 block.
 
 ## Docs
 

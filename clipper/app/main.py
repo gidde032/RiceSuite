@@ -1,0 +1,210 @@
+"""RiceClipper local FastAPI server + review UI (SPEC.md D10).
+
+Localhost only. Hosts the human-in-the-loop review gate: upload a clip, get a
+word-level transcript back, edit text / type a header / configure music, then
+render and download. RiceClipper performs NO posting or upload of content
+(SPEC.md §3) — every route reads and writes local files only.
+"""
+
+from __future__ import annotations
+
+import logging
+import shutil
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
+from app import jobs, probe
+from app.process import terminate_all_owned_processes
+from app.models import JobState, RenderRequest
+from render.pipeline import render
+from transcribe import whisper
+
+logger = logging.getLogger("riceclipper")
+
+WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Startup: surface toolchain problems loudly instead of failing mid-render.
+    if not probe.ffmpeg_available():
+        logger.warning("ffmpeg/ffprobe not found on PATH — rendering will fail.")
+    elif not probe.has_libass():
+        logger.warning(
+            "This ffmpeg has no libass (no 'subtitles' filter). Caption/header "
+            "burn-in WILL FAIL. Install a libass build (Homebrew's core ffmpeg "
+            "omits libass):\n"
+            "  brew unlink ffmpeg && "
+            "brew install homebrew-ffmpeg/ffmpeg/ffmpeg"
+        )
+    try:
+        yield
+    finally:
+        # Stop owned media children before releasing the transcription model.
+        # This covers a graceful server shutdown while a synchronous render is
+        # still in flight; request-local timeouts use the same process-group
+        # mechanism.
+        terminate_all_owned_processes()
+        # Shutdown: release the transcription model so ctranslate2 resources are
+        # torn down deterministically (avoids leaked-semaphore warnings at exit).
+        whisper.dispose()
+
+
+app = FastAPI(title="RiceClipper", version="0.1.0", lifespan=lifespan)
+
+
+@app.get("/api/health")
+def health() -> dict:
+    return {
+        "ffmpeg": probe.ffmpeg_available(),
+        "libass": probe.has_libass(),
+    }
+
+
+@app.get("/api/media-info")
+def media_info() -> dict[str, int]:
+    """Return the size of the server-side working-media cache."""
+    return jobs.cache_info()
+
+
+@app.post("/api/media/clear")
+def clear_media() -> dict[str, int]:
+    """Clear app-owned working media, but never while a job is active."""
+    try:
+        return jobs.clear_cache()
+    except jobs.ActiveJobsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/upload", response_model=JobState)
+def upload(file: UploadFile = File(...)) -> JobState:
+    # Keep this request short: save the file and probe geometry, then return.
+    # Transcription is a separate call (/transcribe) so the client's File handle
+    # is released immediately and the local blob preview doesn't contend with a
+    # long-open upload request.
+    job = jobs.create_job()
+    suffix = Path(file.filename or "clip.mp4").suffix or ".mp4"
+    source = job.dir / f"source{suffix}"
+    try:
+        with jobs.job_operation_lock():
+            with source.open("wb") as fh:
+                shutil.copyfileobj(file.file, fh)
+            job.source_path = source
+            job.info = probe.probe(str(source))
+            # Transcription is a separate request; do not call an idle upload
+            # "active" forever if the client disconnects between requests.
+            job.status = "ready"
+    except probe.ProbeError as exc:
+        logger.warning("uploaded file could not be probed: %s", exc)
+        job.status = "error"
+        job.error = "could not read video"
+        raise HTTPException(status_code=400, detail=job.error) from exc
+    except Exception as exc:  # noqa: BLE001 - surface upload failures cleanly
+        logger.exception("upload failed")
+        job.status = "error"
+        job.error = "upload failed"
+        raise HTTPException(status_code=500, detail=job.error) from exc
+    return job.state()
+
+
+@app.post("/api/jobs/{job_id}/transcribe", response_model=JobState)
+def transcribe_job(job_id: str) -> JobState:
+    with jobs.job_operation_lock():
+        job = jobs.get_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        if job.source_path is None:
+            raise HTTPException(status_code=409, detail="no source uploaded")
+        if job.status in {"transcribing", "rendering"}:
+            raise HTTPException(status_code=409, detail="job is already active")
+
+        job.status = "transcribing"
+        job.error = None
+        try:
+            job.words = whisper.transcribe(str(job.source_path))
+            job.status = "ready"
+        except Exception as exc:  # noqa: BLE001 - surface any transcription failure
+            logger.exception("transcription failed")
+            job.status = "error"
+            job.error = "transcription failed"
+            raise HTTPException(status_code=500, detail=job.error)
+        return job.state()
+
+
+@app.get("/api/jobs/{job_id}", response_model=JobState)
+def get_job(job_id: str) -> JobState:
+    job = jobs.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    return job.state()
+
+
+@app.get("/api/jobs/{job_id}/source")
+def get_source(job_id: str) -> FileResponse:
+    job = jobs.get_job(job_id)
+    if job is None or job.source_path is None or not job.source_path.exists():
+        raise HTTPException(status_code=404, detail="source not found")
+    return FileResponse(job.source_path)
+
+
+@app.post("/api/jobs/{job_id}/music")
+def upload_music(job_id: str, file: UploadFile = File(...)) -> dict:
+    with jobs.job_operation_lock():
+        job = jobs.get_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        suffix = Path(file.filename or "music.mp3").suffix or ".mp3"
+        dest = job.dir / f"music{suffix}"
+        try:
+            with dest.open("wb") as fh:
+                shutil.copyfileobj(file.file, fh)
+        except Exception as exc:  # noqa: BLE001 - keep local paths private
+            logger.exception("music upload failed")
+            raise HTTPException(status_code=500, detail="music upload failed") from exc
+        return {"ok": True, "filename": dest.name}
+
+
+@app.post("/api/jobs/{job_id}/render", response_model=JobState)
+def render_job(job_id: str, req: RenderRequest) -> JobState:
+    with jobs.job_operation_lock():
+        job = jobs.get_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        if job.source_path is None or job.info is None:
+            raise HTTPException(status_code=409, detail="job not ready to render")
+        if job.status not in {"ready", "done", "error"}:
+            raise HTTPException(status_code=409, detail="job is not ready to render")
+
+        job.status = "rendering"
+        job.error = None
+        try:
+            if job.output_path is not None:
+                job.output_path.unlink(missing_ok=True)
+                job.output_path = None
+            out = render(job.dir, job.source_path, job.info, req)
+            job.output_path = out
+            job.status = "done"
+        except Exception as exc:  # noqa: BLE001 - keep failed jobs clearable
+            logger.exception("render failed")
+            job.status = "error"
+            job.error = "render failed"
+            raise HTTPException(status_code=500, detail=job.error) from exc
+        return job.state()
+
+
+@app.get("/api/jobs/{job_id}/output")
+def get_output(job_id: str) -> FileResponse:
+    job = jobs.get_job(job_id)
+    if job is None or job.output_path is None or not job.output_path.exists():
+        raise HTTPException(status_code=404, detail="no rendered output")
+    # Serve inline (no attachment disposition) so the <video> element can play
+    # it; the UI's download anchor sets its own filename for saving.
+    return FileResponse(job.output_path, media_type="video/mp4")
+
+
+# Static review UI mounted last so /api/* routes take precedence.
+app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RiceClipper</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>RiceClipper</h1>
+    <span id="capbadge" class="badge" title="ffmpeg libass status"></span>
+  </header>
+
+  <main>
+    <!-- Step 1: upload -->
+    <section id="upload-panel" class="panel">
+      <label class="dropzone" for="file-input">
+        <strong>Choose a vertical clip</strong>
+        <span>Under ~1 minute. Non-9:16 is blur-padded, never cropped.</span>
+        <input id="file-input" type="file" accept="video/*" hidden />
+      </label>
+      <p id="upload-status" class="status"></p>
+    </section>
+
+    <!-- Step 2: review gate -->
+    <section id="review-panel" class="panel hidden">
+      <div class="review-grid">
+        <div class="preview-col">
+          <video id="source-video" controls playsinline></video>
+          <p id="geo-note" class="hint"></p>
+          <p id="preview-status" class="status"></p>
+        </div>
+
+        <div class="edit-col">
+          <div class="field">
+            <label>Header <span class="hint">(1–2 lines, burned top of frame)</span></label>
+            <textarea id="header-input" rows="2" placeholder="Your on-screen hook…"></textarea>
+          </div>
+
+          <div class="field">
+            <label>
+              <input id="captions-toggle" type="checkbox" checked />
+              Burn captions
+            </label>
+            <p class="hint">Edit any misheard word below. Timing stays locked.</p>
+            <div id="transcript" class="transcript" contenteditable="false"></div>
+          </div>
+
+          <div class="field">
+            <label>Music <span class="hint">(optional)</span></label>
+            <input id="music-input" type="file" accept="audio/*" />
+            <div class="music-controls">
+              <select id="music-mode">
+                <option value="none">No added music</option>
+                <option value="mix">Mix under original</option>
+                <option value="replace">Replace original</option>
+              </select>
+              <label class="vol">Vol
+                <input id="music-volume" type="range" min="0" max="1.5" step="0.05" value="0.35" />
+                <span id="vol-label">0.35</span>
+              </label>
+            </div>
+          </div>
+
+          <button id="render-btn" class="primary">Render clip</button>
+          <p id="render-status" class="status"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 3: result -->
+    <section id="result-panel" class="panel hidden">
+      <h2>Rendered clip</h2>
+      <video id="output-video" controls playsinline></video>
+      <p id="result-status" class="status"></p>
+      <div class="result-actions">
+        <a id="download-link" class="primary" download>Download mp4</a>
+        <button id="restart-btn">Start over</button>
+      </div>
+    </section>
+
+    <section id="cache-panel" class="panel">
+      <div class="cache-actions">
+        <span id="cache-info" class="hint">Media cache: loading…</span>
+        <button id="clear-cache-btn" type="button">Clear media cache</button>
+      </div>
+      <p id="cache-status" class="status"></p>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

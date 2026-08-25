@@ -119,7 +119,8 @@ model earns its keep. Revisit at build if desired.
   2. **Silence-only trimming** — cut long gaps (silence detection); keep A/V sync,
      smooth jump cuts.
   3. **Auto-header** — the Sonnet vision agent above, with manual fallback.
-     *Blocked by the emoji spike (§8).*
+     The emoji spike is resolved via the PNG-overlay path (§8); the feature
+     remains deferred Wave-1 scope.
 - **Wave 2 — early additions:**
   - Caption **style/position configuration** (Tier-1 knobs: font, color, highlight
     color, position) exposed in the UI.
@@ -131,14 +132,13 @@ model earns its keep. Revisit at build if desired.
   - **Path 2** (5–10 min → clip extraction) and **Path 1** (30+ min → chunked
     extraction) — the clip-selection engine, built on this render chassis.
 
-## 8. Open items — routed to a spike
+## 8. Resolved spike
 
-- **Color-emoji burn-in (header-critical).** Both real header examples use color
-  emoji (🥹, 😂). libass can render color emoji as monochrome or missing-glyph
-  boxes without the right color-emoji font in the toolchain. This cannot be
-  settled by discussion — it needs a ~30-minute render test confirming color
-  emoji burn in correctly. **Must pass before the Wave-1 auto-header ships**, and
-  worth verifying early since the manual v1 header can also carry emoji.
+- **Color-emoji burn-in (header-critical) — passed.** The macOS/CoreText libass
+  path renders missing-glyph boxes for color emoji, so emoji headers use the
+  Pillow PNG-overlay fallback documented in
+  [`docs/spikes/emoji-burn-in.md`](docs/spikes/emoji-burn-in.md). Captions and
+  text-only headers remain on the libass path.
 
 ## 9. Recorded defaults
 
