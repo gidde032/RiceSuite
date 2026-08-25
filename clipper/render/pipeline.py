@@ -30,21 +30,36 @@ class RenderError(RuntimeError):
 
 
 def _audio_graph(req: RenderRequest, has_audio: bool, has_music: bool):
-    """Return (statements, map_target). map_target is None for no audio."""
+    """Return (statements, map_target). map_target is None for no audio.
+
+    Music-only branches are `apad`-ed so a music track shorter than the video
+    doesn't truncate the clip via `-shortest` — `-shortest` then bounds the output
+    to the (finite) video stream. `mix` with original audio is already bounded by
+    `amix=duration=first`.
+    """
     mode = req.music.mode if has_music else "none"
     vol = req.music.volume
 
     if mode == "replace":
-        return [f"[1:a]volume={vol}[aout]"], "[aout]"
+        return [f"[1:a]volume={vol},apad[aout]"], "[aout]"
     if mode == "mix" and has_audio:
         return (
             [f"[1:a]volume={vol}[m]", "[0:a][m]amix=inputs=2:duration=first:normalize=0[aout]"],
             "[aout]",
         )
     if mode == "mix":  # music but original is silent
-        return [f"[1:a]volume={vol}[aout]"], "[aout]"
+        return [f"[1:a]volume={vol},apad[aout]"], "[aout]"
     # none
     return [], ("0:a" if has_audio else None)
+
+
+def _job_child(job_dir: Path, filename: str) -> Path:
+    """Resolve a client-supplied filename to a path INSIDE job_dir (basename only).
+
+    Prevents a crafted `/render` request from pointing at another job's dir or an
+    arbitrary path via `..` or an absolute path.
+    """
+    return Path(job_dir) / Path(filename).name
 
 
 def render(
@@ -85,7 +100,7 @@ def render(
 
     # 2. Audio graph (input indices: 0 = source, then music, then header PNG).
     has_music = req.music.mode != "none" and bool(req.music.filename)
-    music_path = job_dir / req.music.filename if has_music else None
+    music_path = _job_child(job_dir, req.music.filename) if has_music else None
     if has_music and not music_path.exists():
         raise RenderError(f"music file not found: {req.music.filename}")
     audio_stmts, audio_map = _audio_graph(req, info.has_audio, has_music)

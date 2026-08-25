@@ -105,6 +105,31 @@ def _render_emoji(cluster: str, size: int, emoji_font: ImageFont.FreeTypeFont) -
     return tmp
 
 
+def _wrap(text, measure_word, space_w, max_width):
+    """Greedy word-wrap into lines, honoring explicit newlines as hard breaks.
+
+    ``measure_word(word) -> (parts, width)``. Returns a list of
+    ``(parts_list, line_width)``. Pure: the caller supplies the measurer, so this
+    is testable without fonts.
+    """
+    lines: list[tuple[list, float]] = []
+    for paragraph in text.split("\n"):
+        cur: list = []
+        cur_w = 0.0
+        for word in (w for w in paragraph.split(" ") if w):
+            parts, w = measure_word(word)
+            add = w if not cur else space_w + w
+            if cur and cur_w + add > max_width:
+                lines.append((cur, cur_w))
+                cur, cur_w = [(parts, w)], w
+            else:
+                cur.append((parts, w))
+                cur_w += add
+        if cur:
+            lines.append((cur, cur_w))
+    return lines
+
+
 def render_header_png(
     text: str,
     out_path: str | Path,
@@ -151,22 +176,8 @@ def render_header_png(
                 width += w
         return parts, width
 
-    # Greedy word-wrap into lines.
-    words = [w for w in text.split(" ") if w != ""]
-    lines: list[tuple[list, float]] = []
-    cur: list = []
-    cur_w = 0.0
-    for word in words:
-        parts, w = measure_word(word)
-        add = w if not cur else space_w + w
-        if cur and cur_w + add > max_width:
-            lines.append((cur, cur_w))
-            cur, cur_w = [(parts, w)], w
-        else:
-            cur.append((parts, w))
-            cur_w += add
-    if cur:
-        lines.append((cur, cur_w))
+    # Greedy word-wrap, honoring newlines the user typed in the 2-row textarea.
+    lines = _wrap(text, measure_word, space_w, max_width)
 
     # Layout metrics.
     ascent, descent = font.getmetrics()

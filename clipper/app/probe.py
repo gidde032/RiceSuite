@@ -48,6 +48,16 @@ def has_libass() -> bool:
     return any(line.split()[1:2] == ["subtitles"] for line in out.splitlines() if line.strip())
 
 
+def _pick_duration(video: dict, fmt: dict) -> float:
+    """First parseable duration from the video stream then the container format."""
+    for src in (video.get("duration"), fmt.get("duration")):
+        try:
+            return float(src)
+        except (TypeError, ValueError):
+            continue
+    return 0.0
+
+
 def probe(path: str) -> MediaInfo:
     """Return dimensions, duration and audio presence for ``path``."""
     try:
@@ -76,13 +86,10 @@ def probe(path: str) -> MediaInfo:
         raise ProbeError("no video stream found")
     has_audio = any(s.get("codec_type") == "audio" for s in streams)
 
-    duration = 0.0
-    for src in (video.get("duration"), data.get("format", {}).get("duration")):
-        try:
-            duration = float(src)
-            break
-        except (TypeError, ValueError):
-            continue
+    duration = _pick_duration(video, data.get("format", {}))
+    if duration <= 0.0:
+        # A 0-duration would make the header a zero-length (invisible) event.
+        raise ProbeError("could not determine video duration")
 
     return MediaInfo(
         width=int(video["width"]),
