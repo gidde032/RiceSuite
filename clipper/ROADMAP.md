@@ -21,7 +21,11 @@ human-in-the-loop gate. One clip at a time. Single Tier-1 caption preset.
 ## Wave 1 — fast-follow (the "first improvements" cluster)
 
 1. **RicePoster integration** — outputs drop into the harness's pickup contract
-   (naming/folder layout it expects). RiceClipper still performs no posting.
+   (naming/folder layout it expects). RiceClipper still performs no posting. The
+   handoff contract is designed in
+   [`docs/integration/riceposter-handoff.md`](./docs/integration/riceposter-handoff.md)
+   (PROPOSED — awaiting ratification). Sequenced as: batch review/render in
+   RiceClipper first, then the filesystem handoff + RicePoster-side pickup.
 2. **Silence-only trimming** — cut long silent gaps via silence detection; keep
    A/V in sync and smooth the jump cuts.
 3. **Auto-header** — Sonnet vision agent: early-frame snapshot + transcript +
