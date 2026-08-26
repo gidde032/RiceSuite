@@ -13,48 +13,19 @@
   </header>
 
   <main>
-    <!-- Step 1: upload -->
+    <!-- Step 1: upload (one or more clips) -->
     <section id="upload-panel" class="panel">
       <label class="dropzone" for="file-input">
-        <strong>Choose a vertical clip</strong>
-        <span>Under ~1 minute. Non-9:16 is blur-padded, never cropped.</span>
-        <input id="file-input" type="file" accept="video/*" hidden />
+        <strong>Choose vertical clips</strong>
+        <span>Pick one or several. Under ~1 minute each. Non-9:16 is blur-padded, never cropped.</span>
+        <input id="file-input" type="file" accept="video/*" multiple hidden />
       </label>
-      <p id="upload-status" class="status"></p>
-    </section>
 
-    <!-- Step 2: review gate -->
-    <section id="review-panel" class="panel hidden">
-      <div class="review-grid">
-        <div class="preview-col">
-          <video id="source-video" controls playsinline></video>
-          <p id="geo-note" class="hint"></p>
-          <p id="preview-status" class="status"></p>
-        </div>
-
-        <div class="edit-col">
-          <div class="field">
-            <label>Header <span class="hint">(1–2 lines, burned top of frame)</span></label>
-            <textarea id="header-input" rows="2" placeholder="Your on-screen hook…"></textarea>
-          </div>
-
-          <div class="field">
-            <label for="header-style">Header style</label>
-            <select id="header-style">
-              <option value="plain">Plain text (recommended)</option>
-              <option value="black_plate">Black plate</option>
-              <option value="white_plate">White plate</option>
-            </select>
-            <p class="hint">All options keep the compact reference scale and support emoji.</p>
-          </div>
-
-          <div class="field">
-            <label>
-              <input id="captions-toggle" type="checkbox" checked />
-              Burn captions
-            </label>
-            <label for="caption-style">Caption style</label>
-            <select id="caption-style">
+      <div class="batch-defaults">
+        <span class="hint">Batch defaults (each clip can override below):</span>
+        <div class="batch-defaults-row">
+          <label class="inline">Caption style
+            <select id="batch-caption-style">
               <option value="classic">Classic (v1 default)</option>
               <option value="clean">Clean / amber</option>
               <option value="punch">Punch / pink</option>
@@ -63,41 +34,28 @@
               <option value="mono">Mono / violet</option>
               <option value="editorial">Editorial / yellow</option>
             </select>
-            <p class="hint">Edit any misheard word below. Timing stays locked.</p>
-            <div id="transcript" class="transcript" contenteditable="false"></div>
-          </div>
-
-          <div class="field">
-            <label>Music <span class="hint">(optional)</span></label>
-            <input id="music-input" type="file" accept="audio/*" />
-            <div class="music-controls">
-              <select id="music-mode">
-                <option value="none">No added music</option>
-                <option value="mix">Mix under original</option>
-                <option value="replace">Replace original</option>
-              </select>
-              <label class="vol">Vol
-                <input id="music-volume" type="range" min="0" max="1.5" step="0.05" value="0.35" />
-                <span id="vol-label">0.35</span>
-              </label>
-            </div>
-          </div>
-
-          <button id="render-btn" class="primary">Render clip</button>
-          <p id="render-status" class="status"></p>
+          </label>
+          <label class="inline">Header style
+            <select id="batch-header-style">
+              <option value="plain">Plain text (recommended)</option>
+              <option value="black_plate">Black plate</option>
+              <option value="white_plate">White plate</option>
+            </select>
+          </label>
         </div>
       </div>
+
+      <p id="upload-status" class="status"></p>
     </section>
 
-    <!-- Step 3: result -->
-    <section id="result-panel" class="panel hidden">
-      <h2>Rendered clip</h2>
-      <video id="output-video" controls playsinline></video>
-      <p id="result-status" class="status"></p>
-      <div class="result-actions">
-        <a id="download-link" class="primary" download>Download mp4</a>
-        <button id="restart-btn">Start over</button>
+    <!-- Step 2: batch review + render -->
+    <section id="batch-panel" class="panel hidden">
+      <div id="clips"></div>
+      <div class="batch-actions">
+        <button id="render-all-btn" class="primary">Approve &amp; Render All</button>
+        <button id="restart-btn" type="button">Start over</button>
       </div>
+      <p id="batch-status" class="status"></p>
     </section>
 
     <section id="cache-panel" class="panel">
@@ -108,6 +66,81 @@
       <p id="cache-status" class="status"></p>
     </section>
   </main>
+
+  <!-- One review card per clip, cloned per upload. -->
+  <template id="clip-card-template">
+    <article class="clip-card">
+      <div class="clip-head">
+        <span class="clip-title"></span>
+        <span class="clip-status status"></span>
+        <button class="clip-remove" type="button" title="Remove this clip">✕</button>
+      </div>
+
+      <div class="review-grid">
+        <div class="preview-col">
+          <video class="source-video" controls playsinline muted></video>
+          <p class="geo-note hint"></p>
+          <p class="preview-status status"></p>
+        </div>
+
+        <div class="edit-col">
+          <div class="field">
+            <label>Header <span class="hint">(1–2 lines, burned top of frame)</span></label>
+            <textarea class="header-input" rows="2" placeholder="Your on-screen hook…"></textarea>
+          </div>
+
+          <div class="field">
+            <label>Header style</label>
+            <select class="header-style">
+              <option value="plain">Plain text (recommended)</option>
+              <option value="black_plate">Black plate</option>
+              <option value="white_plate">White plate</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>
+              <input class="captions-toggle" type="checkbox" checked />
+              Burn captions
+            </label>
+            <label>Caption style</label>
+            <select class="caption-style">
+              <option value="classic">Classic (v1 default)</option>
+              <option value="clean">Clean / amber</option>
+              <option value="punch">Punch / pink</option>
+              <option value="friendly">Friendly / mint</option>
+              <option value="sunset">Sunset / coral</option>
+              <option value="mono">Mono / violet</option>
+              <option value="editorial">Editorial / yellow</option>
+            </select>
+            <p class="hint">Edit any misheard word below. Timing stays locked.</p>
+            <div class="transcript" contenteditable="false"></div>
+          </div>
+
+          <div class="field">
+            <label>Music <span class="hint">(optional)</span></label>
+            <input class="music-input" type="file" accept="audio/*" />
+            <div class="music-controls">
+              <select class="music-mode">
+                <option value="none">No added music</option>
+                <option value="mix">Mix under original</option>
+                <option value="replace">Replace original</option>
+              </select>
+              <label class="vol">Vol
+                <input class="music-volume" type="range" min="0" max="1.5" step="0.05" value="0.35" />
+                <span class="vol-label">0.35</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="clip-result hidden">
+        <video class="output-video" controls playsinline></video>
+        <a class="download-link primary" download>Download mp4</a>
+      </div>
+    </article>
+  </template>
 
   <script src="/app.js"></script>
 </body>

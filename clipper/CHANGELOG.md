@@ -7,6 +7,18 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Bounded batch review (queue N, review each).** The review UI now accepts
+  several clips in one session: multi-file upload, a review card per clip, and a
+  single "Approve & Render All". Transcription and render run strictly one clip
+  at a time (client-driven over the existing per-job routes; the server keeps its
+  single Whisper model / CPU-bound ffmpeg serialization). Per-clip caption and
+  header presets inherit a batch default and can be overridden individually. This
+  is the first leg of the RicePoster integration (see
+  `docs/integration/riceposter-handoff.md`); the handoff writer is a later phase.
+  SPEC §9 updated: the prior "single-clip, no batch" default is superseded; the
+  per-clip human-in-the-loop gate is unchanged.
+
 ### Changed
 - **Visual preset follow-up.** Added seven selectable caption appearances
   (including the original Classic default) and three compact header treatments:

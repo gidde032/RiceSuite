@@ -1,22 +1,31 @@
 // RiceClipper review UI — vanilla JS, talks to the local FastAPI server.
 //
+// Bounded batch (SPEC §9): several clips are queued in one session, each gets a
+// review card, and the human edits + approves every clip. Transcription and
+// render run strictly one clip at a time — the server already serializes on a
+// single Whisper model and CPU-bound ffmpeg, so this UI never fires overlapping
+// work. State lives in the browser (a client-driven batch); the server keeps
+// its existing per-job routes.
+//
 // Video preview follows RicePoster's proven pattern: play from a client-side
-// blob (URL.createObjectURL) rather than a server stream. The source comes
-// straight from the selected File; the rendered output is fetched once into a
-// blob. This sidesteps HTTP range / content-disposition / streaming quirks that
-// break a <video src> pointed at a server endpoint.
+// blob (URL.createObjectURL) rather than a server stream, which sidesteps HTTP
+// range / content-disposition / streaming quirks that break a server-pointed
+// <video src>.
 
 const $ = (id) => document.getElementById(id);
 
-let job = null; // { id, words: [...], ... }
-let selectedFile = null; // the uploaded source File, for local preview
-let sourceUrl = null; // active object URLs, revoked on replace/restart
-let outputUrl = null;
-let operationBusy = false;
+const clips = []; // clip objects (see makeClip)
+let clipSeq = 0; // monotonic counter for stable ordinals
+let ingesting = false; // upload+transcribe queue is draining
+let batchBusy = false; // render-all in progress
 let clearInProgress = false;
 
 const MEDIA_CACHE_INFO_ENDPOINT = "/api/media-info";
 const ACTIVE_JOB_STATUSES = new Set(["transcribing", "rendering"]);
+
+function anyClipActive() {
+  return clips.some((c) => ACTIVE_JOB_STATUSES.has(c.status));
+}
 
 function mediaErrText(video) {
   const e = video.error;
@@ -81,105 +90,104 @@ async function refreshCacheInfo() {
 
 function updateCacheControls() {
   const button = $("clear-cache-btn");
-  const activeJob = job && ACTIVE_JOB_STATUSES.has(job.status);
-  button.disabled = operationBusy || clearInProgress || activeJob;
-  button.title = activeJob
+  const active = anyClipActive() || batchBusy;
+  button.disabled = active || ingesting || clearInProgress;
+  button.title = active
     ? "Wait for the current transcription or render to finish"
     : "Remove server-side media cache files";
 }
 
-// --- upload + transcribe ----------------------------------------------------
+// --- status helpers ---------------------------------------------------------
 
-$("file-input").addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  selectedFile = file;
-  operationBusy = true;
-  updateCacheControls();
+function setClipStatus(clip, text, isError = false) {
+  clip.statusEl.className = isError ? "clip-status status error" : "clip-status status";
+  clip.statusEl.textContent = text;
+}
 
-  // Preview immediately from the File (RicePoster's blob pattern).
-  showSourcePreview(file);
-  $("transcript").innerHTML = '<span class="hint">Uploading…</span>';
+function setBatchStatus(text, isError = false) {
+  const s = $("batch-status");
+  s.className = isError ? "status error" : "status";
+  s.textContent = text;
+}
 
-  const form = new FormData();
-  form.append("file", file);
-  try {
-    const up = await fetch("/api/upload", { method: "POST", body: form });
-    const updata = await up.json();
-    if (!up.ok || updata.status === "error") {
-      throw new Error(updata.error || updata.detail || "upload failed");
-    }
-    job = updata;
-    setGeoNote();
+function updateRenderAllButton() {
+  const ready = clips.some((c) => c.jobId && (c.status === "ready" || c.status === "done"));
+  $("render-all-btn").disabled = batchBusy || ingesting || !ready;
+}
 
-    $("transcript").innerHTML =
-      '<span class="hint">Transcribing… (first run downloads the model)</span>';
-    const tr = await fetch(`/api/jobs/${job.id}/transcribe`, { method: "POST" });
-    const trdata = await tr.json();
-    if (!tr.ok || trdata.status === "error") {
-      throw new Error(trdata.error || trdata.detail || "transcription failed");
-    }
-    job = trdata;
-    renderTranscript();
-  } catch (err) {
-    // Revert to the upload panel and surface the error.
-    $("review-panel").classList.add("hidden");
-    $("upload-panel").classList.remove("hidden");
-    const status = $("upload-status");
-    status.className = "status error";
-    status.textContent = err.message;
-  } finally {
-    operationBusy = false;
-    updateCacheControls();
-    await refreshCacheInfo();
-  }
-});
+// --- clip cards -------------------------------------------------------------
 
-// --- review gate ------------------------------------------------------------
+function buildCard(clip) {
+  const node = $("clip-card-template").content.firstElementChild.cloneNode(true);
+  clip.el = node;
+  clip.titleEl = node.querySelector(".clip-title");
+  clip.statusEl = node.querySelector(".clip-status");
+  clip.previewStatusEl = node.querySelector(".preview-status");
+  clip.geoEl = node.querySelector(".geo-note");
+  clip.sourceVideoEl = node.querySelector(".source-video");
+  clip.headerEl = node.querySelector(".header-input");
+  clip.headerStyleEl = node.querySelector(".header-style");
+  clip.captionsToggleEl = node.querySelector(".captions-toggle");
+  clip.captionStyleEl = node.querySelector(".caption-style");
+  clip.transcriptEl = node.querySelector(".transcript");
+  clip.musicInputEl = node.querySelector(".music-input");
+  clip.musicModeEl = node.querySelector(".music-mode");
+  clip.musicVolumeEl = node.querySelector(".music-volume");
+  clip.volLabelEl = node.querySelector(".vol-label");
+  clip.resultEl = node.querySelector(".clip-result");
+  clip.outputVideoEl = node.querySelector(".output-video");
+  clip.downloadEl = node.querySelector(".download-link");
 
-function showSourcePreview(file) {
-  $("upload-panel").classList.add("hidden");
-  $("review-panel").classList.remove("hidden");
+  clip.titleEl.textContent = `Clip ${clip.ord} — ${clip.file.name}`;
 
-  // Fresh <video controls> each time, started MUTED. Muted is deliberate: some
-  // re-encoded source clips (e.g. social re-uploads) have audio tracks Chrome
-  // can't decode mid-playback and it throws MEDIA_ERR_DECODE — muting avoids
-  // that entirely (it's the same trick RicePoster relies on). Controls let you
-  // pause / scrub / unmute. Clean-audio review happens on the rendered output.
-  const video = document.createElement("video");
-  video.id = "source-video";
-  video.controls = true;
-  video.muted = true;
-  video.playsInline = true;
-  video.onerror = () => {
-    const s = $("preview-status");
-    s.className = "status error";
-    s.textContent = `Can't preview this file in-browser (${mediaErrText(video)}). The rendered output is always H.264/AAC and will play here regardless.`;
+  // Inherit the batch defaults; a manual change marks the field "touched" so a
+  // later batch-default change no longer overrides this clip.
+  clip.captionStyleEl.value = $("batch-caption-style").value;
+  clip.headerStyleEl.value = $("batch-header-style").value;
+  clip.captionStyleEl.addEventListener("change", () => { clip.captionStyleTouched = true; });
+  clip.headerStyleEl.addEventListener("change", () => { clip.headerStyleTouched = true; });
+
+  clip.musicVolumeEl.addEventListener("input", (e) => {
+    clip.volLabelEl.textContent = Number(e.target.value).toFixed(2);
+  });
+  clip.captionsToggleEl.addEventListener("change", () => {
+    clip.captionStyleEl.disabled = !clip.captionsToggleEl.checked;
+  });
+  node.querySelector(".clip-remove").addEventListener("click", () => removeClip(clip));
+
+  // Preview from the File (blob), muted — some re-encoded sources throw
+  // MEDIA_ERR_DECODE mid-play with audio; muting avoids it. Clean-audio review
+  // happens on the rendered output.
+  clip.sourceVideoEl.onerror = () => {
+    clip.previewStatusEl.className = "preview-status status error";
+    clip.previewStatusEl.textContent =
+      `Can't preview this file in-browser (${mediaErrText(clip.sourceVideoEl)}). The rendered output is always H.264/AAC and will play here regardless.`;
   };
-  $("source-video").replaceWith(video);
+  clip.sourceUrl = URL.createObjectURL(clip.file);
+  clip.sourceVideoEl.src = clip.sourceUrl;
+  clip.previewStatusEl.textContent = "Preview starts muted (unmute with the player controls).";
 
-  const s = $("preview-status");
-  s.className = "status";
-  s.textContent = "Preview starts muted (unmute with the player controls). Audio review happens on the rendered output.";
+  clip.outputVideoEl.onerror = () => {
+    setClipStatus(clip, `Playback failed (${mediaErrText(clip.outputVideoEl)}). The file downloaded fine — use Download to save it.`, true);
+  };
 
-  if (sourceUrl) URL.revokeObjectURL(sourceUrl);
-  sourceUrl = URL.createObjectURL(file);
-  video.src = sourceUrl;
+  $("clips").appendChild(node);
 }
 
-function setGeoNote() {
-  const geo = $("geo-note");
-  if (job.width === 1080 && job.height === 1920) {
-    geo.textContent = `${job.width}×${job.height} — perfect 9:16, passthrough.`;
+function setGeoNote(clip, info) {
+  if (info.width === 1080 && info.height === 1920) {
+    clip.geoEl.textContent = `${info.width}×${info.height} — perfect 9:16, passthrough.`;
+  } else if (info.width && info.height) {
+    clip.geoEl.textContent = `${info.width}×${info.height} — will be blur-padded to 1080×1920.`;
   } else {
-    geo.textContent = `${job.width}×${job.height} — will be blur-padded to 1080×1920.`;
+    clip.geoEl.textContent = "";
   }
 }
 
-function renderTranscript() {
-  const box = $("transcript");
+function renderTranscript(clip) {
+  const box = clip.transcriptEl;
   box.innerHTML = "";
-  job.words.forEach((w, i) => {
+  clip.words.forEach((w, i) => {
     const span = document.createElement("span");
     span.className = "word";
     span.contentEditable = "true";
@@ -190,52 +198,185 @@ function renderTranscript() {
   });
 }
 
-function collectWords() {
+function collectWords(clip) {
   // Preserve locked timing (D4); only text is editable.
-  const spans = $("transcript").querySelectorAll(".word");
+  const spans = clip.transcriptEl.querySelectorAll(".word");
   return Array.from(spans).map((span) => {
-    const w = job.words[Number(span.dataset.index)];
+    const w = clip.words[Number(span.dataset.index)];
     return { text: span.textContent.trim(), start: w.start, end: w.end };
   });
 }
 
-$("music-volume").addEventListener("input", (e) => {
-  $("vol-label").textContent = Number(e.target.value).toFixed(2);
+function removeClip(clip) {
+  if (ACTIVE_JOB_STATUSES.has(clip.status) || batchBusy) return;
+  if (clip.sourceUrl) URL.revokeObjectURL(clip.sourceUrl);
+  if (clip.outputUrl) URL.revokeObjectURL(clip.outputUrl);
+  clip.el.remove();
+  const idx = clips.indexOf(clip);
+  if (idx >= 0) clips.splice(idx, 1);
+  if (clips.length === 0) {
+    $("batch-panel").classList.add("hidden");
+    $("upload-panel").classList.remove("hidden");
+  }
+  updateRenderAllButton();
+  updateCacheControls();
+}
+
+// --- upload + transcribe (sequential queue) ---------------------------------
+
+$("file-input").addEventListener("change", (e) => {
+  addFiles(e.target.files);
+  e.target.value = ""; // let the same file / more files be added again
 });
 
-// --- render -----------------------------------------------------------------
+function addFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (files.length === 0) return;
+  $("upload-panel").classList.add("hidden");
+  $("batch-panel").classList.remove("hidden");
+  for (const file of files) {
+    clipSeq += 1;
+    const clip = {
+      localId: clipSeq,
+      ord: clips.length + 1,
+      file,
+      jobId: null,
+      status: "queued",
+      words: [],
+      sourceUrl: null,
+      outputUrl: null,
+      captionStyleTouched: false,
+      headerStyleTouched: false,
+    };
+    clips.push(clip);
+    buildCard(clip);
+    setClipStatus(clip, "Queued…");
+  }
+  updateRenderAllButton();
+  updateCacheControls();
+  processIngestQueue();
+}
 
-$("render-btn").addEventListener("click", async () => {
-  const status = $("render-status");
-  status.className = "status";
-  operationBusy = true;
+async function processIngestQueue() {
+  if (ingesting) return; // a running drain picks up newly-queued clips itself
+  ingesting = true;
+  updateRenderAllButton();
+  updateCacheControls();
+  try {
+    while (true) {
+      const clip = clips.find((c) => c.status === "queued");
+      if (!clip) break;
+      await ingestClip(clip);
+    }
+  } finally {
+    ingesting = false;
+    updateRenderAllButton();
+    updateCacheControls();
+    await refreshCacheInfo();
+  }
+}
+
+async function ingestClip(clip) {
+  clip.status = "uploading";
+  setClipStatus(clip, "Uploading…");
   updateCacheControls();
 
-  const mode = $("music-mode").value;
-  const musicFile = $("music-input").files[0];
+  const form = new FormData();
+  form.append("file", clip.file);
+  try {
+    const up = await fetch("/api/upload", { method: "POST", body: form });
+    const updata = await up.json();
+    if (!up.ok || updata.status === "error") {
+      throw new Error(updata.error || updata.detail || "upload failed");
+    }
+    clip.jobId = updata.id;
+    setGeoNote(clip, updata);
 
+    clip.status = "transcribing";
+    setClipStatus(clip, "Transcribing… (first run downloads the model)");
+    clip.transcriptEl.innerHTML = '<span class="hint">Transcribing…</span>';
+    const tr = await fetch(`/api/jobs/${clip.jobId}/transcribe`, { method: "POST" });
+    const trdata = await tr.json();
+    if (!tr.ok || trdata.status === "error") {
+      throw new Error(trdata.error || trdata.detail || "transcription failed");
+    }
+    clip.words = trdata.words || [];
+    renderTranscript(clip);
+    clip.status = "ready";
+    setClipStatus(clip, "Ready — review & render");
+  } catch (err) {
+    clip.status = "error";
+    clip.error = err.message;
+    clip.transcriptEl.innerHTML = "";
+    setClipStatus(clip, err.message, true);
+  }
+  updateRenderAllButton();
+}
+
+// --- render all -------------------------------------------------------------
+
+$("render-all-btn").addEventListener("click", handleRenderAll);
+
+async function handleRenderAll() {
+  if (batchBusy || ingesting) return;
+  const targets = clips.filter((c) => c.jobId && (c.status === "ready" || c.status === "done"));
+  if (targets.length === 0) {
+    setBatchStatus("No clips are ready to render yet.", true);
+    return;
+  }
+
+  batchBusy = true;
+  updateRenderAllButton();
+  updateCacheControls();
+
+  let ok = 0;
+  for (let i = 0; i < targets.length; i++) {
+    setBatchStatus(`Rendering clip ${i + 1} of ${targets.length}…`);
+    if (await renderClip(targets[i])) ok += 1;
+  }
+
+  batchBusy = false;
+  updateRenderAllButton();
+  updateCacheControls();
+  await refreshCacheInfo();
+  setBatchStatus(
+    ok === targets.length
+      ? `Rendered ${ok} clip${ok === 1 ? "" : "s"}. Download below.`
+      : `Rendered ${ok} of ${targets.length}; see the per-clip errors above.`,
+    ok !== targets.length,
+  );
+}
+
+async function renderClip(clip) {
+  clip.status = "rendering";
+  clip.resultEl.classList.add("hidden");
+  setClipStatus(clip, "Rendering…");
+  updateCacheControls();
+
+  const mode = clip.musicModeEl.value;
+  const musicFile = clip.musicInputEl.files[0];
   try {
     let filename = null;
     if (mode !== "none" && musicFile) {
-      status.textContent = "Uploading music…";
+      setClipStatus(clip, "Uploading music…");
       const form = new FormData();
       form.append("file", musicFile);
-      const mres = await fetch(`/api/jobs/${job.id}/music`, { method: "POST", body: form });
+      const mres = await fetch(`/api/jobs/${clip.jobId}/music`, { method: "POST", body: form });
       const mdata = await mres.json();
       if (!mres.ok) throw new Error(mdata.detail || "music upload failed");
       filename = mdata.filename;
     }
 
-    status.textContent = "Rendering… (burning captions, header & audio)";
+    setClipStatus(clip, "Rendering… (captions, header & audio)");
     const payload = {
-      words: collectWords(),
-      header: $("header-input").value,
-      captions_on: $("captions-toggle").checked,
-      caption_style: $("caption-style").value,
-      header_style: $("header-style").value,
-      music: { mode: musicFile ? mode : "none", volume: Number($("music-volume").value), filename },
+      words: collectWords(clip),
+      header: clip.headerEl.value,
+      captions_on: clip.captionsToggleEl.checked,
+      caption_style: clip.captionStyleEl.value,
+      header_style: clip.headerStyleEl.value,
+      music: { mode: musicFile ? mode : "none", volume: Number(clip.musicVolumeEl.value), filename },
     };
-    const res = await fetch(`/api/jobs/${job.id}/render`, {
+    const res = await fetch(`/api/jobs/${clip.jobId}/render`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -243,95 +384,78 @@ $("render-btn").addEventListener("click", async () => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "render failed");
 
-    status.textContent = "";
-    await showResult();
+    clip.status = "done";
+    setClipStatus(clip, "Rendered ✓");
+    await showResult(clip);
+    return true;
   } catch (err) {
-    status.className = "status error";
-    status.textContent = err.message;
-  } finally {
-    operationBusy = false;
-    updateCacheControls();
-    await refreshCacheInfo();
+    clip.status = "error";
+    clip.error = err.message;
+    setClipStatus(clip, err.message, true);
+    return false;
   }
-});
+}
 
-// --- result -----------------------------------------------------------------
-
-async function showResult() {
-  $("review-panel").classList.add("hidden");
-  $("result-panel").classList.remove("hidden");
-
-  const status = $("result-status");
-  status.className = "status";
-  status.textContent = "Loading rendered clip…";
-
-  const resp = await fetch(`/api/jobs/${job.id}/output`);
+async function showResult(clip) {
+  const resp = await fetch(`/api/jobs/${clip.jobId}/output`);
   if (!resp.ok) throw new Error(`could not load output (${resp.status})`);
   const blob = await resp.blob();
 
-  // Fresh <video> element + blob URL, same pattern as the source preview.
-  const v = document.createElement("video");
-  v.id = "output-video";
-  v.controls = true;
-  v.playsInline = true;
-  v.onerror = () => {
-    status.className = "status error";
-    status.textContent = `Playback failed (${mediaErrText(v)}). The file downloaded fine — use Download to save it.`;
-  };
-  $("output-video").replaceWith(v);
+  if (clip.outputUrl) URL.revokeObjectURL(clip.outputUrl);
+  clip.outputUrl = URL.createObjectURL(blob);
+  clip.outputVideoEl.src = clip.outputUrl;
 
-  if (outputUrl) URL.revokeObjectURL(outputUrl);
-  outputUrl = URL.createObjectURL(blob);
-  v.src = outputUrl;
-
-  const dl = $("download-link");
-  dl.href = outputUrl;
-  dl.download = `riceclipper-${job.id}.mp4`;
-  status.textContent = "";
+  clip.downloadEl.href = clip.outputUrl;
+  clip.downloadEl.download = `riceclipper-${clip.jobId}.mp4`;
+  clip.resultEl.classList.remove("hidden");
 }
 
-$("restart-btn").addEventListener("click", () => {
-  resetClientState();
-});
+// --- start over -------------------------------------------------------------
 
-function resetClientState() {
-  // Stop playback — hiding the panel doesn't pause the media element.
-  ["source-video", "output-video"].forEach((id) => {
-    const v = $(id);
-    if (v) {
-      v.pause();
-      v.removeAttribute("src");
-      v.load();
-    }
+$("restart-btn").addEventListener("click", resetAll);
+
+function resetAll() {
+  if (batchBusy || ingesting) return;
+  clips.forEach((c) => {
+    ["sourceVideoEl", "outputVideoEl"].forEach((k) => {
+      const v = c[k];
+      if (v) {
+        v.pause();
+        v.removeAttribute("src");
+        v.load();
+      }
+    });
+    if (c.sourceUrl) URL.revokeObjectURL(c.sourceUrl);
+    if (c.outputUrl) URL.revokeObjectURL(c.outputUrl);
   });
-  if (sourceUrl) URL.revokeObjectURL(sourceUrl);
-  if (outputUrl) URL.revokeObjectURL(outputUrl);
-  sourceUrl = outputUrl = null;
-  job = null;
-  selectedFile = null;
-  operationBusy = false;
-  $("result-panel").classList.add("hidden");
-  $("review-panel").classList.add("hidden");
+  clips.length = 0;
+  $("clips").innerHTML = "";
+  $("batch-panel").classList.add("hidden");
   $("upload-panel").classList.remove("hidden");
   $("file-input").value = "";
-  $("music-input").value = "";
-  $("header-input").value = "";
-  $("header-style").value = "plain";
-  $("caption-style").value = "classic";
-  $("captions-toggle").checked = true;
-  $("music-mode").value = "none";
-  $("music-volume").value = "0.35";
-  $("vol-label").textContent = "0.35";
-  $("transcript").innerHTML = "";
   $("upload-status").textContent = "";
-  $("preview-status").textContent = "";
-  $("render-status").textContent = "";
-  $("result-status").textContent = "";
+  setBatchStatus("");
+  updateRenderAllButton();
   updateCacheControls();
 }
 
+// --- batch-default preset propagation ---------------------------------------
+
+$("batch-caption-style").addEventListener("change", (e) => {
+  clips.forEach((c) => {
+    if (!c.captionStyleTouched && c.captionStyleEl) c.captionStyleEl.value = e.target.value;
+  });
+});
+$("batch-header-style").addEventListener("change", (e) => {
+  clips.forEach((c) => {
+    if (!c.headerStyleTouched && c.headerStyleEl) c.headerStyleEl.value = e.target.value;
+  });
+});
+
+// --- clear media cache ------------------------------------------------------
+
 $("clear-cache-btn").addEventListener("click", async () => {
-  if (!window.confirm("Clear all server-side media cache files? Your original browser file will not be affected.")) {
+  if (!window.confirm("Clear all server-side media cache files? Your original browser files will not be affected.")) {
     return;
   }
 
@@ -353,7 +477,7 @@ $("clear-cache-btn").addEventListener("click", async () => {
       throw new Error(data.detail || data.error || `cache clear failed (${response.status})`);
     }
 
-    resetClientState();
+    resetAll();
     await refreshCacheInfo();
     status.className = "status";
     status.textContent = "Media cache cleared.";
@@ -368,3 +492,4 @@ $("clear-cache-btn").addEventListener("click", async () => {
 
 checkHealth();
 refreshCacheInfo();
+updateCacheControls();
