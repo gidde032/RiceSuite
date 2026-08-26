@@ -66,13 +66,39 @@ main { max-width: 960px; margin: 0 auto; padding: 24px; }
 .review-grid { display: grid; grid-template-columns: 300px 1fr; gap: 24px; }
 @media (max-width: 720px) { .review-grid { grid-template-columns: 1fr; } }
 
-.preview-col video, .result-actions, #output-video {
+.preview-col video, .output-video {
   width: 100%;
   border-radius: 10px;
   background: #000;
 }
-#source-video { width: 100%; max-height: 520px; border-radius: 10px; background: #000; }
-#output-video { max-height: 620px; margin-bottom: 16px; }
+.source-video { width: 100%; max-height: 520px; border-radius: 10px; background: #000; }
+.output-video { max-height: 620px; margin-bottom: 16px; }
+
+/* --- batch layout --- */
+.batch-defaults { margin-top: 16px; }
+.batch-defaults-row { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 8px; }
+label.inline { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+label.inline select { width: auto; min-width: 180px; }
+
+.clip-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 18px;
+  background: #14161c;
+}
+.clip-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.clip-title { font-weight: 700; }
+.clip-head .clip-status { margin: 0; flex: 1; }
+.clip-remove {
+  padding: 4px 10px;
+  line-height: 1;
+  color: var(--muted);
+}
+.clip-result { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 16px; }
+.clip-result .download-link { margin-top: 4px; }
+
+.batch-actions { display: flex; gap: 12px; align-items: center; margin-top: 4px; }
 
 .field { margin-bottom: 18px; }
 .field > label { display: block; font-weight: 600; margin-bottom: 6px; }

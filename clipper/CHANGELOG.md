@@ -7,6 +7,28 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **RicePoster handoff writer (producer side).** A "Send to RicePoster" button
+  posts the rendered batch to `POST /api/handoff` (`app/handoff.py`), which
+  copies each clip to `clip_<position>.mp4` under a fresh `batch_<ts>/` in the
+  handoff root (`RICECLIPPER_HANDOFF_DIR`, default `~/riceclipper-handoff/`) and
+  writes `manifest.json` last via an atomic rename. The manifest carries the
+  reviewed transcript (for RicePoster's caption grounding), header, and preset
+  provenance; it holds no account/slot/posting fields. RiceClipper still writes
+  local files only. Implements the producer half of
+  `docs/integration/riceposter-handoff.md`; the RicePoster-side pickup is a
+  separate effort in that repo.
+- **Bounded batch review (queue N, review each).** The review UI now accepts
+  several clips in one session: multi-file upload, a review card per clip, and a
+  single "Approve & Render All". Transcription and render run strictly one clip
+  at a time (client-driven over the existing per-job routes; the server keeps its
+  single Whisper model / CPU-bound ffmpeg serialization). Per-clip caption and
+  header presets inherit a batch default and can be overridden individually. This
+  is the first leg of the RicePoster integration (see
+  `docs/integration/riceposter-handoff.md`); the handoff writer is a later phase.
+  SPEC §9 updated: the prior "single-clip, no batch" default is superseded; the
+  per-clip human-in-the-loop gate is unchanged.
+
 ### Changed
 - **Visual preset follow-up.** Added seven selectable caption appearances
   (including the original Classic default) and three compact header treatments:

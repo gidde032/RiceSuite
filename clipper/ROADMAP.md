@@ -6,10 +6,14 @@ v1: ship a clean, provable render chassis first, then add features on top of it.
 
 ## Immediate next step
 
-The v1 hardening pass is complete. The approved visual render-tuning pass is
-implemented: seven built-in caption presets, three compact header treatments,
-and preserved color-emoji rendering through the existing Pillow overlay
-fallback.
+The full v1 → Wave-1 clip pipeline is implemented and **confirmed working end to
+end** — upload to RiceClipper, batch review/render, filesystem handoff, then
+RicePoster "Pull from Clipper" and post. It lives in draft PRs pending merge
+(#4 batch review/render, #5 handoff writer, RicePoster #77 pickup). Next is
+merging those, then the remaining Wave-1 items (silence-only trimming,
+auto-header). Earlier work already merged to `main`: v1 slice, hardening pass,
+and the bounded visual presets (seven caption presets, three header treatments,
+color-emoji via the Pillow overlay).
 
 ## v1 (current — see SPEC.md)
 
@@ -21,7 +25,14 @@ human-in-the-loop gate. One clip at a time. Single Tier-1 caption preset.
 ## Wave 1 — fast-follow (the "first improvements" cluster)
 
 1. **RicePoster integration** — outputs drop into the harness's pickup contract
-   (naming/folder layout it expects). RiceClipper still performs no posting.
+   (naming/folder layout it expects). RiceClipper still performs no posting. The
+   handoff contract is ratified in
+   [`docs/integration/riceposter-handoff.md`](./docs/integration/riceposter-handoff.md).
+   **Implemented and verified end to end** (pending PR merge): batch
+   review/render in RiceClipper (#4), the producer-side handoff writer (#5,
+   `POST /api/handoff` → `~/riceclipper-handoff/`), and the RicePoster-side
+   "Pull from Clipper" pickup + auto-caption (RicePoster #77), where captions are
+   generated on a real frame captured from the staged clip.
 2. **Silence-only trimming** — cut long silent gaps via silence detection; keep
    A/V in sync and smooth the jump cuts.
 3. **Auto-header** — Sonnet vision agent: early-frame snapshot + transcript +

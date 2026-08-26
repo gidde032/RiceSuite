@@ -54,6 +54,28 @@ class RenderRequest(BaseModel):
     music: MusicSettings = Field(default_factory=MusicSettings)
 
 
+class HandoffClip(BaseModel):
+    """One rendered clip to write into the RicePoster handoff (SPEC §7 Wave-1 #1).
+
+    ``transcript`` is the reviewed spoken text (the client already holds the
+    edited words); it grounds RicePoster's caption generation. ``position`` is
+    the only routing signal — RicePoster maps it to a slot on pickup.
+    """
+
+    job_id: str
+    position: int = Field(ge=1)
+    transcript: str = ""
+    header: str = ""
+    caption_style: CaptionStyle = "classic"
+    header_style: HeaderStyle = "plain"
+
+
+class HandoffRequest(BaseModel):
+    """Client-assembled batch for POST /api/handoff."""
+
+    clips: list[HandoffClip] = Field(default_factory=list)
+
+
 class JobState(BaseModel):
     """Server-side state for one clip, surfaced to the UI."""
 

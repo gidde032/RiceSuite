@@ -12,11 +12,14 @@ memory or chat — read the spec.
 
 ## Current status
 
-**v1 vertical slice and hardening pass complete; bounded visual follow-up
-implemented.** The reviewed correctness/performance/cleanup repairs are merged
-to `main`, and the approved visual preset work is implemented on the
-`visual-presets` branch. Further changes still require explicit approval and
-must remain within the active phase.
+**Full v1 → Wave-1 clip pipeline implemented and confirmed functional end to
+end** — upload → RiceClipper batch review/render → filesystem handoff →
+RicePoster "Pull from Clipper" → post. Merged to `main`: the v1 vertical slice,
+the hardening pass, and the bounded visual presets. Implemented and verified,
+pending PR merge: bounded batch review/render (PR #4), the producer-side handoff
+writer (PR #5), and the RicePoster-side pickup + auto-caption (RicePoster #77).
+Further changes still require explicit approval and must remain within the active
+phase.
 
 The **color-emoji burn-in spike** (`docs/spikes/emoji-burn-in.md`) passed via the
 PNG-overlay fallback. The Wave-1 auto-header remains deferred product scope,
