@@ -49,6 +49,15 @@ def test_batch_review_ui_supports_multiple_clips():
     assert "processIngestQueue" in javascript
 
 
+def test_handoff_send_button_posts_the_batch():
+    html = _html()
+    javascript = _js()
+    assert 'id="send-handoff-btn"' in html
+    # The send button hands the batch to the local handoff endpoint (no posting).
+    assert "/api/handoff" in javascript
+    assert "position: i + 1" in javascript  # handoff order → RicePoster slot order
+
+
 def test_render_runs_one_clip_at_a_time():
     # Render-all iterates clips sequentially (awaits each) rather than firing
     # concurrent renders — the SPEC §9 bounded-batch guarantee.

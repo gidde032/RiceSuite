@@ -1,9 +1,12 @@
 # RiceClipper → RicePoster handoff contract
 
-**Status: PROPOSED — awaiting ratification. No implementation authorized.**
-This is the Phase 0 design deliverable for Wave-1 item #1 (`ROADMAP.md`). It
-defines the integration contract only; building any part of it requires an
-explicit approved phase change in the owning repo.
+**Status: contract RATIFIED. Producer side (RiceClipper writer) IMPLEMENTED;
+consumer side (RicePoster pickup) PENDING in that repo.**
+This is Wave-1 item #1 (`ROADMAP.md`). The producer half — writing a batch of
+clips + a manifest into the handoff directory — is implemented in RiceClipper
+(`app/handoff.py`, `POST /api/handoff`). The consumer half (RicePoster "Pull
+from Clipper") is a separate effort in the `clippingharness`/RicePoster repo
+under its own approval.
 
 ## Goal
 
@@ -83,15 +86,18 @@ it can never read a half-written batch. No separate lock/marker file is needed.
   behavior. Field may be omitted.
 - `schema_version` lets the consumer reject an unknown future shape loudly.
 
-## Producer side — RiceClipper (Phase 2 work, not authorized here)
+## Producer side — RiceClipper (IMPLEMENTED)
 
-After a batch render completes: for each clip, in review order, write
-`clip_<position>.mp4` to a fresh `batch_<timestamp>/` under the handoff root,
-then write `manifest.json` last. RiceClipper does not manage the batch after
-that; it may offer a local "clear handoff" convenience but is not the lifecycle
-owner.
+After a batch is rendered, the review UI's **"Send to RicePoster"** button posts
+the done clips to `POST /api/handoff` (`app/handoff.py`). For each clip, in
+handoff order, it copies the rendered mp4 to `clip_<position>.mp4` under a fresh
+`batch_<ts>_<rand>/` in the handoff root, then writes `manifest.json` last via an
+atomic rename. The handoff root is `RICECLIPPER_HANDOFF_DIR` (default
+`~/riceclipper-handoff`). The client sends the reviewed transcript text, so no
+server-side batch object is needed. RiceClipper only writes here and does not
+manage the batch afterward; it is not the lifecycle owner.
 
-## Consumer side — RicePoster (Phase 2 work, its own repo's authorization)
+## Consumer side — RicePoster (PENDING — its own repo's authorization)
 
 A "Pull from Clipper" action (or a light watcher) scans the handoff root for
 batch dirs containing a `manifest.json`.

@@ -113,6 +113,9 @@ function setBatchStatus(text, isError = false) {
 function updateRenderAllButton() {
   const ready = clips.some((c) => c.jobId && (c.status === "ready" || c.status === "done"));
   $("render-all-btn").disabled = batchBusy || ingesting || !ready;
+  // Handoff is offered once at least one clip has a rendered output.
+  const anyDone = clips.some((c) => c.jobId && c.status === "done");
+  $("send-handoff-btn").disabled = batchBusy || ingesting || !anyDone;
 }
 
 // --- clip cards -------------------------------------------------------------
@@ -409,6 +412,44 @@ async function showResult(clip) {
   clip.downloadEl.download = `riceclipper-${clip.jobId}.mp4`;
   clip.resultEl.classList.remove("hidden");
 }
+
+// --- send to RicePoster (handoff) -------------------------------------------
+
+$("send-handoff-btn").addEventListener("click", async () => {
+  const done = clips.filter((c) => c.jobId && c.status === "done");
+  if (done.length === 0) {
+    setBatchStatus("Render clips before sending to RicePoster.", true);
+    return;
+  }
+
+  $("send-handoff-btn").disabled = true;
+  setBatchStatus(`Sending ${done.length} clip${done.length === 1 ? "" : "s"} to RicePoster…`);
+  try {
+    const payload = {
+      clips: done.map((c, i) => ({
+        job_id: c.jobId,
+        position: i + 1, // handoff order → RicePoster slot order
+        transcript: collectWords(c).map((w) => w.text).join(" ").trim(),
+        header: c.headerEl.value,
+        caption_style: c.captionStyleEl.value,
+        header_style: c.headerStyleEl.value,
+      })),
+    };
+    const res = await fetch("/api/handoff", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "handoff failed");
+    const n = data.clip_count;
+    setBatchStatus(`Sent batch ${data.batch_id} (${n} clip${n === 1 ? "" : "s"}) to RicePoster.`);
+  } catch (err) {
+    setBatchStatus(err.message, true);
+  } finally {
+    updateRenderAllButton();
+  }
+});
 
 // --- start over -------------------------------------------------------------
 

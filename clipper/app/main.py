@@ -17,9 +17,9 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import jobs, probe
+from app import handoff, jobs, probe
 from app.process import terminate_all_owned_processes
-from app.models import JobState, RenderRequest
+from app.models import HandoffRequest, JobState, RenderRequest
 from render.pipeline import render
 from transcribe import whisper
 
@@ -194,6 +194,47 @@ def render_job(job_id: str, req: RenderRequest) -> JobState:
             job.error = "render failed"
             raise HTTPException(status_code=500, detail=job.error) from exc
         return job.state()
+
+
+@app.post("/api/handoff")
+def handoff_batch(req: HandoffRequest) -> dict:
+    """Write a rendered batch into the RicePoster handoff directory.
+
+    Producer side of the pickup contract (SPEC §7 Wave-1 #1). Reads job outputs
+    and writes local files only — no posting, no network. The batch grouping and
+    the reviewed transcript come from the client (the batch is client-driven);
+    the server contributes the rendered mp4s and the manifest.
+    """
+    if not req.clips:
+        raise HTTPException(status_code=400, detail="no clips provided")
+
+    entries: list[handoff.HandoffEntry] = []
+    with jobs.job_operation_lock():
+        for clip in req.clips:
+            job = jobs.get_job(clip.job_id)
+            if job is None:
+                raise HTTPException(status_code=404, detail=f"job {clip.job_id} not found")
+            if job.output_path is None or not job.output_path.exists():
+                raise HTTPException(
+                    status_code=409, detail=f"job {clip.job_id} has no rendered output"
+                )
+            entries.append(
+                handoff.HandoffEntry(
+                    position=clip.position,
+                    source=job.output_path,
+                    transcript=clip.transcript,
+                    header=clip.header,
+                    caption_style=clip.caption_style,
+                    header_style=clip.header_style,
+                )
+            )
+
+    # Copy outside the job lock: gathering the source paths is quick, but the
+    # file copies are not, and they must not block status/upload requests.
+    try:
+        return handoff.write_batch(entries)
+    except handoff.HandoffError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/jobs/{job_id}/output")

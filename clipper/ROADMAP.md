@@ -22,10 +22,12 @@ human-in-the-loop gate. One clip at a time. Single Tier-1 caption preset.
 
 1. **RicePoster integration** — outputs drop into the harness's pickup contract
    (naming/folder layout it expects). RiceClipper still performs no posting. The
-   handoff contract is designed in
-   [`docs/integration/riceposter-handoff.md`](./docs/integration/riceposter-handoff.md)
-   (PROPOSED — awaiting ratification). Sequenced as: batch review/render in
-   RiceClipper first, then the filesystem handoff + RicePoster-side pickup.
+   handoff contract is ratified in
+   [`docs/integration/riceposter-handoff.md`](./docs/integration/riceposter-handoff.md).
+   **Done:** batch review/render in RiceClipper, and the producer-side handoff
+   writer (`POST /api/handoff` → `~/riceclipper-handoff/`). **Pending:** the
+   RicePoster-side "Pull from Clipper" pickup + auto-caption, which lives in the
+   RicePoster repo under its own approval.
 2. **Silence-only trimming** — cut long silent gaps via silence detection; keep
    A/V in sync and smooth the jump cuts.
 3. **Auto-header** — Sonnet vision agent: early-frame snapshot + transcript +
