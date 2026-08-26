@@ -1,3 +1,7 @@
+import pytest
+
+from render import header_image
+from render.ass import style_for_presets
 from render.header_image import _segment, _wrap, has_emoji
 
 
@@ -41,3 +45,28 @@ def test_segment_splits_text_and_emoji_runs():
 
 def test_segment_pure_text():
     assert _segment("hello") == [("text", "hello")]
+
+
+def test_plain_emoji_header_is_transparent_without_a_plate(monkeypatch, tmp_path):
+    """Plain headers keep the color-emoji PNG path, but do not draw a plate."""
+    if (
+        header_image._first_existing(header_image._TEXT_FONT_CANDIDATES) is None
+        or header_image._resolve_emoji_font() is None
+    ):
+        pytest.skip("Pillow-compatible text and color-emoji fonts are unavailable")
+
+    def fail_if_plate(*_args, **_kwargs):
+        raise AssertionError("plain header unexpectedly drew a plate")
+
+    monkeypatch.setattr(
+        header_image.ImageDraw.ImageDraw,
+        "rounded_rectangle",
+        fail_if_plate,
+    )
+    output = header_image.render_header_png(
+        "hello 😂",
+        tmp_path / "header.png",
+        style_for_presets("classic", "plain"),
+    )
+
+    assert output.exists()

@@ -8,7 +8,9 @@ text and color emoji (preferring Apple Color Emoji on macOS), which ffmpeg then
 composites.
 
 Headers with no emoji never touch this module — they stay on the libass path.
-Captions always stay on libass (they carry no emoji).
+Captions always stay on libass (they carry no emoji). The selected header
+treatment is shared with the libass path: plain text has no plate, while the
+two plate choices draw a per-line legibility box.
 """
 
 from __future__ import annotations
@@ -139,9 +141,9 @@ def render_header_png(
 ) -> Path:
     """Render ``text`` (with color emoji) to a full-frame transparent PNG.
 
-    The header block is drawn on a legibility plate near the top, horizontally
-    centered — matching the libass header placement — so ffmpeg can overlay it
-    at 0,0.
+    The header block is near the top and horizontally centered — matching the
+    libass header placement — so ffmpeg can overlay it at 0,0. Plain headers
+    remain transparent everywhere except their text and edge.
     """
     style = style or StyleConfig()
     out_path = Path(out_path)
@@ -184,7 +186,8 @@ def render_header_png(
     ascent, descent = font.getmetrics()
     text_h = ascent + descent
     line_h = round(max(text_h, emoji_size) * 1.35)
-    x_pad, y_pad = 24, 8
+    x_pad = style.header_padding
+    y_pad = max(4, style.header_padding // 2)
 
     img = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -195,17 +198,23 @@ def render_header_png(
     pb = int(style.header_plate_color[4:6], 16)
     plate = (pr, pg, pb, plate_alpha)
     text_color = tuple(int(style.header_color[i : i + 2], 16) for i in (0, 2, 4)) + (255,)
+    outline_color = tuple(
+        int(style.header_outline_color[i : i + 2], 16) for i in (0, 2, 4)
+    ) + (255,)
 
     y = style.header_margin_v
     for parts_list, line_w in lines:
         line_w = int(line_w)
         x0 = (cw - line_w) // 2
-        # Per-line legibility plate.
-        draw.rounded_rectangle(
-            [x0 - x_pad, y - y_pad, x0 + line_w + x_pad, y + line_h + y_pad],
-            radius=14,
-            fill=plate,
-        )
+        if style.header_border_style == 3:
+            # Per-line legibility plate. The libass opaque-box path is
+            # rectangular; slight rounding keeps the emoji path friendly
+            # without changing its size or placement.
+            draw.rounded_rectangle(
+                [x0 - x_pad, y - y_pad, x0 + line_w + x_pad, y + line_h + y_pad],
+                radius=14,
+                fill=plate,
+            )
         # Draw the runs left to right.
         x = x0
         first = True
@@ -226,8 +235,8 @@ def render_header_png(
                         part[1],
                         font=font,
                         fill=text_color,
-                        stroke_width=2,
-                        stroke_fill=(0, 0, 0, 255),
+                        stroke_width=max(0, style.header_outline),
+                        stroke_fill=outline_color,
                     )
                     x += part[2]
         y += line_h + y_pad * 2

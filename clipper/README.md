@@ -8,8 +8,8 @@ It is the render chassis for a larger clipping concept ("Path 3"): no clip
 It is a standalone project, distinct from **RicePoster** (the posting harness),
 built to an output contract that lets its clips drop into RicePoster later.
 
-> **Status: v1 slice implemented; hardening pass complete and under review in
-> PR #1.** End-to-end rendering and shutdown cleanup are verified with a
+> **Status: v1 slice implemented; hardening pass and bounded visual follow-up
+> complete.** End-to-end rendering and shutdown cleanup are verified with a
 > libass-enabled ffmpeg. The design is recorded in [`SPEC.md`](./SPEC.md).
 > Burn-in requires an ffmpeg with libass (see setup) — the stock Homebrew formula
 > omits it.

@@ -1,9 +1,9 @@
 # RiceClipper — v1 Specification
 
 > Status: **Ratified and implemented** (design locked via decision-challenge
-> session). The v1 hardening pass is complete on `review/v1-slice` and under
-> review in draft PR #1. This document remains the source of truth for v1 scope
-> and the deferred roadmap.
+> session). The v1 hardening pass is complete on `main`, and the bounded visual
+> preset follow-up is implemented on the `visual-presets` branch. This document
+> remains the source of truth for v1 scope and the deferred roadmap.
 >
 > Project: **RiceClipper** — a standalone short-form video captioning tool.
 > Distinct repo/project from **RicePoster** (the posting harness).
@@ -33,7 +33,12 @@ human-in-the-loop gate.
 **Explicitly out of scope for v1 (see §7 roadmap for when):**
 clip selection/extraction (Paths 2 & 1), landscape/mixed input + reframe,
 dead-space/filler trimming, auto-generated header, RicePoster integration,
-caption style/position configuration, animated (Tier-3) captions, auto-ducking.
+arbitrary caption style/position editing, animated (Tier-3) captions,
+auto-ducking.
+
+The approved post-v1 visual follow-up adds a bounded set of built-in choices:
+seven caption presets and three header treatments. It does not add a general
+text editor, arbitrary font/color input, or user-authored preset persistence.
 
 ## 3. Boundary & safety note
 
@@ -56,8 +61,9 @@ generates text and posts nothing.
    types the header. Preview available.
 5. **Render captions** — emit an ASS subtitle file; burn with ffmpeg/libass:
    phrase groups with per-word highlight synced to the timestamps.
-6. **Render header** — burn the user's 1–2 line header at the top, on a
-   legibility plate, cleared above the caption zone.
+6. **Render header** — burn the user's 1–2 line header at the top using the
+   selected compact plain-text or plate treatment, cleared above the caption
+   zone.
 7. **Mix audio** — original audio passes through; if the user supplied a music
    file, apply **replace** or **mix-under** (with a volume level). Because
    caption timing is already baked to the timeline in seconds, adding music at
@@ -87,6 +93,19 @@ shadow for legibility on any background, per-word color highlight, lower-third
 position with the header cleared above. The ASS template is parameterized from
 day one so exposing font/color/highlight/position config later (§7, Wave 2) is
 filling in variables, not rebuilding.
+
+### 5.1 Bounded visual preset follow-up
+
+The review UI exposes seven named caption presets: **Classic** (the original
+v1 treatment), **Clean**, **Punch**, **Friendly**, **Sunset**, **Mono**, and
+**Editorial**. Each remains a Tier-1 ASS/libass combination of font, size,
+outline/shadow, position, base color, and active-word highlight color.
+
+The UI also exposes three header treatments at the same compact,
+reference-matched scale: **Plain text**, **Black plate**, and **White plate**.
+Plain text is the default. Headers with emoji use the existing Pillow PNG
+overlay path and apply the same selected treatment; text-only headers remain on
+libass.
 
 ## 6. Header
 

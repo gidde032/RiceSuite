@@ -39,10 +39,30 @@
           </div>
 
           <div class="field">
+            <label for="header-style">Header style</label>
+            <select id="header-style">
+              <option value="plain">Plain text (recommended)</option>
+              <option value="black_plate">Black plate</option>
+              <option value="white_plate">White plate</option>
+            </select>
+            <p class="hint">All options keep the compact reference scale and support emoji.</p>
+          </div>
+
+          <div class="field">
             <label>
               <input id="captions-toggle" type="checkbox" checked />
               Burn captions
             </label>
+            <label for="caption-style">Caption style</label>
+            <select id="caption-style">
+              <option value="classic">Classic (v1 default)</option>
+              <option value="clean">Clean / amber</option>
+              <option value="punch">Punch / pink</option>
+              <option value="friendly">Friendly / mint</option>
+              <option value="sunset">Sunset / coral</option>
+              <option value="mono">Mono / violet</option>
+              <option value="editorial">Editorial / yellow</option>
+            </select>
             <p class="hint">Edit any misheard word below. Timing stays locked.</p>
             <div id="transcript" class="transcript" contenteditable="false"></div>
           </div>
