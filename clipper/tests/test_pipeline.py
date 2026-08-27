@@ -155,7 +155,7 @@ def test_render_resolves_request_visual_presets(monkeypatch, tmp_path):
     ass = (tmp_path / "captions.ass").read_text()
     assert "Style: Caption,Impact,92" in ass
     assert "Style: Header,Arial,42" in ass
-    assert ",3,16,0,8,80,80,120,1" in ass
+    assert ",3,16,0,8,80,80,450,1" in ass
 
 
 def test_render_rejects_non_finite_duration(tmp_path):

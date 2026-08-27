@@ -17,5 +17,5 @@ def test_spec_records_the_bounded_visual_preset_contract():
 
 def test_roadmap_keeps_custom_preset_work_deferred():
     roadmap = _normalized_doc("ROADMAP.md")
-    assert "seven built-in caption presets, three compact header treatments" in roadmap
+    assert "seven caption presets, three header treatments" in roadmap
     assert "persistent saved presets remain deferred" in roadmap
