@@ -90,12 +90,29 @@ launching the server:
 export TOKENIZERS_PARALLELISM=false
 ```
 
-## Test
+## Test and quality gates
 
 ```bash
 pip install -r requirements-dev.txt
 pytest -q                              # pure-Python core; no ffmpeg needed
+
+ruff check . && ruff format --check .  # lint + format (matches CI)
+pytest -m smoke -q                     # the 6-test fast tier
+pytest tests/ --cov=app --cov=render --cov=transcribe --cov-fail-under=85
 ```
+
+CI (`.github/workflows/ci.yml`) runs the same ruff checks and the full suite
+with an **85% coverage floor** on every PR and push to `main`. `tests/test_gates.py`
+locks those numbers so they can't silently drift. Optional local hooks mirror CI:
+
+```bash
+pre-commit install --hook-type pre-commit --hook-type pre-push
+```
+
+The commit tier runs ruff + the smoke tier; the push tier runs the full suite
+and coverage floor. A `main` branch-protection ruleset is prepared in
+`.github/rulesets/` but not yet applied (rulesets need GitHub Pro on a private
+repo).
 
 ## Repo layout
 
@@ -105,8 +122,10 @@ transcribe/       faster-whisper wrapper → word-level caption lines
 render/           ffmpeg + ASS rendering (captions, header, audio mix)
   templates/      ASS caption/header templates
 web/              static HTML/JS review UI
-tests/            unit tests (phrasing + ASS generation)
+tests/            unit tests + test_gates.py (quality-gate meta-tests)
 .riceclipper_work/ app-owned uploaded sources, intermediates, and outputs (gitignored)
+.github/          CI workflow, issue/PR templates, pending branch ruleset
+pyproject.toml    ruff + pytest configuration
 docs/
   spikes/         de-risking investigations (see emoji-burn-in)
   adr/            architecture decision records (optional, future)
