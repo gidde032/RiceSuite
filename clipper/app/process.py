@@ -13,8 +13,8 @@ import os
 import signal
 import subprocess
 import threading
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 
 class ProcessTimeoutError(subprocess.TimeoutExpired):
@@ -60,10 +60,10 @@ def _reap_after_termination(proc: subprocess.Popen) -> tuple[object, object]:
     """Reap a killed child without letting a second decode error mask the cause."""
     try:
         return proc.communicate()
-    except BaseException:  # noqa: BLE001 - preserve the original failure
+    except BaseException:
         try:
             proc.wait()
-        except BaseException:  # noqa: BLE001 - best-effort cleanup
+        except BaseException:
             pass
         return None, None
 

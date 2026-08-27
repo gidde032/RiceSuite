@@ -1,5 +1,3 @@
-from tests._util import words
-
 from render.ass import (
     CAPTION_STYLE_NAMES,
     HEADER_STYLE_NAMES,
@@ -8,6 +6,7 @@ from render.ass import (
     build_ass,
     style_for_presets,
 )
+from tests._util import words
 
 
 def test_time_formatting():
@@ -28,7 +27,7 @@ def test_has_required_sections():
 def test_one_caption_event_per_word():
     ws = words(("one", 0.0, 0.3), ("two", 0.3, 0.6), ("three", 0.6, 0.9))
     ass = build_ass(ws, captions_on=True, duration=1.0)
-    dialogues = [l for l in ass.splitlines() if l.startswith("Dialogue:")]
+    dialogues = [line for line in ass.splitlines() if line.startswith("Dialogue:")]
     # 3 caption events (one active-word window each), no header.
     assert len(dialogues) == 3
     # Each event highlights exactly one word via an inline colour override.
@@ -39,14 +38,16 @@ def test_one_caption_event_per_word():
 def test_active_word_window_is_contiguous():
     ws = words(("a", 0.0, 0.2), ("b", 0.5, 0.7))
     ass = build_ass(ws, duration=1.0)
-    dialogues = [l for l in ass.splitlines() if l.startswith("Dialogue:")]
+    dialogues = [line for line in ass.splitlines() if line.startswith("Dialogue:")]
     # First window ends where the second word starts (0.50), not at a's end.
     assert "0:00:00.00,0:00:00.50" in dialogues[0]
 
 
 def test_captions_off_still_emits_header():
-    ass = build_ass(words(("skip", 0.0, 0.3)), header="Look 🥹", captions_on=False, duration=2.0)
-    dialogues = [l for l in ass.splitlines() if l.startswith("Dialogue:")]
+    ass = build_ass(
+        words(("skip", 0.0, 0.3)), header="Look 🥹", captions_on=False, duration=2.0
+    )
+    dialogues = [line for line in ass.splitlines() if line.startswith("Dialogue:")]
     assert len(dialogues) == 1
     assert "Header" in dialogues[0]
     assert "Look 🥹" in dialogues[0]  # emoji passed through untouched
@@ -54,7 +55,7 @@ def test_captions_off_still_emits_header():
 
 def test_header_spans_full_duration():
     ass = build_ass(words(("x", 0.0, 0.3)), header="Hook", duration=4.2)
-    header = [l for l in ass.splitlines() if l.startswith("Dialogue: 1")][0]
+    header = next(line for line in ass.splitlines() if line.startswith("Dialogue: 1"))
     assert "0:00:00.00,0:00:04.20" in header
 
 
@@ -107,14 +108,24 @@ def test_caption_presets_change_font_and_highlight_without_leaving_ass():
 
 
 def test_header_presets_share_compact_scale_and_plain_has_no_plate():
-    styles = [
-        style_for_presets("classic", name) for name in HEADER_STYLE_NAMES
-    ]
+    styles = [style_for_presets("classic", name) for name in HEADER_STYLE_NAMES]
     assert [style.header_font_size for style in styles] == [42, 42, 42]
 
-    plain = build_ass([], header="Hook", duration=1.0, style=style_for_presets("classic", "plain"))
-    black = build_ass([], header="Hook", duration=1.0, style=style_for_presets("classic", "black_plate"))
-    white = build_ass([], header="Hook", duration=1.0, style=style_for_presets("classic", "white_plate"))
+    plain = build_ass(
+        [], header="Hook", duration=1.0, style=style_for_presets("classic", "plain")
+    )
+    black = build_ass(
+        [],
+        header="Hook",
+        duration=1.0,
+        style=style_for_presets("classic", "black_plate"),
+    )
+    white = build_ass(
+        [],
+        header="Hook",
+        duration=1.0,
+        style=style_for_presets("classic", "white_plate"),
+    )
 
     assert "Style: Header,Arial,42" in plain
     assert ",1,2,2,8,80,80,450,1" in plain

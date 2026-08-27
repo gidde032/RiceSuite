@@ -18,8 +18,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import handoff, jobs, probe
-from app.process import terminate_all_owned_processes
 from app.models import HandoffRequest, JobState, RenderRequest
+from app.process import terminate_all_owned_processes
 from render.pipeline import render
 from transcribe import whisper
 
@@ -103,7 +103,7 @@ def upload(file: UploadFile = File(...)) -> JobState:
         job.status = "error"
         job.error = "could not read video"
         raise HTTPException(status_code=400, detail=job.error) from exc
-    except Exception as exc:  # noqa: BLE001 - surface upload failures cleanly
+    except Exception as exc:
         logger.exception("upload failed")
         job.status = "error"
         job.error = "upload failed"
@@ -127,11 +127,11 @@ def transcribe_job(job_id: str) -> JobState:
         try:
             job.words = whisper.transcribe(str(job.source_path))
             job.status = "ready"
-        except Exception as exc:  # noqa: BLE001 - surface any transcription failure
+        except Exception:
             logger.exception("transcription failed")
             job.status = "error"
             job.error = "transcription failed"
-            raise HTTPException(status_code=500, detail=job.error)
+            raise HTTPException(status_code=500, detail=job.error) from None
         return job.state()
 
 
@@ -162,7 +162,7 @@ def upload_music(job_id: str, file: UploadFile = File(...)) -> dict:
         try:
             with dest.open("wb") as fh:
                 shutil.copyfileobj(file.file, fh)
-        except Exception as exc:  # noqa: BLE001 - keep local paths private
+        except Exception as exc:
             logger.exception("music upload failed")
             raise HTTPException(status_code=500, detail="music upload failed") from exc
         return {"ok": True, "filename": dest.name}
@@ -188,7 +188,7 @@ def render_job(job_id: str, req: RenderRequest) -> JobState:
             out = render(job.dir, job.source_path, job.info, req)
             job.output_path = out
             job.status = "done"
-        except Exception as exc:  # noqa: BLE001 - keep failed jobs clearable
+        except Exception as exc:
             logger.exception("render failed")
             job.status = "error"
             job.error = "render failed"
@@ -213,7 +213,9 @@ def handoff_batch(req: HandoffRequest) -> dict:
         for clip in req.clips:
             job = jobs.get_job(clip.job_id)
             if job is None:
-                raise HTTPException(status_code=404, detail=f"job {clip.job_id} not found")
+                raise HTTPException(
+                    status_code=404, detail=f"job {clip.job_id} not found"
+                )
             if job.output_path is None or not job.output_path.exists():
                 raise HTTPException(
                     status_code=409, detail=f"job {clip.job_id} has no rendered output"

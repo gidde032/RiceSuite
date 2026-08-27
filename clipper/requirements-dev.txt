@@ -2,4 +2,6 @@
 -r requirements.txt
 
 pytest==8.3.4
+pytest-cov==7.1.0          # coverage-floor gate
 httpx==0.28.1  # FastAPI TestClient
+ruff==0.16.4               # lint + format gate (pinned so CI matches local)

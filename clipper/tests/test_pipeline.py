@@ -8,18 +8,20 @@ from app import process
 from app.models import MusicSettings, RenderRequest
 from app.probe import MediaInfo
 from render.pipeline import (
+    RenderError,
     _audio_graph,
     _encode_threads,
     _ffmpeg_command,
     _job_child,
     _render_timeout,
-    RenderError,
     render,
 )
 
 
 def _req(mode, vol=0.5):
-    return RenderRequest(music=MusicSettings(mode=mode, filename="music.m4a", volume=vol))
+    return RenderRequest(
+        music=MusicSettings(mode=mode, filename="music.m4a", volume=vol)
+    )
 
 
 def test_replace_music_is_padded_so_shortest_cannot_truncate_video():
@@ -138,7 +140,9 @@ def test_render_resolves_request_visual_presets(monkeypatch, tmp_path):
         returncode = 0
         stderr = ""
 
-    monkeypatch.setattr("render.pipeline.run_owned", lambda *args, **kwargs: Completed())
+    monkeypatch.setattr(
+        "render.pipeline.run_owned", lambda *args, **kwargs: Completed()
+    )
     request = RenderRequest(
         header="A compact header",
         caption_style="punch",
@@ -199,9 +203,7 @@ def test_owned_process_kills_process_group_on_timeout(monkeypatch):
     )
 
     with pytest.raises(process.ProcessTimeoutError) as exc_info:
-        process.run_owned(
-            ["ffmpeg"], timeout=3.0, capture_output=True, text=True
-        )
+        process.run_owned(["ffmpeg"], timeout=3.0, capture_output=True, text=True)
 
     assert "timed out" in str(exc_info.value)
     assert ("killpg", 456, signal.SIGKILL) in calls
@@ -248,7 +250,9 @@ def test_owned_process_is_killed_when_communicate_fails(monkeypatch):
         def kill(self):
             calls.append(("kill",))
 
-    monkeypatch.setattr(process.subprocess, "Popen", lambda *args, **kwargs: FakeProcess())
+    monkeypatch.setattr(
+        process.subprocess, "Popen", lambda *args, **kwargs: FakeProcess()
+    )
     monkeypatch.setattr(process.os, "getpgid", lambda pid: 456)
     monkeypatch.setattr(
         process.os,

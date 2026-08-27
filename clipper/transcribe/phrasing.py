@@ -11,8 +11,10 @@ phrase block, within which each word is highlighted as it is spoken.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol, Sequence
+from itertools import pairwise
+from typing import Protocol
 
 
 class WordLike(Protocol):
@@ -60,7 +62,7 @@ def group_words(
     phrases: list[Phrase] = []
     current: list = [clean[0]]
 
-    for prev, word in zip(clean, clean[1:]):
+    for prev, word in pairwise(clean):
         gap = word.start - prev.end
         if len(current) >= max_words or gap > max_gap:
             phrases.append(Phrase(current))

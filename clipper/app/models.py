@@ -8,10 +8,9 @@ stays locked to the detected boundaries.
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
-
 
 CaptionStyle = Literal[
     "classic",
@@ -40,7 +39,7 @@ class MusicSettings(BaseModel):
     # Gain applied to the added music (mix-under level, or replace level).
     volume: float = Field(default=0.35, ge=0.0, le=2.0)
     # Filename of a track previously uploaded to this job's work dir.
-    filename: Optional[str] = None
+    filename: str | None = None
 
 
 class RenderRequest(BaseModel):
@@ -81,11 +80,11 @@ class JobState(BaseModel):
 
     id: str
     status: Literal["transcribing", "ready", "rendering", "done", "error"]
-    width: Optional[int] = None
-    height: Optional[int] = None
-    duration: Optional[float] = None
+    width: int | None = None
+    height: int | None = None
+    duration: float | None = None
     has_audio: bool = False
     words: list[Word] = Field(default_factory=list)
-    error: Optional[str] = None
+    error: str | None = None
     # True once an output mp4 exists for download.
     has_output: bool = False

@@ -1,0 +1,34 @@
+# RiceClipper — tooling configuration.
+#
+# There is no build system section: RiceClipper is run in-place from the repo
+# root (see conftest.py, which puts the root on sys.path), not installed as a
+# package. This file exists to pin the lint and test gates so they behave the
+# same locally and in CI.
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+# Pinned explicitly rather than relying on ruff's implicit default: the default
+# set has shifted between ruff releases, and CI installs ruff fresh, so an
+# implicit default would make the gate non-reproducible. This is ruff's own
+# base (E4/E7/E9 + F) plus isort, pyupgrade, bugbear, and ruff rules. E5
+# (line-length) is deliberately excluded: `ruff format` owns line width, and
+# it cannot rewrap long strings/comments, which would make E501 an unfixable
+# gate against formatted code.
+select = ["E4", "E7", "E9", "F", "I", "B", "UP", "RUF"]
+ignore = [
+    # FastAPI endpoints legitimately use `File(...)`, `Form(...)`, and
+    # `Depends(...)` calls as argument defaults (app/main.py). That is the
+    # framework's documented idiom, not the bug B008 is meant to catch.
+    "B008",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "render", "transcribe"]
+
+[tool.pytest.ini_options]
+markers = [
+    "smoke: fast happy-path tests for the core surfaces (run on pre-commit)",
+]
