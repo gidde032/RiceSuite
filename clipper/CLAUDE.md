@@ -15,11 +15,21 @@ memory or chat — read the spec.
 **Full v1 → Wave-1 clip pipeline implemented and confirmed functional end to
 end** — upload → RiceClipper batch review/render → filesystem handoff →
 RicePoster "Pull from Clipper" → post. Merged to `main`: the v1 vertical slice,
-the hardening pass, and the bounded visual presets. Implemented and verified,
-pending PR merge: bounded batch review/render (PR #4), the producer-side handoff
-writer (PR #5), and the RicePoster-side pickup + auto-caption (RicePoster #77).
-Further changes still require explicit approval and must remain within the active
-phase.
+the hardening pass, the bounded visual presets, the bounded batch review/render,
+and the producer-side handoff writer. The RicePoster-side pickup + auto-caption
+is tracked separately (RicePoster #77). Further changes still require explicit
+approval and must remain within the active phase.
+
+**Quality gates are enforced in CI.** `.github/workflows/ci.yml` runs ruff
+lint + format and the full test suite with an **85% coverage floor** on every
+PR and push to `main`; `tests/test_gates.py` locks the gate numbers (smoke
+count, coverage floor, ruff gates) so they cannot silently drift. Before
+calling a change done, run `ruff check . && ruff format --check .` and
+`pytest tests/ --cov=app --cov=render --cov=transcribe --cov-fail-under=85`.
+Ruff config is in `pyproject.toml`; the two-tier `pre-commit` hooks mirror CI
+locally. The `main` branch-protection ruleset is prepared in
+`.github/rulesets/main.json` but not yet applied — repository rulesets require
+GitHub Pro on a private repo.
 
 The **color-emoji burn-in spike** (`docs/spikes/emoji-burn-in.md`) passed via the
 PNG-overlay fallback. The Wave-1 auto-header remains deferred product scope,
