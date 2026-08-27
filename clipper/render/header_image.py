@@ -63,8 +63,15 @@ def _first_existing(paths: list[str]) -> str | None:
 
 
 @lru_cache(maxsize=1)
-def _resolve_emoji_font() -> tuple[str, int] | None:
-    """Find a (font path, strike size) that actually renders a color glyph."""
+def _resolve_emoji_font() -> tuple[str, int] | None:  # pragma: no cover
+    """Find a (font path, strike size) that actually renders a color glyph.
+
+    Excluded from coverage: this requires a real Pillow-renderable color-emoji
+    font (Apple Color Emoji on macOS). No Linux color-emoji font renders here
+    (the Homebrew Noto build rasterizes blank — see docs/spikes/emoji-burn-in.md),
+    so the CI runner cannot exercise it. It is integration-tested on macOS via
+    test_header_image.py, which skips when no such font is present.
+    """
     probe = "\U0001f602"
     for path in _EMOJI_FONT_CANDIDATES:
         if not os.path.exists(path):
@@ -95,8 +102,12 @@ def _segment(word: str) -> list[tuple[str, str]]:
 
 def _render_emoji(
     cluster: str, size: int, emoji_font: ImageFont.FreeTypeFont
-) -> Image.Image:
-    """Render an emoji cluster at the native strike, cropped and scaled to ``size``."""
+) -> Image.Image:  # pragma: no cover
+    """Render an emoji cluster at the native strike, cropped and scaled to ``size``.
+
+    Excluded from coverage: reachable only with a real color-emoji font, which
+    the Linux CI runner lacks (see ``_resolve_emoji_font``).
+    """
     strike = emoji_font.size
     box = strike * (len(cluster) + 2)
     tmp = Image.new("RGBA", (box, strike * 2), (0, 0, 0, 0))
@@ -140,7 +151,7 @@ def render_header_png(
     out_path: str | Path,
     style: StyleConfig | None = None,
     canvas: tuple[int, int] = (1080, 1920),
-) -> Path:
+) -> Path:  # pragma: no cover
     """Render ``text`` (with color emoji) to a full-frame transparent PNG.
 
     The header block is near the top and horizontally centered — matching the
