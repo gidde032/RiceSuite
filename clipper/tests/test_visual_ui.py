@@ -43,9 +43,10 @@ def test_review_ui_exposes_all_visual_choices_and_sends_them():
 def test_slate_identity_and_theme_contract_are_present():
     html = _html()
     stylesheet = (ROOT / "web/style.css").read_text(encoding="utf-8")
-    logo = (ROOT / "web/slate-logo.svg").read_text(encoding="utf-8")
+    approved_logo = (ROOT / "docs/design/assets/slate-logo-selected.png").read_bytes()
+    runtime_logo = (ROOT / "web/slate-logo.png").read_bytes()
 
-    assert 'href="/slate-logo.svg"' in html
+    assert 'href="/slate-logo.png"' in html
     assert '<span class="sr-only">RiceClipper</span>' in html
     for token in (
         "#080c10",
@@ -59,9 +60,7 @@ def test_slate_identity_and_theme_contract_are_present():
         "#e5e8ea",
     ):
         assert token in stylesheet
-    assert "#AEB3B6" in logo
-    assert "#3B4044" in logo
-    assert "<text" not in logo
+    assert runtime_logo == approved_logo
 
 
 def test_each_cloned_card_gets_independent_radio_groups():

@@ -14,12 +14,12 @@ The selected concept and logo are the visual authority for implementation:
 - [Selected Slate logo](assets/slate-logo-selected.png)
 - [Backup logo A](assets/slate-logo-backup-a.png)
 - [Backup logo B](assets/slate-logo-backup-b.png)
-- [Production Slate SVG](../../web/slate-logo.svg)
+- [Production Slate PNG](../../web/slate-logo.png)
 
-The generated PNGs are design references, not production-ready web assets. The
-implementation must trace the selected symbol into a compact deterministic SVG
-and verify it at toolbar and favicon sizes. The backup marks are retained only
-as decision evidence; they are not alternate runtime themes.
+The selected PNG is also the production app mark: `web/slate-logo.png` must
+remain byte-for-byte identical to `assets/slate-logo-selected.png`. The backup
+marks are retained only as decision evidence; they are not alternate runtime
+themes.
 
 ![Slate interface concept](assets/slate-ui-concept.png)
 
@@ -75,10 +75,9 @@ The selected symbol combines:
 - charcoal shears (`#3B4044`), visibly darker than the rice; and
 - no text, letters, blue pivot, gradient, glow, shadow, or enclosing badge.
 
-The production SVG must retain a recognizable cut at 20–24 px, provide a
-square favicon-safe view box, use simple paths, and inherit or map cleanly to
-Slate tokens. The selected PNG governs the composition; implementation may
-remove tiny raster details that disappear at small sizes.
+The production PNG must retain the selected composition without tracing,
+redrawing, recoloring, cropping, or other reinterpretation. It must be used for
+both the visible toolbar symbol and the favicon.
 
 ## Layout contract
 
@@ -174,8 +173,8 @@ The implementation is complete only when:
    cache, and RicePoster-handoff states use Slate consistently.
 2. Every existing control and value is present and functional.
 3. Header and caption radio cards send the existing payload values.
-4. The selected logo is shipped as a deterministic SVG and remains legible at
-   20–24 px and favicon scale.
+4. The selected logo is shipped unchanged as the runtime PNG and remains
+   recognizable at toolbar and favicon scale.
 5. Desktop and narrow layouts show no unintended overflow or obscured actions.
 6. Keyboard-only use has visible focus and logical order.
 7. Controls and essential text meet WCAG AA contrast targets.
