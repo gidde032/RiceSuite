@@ -101,12 +101,14 @@ function updateCacheControls() {
 
 function setClipStatus(clip, text, isError = false) {
   clip.statusEl.className = isError ? "clip-status status error" : "clip-status status";
+  clip.statusEl.setAttribute("aria-live", isError ? "assertive" : "polite");
   clip.statusEl.textContent = text;
 }
 
 function setBatchStatus(text, isError = false) {
   const s = $("batch-status");
   s.className = isError ? "status error" : "status";
+  s.setAttribute("aria-live", isError ? "assertive" : "polite");
   s.textContent = text;
 }
 
@@ -157,16 +159,23 @@ function buildCard(clip) {
   clip.downloadEl = node.querySelector(".download-link");
 
   node.querySelectorAll('.header-style input[type="radio"]').forEach((option) => {
-    option.name = `header-style-${clip.ord}`;
+    option.name = `header-style-${clip.localId}`;
   });
   node.querySelectorAll('.caption-style input[type="radio"]').forEach((option) => {
-    option.name = `caption-style-${clip.ord}`;
+    option.name = `caption-style-${clip.localId}`;
   });
   const headerHelp = node.querySelector("#header-help");
-  headerHelp.id = `header-help-${clip.ord}`;
+  headerHelp.id = `header-help-${clip.localId}`;
+  clip.headerEl.id = `header-input-${clip.localId}`;
+  node.querySelector(".header-label").htmlFor = clip.headerEl.id;
   clip.headerEl.setAttribute("aria-describedby", headerHelp.id);
 
   clip.titleEl.textContent = `Clip ${clip.ord} — ${clip.file.name}`;
+  clip.titleEl.id = `clip-title-${clip.localId}`;
+  node.setAttribute("aria-labelledby", clip.titleEl.id);
+  node.querySelector(".clip-remove").setAttribute("aria-label", `Remove ${clip.file.name}`);
+  clip.sourceVideoEl.setAttribute("aria-label", `Source preview for ${clip.file.name}`);
+  clip.outputVideoEl.setAttribute("aria-label", `Rendered output for ${clip.file.name}`);
 
   // Inherit the batch defaults; a manual change marks the field "touched" so a
   // later batch-default change no longer overrides this clip.

@@ -30,7 +30,8 @@ unchanged.
 Decode → transcribe (word-level) → word-highlight captions → manual on-screen
 header → blur-pad non-9:16 vertical input → optional added-music (replace / mix
 with volume) → export 1080×1920 H.264, through a local FastAPI review UI with a
-human-in-the-loop gate. One clip at a time. Single Tier-1 caption preset.
+human-in-the-loop gate. Bounded batches are reviewed and processed sequentially,
+with seven caption presets and three header treatments.
 
 ## Wave 1 — fast-follow (the "first improvements" cluster)
 
@@ -38,8 +39,8 @@ human-in-the-loop gate. One clip at a time. Single Tier-1 caption preset.
    (naming/folder layout it expects). RiceClipper still performs no posting. The
    handoff contract is ratified in
    [`docs/integration/riceposter-handoff.md`](./docs/integration/riceposter-handoff.md).
-   **Implemented and verified end to end** (pending PR merge): batch
-   review/render in RiceClipper (#4), the producer-side handoff writer (#5,
+   **Implemented, merged, and verified end to end**: batch review/render in
+   RiceClipper (#4), the producer-side handoff writer (#5,
    `POST /api/handoff` → `~/riceclipper-handoff/`), and the RicePoster-side
    "Pull from Clipper" pickup + auto-caption (RicePoster #77), where captions are
    generated on a real frame captured from the staged clip.

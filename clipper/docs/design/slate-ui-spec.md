@@ -83,7 +83,7 @@ both the visible toolbar symbol and the favicon.
 
 ### Global shell
 
-- Compact top bar with the symbol at left and toolchain readiness at right.
+- Compact top bar with the symbol and toolchain readiness grouped at left.
 - Centered, wide workspace with restrained outer margins.
 - Stable bottom action bar in review state.
 - Maintenance/cache controls remain visually subordinate to the main workflow.

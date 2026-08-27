@@ -23,7 +23,7 @@
         <span class="upload-icon" aria-hidden="true">↥</span>
         <strong>Choose vertical clips</strong>
         <span>Pick one or several. Under ~1 minute each. Non-9:16 is blur-padded, never cropped.</span>
-        <input id="file-input" type="file" accept="video/*" multiple hidden />
+        <input id="file-input" class="file-input-accessible" type="file" accept="video/*" multiple />
       </label>
 
       <div class="batch-defaults">
@@ -50,7 +50,7 @@
         </div>
       </div>
 
-      <p id="upload-status" class="status"></p>
+      <p id="upload-status" class="status" role="status"></p>
     </section>
 
     <!-- Step 2: batch review + render -->
@@ -59,9 +59,9 @@
       <div class="batch-actions">
         <button id="restart-btn" type="button">Start over</button>
         <button id="send-handoff-btn" type="button" disabled>Send to RicePoster</button>
-        <button id="render-all-btn" class="primary">Approve &amp; Render All</button>
+        <button id="render-all-btn" class="primary">Render all</button>
       </div>
-      <p id="batch-status" class="status"></p>
+      <p id="batch-status" class="status" role="status"></p>
     </section>
 
     <section id="cache-panel" class="panel">
@@ -69,7 +69,7 @@
         <span id="cache-info" class="hint">Media cache: loading…</span>
         <button id="clear-cache-btn" type="button">Clear media cache</button>
       </div>
-      <p id="cache-status" class="status"></p>
+      <p id="cache-status" class="status" role="status"></p>
     </section>
   </main>
 
@@ -78,7 +78,7 @@
     <article class="clip-card">
       <div class="clip-head">
         <span class="clip-title"></span>
-        <span class="clip-status status"></span>
+        <span class="clip-status status" role="status"></span>
         <button class="clip-remove" type="button" title="Remove this clip">✕</button>
       </div>
 
@@ -86,14 +86,14 @@
         <div class="preview-col">
           <video class="source-video" controls playsinline muted></video>
           <p class="geo-note hint"></p>
-          <p class="preview-status status"></p>
+          <p class="preview-status status" role="status"></p>
         </div>
 
         <div class="edit-col">
           <div class="field field-row">
-            <label>Header</label>
+            <label class="header-label">Header</label>
             <div>
-              <textarea class="header-input" rows="2" maxlength="120" placeholder="Your on-screen hook…" aria-describedby="header-help"></textarea>
+              <textarea class="header-input" rows="2" placeholder="Your on-screen hook…" aria-describedby="header-help"></textarea>
               <p id="header-help" class="hint">1–2 lines, burned into the top of the frame.</p>
             </div>
           </div>
