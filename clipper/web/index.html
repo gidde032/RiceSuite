@@ -4,18 +4,23 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>RiceClipper</title>
+  <link rel="icon" href="/slate-logo.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
   <header class="topbar">
-    <h1>RiceClipper</h1>
-    <span id="capbadge" class="badge" title="ffmpeg libass status"></span>
+    <h1 class="app-identity">
+      <img src="/slate-logo.svg" alt="" width="32" height="32" />
+      <span class="sr-only">RiceClipper</span>
+    </h1>
+    <span id="capbadge" class="badge" title="ffmpeg libass status" aria-live="polite"></span>
   </header>
 
   <main>
     <!-- Step 1: upload (one or more clips) -->
     <section id="upload-panel" class="panel">
       <label class="dropzone" for="file-input">
+        <span class="upload-icon" aria-hidden="true">↥</span>
         <strong>Choose vertical clips</strong>
         <span>Pick one or several. Under ~1 minute each. Non-9:16 is blur-padded, never cropped.</span>
         <input id="file-input" type="file" accept="video/*" multiple hidden />
@@ -52,9 +57,9 @@
     <section id="batch-panel" class="panel hidden">
       <div id="clips"></div>
       <div class="batch-actions">
-        <button id="render-all-btn" class="primary">Approve &amp; Render All</button>
-        <button id="send-handoff-btn" type="button" disabled>Send to RicePoster</button>
         <button id="restart-btn" type="button">Start over</button>
+        <button id="send-handoff-btn" type="button" disabled>Send to RicePoster</button>
+        <button id="render-all-btn" class="primary">Approve &amp; Render All</button>
       </div>
       <p id="batch-status" class="status"></p>
     </section>
@@ -85,52 +90,82 @@
         </div>
 
         <div class="edit-col">
-          <div class="field">
-            <label>Header <span class="hint">(1–2 lines, burned top of frame)</span></label>
-            <textarea class="header-input" rows="2" placeholder="Your on-screen hook…"></textarea>
+          <div class="field field-row">
+            <label>Header</label>
+            <div>
+              <textarea class="header-input" rows="2" maxlength="120" placeholder="Your on-screen hook…" aria-describedby="header-help"></textarea>
+              <p id="header-help" class="hint">1–2 lines, burned into the top of the frame.</p>
+            </div>
           </div>
 
-          <div class="field">
-            <label>Header style</label>
-            <select class="header-style">
-              <option value="plain">Plain text (recommended)</option>
-              <option value="black_plate">Black plate</option>
-              <option value="white_plate">White plate</option>
-            </select>
-          </div>
+          <fieldset class="field choice-field header-style">
+            <legend>Header style</legend>
+            <div class="choice-grid header-choice-grid">
+              <label class="choice-card">
+                <input type="radio" name="header-style" value="plain" checked />
+                <span class="choice-check" aria-hidden="true">✓</span>
+                <span class="header-sample sample-plain">Build systems,<br />not hustle</span>
+                <span class="choice-label">Plain text</span>
+              </label>
+              <label class="choice-card">
+                <input type="radio" name="header-style" value="black_plate" />
+                <span class="choice-check" aria-hidden="true">✓</span>
+                <span class="header-sample sample-black">Build systems,<br />not hustle</span>
+                <span class="choice-label">Black plate</span>
+              </label>
+              <label class="choice-card">
+                <input type="radio" name="header-style" value="white_plate" />
+                <span class="choice-check" aria-hidden="true">✓</span>
+                <span class="header-sample sample-white">Build systems,<br />not hustle</span>
+                <span class="choice-label">White plate</span>
+              </label>
+            </div>
+          </fieldset>
 
-          <div class="field">
-            <label>
+          <div class="field field-row captions-row">
+            <span class="field-label">Burn captions</span>
+            <label class="switch-label">
               <input class="captions-toggle" type="checkbox" checked />
-              Burn captions
+              <span>Burn captions into video</span>
             </label>
-            <label>Caption style</label>
-            <select class="caption-style">
-              <option value="classic">Classic (v1 default)</option>
-              <option value="clean">Clean / amber</option>
-              <option value="punch">Punch / pink</option>
-              <option value="friendly">Friendly / mint</option>
-              <option value="sunset">Sunset / coral</option>
-              <option value="mono">Mono / violet</option>
-              <option value="editorial">Editorial / yellow</option>
-            </select>
-            <p class="hint">Edit any misheard word below. Timing stays locked.</p>
-            <div class="transcript" contenteditable="false"></div>
           </div>
 
-          <div class="field">
-            <label>Music <span class="hint">(optional)</span></label>
-            <input class="music-input" type="file" accept="audio/*" />
-            <div class="music-controls">
-              <select class="music-mode">
+          <fieldset class="field choice-field caption-style">
+            <legend>Caption style</legend>
+            <div class="choice-grid caption-choice-grid">
+              <label class="choice-card"><input type="radio" name="caption-style" value="classic" checked /><span class="choice-check" aria-hidden="true">✓</span><span class="caption-sample sample-classic">Aa</span><span class="choice-label">Classic</span></label>
+              <label class="choice-card"><input type="radio" name="caption-style" value="clean" /><span class="choice-check" aria-hidden="true">✓</span><span class="caption-sample sample-clean">Aa</span><span class="choice-label">Clean</span></label>
+              <label class="choice-card"><input type="radio" name="caption-style" value="punch" /><span class="choice-check" aria-hidden="true">✓</span><span class="caption-sample sample-punch">Aa</span><span class="choice-label">Punch</span></label>
+              <label class="choice-card"><input type="radio" name="caption-style" value="friendly" /><span class="choice-check" aria-hidden="true">✓</span><span class="caption-sample sample-friendly">Aa</span><span class="choice-label">Friendly</span></label>
+              <label class="choice-card"><input type="radio" name="caption-style" value="sunset" /><span class="choice-check" aria-hidden="true">✓</span><span class="caption-sample sample-sunset">Aa</span><span class="choice-label">Sunset</span></label>
+              <label class="choice-card"><input type="radio" name="caption-style" value="mono" /><span class="choice-check" aria-hidden="true">✓</span><span class="caption-sample sample-mono">Aa</span><span class="choice-label">Mono</span></label>
+              <label class="choice-card"><input type="radio" name="caption-style" value="editorial" /><span class="choice-check" aria-hidden="true">✓</span><span class="caption-sample sample-editorial">Aa</span><span class="choice-label">Editorial</span></label>
+            </div>
+          </fieldset>
+
+          <div class="field field-row transcript-field">
+            <label>Transcript</label>
+            <div>
+              <div class="transcript" contenteditable="false" aria-label="Editable transcript"></div>
+              <p class="hint">Edit any misheard word. Timing stays locked.</p>
+            </div>
+          </div>
+
+          <div class="field field-row music-field">
+            <label>Music <span class="hint">optional</span></label>
+            <div class="music-stack">
+              <input class="music-input" type="file" accept="audio/*" aria-label="Choose optional music" />
+              <div class="music-controls">
+                <select class="music-mode" aria-label="Music mode">
                 <option value="none">No added music</option>
                 <option value="mix">Mix under original</option>
                 <option value="replace">Replace original</option>
-              </select>
-              <label class="vol">Vol
-                <input class="music-volume" type="range" min="0" max="1.5" step="0.05" value="0.35" />
-                <span class="vol-label">0.35</span>
-              </label>
+                </select>
+                <label class="vol"><span>Volume</span>
+                  <input class="music-volume" type="range" min="0" max="1.5" step="0.05" value="0.35" />
+                  <output class="vol-label">0.35</output>
+                </label>
+              </div>
             </div>
           </div>
         </div>

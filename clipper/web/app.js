@@ -118,6 +118,21 @@ function updateRenderAllButton() {
   $("send-handoff-btn").disabled = batchBusy || ingesting || !anyDone;
 }
 
+function radioValue(group) {
+  return group.querySelector('input[type="radio"]:checked').value;
+}
+
+function setRadioValue(group, value) {
+  const option = group.querySelector(`input[type="radio"][value="${value}"]`);
+  if (option) option.checked = true;
+}
+
+function setRadioDisabled(group, disabled) {
+  group.querySelectorAll('input[type="radio"]').forEach((option) => {
+    option.disabled = disabled;
+  });
+}
+
 // --- clip cards -------------------------------------------------------------
 
 function buildCard(clip) {
@@ -141,12 +156,22 @@ function buildCard(clip) {
   clip.outputVideoEl = node.querySelector(".output-video");
   clip.downloadEl = node.querySelector(".download-link");
 
+  node.querySelectorAll('.header-style input[type="radio"]').forEach((option) => {
+    option.name = `header-style-${clip.ord}`;
+  });
+  node.querySelectorAll('.caption-style input[type="radio"]').forEach((option) => {
+    option.name = `caption-style-${clip.ord}`;
+  });
+  const headerHelp = node.querySelector("#header-help");
+  headerHelp.id = `header-help-${clip.ord}`;
+  clip.headerEl.setAttribute("aria-describedby", headerHelp.id);
+
   clip.titleEl.textContent = `Clip ${clip.ord} — ${clip.file.name}`;
 
   // Inherit the batch defaults; a manual change marks the field "touched" so a
   // later batch-default change no longer overrides this clip.
-  clip.captionStyleEl.value = $("batch-caption-style").value;
-  clip.headerStyleEl.value = $("batch-header-style").value;
+  setRadioValue(clip.captionStyleEl, $("batch-caption-style").value);
+  setRadioValue(clip.headerStyleEl, $("batch-header-style").value);
   clip.captionStyleEl.addEventListener("change", () => { clip.captionStyleTouched = true; });
   clip.headerStyleEl.addEventListener("change", () => { clip.headerStyleTouched = true; });
 
@@ -154,7 +179,7 @@ function buildCard(clip) {
     clip.volLabelEl.textContent = Number(e.target.value).toFixed(2);
   });
   clip.captionsToggleEl.addEventListener("change", () => {
-    clip.captionStyleEl.disabled = !clip.captionsToggleEl.checked;
+    setRadioDisabled(clip.captionStyleEl, !clip.captionsToggleEl.checked);
   });
   node.querySelector(".clip-remove").addEventListener("click", () => removeClip(clip));
 
@@ -375,8 +400,8 @@ async function renderClip(clip) {
       words: collectWords(clip),
       header: clip.headerEl.value,
       captions_on: clip.captionsToggleEl.checked,
-      caption_style: clip.captionStyleEl.value,
-      header_style: clip.headerStyleEl.value,
+      caption_style: radioValue(clip.captionStyleEl),
+      header_style: radioValue(clip.headerStyleEl),
       music: { mode: musicFile ? mode : "none", volume: Number(clip.musicVolumeEl.value), filename },
     };
     const res = await fetch(`/api/jobs/${clip.jobId}/render`, {
@@ -431,8 +456,8 @@ $("send-handoff-btn").addEventListener("click", async () => {
         position: i + 1, // handoff order → RicePoster slot order
         transcript: collectWords(c).map((w) => w.text).join(" ").trim(),
         header: c.headerEl.value,
-        caption_style: c.captionStyleEl.value,
-        header_style: c.headerStyleEl.value,
+        caption_style: radioValue(c.captionStyleEl),
+        header_style: radioValue(c.headerStyleEl),
       })),
     };
     const res = await fetch("/api/handoff", {
@@ -484,12 +509,12 @@ function resetAll() {
 
 $("batch-caption-style").addEventListener("change", (e) => {
   clips.forEach((c) => {
-    if (!c.captionStyleTouched && c.captionStyleEl) c.captionStyleEl.value = e.target.value;
+    if (!c.captionStyleTouched && c.captionStyleEl) setRadioValue(c.captionStyleEl, e.target.value);
   });
 });
 $("batch-header-style").addEventListener("change", (e) => {
   clips.forEach((c) => {
-    if (!c.headerStyleTouched && c.headerStyleEl) c.headerStyleEl.value = e.target.value;
+    if (!c.headerStyleTouched && c.headerStyleEl) setRadioValue(c.headerStyleEl, e.target.value);
   });
 });
 

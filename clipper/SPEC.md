@@ -1,9 +1,11 @@
 # RiceClipper — v1 Specification
 
 > Status: **Ratified and implemented** (design locked via decision-challenge
-> session). The v1 hardening pass is complete on `main`, and the bounded visual
-> preset follow-up is implemented on the `visual-presets` branch. This document
-> remains the source of truth for v1 scope and the deferred roadmap.
+> session). The v1 hardening pass and bounded visual preset follow-up are merged
+> to `main`. The separately ratified **Slate** browser-interface polish is
+> governed by [`docs/design/slate-ui-spec.md`](docs/design/slate-ui-spec.md) and
+> does not change v1 functionality. This document remains the source of truth
+> for v1 scope and the deferred roadmap.
 >
 > Project: **RiceClipper** — a standalone short-form video captioning tool.
 > Distinct repo/project from **RicePoster** (the posting harness).
@@ -107,6 +109,17 @@ Plain text is the default. Headers with emoji use the existing Pillow PNG
 overlay path and apply the same selected treatment; text-only headers remain on
 libass.
 
+### 5.2 Slate browser-interface polish
+
+**Slate** is the ratified visual theme for the local browser review UI. It
+reorganizes the existing controls into a dark, compact editing-console layout,
+uses treatment-preview radio cards for per-clip header and caption selection,
+and introduces a symbol-only rice-and-shears mark. It preserves all existing
+values, defaults, API contracts, rendering behavior, and workflow boundaries.
+
+The complete visual, responsive, accessibility, asset, and non-goal contract is
+owned by [`docs/design/slate-ui-spec.md`](docs/design/slate-ui-spec.md).
+
 ## 6. Header
 
 ### 6.1 v1 — manual
@@ -202,3 +215,4 @@ model earns its keep. Revisit at build if desired.
 | D11 | Styling | One Tier-1 preset v1; style/position config Wave-2; Tier-3 deferred behind engine decision | Config is a time sink; template already parameterized for cheap later exposure |
 | D12 | Non-9:16 handling | Blur-pad fill | Never loses content; avoids the edge-crop failure fought in RicePoster |
 | D13 | Music | Optional added audio; replace **or** mix-under toggle with volume slider; v1. Auto-ducking + vocal isolation deferred | Central to actual usage; cheap since encoding already exists; adding after sync can't affect timing |
+| D14 | Browser theme | Slate: dark carbon/grey chrome, rice-grey state accents, visual per-clip preset cards, symbol-only rice-and-shears mark | Makes the daily-driver review path faster to scan without changing behavior or adding editor features |
