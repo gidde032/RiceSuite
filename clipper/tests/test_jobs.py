@@ -63,7 +63,9 @@ def test_clear_cache_removes_children_preserves_root_and_forgets_jobs(
     assert jobs.get_job(job.id) is None
 
 
-def test_clear_cache_unlinks_symlinks_without_following_targets(isolated_cache, tmp_path):
+def test_clear_cache_unlinks_symlinks_without_following_targets(
+    isolated_cache, tmp_path
+):
     if not hasattr(os, "symlink"):
         pytest.skip("symlinks are unavailable on this platform")
 

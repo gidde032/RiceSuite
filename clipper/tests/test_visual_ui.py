@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -21,7 +20,15 @@ def test_review_ui_exposes_all_visual_choices_and_sends_them():
     assert 'value="plain"' in html
     assert 'value="black_plate"' in html
     assert 'value="white_plate"' in html
-    for style in ("classic", "clean", "punch", "friendly", "sunset", "mono", "editorial"):
+    for style in (
+        "classic",
+        "clean",
+        "punch",
+        "friendly",
+        "sunset",
+        "mono",
+        "editorial",
+    ):
         assert f'value="{style}"' in html
 
     # The render payload still carries the per-clip visual choices.

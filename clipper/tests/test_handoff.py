@@ -9,12 +9,15 @@ from app import handoff, jobs, main
 
 
 def _entry(pos: int, src) -> handoff.HandoffEntry:
-    return handoff.HandoffEntry(position=pos, source=src, transcript=f"t{pos}", header=f"h{pos}")
+    return handoff.HandoffEntry(
+        position=pos, source=src, transcript=f"t{pos}", header=f"h{pos}"
+    )
 
 
 # --- writer -----------------------------------------------------------------
 
 
+@pytest.mark.smoke
 def test_write_batch_lays_out_clips_and_manifest(tmp_path):
     src1 = tmp_path / "a.mp4"
     src1.write_bytes(b"one")
@@ -68,7 +71,9 @@ def test_write_batch_rejects_duplicate_positions(tmp_path):
 
 def test_write_batch_rejects_missing_source(tmp_path):
     with pytest.raises(handoff.HandoffError):
-        handoff.write_batch([_entry(1, tmp_path / "missing.mp4")], root=tmp_path / "handoff")
+        handoff.write_batch(
+            [_entry(1, tmp_path / "missing.mp4")], root=tmp_path / "handoff"
+        )
 
 
 def test_handoff_root_honours_env(monkeypatch, tmp_path):
@@ -131,13 +136,17 @@ def test_handoff_endpoint_writes_batch(isolated_jobs, tmp_path, monkeypatch):
     assert manifest["clips"][0]["presets"]["caption_style"] == "punch"
 
 
-def test_handoff_endpoint_rejects_job_without_output(isolated_jobs, tmp_path, monkeypatch):
+def test_handoff_endpoint_rejects_job_without_output(
+    isolated_jobs, tmp_path, monkeypatch
+):
     monkeypatch.setenv("RICECLIPPER_HANDOFF_DIR", str(tmp_path / "handoff"))
     job = jobs.create_job()
     job.status = "ready"  # no rendered output
 
     with TestClient(main.app) as client:
-        res = client.post("/api/handoff", json={"clips": [{"job_id": job.id, "position": 1}]})
+        res = client.post(
+            "/api/handoff", json={"clips": [{"job_id": job.id, "position": 1}]}
+        )
 
     assert res.status_code == 409
 
@@ -151,5 +160,7 @@ def test_handoff_endpoint_rejects_empty_batch(isolated_jobs):
 def test_handoff_endpoint_unknown_job(isolated_jobs, tmp_path, monkeypatch):
     monkeypatch.setenv("RICECLIPPER_HANDOFF_DIR", str(tmp_path / "handoff"))
     with TestClient(main.app) as client:
-        res = client.post("/api/handoff", json={"clips": [{"job_id": "nope", "position": 1}]})
+        res = client.post(
+            "/api/handoff", json={"clips": [{"job_id": "nope", "position": 1}]}
+        )
     assert res.status_code == 404

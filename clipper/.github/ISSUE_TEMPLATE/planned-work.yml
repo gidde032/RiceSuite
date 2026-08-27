@@ -1,0 +1,88 @@
+name: Planned work
+description: Propose an enhancement, maintenance task, investigation, or documentation change.
+title: ""
+labels:
+  - needs-decision
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for durable candidates as well as ready work. Candidates
+        remain unmilestoned until the maintainer selects them for a phase.
+        SPEC.md is the source of truth for v1 scope; ROADMAP.md owns post-v1
+        sequencing — reference them rather than re-deriving scope here.
+
+  - type: dropdown
+    id: work_type
+    attributes:
+      label: Work type
+      options:
+        - Enhancement
+        - Maintenance
+        - Investigation
+        - Documentation
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: What is missing, fragile, costly, or hard to understand?
+    validations:
+      required: true
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe the user-visible or operational result, not an implementation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: provenance
+    attributes:
+      label: Provenance and current evidence
+      description: |
+        Name the spec decision, roadmap entry, spike, or code location that
+        produced this candidate. Separate measured facts from hypotheses.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed_scope
+    attributes:
+      label: Proposed scope
+      description: What belongs in this issue, and what explicitly does not?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Phase / boundary
+      description: Where does this sit relative to the current phase and the no-posting boundary?
+      options:
+        - Within the current phase
+        - Wave-1 (needs an approved phase transition)
+        - Wave-2 or deferred
+        - Touches the outbound-network / posting boundary (needs explicit review)
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List observable completion conditions, including tests where applicable.
+    validations:
+      required: true
+
+  - type: textarea
+    id: documentation
+    attributes:
+      label: Documentation impact
+      description: Which of SPEC.md, ROADMAP.md, CHANGELOG.md, or docs/ may change?
+    validations:
+      required: true

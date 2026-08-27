@@ -18,8 +18,8 @@ variables from the UI, not rebuilding this file.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from typing import Sequence
 
 from transcribe.phrasing import Phrase, WordLike, group_words
 
@@ -34,12 +34,12 @@ class StyleConfig:
     font: str = "Arial"
     font_size: int = 96
     bold: bool = True
-    primary_color: str = "FFFFFF"      # base word colour, RRGGBB
-    highlight_color: str = "35E36B"    # active word colour, RRGGBB
+    primary_color: str = "FFFFFF"  # base word colour, RRGGBB
+    highlight_color: str = "35E36B"  # active word colour, RRGGBB
     outline_color: str = "000000"
-    outline: int = 6                   # thick outline for legibility on any bg
+    outline: int = 6  # thick outline for legibility on any bg
     shadow: int = 3
-    caption_margin_v: int = 340        # px up from the bottom (lower third)
+    caption_margin_v: int = 340  # px up from the bottom (lower third)
 
     # Header (top text or optional plate).
     header_font: str = "Arial"
@@ -47,12 +47,12 @@ class StyleConfig:
     header_color: str = "FFFFFF"
     header_outline_color: str = "000000"
     header_plate_color: str = "000000"
-    header_plate_alpha: int = 255      # ASS alpha: 0 opaque .. 255 transparent
-    header_padding: int = 0            # opaque-box padding around the text
-    header_border_style: int = 1       # 1 = outline, 3 = opaque box
+    header_plate_alpha: int = 255  # ASS alpha: 0 opaque .. 255 transparent
+    header_padding: int = 0  # opaque-box padding around the text
+    header_border_style: int = 1  # 1 = outline, 3 = opaque box
     header_outline: int = 2
     header_shadow: int = 2
-    header_margin_v: int = 450         # px down from the top (~23% of 1920px)
+    header_margin_v: int = 450  # px down from the top (~23% of 1920px)
 
 
 CAPTION_STYLE_NAMES = (
@@ -175,6 +175,7 @@ def style_for_presets(
 
 # --- colour + text helpers ---------------------------------------------------
 
+
 def _style_color(rrggbb: str, alpha: int = 0) -> str:
     """Return an ASS style colour (&HAABBGGRR)."""
     rr, gg, bb = rrggbb[0:2], rrggbb[2:4], rrggbb[4:6]
@@ -202,7 +203,7 @@ def _escape(text: str) -> str:
 def _ass_time(seconds: float) -> str:
     """Format seconds as ASS time H:MM:SS.cc (centiseconds)."""
     seconds = max(0.0, seconds)
-    cs = int(round(seconds * 100))
+    cs = round(seconds * 100)
     h, cs = divmod(cs, 360000)
     m, cs = divmod(cs, 6000)
     s, cs = divmod(cs, 100)
@@ -210,6 +211,7 @@ def _ass_time(seconds: float) -> str:
 
 
 # --- event builders ----------------------------------------------------------
+
 
 def _phrase_events(phrases: Sequence[Phrase], style: StyleConfig) -> list[str]:
     hi = _inline_color(style.highlight_color)
@@ -258,6 +260,7 @@ def _header_event(
 
 # --- top-level ---------------------------------------------------------------
 
+
 def build_ass(
     words: Sequence[WordLike],
     *,
@@ -277,18 +280,14 @@ def build_ass(
         f"1,{style.outline},{style.shadow},2,60,60,{style.caption_margin_v},1"
     )
     # BorderStyle 3 = opaque box; BorderStyle 1 = plain text with an outline.
-    header_box_color = _style_color(
-        style.header_plate_color, style.header_plate_alpha
-    )
+    header_box_color = _style_color(style.header_plate_color, style.header_plate_alpha)
     header_outline_color = (
         header_box_color
         if style.header_border_style == 3
         else _style_color(style.header_outline_color)
     )
     header_outline = (
-        style.header_padding
-        if style.header_border_style == 3
-        else style.header_outline
+        style.header_padding if style.header_border_style == 3 else style.header_outline
     )
     header_style = (
         f"Style: Header,{style.header_font},{style.header_font_size},"

@@ -27,8 +27,8 @@ from render.ass import StyleConfig
 # Emoji codepoint ranges (covers the common blocks incl. the real header
 # examples 🥹 U+1F979 and 😂 U+1F602, plus ZWJ sequences and variation selectors).
 _EMOJI_RE = re.compile(
-    "[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF"
-    "\U00002300-\U000023FF\U00002B00-\U00002BFF\U0000FE00-\U0000FE0F\U0000200D]"
+    "[\U0001f000-\U0001faff\U00002600-\U000027bf\U0001f1e6-\U0001f1ff"
+    "\U00002300-\U000023ff\U00002b00-\U00002bff\U0000fe00-\U0000fe0f\U0000200d]"
 )
 
 _TEXT_FONT_CANDIDATES = [
@@ -63,9 +63,16 @@ def _first_existing(paths: list[str]) -> str | None:
 
 
 @lru_cache(maxsize=1)
-def _resolve_emoji_font() -> tuple[str, int] | None:
-    """Find a (font path, strike size) that actually renders a color glyph."""
-    probe = "\U0001F602"
+def _resolve_emoji_font() -> tuple[str, int] | None:  # pragma: no cover
+    """Find a (font path, strike size) that actually renders a color glyph.
+
+    Excluded from coverage: this requires a real Pillow-renderable color-emoji
+    font (Apple Color Emoji on macOS). No Linux color-emoji font renders here
+    (the Homebrew Noto build rasterizes blank — see docs/spikes/emoji-burn-in.md),
+    so the CI runner cannot exercise it. It is integration-tested on macOS via
+    test_header_image.py, which skips when no such font is present.
+    """
+    probe = "\U0001f602"
     for path in _EMOJI_FONT_CANDIDATES:
         if not os.path.exists(path):
             continue
@@ -93,8 +100,14 @@ def _segment(word: str) -> list[tuple[str, str]]:
     return runs
 
 
-def _render_emoji(cluster: str, size: int, emoji_font: ImageFont.FreeTypeFont) -> Image.Image:
-    """Render an emoji cluster at the native strike, cropped and scaled to ``size``."""
+def _render_emoji(
+    cluster: str, size: int, emoji_font: ImageFont.FreeTypeFont
+) -> Image.Image:  # pragma: no cover
+    """Render an emoji cluster at the native strike, cropped and scaled to ``size``.
+
+    Excluded from coverage: reachable only with a real color-emoji font, which
+    the Linux CI runner lacks (see ``_resolve_emoji_font``).
+    """
     strike = emoji_font.size
     box = strike * (len(cluster) + 2)
     tmp = Image.new("RGBA", (box, strike * 2), (0, 0, 0, 0))
@@ -138,7 +151,7 @@ def render_header_png(
     out_path: str | Path,
     style: StyleConfig | None = None,
     canvas: tuple[int, int] = (1080, 1920),
-) -> Path:
+) -> Path:  # pragma: no cover
     """Render ``text`` (with color emoji) to a full-frame transparent PNG.
 
     The header block is near the top and horizontally centered — matching the
@@ -197,10 +210,11 @@ def render_header_png(
     pg = int(style.header_plate_color[2:4], 16)
     pb = int(style.header_plate_color[4:6], 16)
     plate = (pr, pg, pb, plate_alpha)
-    text_color = tuple(int(style.header_color[i : i + 2], 16) for i in (0, 2, 4)) + (255,)
-    outline_color = tuple(
-        int(style.header_outline_color[i : i + 2], 16) for i in (0, 2, 4)
-    ) + (255,)
+    text_color = (*(int(style.header_color[i : i + 2], 16) for i in (0, 2, 4)), 255)
+    outline_color = (
+        *(int(style.header_outline_color[i : i + 2], 16) for i in (0, 2, 4)),
+        255,
+    )
 
     y = style.header_margin_v
     for parts_list, line_w in lines:
@@ -218,7 +232,7 @@ def render_header_png(
         # Draw the runs left to right.
         x = x0
         first = True
-        for parts, w in parts_list:
+        for parts, _w in parts_list:
             if not first:
                 x += space_w
             first = False

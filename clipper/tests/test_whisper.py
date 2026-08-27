@@ -34,6 +34,7 @@ def test_model_setup_does_not_register_process_semaphore(monkeypatch):
     Fix: use tqdm's thread-only lock instead of its multiprocessing lock.
     """
     import multiprocessing.resource_tracker as resource_tracker
+
     from tqdm import tqdm
 
     registrations = []
@@ -53,9 +54,7 @@ def test_model_setup_does_not_register_process_semaphore(monkeypatch):
     tqdm.get_lock()
 
     assert not [
-        registration
-        for registration in registrations
-        if registration[1] == "semaphore"
+        registration for registration in registrations if registration[1] == "semaphore"
     ]
     assert isinstance(tqdm.get_lock(), type(threading.RLock()))
 
@@ -140,6 +139,7 @@ def test_dispose_clears_cached_model_and_allows_reconstruction(monkeypatch):
     assert instances == [first, second]
 
 
+@pytest.mark.smoke
 def test_transcribe_preserves_word_timestamps_and_skips_blanks(monkeypatch):
     class FakeWhisperModel:
         def __init__(self, *args, **kwargs):

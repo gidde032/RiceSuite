@@ -16,7 +16,9 @@ def is_target(width: int, height: int) -> bool:
     return width == TARGET_W and height == TARGET_H
 
 
-def blur_pad_statements(input_label: str = "[0:v]", out_label: str = "[base]") -> list[str]:
+def blur_pad_statements(
+    input_label: str = "[0:v]", out_label: str = "[base]"
+) -> list[str]:
     """filter_complex statements that blur-pad ``input_label`` to 1080x1920."""
     return [
         f"{input_label}split=2[bg][fg]",

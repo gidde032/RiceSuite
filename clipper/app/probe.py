@@ -58,7 +58,9 @@ def has_libass() -> bool:
         ) from exc
     except (subprocess.CalledProcessError, OSError):
         return False
-    return any(line.split()[1:2] == ["subtitles"] for line in out.splitlines() if line.strip())
+    return any(
+        line.split()[1:2] == ["subtitles"] for line in out.splitlines() if line.strip()
+    )
 
 
 def _pick_duration(video: dict, fmt: dict) -> float:
@@ -91,7 +93,9 @@ def probe(path: str) -> MediaInfo:
             check=True,
         ).stdout
     except ProcessTimeoutError as exc:
-        raise ProbeError(f"ffprobe timed out after {_probe_timeout():g} seconds") from exc
+        raise ProbeError(
+            f"ffprobe timed out after {_probe_timeout():g} seconds"
+        ) from exc
     except subprocess.CalledProcessError as exc:  # pragma: no cover - passthrough
         raise ProbeError(exc.stderr.strip() or "ffprobe failed") from exc
 

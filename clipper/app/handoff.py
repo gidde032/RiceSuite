@@ -15,7 +15,7 @@ import os
 import shutil
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 SCHEMA_VERSION = 1
@@ -44,7 +44,7 @@ def handoff_root() -> Path:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def write_batch(entries: list[HandoffEntry], *, root: Path | None = None) -> dict:
@@ -62,7 +62,7 @@ def write_batch(entries: list[HandoffEntry], *, root: Path | None = None) -> dic
     if len(set(positions)) != len(positions):
         raise HandoffError("clip positions must be unique")
 
-    base = (root or handoff_root())
+    base = root or handoff_root()
     base.mkdir(parents=True, exist_ok=True)
     base = base.resolve()
 

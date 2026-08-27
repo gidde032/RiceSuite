@@ -3,13 +3,11 @@ from __future__ import annotations
 import io
 
 import pytest
-from fastapi import HTTPException
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from app import jobs
-from app import main
+from app import jobs, main
 from app.models import RenderRequest
 from app.probe import MediaInfo
 
@@ -26,6 +24,7 @@ def isolated_jobs(tmp_path, monkeypatch):
     jobs._JOBS.update(previous_jobs)
 
 
+@pytest.mark.smoke
 def test_media_routes_report_and_clear_server_cache(isolated_jobs):
     job = jobs.create_job()
     job.status = "ready"
@@ -78,9 +77,11 @@ def test_render_failure_does_not_leave_job_active(monkeypatch, isolated_jobs):
     job.source_path = job.dir / "source.mp4"
     job.source_path.write_bytes(b"source")
     job.info = MediaInfo(1080, 1920, 1.0, False)
-    monkeypatch.setattr(main, "render", lambda *args, **kwargs: (_ for _ in ()).throw(
-        OSError("ffmpeg disappeared")
-    ))
+    monkeypatch.setattr(
+        main,
+        "render",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("ffmpeg disappeared")),
+    )
 
     with pytest.raises(HTTPException) as exc_info:
         main.render_job(job.id, RenderRequest())

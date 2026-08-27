@@ -4,10 +4,11 @@ from types import SimpleNamespace
 import pytest
 
 from app import probe as probe_module
-from app.process import ProcessTimeoutError
 from app.probe import ProbeError, _pick_duration
+from app.process import ProcessTimeoutError
 
 
+@pytest.mark.smoke
 def test_prefers_video_stream_duration():
     assert _pick_duration({"duration": "12.5"}, {"duration": "13.0"}) == 12.5
 
@@ -24,12 +25,14 @@ def test_returns_zero_when_no_parseable_duration():
 
 def test_probe_rejects_non_finite_duration(monkeypatch):
     payload = {
-        "streams": [{
-            "codec_type": "video",
-            "width": 1080,
-            "height": 1920,
-            "duration": "Infinity",
-        }],
+        "streams": [
+            {
+                "codec_type": "video",
+                "width": 1080,
+                "height": 1920,
+                "duration": "Infinity",
+            }
+        ],
         "format": {"duration": "Infinity"},
     }
     monkeypatch.setattr(
@@ -67,12 +70,14 @@ def test_has_libass_timeout_is_converted_to_probe_error(monkeypatch):
 def test_probe_uses_bounded_timeout_and_preserves_json_contract(monkeypatch):
     calls = []
     payload = {
-        "streams": [{
-            "codec_type": "video",
-            "width": 1080,
-            "height": 1920,
-            "duration": "4.5",
-        }],
+        "streams": [
+            {
+                "codec_type": "video",
+                "width": 1080,
+                "height": 1920,
+                "duration": "4.5",
+            }
+        ],
         "format": {},
     }
 

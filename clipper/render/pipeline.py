@@ -15,9 +15,9 @@ import math
 import os
 from pathlib import Path
 
-from app.process import ProcessTimeoutError, run_owned
 from app.models import RenderRequest
 from app.probe import MediaInfo
+from app.process import ProcessTimeoutError, run_owned
 from render import geometry
 from render.ass import StyleConfig, build_ass, style_for_presets
 from render.header_image import has_emoji, render_header_png
@@ -120,22 +120,32 @@ def _ffmpeg_command(
         cmd += ["-i", HEADER_PNG]
     filter_threads = _encode_threads()
     cmd += [
-        "-filter_threads", str(filter_threads),
-        "-filter_complex_threads", str(filter_threads),
-        "-filter_complex", filter_complex,
-        "-map", "[vout]",
+        "-filter_threads",
+        str(filter_threads),
+        "-filter_complex_threads",
+        str(filter_threads),
+        "-filter_complex",
+        filter_complex,
+        "-map",
+        "[vout]",
     ]
     if audio_map is not None:
         cmd += ["-map", audio_map]
     else:
         cmd += ["-an"]
     cmd += [
-        "-threads", str(_encode_threads()),
-        "-c:v", "libx264",
-        "-preset", "medium",
-        "-crf", "20",
-        "-pix_fmt", "yuv420p",
-        "-profile:v", "high",
+        "-threads",
+        str(_encode_threads()),
+        "-c:v",
+        "libx264",
+        "-preset",
+        "medium",
+        "-crf",
+        "20",
+        "-pix_fmt",
+        "yuv420p",
+        "-profile:v",
+        "high",
     ]
     if audio_map is not None:
         # Resample audio to 48 kHz stereo. Many macOS audio output devices run at
@@ -146,9 +156,12 @@ def _ffmpeg_command(
     # This is an explicit output bound. Audio filters also trim to this same
     # duration, so output length does not depend on whichever input ends first.
     cmd += [
-        "-t", _duration_arg(duration),
+        "-t",
+        _duration_arg(duration),
         "-shortest",
-        "-movflags", "+faststart", OUTPUT_NAME,
+        "-movflags",
+        "+faststart",
+        OUTPUT_NAME,
     ]
     return cmd
 
@@ -176,10 +189,12 @@ def render(
     if overlay_header:
         try:
             render_header_png(
-                req.header, job_dir / HEADER_PNG, style,
+                req.header,
+                job_dir / HEADER_PNG,
+                style,
                 canvas=(geometry.TARGET_W, geometry.TARGET_H),
             )
-        except Exception:  # noqa: BLE001 - degrade to libass header
+        except Exception:
             overlay_header = False
 
     ass_text = build_ass(

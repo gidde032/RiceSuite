@@ -14,7 +14,6 @@ import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from app.models import JobState, Word
 from app.probe import MediaInfo
@@ -26,12 +25,12 @@ WORK_ROOT = Path(__file__).resolve().parent.parent / ".riceclipper_work"
 class Job:
     id: str
     dir: Path
-    source_path: Optional[Path] = None
-    info: Optional[MediaInfo] = None
+    source_path: Path | None = None
+    info: MediaInfo | None = None
     words: list[Word] = field(default_factory=list)
     status: str = "transcribing"
-    error: Optional[str] = None
-    output_path: Optional[Path] = None
+    error: str | None = None
+    output_path: Path | None = None
 
     def state(self) -> JobState:
         return JobState(
@@ -52,9 +51,7 @@ _JOBS_LOCK = threading.RLock()
 
 _ACTIVE_STATUSES = frozenset({"transcribing", "rendering"})
 _DIRECTORY_OPEN_FLAGS = (
-    os.O_RDONLY
-    | getattr(os, "O_DIRECTORY", 0)
-    | getattr(os, "O_NOFOLLOW", 0)
+    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
 )
 
 
@@ -93,7 +90,7 @@ def _ensure_work_root() -> Path:
     return root
 
 
-def _open_directory(path: Path | str, *, dir_fd: Optional[int] = None) -> int:
+def _open_directory(path: Path | str, *, dir_fd: int | None = None) -> int:
     """Open a directory without following a symlink at that path."""
 
     if dir_fd is None:
@@ -293,6 +290,6 @@ def create_job() -> Job:
         return job
 
 
-def get_job(job_id: str) -> Optional[Job]:
+def get_job(job_id: str) -> Job | None:
     with _JOBS_LOCK:
         return _JOBS.get(job_id)
