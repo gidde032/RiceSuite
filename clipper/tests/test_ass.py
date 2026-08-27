@@ -1,3 +1,5 @@
+import pytest
+
 from render.ass import (
     CAPTION_STYLE_NAMES,
     HEADER_STYLE_NAMES,
@@ -16,6 +18,7 @@ def test_time_formatting():
     assert _ass_time(-5) == "0:00:00.00"
 
 
+@pytest.mark.smoke
 def test_has_required_sections():
     ass = build_ass(words(("hi", 0.0, 0.3)), duration=1.0)
     for section in ("[Script Info]", "[V4+ Styles]", "[Events]"):

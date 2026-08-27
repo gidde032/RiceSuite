@@ -8,6 +8,7 @@ from app.probe import ProbeError, _pick_duration
 from app.process import ProcessTimeoutError
 
 
+@pytest.mark.smoke
 def test_prefers_video_stream_duration():
     assert _pick_duration({"duration": "12.5"}, {"duration": "13.0"}) == 12.5
 

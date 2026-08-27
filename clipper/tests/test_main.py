@@ -24,6 +24,7 @@ def isolated_jobs(tmp_path, monkeypatch):
     jobs._JOBS.update(previous_jobs)
 
 
+@pytest.mark.smoke
 def test_media_routes_report_and_clear_server_cache(isolated_jobs):
     job = jobs.create_job()
     job.status = "ready"

@@ -17,6 +17,7 @@ def _entry(pos: int, src) -> handoff.HandoffEntry:
 # --- writer -----------------------------------------------------------------
 
 
+@pytest.mark.smoke
 def test_write_batch_lays_out_clips_and_manifest(tmp_path):
     src1 = tmp_path / "a.mp4"
     src1.write_bytes(b"one")

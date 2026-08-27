@@ -139,6 +139,7 @@ def test_dispose_clears_cached_model_and_allows_reconstruction(monkeypatch):
     assert instances == [first, second]
 
 
+@pytest.mark.smoke
 def test_transcribe_preserves_word_timestamps_and_skips_blanks(monkeypatch):
     class FakeWhisperModel:
         def __init__(self, *args, **kwargs):

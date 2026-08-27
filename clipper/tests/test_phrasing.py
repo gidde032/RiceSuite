@@ -1,7 +1,10 @@
+import pytest
+
 from tests._util import words
 from transcribe.phrasing import group_words
 
 
+@pytest.mark.smoke
 def test_splits_on_max_words():
     ws = words(
         ("one", 0.0, 0.2),
