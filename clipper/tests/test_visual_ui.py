@@ -49,10 +49,10 @@ def test_slate_identity_and_theme_contract_are_present():
     assert 'href="/slate-logo.png"' in html
     assert '<span class="sr-only">RiceClipper</span>' in html
     for token in (
-        "#080c10",
-        "#10161c",
-        "#171c21",
-        "#30363b",
+        "#04060a",
+        "#0c1116",
+        "#14191e",
+        "#2b3136",
         "#626a70",
         "#aeb3b6",
         "#80878c",

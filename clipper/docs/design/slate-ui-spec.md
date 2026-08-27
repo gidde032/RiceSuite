@@ -43,10 +43,10 @@ send the completed batch to RicePoster.
 
 | Token | Value | Use |
 | --- | --- | --- |
-| Backdrop | `#080C10` | Page and top-bar background |
-| Midground | `#10161C` | Main workspace and recessed regions |
-| Interior | `#171C21` | Cards, inputs, transcript, menus |
-| Hairline | `#30363B` | Decorative dividers |
+| Backdrop | `#04060A` | Page and top-bar background; sampled from the approved logo edge |
+| Midground | `#0C1116` | Main workspace and recessed regions |
+| Interior | `#14191E` | Cards, inputs, transcript, menus |
+| Hairline | `#2B3136` | Decorative dividers |
 | Control line | `#626A70` | Accessible inactive control boundaries |
 | Rice grey | `#AEB3B6` | Selection, focus, progress, ready state |
 | Muted grey | `#80878C` | AA secondary text and inactive controls |
@@ -54,6 +54,8 @@ send the completed batch to RicePoster.
 | Primary text | `#E5E8EA` | Labels and readable content |
 
 There is no blue, amber, gold, cyan, or purple in Slate's interface chrome.
+The solid top bar must use the exact backdrop token so the unchanged production
+PNG blends into it without a contrasting square.
 Two intentional semantic exceptions remain:
 
 - destructive and error states retain an accessible red treatment; and
