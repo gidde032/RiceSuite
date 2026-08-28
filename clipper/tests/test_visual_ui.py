@@ -15,7 +15,7 @@ def test_review_ui_exposes_all_visual_choices_and_sends_them():
     html = _html()
     javascript = _js()
 
-    # All three header treatments and all seven caption presets are offered
+    # All three header treatments and all eleven caption presets are offered
     # (they appear in both the batch-default selects and the per-clip template).
     assert 'value="plain"' in html
     assert 'value="black_plate"' in html
@@ -28,6 +28,10 @@ def test_review_ui_exposes_all_visual_choices_and_sends_them():
         "sunset",
         "mono",
         "editorial",
+        "lyric_block",
+        "velvet_serif",
+        "din_condensed",
+        "baskerville",
     ):
         assert f'value="{style}"' in html
 
@@ -36,6 +40,8 @@ def test_review_ui_exposes_all_visual_choices_and_sends_them():
     assert "header_style: radioValue(clip.headerStyleEl)" in javascript
     assert 'class="choice-grid header-choice-grid"' in html
     assert 'class="choice-grid caption-choice-grid"' in html
+    assert 'value="din_condensed">Powder / powder blue</option>' in html
+    assert '<span class="choice-label">Powder</span>' in html
     assert "setRadioValue(clip.captionStyleEl" in javascript
     assert "setRadioValue(clip.headerStyleEl" in javascript
 

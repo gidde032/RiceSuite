@@ -63,6 +63,10 @@ CAPTION_STYLE_NAMES = (
     "sunset",
     "mono",
     "editorial",
+    "lyric_block",
+    "velvet_serif",
+    "din_condensed",
+    "baskerville",
 )
 HEADER_STYLE_NAMES = ("plain", "black_plate", "white_plate")
 
@@ -125,6 +129,44 @@ _CAPTION_PRESETS: dict[str, dict[str, object]] = {
         "outline": 5,
         "shadow": 3,
         "caption_margin_v": 350,
+    },
+    "lyric_block": {
+        "font": "Avenir Next Condensed",
+        "font_size": 100,
+        "primary_color": "F7F3EE",
+        "highlight_color": "00E5FF",
+        "outline": 5,
+        "shadow": 3,
+        "caption_margin_v": 340,
+    },
+    "velvet_serif": {
+        "font": "Bodoni 72",
+        "font_size": 92,
+        "bold": False,
+        "primary_color": "FFF8F0",
+        "highlight_color": "FF3654",
+        "outline": 3,
+        "shadow": 2,
+        "caption_margin_v": 355,
+    },
+    "din_condensed": {
+        "font": "DIN Condensed",
+        "font_size": 100,
+        "primary_color": "F7F3EE",
+        "highlight_color": "A8C7E8",
+        "outline": 5,
+        "shadow": 3,
+        "caption_margin_v": 340,
+    },
+    "baskerville": {
+        "font": "Baskerville",
+        "font_size": 92,
+        "bold": False,
+        "primary_color": "FFF8F0",
+        "highlight_color": "00A7A7",
+        "outline": 3,
+        "shadow": 2,
+        "caption_margin_v": 355,
     },
 }
 

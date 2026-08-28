@@ -20,6 +20,10 @@ CaptionStyle = Literal[
     "sunset",
     "mono",
     "editorial",
+    "lyric_block",
+    "velvet_serif",
+    "din_condensed",
+    "baskerville",
 ]
 HeaderStyle = Literal["plain", "black_plate", "white_plate"]
 

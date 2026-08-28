@@ -83,6 +83,10 @@ def test_visual_preset_catalog_keeps_classic_and_exposes_requested_choices():
         "sunset",
         "mono",
         "editorial",
+        "lyric_block",
+        "velvet_serif",
+        "din_condensed",
+        "baskerville",
     )
     assert HEADER_STYLE_NAMES == ("plain", "black_plate", "white_plate")
 
@@ -108,6 +112,38 @@ def test_caption_presets_change_font_and_highlight_without_leaving_ass():
     ass = build_ass(words(("hi", 0.0, 0.3)), duration=1.0, style=punch)
     assert "Style: Caption,Impact,92" in ass
     assert "&H813BFF&" in ass
+
+
+def test_lyric_presets_match_the_ratified_font_and_color_treatments():
+    lyric_block = style_for_presets("lyric_block", "plain")
+    velvet_serif = style_for_presets("velvet_serif", "plain")
+    din_condensed = style_for_presets("din_condensed", "plain")
+    baskerville = style_for_presets("baskerville", "plain")
+
+    assert (lyric_block.font, lyric_block.highlight_color, lyric_block.bold) == (
+        "Avenir Next Condensed",
+        "00E5FF",
+        True,
+    )
+    assert (velvet_serif.font, velvet_serif.highlight_color, velvet_serif.bold) == (
+        "Bodoni 72",
+        "FF3654",
+        False,
+    )
+    assert (din_condensed.font, din_condensed.highlight_color, din_condensed.bold) == (
+        "DIN Condensed",
+        "A8C7E8",
+        True,
+    )
+    assert (baskerville.font, baskerville.highlight_color, baskerville.bold) == (
+        "Baskerville",
+        "00A7A7",
+        False,
+    )
+
+    ass = build_ass(words(("little", 0.0, 0.4)), duration=1.0, style=din_condensed)
+    assert "Style: Caption,DIN Condensed,100" in ass
+    assert "&HE8C7A8&" in ass
 
 
 def test_header_presets_share_compact_scale_and_plain_has_no_plate():

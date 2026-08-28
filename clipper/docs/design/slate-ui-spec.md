@@ -119,12 +119,14 @@ both the visible toolbar symbol and the favicon.
 
 - Per-clip header styles become three accessible radio-card tiles: **Plain
   text**, **Black plate**, and **White plate**.
-- Per-clip caption styles become seven accessible radio-card tiles: **Classic**,
-  **Clean**, **Punch**, **Friendly**, **Sunset**, **Mono**, and **Editorial**.
+- Per-clip caption styles become eleven accessible radio-card tiles: **Classic**,
+  **Clean**, **Punch**, **Friendly**, **Sunset**, **Mono**, **Editorial**,
+  **Lyric Block**, **Velvet Serif**, **DIN Condensed**, and **Baskerville**.
 - Each tile includes a truthful miniature treatment example and a text label.
 - Selection uses a rice-grey border and checkmark, never color alone.
-- The underlying values and API payloads remain exactly the existing
-  `header_style` and `caption_style` contracts.
+- The underlying values and API payload shapes remain the existing
+  `header_style` and `caption_style` contracts; the bounded catalog now includes
+  the four approved lyric preset identifiers.
 - Batch-default controls remain compact selects unless a later approved design
   explicitly expands them.
 
@@ -156,13 +158,13 @@ both the visible toolbar symbol and the favicon.
 Slate must not add or change:
 
 - upload, transcription, render, download, cache, or handoff behavior;
-- API endpoints, request/response models, preset identifiers, or defaults;
+- API endpoints, request/response shapes, or defaults;
 - clip trimming, a timeline, crop/reframe controls, duplicate settings, or
   replacement controls;
 - music preview, waveforms, extra modes, or audio processing;
 - arbitrary font/color editing or user-authored preset persistence;
 - posting, publishing, authentication, or external content upload; or
-- caption/header burn-in appearance beyond the existing selectable presets.
+- arbitrary caption/header editing beyond the bounded selectable presets.
 
 HTML may be reorganized for semantics and styling. JavaScript may change only
 where required to bind the same existing behavior to accessible controls.
