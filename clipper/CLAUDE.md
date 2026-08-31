@@ -22,9 +22,10 @@ approval and must remain within the active phase.
 
 **Quality gates are enforced in CI.** `.github/workflows/ci.yml` runs ruff
 lint + format and the full test suite with an **85% coverage floor** on every
-PR and push to `main`; `tests/test_gates.py` locks the gate numbers (smoke
-count, coverage floor, ruff gates) so they cannot silently drift. Before
-calling a change done, run `ruff check . && ruff format --check .` and
+PR, including stacked PRs, and on every push to `main`; `tests/test_gates.py`
+locks the CI trigger and gate numbers (smoke count, coverage floor, ruff gates)
+so they cannot silently drift. Before calling a change done, run
+`ruff check . && ruff format --check .` and
 `pytest tests/ --cov=app --cov=render --cov=transcribe --cov-fail-under=85`.
 Ruff config is in `pyproject.toml`; the two-tier `pre-commit` hooks mirror CI
 locally. The `main` branch-protection ruleset is prepared in

@@ -1,12 +1,13 @@
 """Quality-gate meta-tests.
 
-These enforce the project's numeric gate contracts and their *placement*, so a
+These enforce the project's quality-gate contracts and their *placement*, so a
 gate cannot silently disappear the way an undocumented one silently never
 existed. They check:
 
 * the smoke tier tags exactly ``SMOKE_TEST_COUNT`` tests,
 * the smoke tier stays within its speed budget (it is only useful on the
   pre-commit hook if it is fast), and
+* CI runs for pull requests targeting any branch, including stacked PRs, and
 * the ``COVERAGE_FLOOR`` and the ruff lint/format gates are enforced in BOTH
   the local pre-push hook and the GitHub Actions workflow, with the coverage
   numbers in agreement.
@@ -35,6 +36,21 @@ SMOKE_TEST_COUNT = 6
 # generous headroom for a loaded machine while still catching a tier that has
 # quietly accreted slow tests and is no longer commit-hook material.
 SMOKE_EXECUTION_BUDGET_S = 3.0
+
+
+def test_ci_runs_for_pull_requests_to_any_branch():
+    """The CI workflow must not exclude stacked PRs targeting feature branches."""
+    ci = CI_WORKFLOW.read_text(encoding="utf-8")
+    pull_request_trigger = ci.split("pull_request:", maxsplit=1)[1].split(
+        "push:", maxsplit=1
+    )[0]
+
+    assert "branches:" not in pull_request_trigger, (
+        "CI filters pull_request target branches, so stacked PRs receive no checks"
+    )
+    assert "branches-ignore:" not in pull_request_trigger, (
+        "CI ignores pull request target branches, so some stacked PRs receive no checks"
+    )
 
 
 def _collected_node_ids(stdout: str) -> list[str]:
