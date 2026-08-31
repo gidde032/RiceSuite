@@ -121,7 +121,8 @@ both the visible toolbar symbol and the favicon.
   text**, **Black plate**, and **White plate**.
 - Per-clip caption styles become eleven accessible radio-card tiles: **Classic**,
   **Clean**, **Punch**, **Friendly**, **Sunset**, **Mono**, **Editorial**,
-  **Lyric Block**, **Velvet Serif**, **DIN Condensed**, and **Baskerville**.
+  **Lyric Block**, **Velvet Serif**, **Powder**, and **Baskerville**. Powder keeps
+  the stable `din_condensed` identifier and uses the DIN Condensed font.
 - Each tile includes a truthful miniature treatment example and a text label.
 - Selection uses a rice-grey border and checkmark, never color alone.
 - The underlying values and API payload shapes remain the existing

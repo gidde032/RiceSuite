@@ -34,6 +34,7 @@ class StyleConfig:
     font: str = "Arial"
     font_size: int = 96
     bold: bool = True
+    italic: bool = False
     primary_color: str = "FFFFFF"  # base word colour, RRGGBB
     highlight_color: str = "35E36B"  # active word colour, RRGGBB
     outline_color: str = "000000"
@@ -133,6 +134,7 @@ _CAPTION_PRESETS: dict[str, dict[str, object]] = {
     "lyric_block": {
         "font": "Avenir Next Condensed",
         "font_size": 100,
+        "italic": True,
         "primary_color": "F7F3EE",
         "highlight_color": "00E5FF",
         "outline": 5,
@@ -318,7 +320,7 @@ def build_ass(
         f"Style: Caption,{style.font},{style.font_size},"
         f"{_style_color(style.primary_color)},{_style_color(style.highlight_color)},"
         f"{_style_color(style.outline_color)},{_style_color('000000')},"
-        f"{-1 if style.bold else 0},0,0,0,100,100,0,0,"
+        f"{-1 if style.bold else 0},{-1 if style.italic else 0},0,0,100,100,0,0,"
         f"1,{style.outline},{style.shadow},2,60,60,{style.caption_margin_v},1"
     )
     # BorderStyle 3 = opaque box; BorderStyle 1 = plain text with an outline.

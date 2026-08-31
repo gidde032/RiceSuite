@@ -40,11 +40,11 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - **Lyric caption preset addition.** Added four fixed, selectable lyric
-  treatments: Lyric Block (Avenir Next Condensed with cyan highlight), Velvet
-  Serif (Bodoni 72 with red highlight), DIN Condensed (with powder-blue
-  highlight), and Baskerville (with teal highlight). The catalog remains
-  bounded; arbitrary font/color editing and user-authored preset persistence
-  remain deferred.
+  treatments: Lyric Block (italic Avenir Next Condensed with cyan highlight),
+  Velvet Serif (Bodoni 72 with red highlight), Powder (DIN Condensed font with
+  powder-blue highlight), and Baskerville (with teal highlight). The catalog
+  remains bounded; arbitrary font/color editing and user-authored preset
+  persistence remain deferred.
 - **Visual preset follow-up.** Added seven selectable caption appearances
   (including the original Classic default) and three compact header treatments:
   plain text, black plate, and white plate. The default header is now a

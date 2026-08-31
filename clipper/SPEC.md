@@ -100,12 +100,14 @@ filling in variables, not rebuilding.
 
 The review UI exposes eleven named caption presets: **Classic** (the original
 v1 treatment), **Clean**, **Punch**, **Friendly**, **Sunset**, **Mono**,
-**Editorial**, **Lyric Block**, **Velvet Serif**, **DIN Condensed**, and
+**Editorial**, **Lyric Block**, **Velvet Serif**, **Powder**, and
 **Baskerville**. Each remains a Tier-1 ASS/libass combination of font, size,
 outline/shadow, position, base color, and active-word highlight color. The
 four approved lyric treatments are fixed combinations: Avenir Next Condensed
-with cyan (`#00E5FF`), Bodoni 72 with red (`#FF3654`), DIN Condensed with
-powder blue (`#A8C7E8`), and Baskerville with teal (`#00A7A7`).
+italic with cyan (`#00E5FF`), Bodoni 72 with red (`#FF3654`), **Powder** using
+the DIN Condensed font with powder blue (`#A8C7E8`), and Baskerville with teal
+(`#00A7A7`). The stable internal identifier for Powder remains
+`din_condensed`.
 
 The UI also exposes three header treatments at the same compact,
 reference-matched scale: **Plain text**, **Black plate**, and **White plate**.
