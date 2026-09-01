@@ -2,10 +2,11 @@
 
 > Status: **Ratified and implemented** (design locked via decision-challenge
 > session). The v1 hardening pass and bounded visual preset follow-up are merged
-> to `main`. The separately ratified **Slate** browser-interface polish is
-> governed by [`docs/design/slate-ui-spec.md`](docs/design/slate-ui-spec.md) and
-> does not change v1 functionality. This document remains the source of truth
-> for v1 scope and the deferred roadmap.
+> to `main`. The separately ratified **Slate** browser-interface polish and its
+> bounded four-preset lyric-caption follow-up are also merged to `main`; Slate
+> is governed by [`docs/design/slate-ui-spec.md`](docs/design/slate-ui-spec.md)
+> and does not change v1 functionality. This document remains the source of
+> truth for v1 scope and the deferred roadmap.
 >
 > Project: **RiceClipper** — a standalone short-form video captioning tool.
 > Distinct repo/project from **RicePoster** (the posting harness).
@@ -19,10 +20,10 @@ post-ready clips with **burned-in, word-synced captions** and an **on-screen
 header**. It is the "Path 3" of a larger clipping concept: no clip *selection*
 intelligence, just a clean caption/header/export render chassis.
 
-It is built standalone for v1 but to an output contract that lets its clips drop
-straight into RicePoster later. Building the render chassis first is deliberate —
-the future Paths 2 and 1 (clip extraction from longer video) sit directly on top
-of it.
+It was built standalone for v1 with an output contract that now lets its clips
+drop straight into RicePoster through a local-filesystem handoff. Building the
+render chassis first is deliberate — the future Paths 2 and 1 (clip extraction
+from longer video) sit directly on top of it.
 
 ## 2. Scope
 
@@ -47,9 +48,9 @@ text editor, arbitrary font/color input, or user-authored preset persistence.
 RiceClipper **performs no posting, publishing, or network upload of content**. It
 reads local video files and writes local output files. The "no live post without
 explicit approval" safety rule belongs to RicePoster and remains RicePoster's
-responsibility at the future integration point (§7, Wave 1). RiceClipper's only
-outbound network call is the deferred header agent's API request (§6.2), which
-generates text and posts nothing.
+responsibility after it separately pulls from the implemented local handoff
+(§7, Wave 1). RiceClipper's only outbound network call is the deferred header
+agent's API request (§6.2), which generates text and posts nothing.
 
 ## 4. Pipeline (data flow)
 

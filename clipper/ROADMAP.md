@@ -8,14 +8,13 @@ v1: ship a clean, provable render chassis first, then add features on top of it.
 
 The full v1 → Wave-1 clip pipeline is implemented, merged, and **confirmed
 working end to end** — upload to RiceClipper, batch review/render, filesystem
-handoff, then RicePoster "Pull from Clipper" and post. The next approved
-delivery candidate is the behavior-preserving **Slate** browser-interface
-polish. Its ratified contract and selected reference assets live in
-[`docs/design/slate-ui-spec.md`](docs/design/slate-ui-spec.md). Its bounded
-implementation is authorized in Issue #9. Remaining Wave-1 product additions
-(silence-only trimming and auto-header) stay deferred behind a phase change.
+handoff, then RicePoster "Pull from Clipper" and post. The behavior-preserving
+**Slate** browser-interface polish and bounded four-preset lyric-caption
+addition are also merged. There is no currently authorized follow-on
+implementation. Remaining Wave-1 product additions (silence-only trimming and
+auto-header) stay deferred behind an explicit phase change.
 
-## Approved visual polish — Slate
+## Delivered visual polish — Slate
 
 Slate redesigns the existing local review UI around a dark carbon/grey editing
 console, rice-grey interaction states, treatment-preview cards for per-clip

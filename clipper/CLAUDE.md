@@ -16,8 +16,9 @@ memory or chat — read the spec.
 end** — upload → RiceClipper batch review/render → filesystem handoff →
 RicePoster "Pull from Clipper" → post. Merged to `main`: the v1 vertical slice,
 the hardening pass, the bounded visual presets, the bounded batch review/render,
-and the producer-side handoff writer. The RicePoster-side pickup + auto-caption
-is tracked separately (RicePoster #77). Further changes still require explicit
+the producer-side handoff writer, the Slate browser-interface redesign, and the
+four fixed lyric caption presets. The RicePoster-side pickup + auto-caption is
+tracked separately (RicePoster #77). Further changes still require explicit
 approval and must remain within the active phase.
 
 **Quality gates are enforced in CI.** `.github/workflows/ci.yml` runs ruff
@@ -42,7 +43,7 @@ but is no longer blocked by that spike.
    files and writes local files. It performs no social posting. The only outbound
    network call in the whole design is the *deferred* header agent (Wave 1), which
    generates text and posts nothing. Posting and its approval gate belong to
-   **RicePoster**, a separate repo, at the future integration point.
+   **RicePoster**, a separate repo, after RiceClipper writes the local handoff.
 2. **No implementation code without explicit approval.** When a build task comes
    up, first present a triage/plan (what will change, where, why) and get a clear
    yes. Do not start writing modules because the design is settled — a ratified
@@ -72,7 +73,7 @@ throughout · output 1080×1920 H.264/AAC mp4.
 ## Relationship to RicePoster
 
 Separate project, separate repo. RicePoster handles the posting automation;
-RiceClipper produces the clips it will eventually post. Integration is Wave-1 work
-(`ROADMAP.md`). When integrating, RiceClipper still does not post — it only writes
-output files into whatever pickup contract RicePoster expects; the posting safety
-gate stays on the RicePoster side.
+RiceClipper produces clips and writes them to the implemented local pickup
+contract. RicePoster pulls those files separately and owns all posting behavior.
+RiceClipper still does not post; the posting safety gate stays on the RicePoster
+side. See `ROADMAP.md` and `docs/integration/riceposter-handoff.md`.

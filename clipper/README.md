@@ -6,13 +6,13 @@ Turns short (**under ~1 minute**) vertical videos into post-ready clips with
 It is the render chassis for a larger clipping concept ("Path 3"): no clip
 *selection* intelligence yet — just clean captioning, header, and vertical export.
 It is a standalone project, distinct from **RicePoster** (the posting harness),
-built to an output contract that lets its clips drop into RicePoster later.
+with an implemented local-filesystem handoff that RicePoster can pull from.
 
-> **Status: v1 slice implemented; hardening pass and bounded visual follow-up
-> complete.** End-to-end rendering and shutdown cleanup are verified with a
-> libass-enabled ffmpeg. The design is recorded in [`SPEC.md`](./SPEC.md).
-> Burn-in requires an ffmpeg with libass (see setup) — the stock Homebrew formula
-> omits it.
+> **Status: v1 slice implemented; hardening, bounded visual presets, Slate UI,
+> and fixed lyric-caption presets complete.** End-to-end rendering and shutdown
+> cleanup are verified with a libass-enabled ffmpeg. The design is recorded in
+> [`SPEC.md`](./SPEC.md). Burn-in requires an ffmpeg with libass (see setup) —
+> the stock Homebrew formula omits it.
 
 ## What it does (v1)
 
@@ -27,7 +27,8 @@ Full scope, deferred roadmap, and the decision log are in [`SPEC.md`](./SPEC.md)
 
 RiceClipper **does not post, publish, or upload content anywhere.** It reads
 local files and writes local files. Posting — and its approval gate — belongs to
-RicePoster, at the future integration point. See `SPEC.md` §3.
+RicePoster, which separately pulls from RiceClipper's local handoff. See
+`SPEC.md` §3.
 
 ## Stack
 

@@ -39,6 +39,11 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   per-clip human-in-the-loop gate is unchanged.
 
 ### Changed
+- **Slate browser interface.** Reworked the local review UI into the ratified
+  dark, compact editing-console layout with rice-grey interaction states,
+  treatment-preview cards, the selected rice-and-shears production mark, and
+  responsive/accessibility hardening while preserving the existing API,
+  render, batch, and handoff contracts.
 - **Lyric caption preset addition.** Added four fixed, selectable lyric
   treatments: Lyric Block (italic Avenir Next Condensed with cyan highlight),
   Velvet Serif (Bodoni 72 with red highlight), Powder (DIN Condensed font with
