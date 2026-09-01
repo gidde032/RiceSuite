@@ -93,6 +93,10 @@ input[type="file"]::file-selector-button { margin-right: 10px; border: 1px solid
 .sample-sunset { color: #ff9a76; }
 .sample-mono { color: #d6c5ff; font-family: ui-monospace, monospace; font-weight: 500; }
 .sample-editorial { color: #fff0a6; font-family: Georgia, serif; }
+.sample-lyric-block { color: #00e5ff; font-family: "Avenir Next Condensed", "Arial Narrow", sans-serif; font-weight: 800; font-style: italic; }
+.sample-velvet-serif { color: #ff3654; font-family: "Bodoni 72", Georgia, serif; font-weight: 400; }
+.sample-din-condensed { color: #a8c7e8; font-family: "DIN Condensed", "Arial Narrow", sans-serif; font-weight: 800; }
+.sample-baskerville { color: #00a7a7; font-family: Baskerville, Georgia, serif; font-weight: 400; }
 
 .switch-label { display: flex; min-height: 44px; padding: 0 !important; align-items: center; gap: 10px; font-size: 14px !important; font-weight: 400 !important; letter-spacing: 0 !important; text-transform: none !important; }
 .switch-label input { width: 38px; height: 22px; accent-color: var(--rice); }

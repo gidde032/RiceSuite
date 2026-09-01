@@ -34,6 +34,7 @@ class StyleConfig:
     font: str = "Arial"
     font_size: int = 96
     bold: bool = True
+    italic: bool = False
     primary_color: str = "FFFFFF"  # base word colour, RRGGBB
     highlight_color: str = "35E36B"  # active word colour, RRGGBB
     outline_color: str = "000000"
@@ -63,6 +64,10 @@ CAPTION_STYLE_NAMES = (
     "sunset",
     "mono",
     "editorial",
+    "lyric_block",
+    "velvet_serif",
+    "din_condensed",
+    "baskerville",
 )
 HEADER_STYLE_NAMES = ("plain", "black_plate", "white_plate")
 
@@ -125,6 +130,45 @@ _CAPTION_PRESETS: dict[str, dict[str, object]] = {
         "outline": 5,
         "shadow": 3,
         "caption_margin_v": 350,
+    },
+    "lyric_block": {
+        "font": "Avenir Next Condensed",
+        "font_size": 100,
+        "italic": True,
+        "primary_color": "F7F3EE",
+        "highlight_color": "00E5FF",
+        "outline": 5,
+        "shadow": 3,
+        "caption_margin_v": 340,
+    },
+    "velvet_serif": {
+        "font": "Bodoni 72",
+        "font_size": 92,
+        "bold": False,
+        "primary_color": "FFF8F0",
+        "highlight_color": "FF3654",
+        "outline": 3,
+        "shadow": 2,
+        "caption_margin_v": 355,
+    },
+    "din_condensed": {
+        "font": "DIN Condensed",
+        "font_size": 100,
+        "primary_color": "F7F3EE",
+        "highlight_color": "A8C7E8",
+        "outline": 5,
+        "shadow": 3,
+        "caption_margin_v": 340,
+    },
+    "baskerville": {
+        "font": "Baskerville",
+        "font_size": 92,
+        "bold": False,
+        "primary_color": "FFF8F0",
+        "highlight_color": "00A7A7",
+        "outline": 3,
+        "shadow": 2,
+        "caption_margin_v": 355,
     },
 }
 
@@ -276,7 +320,7 @@ def build_ass(
         f"Style: Caption,{style.font},{style.font_size},"
         f"{_style_color(style.primary_color)},{_style_color(style.highlight_color)},"
         f"{_style_color(style.outline_color)},{_style_color('000000')},"
-        f"{-1 if style.bold else 0},0,0,0,100,100,0,0,"
+        f"{-1 if style.bold else 0},{-1 if style.italic else 0},0,0,100,100,0,0,"
         f"1,{style.outline},{style.shadow},2,60,60,{style.caption_margin_v},1"
     )
     # BorderStyle 3 = opaque box; BorderStyle 1 = plain text with an outline.
