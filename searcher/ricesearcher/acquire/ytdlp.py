@@ -34,13 +34,24 @@ class YtDlpAcquirer:
         out_dir.mkdir(parents=True, exist_ok=True)
         opts = {
             "outtmpl": str(out_dir / "%(id)s.%(ext)s"),
-            "format": "mp4/best",
+            # A transcription-first tool MUST get audio: YouTube serves video and
+            # audio as separate DASH streams, so select the best of each and let
+            # ffmpeg merge them. The bare "mp4/best" fallback can yield a
+            # video-only stream (no audio → transcription fails).
+            "format": "bestvideo*+bestaudio/best",
+            "merge_output_format": "mp4",
             "quiet": True,
             "noplaylist": True,
         }
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(request, download=True)
-            media_path = Path(ydl.prepare_filename(info))
+            # After a merge, the real output path is in requested_downloads;
+            # prepare_filename can still report a pre-merge extension.
+            downloads = info.get("requested_downloads") or []
+            if downloads and downloads[0].get("filepath"):
+                media_path = Path(downloads[0]["filepath"])
+            else:
+                media_path = Path(ydl.prepare_filename(info))
         return AcquiredSource(
             kind=SourceKind.YOUTUBE,
             ref=request,

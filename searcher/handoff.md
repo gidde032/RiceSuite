@@ -19,11 +19,17 @@ Last updated: 2026-09-02.
 
 ## Next action
 
-Finish Phase 1 on PR #10: (1) exercise the **real yt-dlp + faster-whisper adapters**
-against a live pull off-CI and record evidence (note: faster-whisper on Python 3.14
-may need a version check — CI runs 3.12); (2) run independent review (3 reviewers
-incl. standing skeptic); (3) repair findings with fail-before-fix regressions; then
-mark PR ready. **Merge is maintainer-only.**
+**Phase 1 / PR #10 is review-ready pending maintainer merge.** Done: independent
+3-reviewer cold review → approved repair batch (C1–C3, S1–S5) landed with
+fail-before-fix regressions; deferred D1→#2, D2→#5. **Live pull confirmed** off-CI:
+real yt-dlp (video+audio merge) + faster-whisper transcribed "Me at the zoo" (35
+words) end-to-end; `list`/`show` work. faster-whisper + ctranslate2 4.8.2 install &
+import fine on Python 3.14 (earlier concern cleared). Two live-surfaced adapter bugs
+fixed: yt-dlp needed `bestvideo*+bestaudio` merge (was pulling video-only), and the
+transcriber now raises a clear error on audio-less input.
+
+Remaining: maintainer marks PR #10 ready + merges (maintainer-only), then Phase 2
+(Extract + score, Issue #2). **Merge is maintainer-only.**
 
 ## Reserved from the agent (maintainer-only)
 

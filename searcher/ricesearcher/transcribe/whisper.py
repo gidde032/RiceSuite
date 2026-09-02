@@ -27,7 +27,15 @@ class WhisperTranscriber:
 
     def transcribe(self, media_path: Path) -> list[TranscriptWord]:  # pragma: no cover
         model = self._load()
-        segments, _info = model.transcribe(str(media_path), word_timestamps=True)
+        try:
+            segments, _info = model.transcribe(str(media_path), word_timestamps=True)
+        except IndexError as exc:
+            # faster-whisper's PyAV demux raises a bare IndexError when the file
+            # has no decodable audio stream. Surface a clear, actionable error.
+            raise RuntimeError(
+                f"no decodable audio stream in {media_path.name}; "
+                "the source must contain audio to transcribe"
+            ) from exc
         words: list[TranscriptWord] = []
         for seg in segments:
             for w in seg.words or []:
