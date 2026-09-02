@@ -1,0 +1,16 @@
+# RiceSearcher — runtime dependencies.
+# The heavy adapters are imported lazily; install them to enable those doors.
+#
+# ffmpeg is a SYSTEM dependency (used by yt-dlp and faster-whisper).
+
+# Acquisition (D1) — the yt-dlp door:
+yt-dlp>=2024.1.0
+
+# Transcription (D3) — reuse RiceClipper's local stack:
+faster-whisper>=1.1.1
+
+# Scoring (D4, Phase 2) — enable when the scorer lands:
+# anthropic
+
+# Dedup embeddings (D6, Phase 3) — enable when dedup lands:
+# sentence-transformers

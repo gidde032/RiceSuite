@@ -1,0 +1,30 @@
+[project]
+name = "ricesearcher"
+version = "0.1.0"
+description = "Content-sourcing pillar of the Rice harness: discovery + transcript-driven extraction into a scored, deduplicated candidate-slice library."
+requires-python = ">=3.11"
+# Runtime deps are declared in requirements.txt. The heavy adapters
+# (faster-whisper, yt-dlp) are imported lazily so the core + tests run without them.
+dependencies = []
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["ricesearcher*"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, isort, pyupgrade, bugbear, comprehensions.
+select = ["E", "F", "I", "UP", "B", "C4"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Coverage floor calibrated against the Phase-1 walking skeleton (OQ-1: measured
+# 98.2%). Floored at 90% — comfortably under measured, with headroom for the
+# harder-to-test scoring/UI code in later phases. Ratchet up as coverage proves out.
+addopts = "--cov=ricesearcher --cov-report=term-missing --cov-fail-under=90"
