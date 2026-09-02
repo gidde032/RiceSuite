@@ -27,11 +27,16 @@ caches it content-addressed, transcribes it word-by-word, and stores it in the
 local SQLite library.
 
 ```bash
-ricesearcher pull https://youtu.be/VIDEO_ID   # or: python -m ricesearcher pull ...
-ricesearcher pull ./interview.mp4             # local file (watch-folder door)
-ricesearcher list                             # list library sources
-ricesearcher show <id-or-prefix>              # print a source's transcript
+# Quote YouTube URLs — the `?` in a URL is a shell glob character (zsh will
+# otherwise error "no matches found" before the command even runs):
+ricesearcher pull "https://www.youtube.com/watch?v=VIDEO_ID"
+ricesearcher pull "https://youtu.be/VIDEO_ID"     # short form also works
+ricesearcher pull ./interview.mp4                 # local file (watch-folder door)
+ricesearcher list                                 # list library sources
+ricesearcher show <id-or-prefix>                  # print a source's transcript
 ```
+
+(`python -m ricesearcher <cmd> …` works identically if you prefer.)
 
 Data lives under `~/.ricesearcher` by default (override with
 `RICESEARCHER_DATA_DIR`). Nothing is written outside that root.
