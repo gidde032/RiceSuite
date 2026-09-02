@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+*.egg-info/
+
+# Local session scratch (never a second backlog)
+TASKS.md
+
+# Secrets / config
+credentials.env
+*.env
+!*.env.example
+
+# Local data — never commit source media, the library, or handoff batches
+media/
+cache/
+*.sqlite
+*.sqlite3
+*.db
+handoff/
+riceclipper-handoff/
+
+# OS
+.DS_Store
