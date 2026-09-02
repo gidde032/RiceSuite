@@ -27,9 +27,5 @@ mark PR ready. **Merge is maintainer-only.**
 
 ## Reserved from the agent (maintainer-only)
 
-Merge, publish, deploy, repository-visibility change, tag/release.
-
-## Reserved from the agent (maintainer-only)
-
 Merge, publish, deploy, repository-visibility change, tag/release. Everything else
 in the ratified setup + Phase 1 is authorized.

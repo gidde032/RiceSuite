@@ -40,6 +40,12 @@ def _cmd_pull(args: argparse.Namespace) -> int:
         except NoAcquirerError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
+        except Exception as exc:  # noqa: BLE001 - CLI boundary: any pipeline
+            # failure (missing file, transcription/network/OS error) becomes a
+            # clean message + exit 2, matching the rest of the CLI's contract
+            # instead of dumping a raw traceback.
+            print(f"error: pull failed: {exc}", file=sys.stderr)
+            return 2
     print(f"pulled {source.id[:12]}  {source.kind.value}  {source.title!r}")
     print(f"  {len(source.words)} transcript words, {source.duration_s:.0f}s")
     return 0

@@ -1,8 +1,13 @@
 """SQLite library index (SPEC §6).
 
 Phase 1 persists sources and their word-level transcripts. The candidate-slice
-tables (score, dedup, window, status) are added in Phase 2/3 via additive
-migrations keyed on ``schema_version``.
+tables (score, dedup, window, status) land in Phase 2/3.
+
+``schema_version`` is recorded but there is **no upgrade machinery yet**: today's
+``_migrate`` only runs ``CREATE TABLE IF NOT EXISTS`` and records the version
+once. When Phase 2 adds tables it must also add real version-detection and an
+upgrade path here (tracked on Issue #2); until then the stored version is just a
+forward-compatibility marker.
 """
 
 from __future__ import annotations
@@ -49,8 +54,14 @@ class Library:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(self.db_path)
         self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA foreign_keys = ON")
-        self._migrate()
+        try:
+            self._conn.execute("PRAGMA foreign_keys = ON")
+            self._migrate()
+        except Exception:
+            # Don't leak the connection if setup fails (e.g. a corrupt db file):
+            # the object is never fully constructed, so no caller can reach close().
+            self._conn.close()
+            raise
 
     def _migrate(self) -> None:
         self._conn.executescript(_SCHEMA)
@@ -118,8 +129,12 @@ class Library:
         Returns the id on a unique match, ``None`` on no match, and raises on an
         ambiguous prefix so the caller never acts on the wrong source.
         """
+        # Literal prefix match: substr(...) avoids LIKE treating a '%' or '_' in
+        # the prefix as a wildcard (real ids are hex, but the query must be
+        # correct against its own contract regardless of input).
         rows = self._conn.execute(
-            "SELECT id FROM sources WHERE id LIKE ? || '%'", (prefix,)
+            "SELECT id FROM sources WHERE substr(id, 1, length(?)) = ?",
+            (prefix, prefix),
         ).fetchall()
         if not rows:
             return None
