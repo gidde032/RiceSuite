@@ -1,0 +1,111 @@
+"""RiceSearcher CLI (SPEC §8, D7) — CLI-first before the Slate review UI.
+
+Commands: ``pull`` (acquire+transcribe a source into the library), ``list``
+(show sources), ``show`` (print a source's transcript). Never posts or uploads.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from collections.abc import Sequence
+
+from ricesearcher.acquire.watchfolder import WatchFolderAcquirer
+from ricesearcher.acquire.ytdlp import YtDlpAcquirer
+from ricesearcher.config import load_config
+from ricesearcher.library.cache import MediaCache
+from ricesearcher.library.store import Library
+from ricesearcher.pipeline import NoAcquirerError, pull
+from ricesearcher.transcribe.whisper import WhisperTranscriber
+
+
+def _default_acquirers() -> list:
+    # Order matters: local files first (cheap check), then URL.
+    return [WatchFolderAcquirer(), YtDlpAcquirer()]
+
+
+def _cmd_pull(args: argparse.Namespace) -> int:
+    cfg = load_config()
+    cfg.ensure_dirs()
+    cache = MediaCache(cfg.cache_dir)
+    with Library(cfg.db_path) as lib:
+        try:
+            source = pull(
+                args.request,
+                acquirers=_default_acquirers(),
+                transcriber=WhisperTranscriber(model_size=args.model),
+                cache=cache,
+                library=lib,
+            )
+        except NoAcquirerError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        except Exception as exc:  # noqa: BLE001 - CLI boundary: any pipeline
+            # failure (missing file, transcription/network/OS error) becomes a
+            # clean message + exit 2, matching the rest of the CLI's contract
+            # instead of dumping a raw traceback.
+            print(f"error: pull failed: {exc}", file=sys.stderr)
+            return 2
+    print(f"pulled {source.id[:12]}  {source.kind.value}  {source.title!r}")
+    print(f"  {len(source.words)} transcript words, {source.duration_s:.0f}s")
+    return 0
+
+
+def _cmd_list(_args: argparse.Namespace) -> int:
+    cfg = load_config()
+    cfg.ensure_dirs()
+    with Library(cfg.db_path) as lib:
+        sources = lib.list_sources()
+    if not sources:
+        print("library is empty")
+        return 0
+    for s in sources:
+        print(f"{s.id[:12]}  {s.kind.value:7}  {s.acquired_at:20}  {s.title!r}")
+    return 0
+
+
+def _cmd_show(args: argparse.Namespace) -> int:
+    cfg = load_config()
+    with Library(cfg.db_path) as lib:
+        try:
+            full_id = lib.resolve_source_id(args.source_id)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        source = lib.get_source(full_id) if full_id else None
+    if source is None:
+        print(f"error: no source {args.source_id!r}", file=sys.stderr)
+        return 2
+    print(f"# {source.title}  ({source.kind.value})")
+    print(f"ref: {source.ref}")
+    print(source.transcript_text or "(no transcript)")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="ricesearcher")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p_pull = sub.add_parser("pull", help="acquire + transcribe a source")
+    p_pull.add_argument("request", help="a YouTube URL or a local media file path")
+    p_pull.add_argument("--model", default="small", help="faster-whisper model size")
+    p_pull.set_defaults(func=_cmd_pull)
+
+    p_list = sub.add_parser("list", help="list library sources")
+    p_list.set_defaults(func=_cmd_list)
+
+    p_show = sub.add_parser("show", help="print a source's transcript")
+    p_show.add_argument("source_id", help="a source id (or its 12-char prefix)")
+    p_show.set_defaults(func=_cmd_show)
+
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

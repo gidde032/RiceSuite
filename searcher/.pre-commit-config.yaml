@@ -1,0 +1,17 @@
+# Auto-fix at commit time (bootstrap Step 4: auto-fix belongs at commit, not CI).
+# Install once with: pre-commit install
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.5
+    hooks:
+      - id: ruff          # lint, with --fix
+        args: [--fix]
+      - id: ruff-format   # format
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-added-large-files  # guard against committing media into git
+        args: [--maxkb=512]
+      - id: check-merge-conflict
