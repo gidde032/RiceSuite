@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from ricesearcher.acquire.watchfolder import WatchFolderAcquirer
 from ricesearcher.acquire.ytdlp import YtDlpAcquirer
 from ricesearcher.beat.profile import load_profile
-from ricesearcher.config import load_config
+from ricesearcher.config import load_config, load_env_files
 from ricesearcher.library.cache import MediaCache
 from ricesearcher.library.store import Library
 from ricesearcher.pipeline import NoAcquirerError, extract_and_score, pull
@@ -189,6 +189,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    load_env_files()  # pick up ANTHROPIC_API_KEY from a local credentials.env/.env
     parser = build_parser()
     args = parser.parse_args(argv)
     return args.func(args)

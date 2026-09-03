@@ -46,3 +46,30 @@ def load_config() -> Config:
     data_dir = Path(os.getenv(_DATA_ENV) or _DEFAULT_DATA_DIR).expanduser()
     handoff_dir = Path(os.getenv(_HANDOFF_ENV) or _DEFAULT_HANDOFF_DIR).expanduser()
     return Config(data_dir=data_dir, handoff_dir=handoff_dir)
+
+
+# Dotenv-style files loaded (from the current directory) before a command runs,
+# so secrets like ANTHROPIC_API_KEY can live in a gitignored file instead of the
+# shell. Both are gitignored; only the tracked ``.example`` is committed.
+_ENV_FILES = ("credentials.env", ".env")
+
+
+def load_env_files() -> None:
+    """Load ``KEY=VALUE`` lines from local env files into ``os.environ``.
+
+    Never overrides a variable already set in the real environment (an explicit
+    ``export`` wins), and silently ignores blank lines, comments, and malformed
+    lines. Zero dependencies — this is not a full dotenv implementation.
+    """
+    for name in _ENV_FILES:
+        path = Path(name)
+        if not path.is_file():
+            continue
+        for raw in path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            if key:
+                os.environ.setdefault(key, value.strip().strip('"').strip("'"))

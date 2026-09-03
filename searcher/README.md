@@ -20,6 +20,15 @@ pip install -r requirements-dev.txt # ruff + pytest (for the gates)
 
 `ffmpeg` is a system dependency (used by yt-dlp and faster-whisper).
 
+### API key (scoring only)
+
+`ricesearcher score` calls the Anthropic API — the **only** paid API in the
+project. Provide `ANTHROPIC_API_KEY` either by exporting it, or by copying
+[`credentials.env.example`](credentials.env.example) to `credentials.env` (gitignored)
+and filling it in; RiceSearcher loads that file automatically. The scorer defaults
+to the lower-cost `claude-sonnet-4-6`; set `RICESEARCHER_SCORER_MODEL=claude-haiku-4-5`
+(or pass `--model`) to go cheaper still.
+
 ## Usage
 
 `pull` acquires a source (a YouTube URL via yt-dlp, or a local media file),

@@ -15,7 +15,10 @@ from ricesearcher.beat.profile import BeatProfile
 from ricesearcher.models import CandidateWindow
 from ricesearcher.score.base import ScoredResult
 
-_DEFAULT_MODEL = "claude-sonnet-5"
+# Scoring is a bounded shortlist-ranking task, so default to a lower-cost model
+# (maintainer decision). Override with RICESEARCHER_SCORER_MODEL or --model; e.g.
+# `claude-haiku-4-5` is cheaper still ($1/$5 per 1M vs. sonnet-4-6's $3/$15).
+_DEFAULT_MODEL = "claude-sonnet-4-6"
 _MODEL_ENV = "RICESEARCHER_SCORER_MODEL"
 
 
