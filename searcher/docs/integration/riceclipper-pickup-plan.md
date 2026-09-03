@@ -65,7 +65,14 @@ RicePoster's `backend/handoff_pickup.py` pattern:
    integer `position`s, string file/text fields — every malformed field → a
    controlled error and **zero** writes (RicePoster finding M-02).
 3. **Dedupe by `batch_id`** with a durable consumed-ID registry so a batch is
-   never ingested twice, including across restarts (RicePoster H-04).
+   never ingested twice, including across restarts (RicePoster H-04). **Also be
+   robust to the same source content arriving under two different `batch_id`s:**
+   RiceSearcher's writer has an accepted residual two-phase gap (batch written to
+   disk, then slices marked `handed_off` in a separate DB transaction — a crash
+   between them lets a retry re-deliver the same clips as a new batch; see
+   SPEC §7). So prefer a content-level idempotency signal (e.g. `source_ref` +
+   `source_window`) in addition to `batch_id`, or surface likely-duplicate
+   review cards rather than silently ingesting both.
 4. **Durable custody before purge** (RicePoster H-02): copy each clip into
    RiceClipper's own working dir and persist a recoverable pending record
    (clip files + `clip.target_in/out` + transcript + provenance) **before**

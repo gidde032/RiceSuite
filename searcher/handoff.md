@@ -38,13 +38,13 @@ button in the review UI (`POST /api/handoff`). **RiceClipper "Pull from Searcher
 consumer is PLANNED in `docs/integration/riceclipper-pickup-plan.md` (Issue #8) — to
 build after Phase 5 merges, as the targeted RiceClipper edit that wraps v1.**
 
-### PR #14 repair batch IN PROGRESS (3-reviewer cold review done, approved 2026-09-03)
-Safety confirmed clean. Fixes (commit each, small pieces):
-- [ ] **H1** partial-mark: add `Library.bulk_update_status(ids, status)` (one txn); use in `hand_off_selected` instead of the per-slice loop.
-- [ ] **L1/L2/L3** (writer.py): reject inverted/degenerate clip window in `_manifest_clip`; guard `shutil.rmtree` cleanup so the original error propagates; `mkdir` collision → `HandoffError`.
-- [ ] **H2** concurrent handoff: in-process lock around the `/api/handoff` op; disable the UI "Send selected" button while in-flight.
-- [ ] **D1** reconcile `SPEC.md §7` manifest to `source_window` + `clip`; document the residual two-phase (FS-write-then-DB-mark) gap in SPEC §7 + `docs/integration/riceclipper-pickup-plan.md` (consumer should be content-idempotent, not just batch_id).
-Each fix gets a fail-before-fix regression. Then post the public-safe review summary on PR #14 and update this handoff to review-ready.
+### PR #14 repairs DONE (3-reviewer cold review; approved 2026-09-03). Review-ready.
+Safety confirmed clean by all three. All fixes landed with regressions:
+- [x] **H1** atomic mark (`Library.bulk_update_status`, one txn).
+- [x] **L1/L2/L3** reject inverted clip window; guard rmtree; mkdir collision → HandoffError.
+- [x] **H2** in-process lock around `/api/handoff` + UI button disabled in-flight.
+- [x] **D1** SPEC §7 reconciled (source_window + clip) + residual two-phase gap documented (SPEC §7 + pickup plan → consumer content-idempotency).
+128 tests, ~96.1% cov, ruff + JS clean. CI green on the pre-repair head; re-verify on the repair commits.
 
 **Maintainer to do:** (1) live-test `ricesearcher handoff` on a real selected library
 (needs ffmpeg — already a system dep); (2) mark the Phase-5 PR ready + merge; then the
