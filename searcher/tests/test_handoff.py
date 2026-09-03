@@ -241,3 +241,63 @@ def test_ui_handoff_endpoint(tmp_path: Path, monkeypatch) -> None:
     assert r.json()["clip_count"] == 1
     # slice a is now handed_off (gone from the selected view)
     assert client.get("/api/slices?status=selected").json() == []
+
+
+# -- Repair regressions (H1, L1, L2, L3) --------------------------------------
+
+
+def test_h1_all_selected_marked_atomically(tmp_path: Path) -> None:
+    cfg, lib = _lib_with_selected(tmp_path)
+    # add a second selected slice
+    lib.upsert_slices(
+        [
+            CandidateSlice(
+                id="c",
+                source_id="s1",
+                pad_in=0,
+                pad_out=20,
+                target_in=2,
+                target_out=18,
+                transcript_span="c",
+                score=0.7,
+                status=SliceStatus.SELECTED,
+            ),
+        ]
+    )
+    hand_off_selected(lib, extractor=FakeExtractor(), config=cfg)
+    assert lib.get_slice("a").status is SliceStatus.HANDED_OFF
+    assert lib.get_slice("c").status is SliceStatus.HANDED_OFF
+    lib.close()
+
+
+def test_l1_inverted_window_rejected(tmp_path: Path) -> None:
+    e = _entry(tmp_path)
+    e.target_in, e.target_out = 40.0, 10.0  # reversed
+    with pytest.raises(HandoffError):
+        write_batch([e], extractor=FakeExtractor(), root=tmp_path / "h")
+
+
+def test_l2_rmtree_failure_does_not_mask_original(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        writer_mod.shutil,
+        "rmtree",
+        lambda *a, **k: (_ for _ in ()).throw(OSError("busy")),
+    )
+    with pytest.raises(RuntimeError):  # the extractor error, NOT the rmtree OSError
+        write_batch(
+            [_entry(tmp_path)], extractor=FakeExtractor(fail=True), root=tmp_path / "h"
+        )
+
+
+def test_l3_batch_id_collision_is_handoff_error(tmp_path: Path, monkeypatch) -> None:
+    import datetime
+
+    fixed = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+    monkeypatch.setattr(writer_mod, "_now", lambda: fixed)
+    monkeypatch.setattr(
+        writer_mod.uuid, "uuid4", lambda: __import__("uuid").UUID(int=0)
+    )
+    root = tmp_path / "h"
+    write_batch([_entry(tmp_path)], extractor=FakeExtractor(), root=root)
+    with pytest.raises(HandoffError):
+        write_batch([_entry(tmp_path)], extractor=FakeExtractor(), root=root)

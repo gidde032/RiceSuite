@@ -290,6 +290,18 @@ class Library:
             )
         return cur.rowcount > 0
 
+    def bulk_update_status(self, slice_ids: list[str], status: SliceStatus) -> None:
+        """Set ``status`` on many slices in ONE transaction (all-or-nothing).
+
+        Used by the handoff so a crash can't leave some slices marked and others
+        not (which a retry would then re-deliver) — review finding H1.
+        """
+        with self._conn:
+            self._conn.executemany(
+                "UPDATE candidate_slices SET status = ? WHERE id = ?",
+                [(status.value, sid) for sid in slice_ids],
+            )
+
     def update_slice_window(
         self, slice_id: str, target_in: float, target_out: float
     ) -> bool:

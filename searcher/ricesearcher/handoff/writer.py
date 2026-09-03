@@ -77,13 +77,25 @@ def write_batch(
     if batch_dir.parent != root:
         raise HandoffError("resolved batch directory escapes the handoff root")
 
-    batch_dir.mkdir()
+    try:
+        batch_dir.mkdir()
+    except FileExistsError as exc:  # batch_id collision (negligibly rare)
+        raise HandoffError(f"batch id {batch_id} already exists") from exc
     try:
         manifest_clips = []
         for entry in sorted(entries, key=lambda e: e.position):
             source = Path(entry.source_media)
             if not source.is_file():
                 raise HandoffError(f"clip {entry.position}: source media missing")
+            # Refuse a degenerate/inverted window rather than emit a reversed
+            # clip range downstream (finding L1).
+            if not (
+                entry.pad_in <= entry.target_in < entry.target_out <= entry.pad_out
+            ):
+                raise HandoffError(
+                    f"clip {entry.position}: invalid window "
+                    f"(need pad_in<=target_in<target_out<=pad_out)"
+                )
             filename = f"clip_{entry.position}.mp4"
             dest = (batch_dir / filename).resolve()
             if dest.parent != batch_dir:
@@ -104,7 +116,11 @@ def write_batch(
         os.replace(tmp, batch_dir / "manifest.json")
     except Exception:
         # Leave no half-written batch behind (integration-ledger lesson M-05).
-        shutil.rmtree(batch_dir, ignore_errors=True)
+        # Guard cleanup so a rmtree failure can't mask the original error (L2).
+        try:
+            shutil.rmtree(batch_dir, ignore_errors=True)
+        except Exception:
+            pass
         raise
 
     return {"batch_id": batch_id, "clip_count": len(manifest_clips)}
@@ -191,7 +207,12 @@ def hand_off_selected(
     result = write_batch(
         entries, extractor=extractor or FfmpegClipExtractor(), root=cfg.handoff_dir
     )
-    # Custody handed off only after the manifest is durably written.
-    for sl in ordered:
-        library.update_slice_status(sl.id, SliceStatus.HANDED_OFF)
+    # Custody handed off only after the manifest is durably written, and in ONE
+    # transaction so a crash can't leave a partial mark (finding H1). NOTE: the
+    # file write and this DB mark are two phases with no shared transaction, so a
+    # crash strictly between them leaves a complete batch on disk with the slices
+    # still selected — a retry would re-deliver them as a new batch. The window is
+    # tiny (a human-driven action) and the RiceClipper consumer should be robust
+    # to the same content arriving twice (see the pickup plan / SPEC §7).
+    library.bulk_update_status([sl.id for sl in ordered], SliceStatus.HANDED_OFF)
     return result
