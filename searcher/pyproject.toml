@@ -25,6 +25,11 @@ target-version = "py311"
 # pycodestyle, pyflakes, isort, pyupgrade, bugbear, comprehensions.
 select = ["E", "F", "I", "UP", "B", "C4"]
 
+[tool.ruff.lint.isort]
+# Pin first-party so import ordering is identical locally and in CI (where the
+# editable install can make auto-detection classify `ricesearcher` differently).
+known-first-party = ["ricesearcher"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Coverage floor calibrated against the Phase-1 walking skeleton (OQ-1: measured
