@@ -13,6 +13,12 @@ from datetime import UTC, datetime
 
 from ricesearcher.acquire.base import Acquirer
 from ricesearcher.beat.profile import BeatProfile
+from ricesearcher.dedup.annotate import (
+    OVERLAP_THRESHOLD,
+    SIM_THRESHOLD,
+    annotate_duplicates,
+)
+from ricesearcher.dedup.base import Embedder
 from ricesearcher.extract.prefilter import DEFAULT_TOP_K, prefilter
 from ricesearcher.library.cache import MediaCache
 from ricesearcher.library.store import Library
@@ -140,3 +146,32 @@ def extract_and_score(
     fresh = [s for s in slices if s.id not in protected]
     library.upsert_slices(fresh)
     return fresh
+
+
+def annotate_library_duplicates(
+    library: Library,
+    embedder: Embedder,
+    *,
+    sim_threshold: float = SIM_THRESHOLD,
+    overlap_threshold: float = OVERLAP_THRESHOLD,
+) -> list[CandidateSlice]:
+    """Recompute advisory duplicate annotations across the whole library (FR-6).
+
+    Embeds every slice's transcript span, annotates duplicates (intra-source by
+    time overlap, cross-source by embedding similarity), and persists the updated
+    ``dup_*`` fields. This is a SIGNAL only — no slice is removed, hidden, or
+    reordered; re-running it recomputes from scratch (idempotent).
+    """
+    slices = library.list_slices()
+    if not slices:
+        return []
+    vectors = embedder.embed([s.transcript_span for s in slices])
+    embeddings = {s.id: v for s, v in zip(slices, vectors, strict=True)}
+    annotated = annotate_duplicates(
+        slices,
+        embeddings,
+        sim_threshold=sim_threshold,
+        overlap_threshold=overlap_threshold,
+    )
+    library.upsert_slices(annotated)
+    return annotated

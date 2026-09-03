@@ -256,6 +256,12 @@ class Library:
 
         Used before a re-score so a shrunk shortlist leaves no orphans; slices a
         human has moved past ``candidate`` (reviewed/selected/...) are untouched.
+
+        Note (review finding C4, deferred): this can remove a slice whose id is
+        still referenced by another slice's ``dup_of`` (there is no FK on
+        ``dup_of``). The dangling reference is display-only and self-heals on the
+        next ``dedup`` run, which recomputes annotations from scratch — so re-run
+        ``dedup`` after a re-score.
         """
         with self._conn:
             self._conn.execute(

@@ -14,9 +14,16 @@ from ricesearcher.acquire.watchfolder import WatchFolderAcquirer
 from ricesearcher.acquire.ytdlp import YtDlpAcquirer
 from ricesearcher.beat.profile import load_profile
 from ricesearcher.config import load_config, load_env_files
+from ricesearcher.dedup.annotate import SIM_THRESHOLD
+from ricesearcher.dedup.embed import SentenceTransformerEmbedder
 from ricesearcher.library.cache import MediaCache
 from ricesearcher.library.store import Library
-from ricesearcher.pipeline import NoAcquirerError, extract_and_score, pull
+from ricesearcher.pipeline import (
+    NoAcquirerError,
+    annotate_library_duplicates,
+    extract_and_score,
+    pull,
+)
 from ricesearcher.score.anthropic_scorer import AnthropicScorer
 from ricesearcher.transcribe.whisper import WhisperTranscriber
 
@@ -145,12 +152,47 @@ def _cmd_slices(args: argparse.Namespace) -> int:
         print("no scored slices")
         return 0
     for s in slices:
-        span = s.transcript_span[:48].replace("\n", " ")
+        span = s.transcript_span[:44].replace("\n", " ")
         title = (titles.get(s.source_id, "") or s.source_id[:8])[:22]
+        dup = f"~{s.dup_kind}" if s.dup_of else ""  # advisory duplicate flag
         print(
-            f"{s.score:.2f}  {s.rights_risk:4}  {title:22}  "
+            f"{s.score:.2f}  {dup:6}  {s.rights_risk:4}  {title:22}  "
             f"{s.target_in:6.0f}-{s.target_out:<6.0f}s  {span!r}"
         )
+    return 0
+
+
+def _slice_label(slice_, titles: dict[str, str]) -> str:
+    """Human-identifiable one-liner: source title @ window + transcript snippet."""
+    title = (titles.get(slice_.source_id) or f"src {slice_.source_id[:8]}")[:34]
+    span = slice_.transcript_span[:56].replace("\n", " ")
+    return f"{title!r} @ {slice_.target_in:.0f}-{slice_.target_out:.0f}s  {span!r}"
+
+
+def _cmd_dedup(args: argparse.Namespace) -> int:
+    cfg = load_config()
+    cfg.ensure_dirs()
+    with Library(cfg.db_path) as lib:
+        try:
+            annotated = annotate_library_duplicates(
+                lib, SentenceTransformerEmbedder(), sim_threshold=args.threshold
+            )
+        except Exception as exc:  # noqa: BLE001 - CLI boundary: clean message
+            print(f"error: dedup failed: {exc}", file=sys.stderr)
+            return 2
+        titles = lib.source_titles()
+    by_id = {s.id: s for s in annotated}
+    flagged = sorted((s for s in annotated if s.dup_of), key=lambda s: -s.dup_score)
+    print(
+        f"dedup (threshold {args.threshold}): {len(flagged)} of {len(annotated)} "
+        "slices flagged as possible duplicates (advisory only — nothing removed)"
+    )
+    for s in flagged:
+        canon = by_id.get(s.dup_of)
+        print(f"\n  [{s.dup_kind} {s.dup_score:.2f}]")
+        print(f"    this:    {_slice_label(s, titles)}")
+        canon_label = _slice_label(canon, titles) if canon else f"(missing {s.dup_of})"
+        print(f"    ~dup of: {canon_label}")
     return 0
 
 
@@ -184,6 +226,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--source", default=None, help="filter to one source id (or prefix)"
     )
     p_slices.set_defaults(func=_cmd_slices)
+
+    p_dedup = sub.add_parser(
+        "dedup", help="recompute advisory possible-duplicate annotations"
+    )
+    p_dedup.add_argument(
+        "--threshold",
+        type=float,
+        default=SIM_THRESHOLD,
+        help="cross-source cosine similarity threshold (default %(default)s)",
+    )
+    p_dedup.set_defaults(func=_cmd_dedup)
 
     return parser
 

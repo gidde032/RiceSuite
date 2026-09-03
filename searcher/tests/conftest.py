@@ -87,6 +87,27 @@ def fake_transcriber() -> FakeTranscriber:
     return FakeTranscriber()
 
 
+class FakeEmbedder:
+    """Deterministic one-hot embedder: identical texts -> cosine 1.0, else 0.0."""
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        vocab: dict[str, int] = {}
+        for t in texts:
+            vocab.setdefault(t, len(vocab))
+        dim = max(len(vocab), 1)
+        out = []
+        for t in texts:
+            v = [0.0] * dim
+            v[vocab[t]] = 1.0
+            out.append(v)
+        return out
+
+
 @pytest.fixture
 def fake_scorer() -> FakeScorer:
     return FakeScorer()
+
+
+@pytest.fixture
+def fake_embedder() -> FakeEmbedder:
+    return FakeEmbedder()
