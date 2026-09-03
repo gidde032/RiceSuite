@@ -94,7 +94,11 @@ def extract_and_score(
     results = scorer.score(windows, profile)
     created = _now_iso()
     rights = _RIGHTS_BY_KIND.get(source.kind, "med")
-    duration = source.duration_s or (source.words[-1].end if source.words else 0.0)
+    # Bound padding by the later of the reported duration and the last word's
+    # timestamp: a container/ASR mismatch must never clamp pad_out below the
+    # intended out (ADR Q4b: the padded window brackets the intended cut).
+    last_word_end = source.words[-1].end if source.words else 0.0
+    duration = max(source.duration_s, last_word_end)
 
     slices: list[CandidateSlice] = []
     for window, result in zip(windows, results, strict=True):
@@ -122,5 +126,17 @@ def extract_and_score(
                 created_at=created,
             )
         )
-    library.upsert_slices(slices)
-    return slices
+
+    # Re-scoring regenerates the candidate shortlist, so clear the source's prior
+    # candidate slices first (a smaller top_k or an edited profile would otherwise
+    # leave stale orphans). Human-touched slices (reviewed/selected/...) are never
+    # deleted, and we don't overwrite one back to candidate.
+    protected = {
+        s.id
+        for s in library.list_slices(source_id=source.id)
+        if s.status is not SliceStatus.CANDIDATE
+    }
+    library.delete_candidate_slices(source.id)
+    fresh = [s for s in slices if s.id not in protected]
+    library.upsert_slices(fresh)
+    return fresh

@@ -106,11 +106,15 @@ files only.
 
 ## 6. Library — candidate-slice schema (D5, SQLite)
 
-One row per candidate slice (indicative fields; finalized at Phase 2):
+One row per candidate slice (finalized at Phase 2). **Provenance is normalized:**
+the slice row stores only `source_id` (a foreign key into `sources`); the full
+provenance (`kind`, `ref`, `title`, `channel`, `published_at`, `acquired_at`,
+word-level transcript) is recovered by joining `sources` / `transcript_words`
+rather than copied onto every slice. The handoff writer (Phase 5) resolves these
+at write time.
 
-- `id` — stable slice id.
-- **Provenance:** `source_id`, `source_kind` (`youtube`|`local`), `source_ref`
-  (URL or file path), `source_title`, `channel`, `published_at`, `acquired_at`.
+- `id` — stable slice id (deterministic from `source_id` + the intended window).
+- **Provenance:** `source_id` (FK → `sources`).
 - **Window (ADR Q4b):** `pad_in`, `pad_out` (padded window, seconds on source
   timeline) and `target_in`, `target_out` (intended in/out — metadata, tightenable
   at review, *not* a final cut).

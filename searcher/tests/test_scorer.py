@@ -54,12 +54,18 @@ def test_parse_response_defaults_missing_indices_to_zero() -> None:
     assert results[2].score == 0.0
 
 
-def test_parse_response_tolerates_malformed_json() -> None:
-    results = parse_response("no json here at all", 2)
-    assert [r.score for r in results] == [0.0, 0.0]
+def test_parse_response_raises_on_unparseable_output() -> None:
+    # A total parse failure must raise (visible error), not silently return zeros.
+    import pytest
+
+    from ricesearcher.score.anthropic_scorer import ScorerParseError
+
+    with pytest.raises(ScorerParseError):
+        parse_response("no json here at all", 2)
 
 
 def test_parse_response_ignores_out_of_range_index() -> None:
+    # A valid array with only an out-of-range index parses fine → all default 0.
     results = parse_response('[{"index": 9, "score": 0.8, "rationale": "x"}]', 2)
     assert [r.score for r in results] == [0.0, 0.0]
 

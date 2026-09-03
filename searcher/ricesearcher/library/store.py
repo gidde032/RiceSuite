@@ -251,6 +251,26 @@ class Library:
         ).fetchone()
         return _row_to_slice(row) if row is not None else None
 
+    def delete_candidate_slices(self, source_id: str) -> None:
+        """Delete a source's slices that are still in ``candidate`` status.
+
+        Used before a re-score so a shrunk shortlist leaves no orphans; slices a
+        human has moved past ``candidate`` (reviewed/selected/...) are untouched.
+        """
+        with self._conn:
+            self._conn.execute(
+                "DELETE FROM candidate_slices "
+                "WHERE source_id = ? AND status = 'candidate'",
+                (source_id,),
+            )
+
+    def source_titles(self) -> dict[str, str]:
+        """Map source id -> title, for cheap provenance display without a join."""
+        return {
+            r["id"]: r["title"]
+            for r in self._conn.execute("SELECT id, title FROM sources")
+        }
+
     def close(self) -> None:
         self._conn.close()
 
@@ -276,6 +296,15 @@ def _row_to_source(row: sqlite3.Row, words: list[TranscriptWord]) -> Source:
     )
 
 
+def _coerce_status(value: str) -> SliceStatus:
+    """Tolerate an unknown status (e.g. a newer DB read by older code) instead of
+    letting one row raise and poison a whole ``list_slices`` result."""
+    try:
+        return SliceStatus(value)
+    except ValueError:
+        return SliceStatus.CANDIDATE
+
+
 def _row_to_slice(row: sqlite3.Row) -> CandidateSlice:
     return CandidateSlice(
         id=row["id"],
@@ -295,6 +324,6 @@ def _row_to_slice(row: sqlite3.Row) -> CandidateSlice:
         dup_score=row["dup_score"],
         dup_kind=row["dup_kind"],
         rights_risk=row["rights_risk"],
-        status=SliceStatus(row["status"]),
+        status=_coerce_status(row["status"]),
         created_at=row["created_at"],
     )

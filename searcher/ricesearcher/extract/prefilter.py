@@ -9,6 +9,7 @@ sees this shortlist, which bounds scoring cost (SPEC §5).
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 
 from ricesearcher.beat.profile import BeatProfile
@@ -20,7 +21,7 @@ MAX_S = 45.0
 GAP_S = 1.2  # a silence longer than this ends an utterance
 DEFAULT_TOP_K = 12
 
-_LAUGHTER = ("haha", "haha", "[laugh", "(laugh", "lol", "hehe")
+_LAUGHTER = ("haha", "ha ha", "[laugh", "(laugh", "lol", "hehe")
 
 
 def _segment_utterances(
@@ -60,7 +61,10 @@ def _merge_windows(
                 current = []
             windows.extend(_split_long(utt, max_s))
             continue
-        if current and dur(current) + dur(utt) > max_s:
+        # Use the REAL merged span (including the inter-utterance gap), not the
+        # sum of the two utterances' own durations, so a gap can't push a merged
+        # window past max_s.
+        if current and (utt[-1].end - current[0].start) > max_s:
             windows.append(current)
             current = utt.copy()
         else:
@@ -93,7 +97,13 @@ def _score_window(
     lowered = text.lower()
     duration = window[-1].end - window[0].start
 
-    distinct_hits = sum(1 for kw in set(profile.keywords) if kw in lowered)
+    # Word-boundary match so short keywords like "ring" don't fire on
+    # "during"/"boring"; still supports multi-word keywords ("first date").
+    distinct_hits = sum(
+        1
+        for kw in set(profile.keywords)
+        if kw and re.search(rf"\b{re.escape(kw)}\b", lowered)
+    )
     keyword = min(distinct_hits / 3.0, 1.0)
     question = 1.0 if "?" in text else 0.0
     exclaim = 1.0 if "!" in text else 0.0

@@ -84,13 +84,20 @@ def _cmd_show(args: argparse.Namespace) -> int:
     return 0
 
 
-def _resolve_or_error(lib: Library, prefix: str) -> str | None:
-    """Resolve a source-id prefix, printing a clean error on ambiguity."""
+def _resolve_source(lib: Library, prefix: str) -> str | None:
+    """Resolve a source-id prefix, printing exactly one clean error on failure.
+
+    Distinguishes an ambiguous prefix from a missing one so the caller never
+    prints a second, contradictory message.
+    """
     try:
-        return lib.resolve_source_id(prefix)
-    except ValueError as exc:
+        sid = lib.resolve_source_id(prefix)
+    except ValueError as exc:  # ambiguous prefix
         print(f"error: {exc}", file=sys.stderr)
         return None
+    if sid is None:
+        print(f"error: no source {prefix!r}", file=sys.stderr)
+    return sid
 
 
 def _cmd_score(args: argparse.Namespace) -> int:
@@ -98,9 +105,11 @@ def _cmd_score(args: argparse.Namespace) -> int:
     cfg.ensure_dirs()
     profile = load_profile()
     with Library(cfg.db_path) as lib:
-        full_id = _resolve_or_error(lib, args.source_id)
-        source = lib.get_source(full_id) if full_id else None
-        if source is None:
+        full_id = _resolve_source(lib, args.source_id)
+        if full_id is None:
+            return 2
+        source = lib.get_source(full_id)
+        if source is None:  # defensive: a resolved id should always exist
             print(f"error: no source {args.source_id!r}", file=sys.stderr)
             return 2
         scorer = AnthropicScorer(model=args.model)
@@ -127,18 +136,19 @@ def _cmd_slices(args: argparse.Namespace) -> int:
     with Library(cfg.db_path) as lib:
         source_id = None
         if args.source:
-            source_id = _resolve_or_error(lib, args.source)
+            source_id = _resolve_source(lib, args.source)
             if source_id is None:
-                print(f"error: no source {args.source!r}", file=sys.stderr)
                 return 2
         slices = lib.list_slices(source_id=source_id)
+        titles = lib.source_titles()
     if not slices:
         print("no scored slices")
         return 0
     for s in slices:
-        span = s.transcript_span[:56].replace("\n", " ")
+        span = s.transcript_span[:48].replace("\n", " ")
+        title = (titles.get(s.source_id, "") or s.source_id[:8])[:22]
         print(
-            f"{s.score:.2f}  {s.rights_risk:4}  {s.source_id[:8]}  "
+            f"{s.score:.2f}  {s.rights_risk:4}  {title:22}  "
             f"{s.target_in:6.0f}-{s.target_out:<6.0f}s  {span!r}"
         )
     return 0
