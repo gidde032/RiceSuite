@@ -28,9 +28,18 @@ class FfmpegClipExtractor:
         duration = max(0.0, end - start)
         subprocess.run(
             [
-                "ffmpeg", "-y", "-loglevel", "error",
-                "-ss", f"{start:.3f}", "-i", str(source),
-                "-t", f"{duration:.3f}", "-c", "copy",
+                "ffmpeg",
+                "-y",
+                "-loglevel",
+                "error",
+                "-ss",
+                f"{start:.3f}",
+                "-i",
+                str(source),
+                "-t",
+                f"{duration:.3f}",
+                "-c",
+                "copy",
                 str(dest),
             ],
             check=True,
