@@ -10,26 +10,21 @@ Last updated: 2026-09-02.
 
 - Bootstrap complete. `ADR-001.md` ACCEPTED; `SPEC.md` RATIFIED (D1–D8). GitHub:
   private `gidde032/RiceSearcher`; milestone #1; Issues #1–#9; templates; CI.
-- **Phase 1 in flight** on branch `phase-1-acquire-transcribe`, **draft PR #10**
-  (linked to Issue #1). Walking skeleton committed at `6369b47`:
-  config/models/library(SQLite+cache)/acquire(watchfolder+ytdlp)/transcribe(whisper)/
-  pipeline/cli. Heavy deps lazily imported behind interfaces.
-- Gates green locally: ruff format+lint clean; **29 tests pass, 98.22% cov**
-  (floor 90%); 5-test smoke inventory pinned. OQ-1 coverage resolved for Phase 1.
+- ✅ **Phase 1 MERGED** to `main` (PR #10, merge commit `52c386c`). Acquire
+  (yt-dlp + watch-folder) → content-addressed cache → faster-whisper transcript →
+  SQLite library, with CLI (pull/list/show). Independently reviewed (3 cold
+  reviewers), repairs landed with fail-before-fix regressions, live-verified
+  end-to-end. faster-whisper/ctranslate2 4.8.2 confirmed working on Python 3.14.
+- Gates on main: ruff clean; **38 tests, 97% cov** (floor 90%); pinned smoke tier.
 
 ## Next action
 
-**Phase 1 / PR #10 is review-ready pending maintainer merge.** Done: independent
-3-reviewer cold review → approved repair batch (C1–C3, S1–S5) landed with
-fail-before-fix regressions; deferred D1→#2, D2→#5. **Live pull confirmed** off-CI:
-real yt-dlp (video+audio merge) + faster-whisper transcribed "Me at the zoo" (35
-words) end-to-end; `list`/`show` work. faster-whisper + ctranslate2 4.8.2 install &
-import fine on Python 3.14 (earlier concern cleared). Two live-surfaced adapter bugs
-fixed: yt-dlp needed `bestvideo*+bestaudio` merge (was pulling video-only), and the
-transcriber now raises a clear error on audio-less input.
-
-Remaining: maintainer marks PR #10 ready + merges (maintainer-only), then Phase 2
-(Extract + score, Issue #2). **Merge is maintainer-only.**
+**Phase 2 — Extract + score (Issue #2)** on branch `phase-2-extract-score`:
+heuristic prefilter → candidate windows → LLM scoring vs. the versioned
+beat-profile (NL brief + few-shot) → scored candidate slices persisted with the
+SPEC §6 schema (padded window + intended in/out). Also carries deferred **D1**
+(real schema-version migration path). Open a draft PR after the first green commit;
+independent review before ready. **Merge stays maintainer-only** (harness-enforced).
 
 ## Reserved from the agent (maintainer-only)
 
