@@ -24,12 +24,19 @@ Last updated: 2026-09-02.
 
 ## Next action
 
-**Phase 3 — Dedup signal (Issue #3)** on branch `phase-3-dedup`: **advisory-only**
-"possible duplicate" annotation — intra-source (source-id + time overlap) +
-cross-source transcript-embedding similarity (local model). **Never filters,
-discards, blocks, or deprioritizes** a slice (hard rule — populates the existing
-`dup_of`/`dup_score`/`dup_kind` columns only). Draft PR after first green commit;
-independent review before ready. **Merge stays maintainer-only** (harness-enforced).
+**Phase 3 — Dedup signal (Issue #3): review-ready on draft PR #12**, CI green, 99
+tests / 96.6% cov. Advisory-only "possible duplicate" annotation (intra-source time
+overlap + cross-source transcript embedding via a lazy, swappable local embedder);
+`dedup` CLI + `~cross`/`~intra` marker in `slices`. 3-reviewer cold review confirmed
+the advisory-only invariant + safety boundary clean → maintainer-approved repairs
+landed with regressions (status-aware canonical, sliding-window coverage, CLI
+alignment); deferred C4 noted on #3.
+
+**Maintainer to do:** (1) live-test `ricesearcher dedup` on a real multi-source
+library — note `sentence-transformers` (torch) may not install on Python 3.14; the
+embedder is lazy + swappable behind `dedup.base.Embedder` if so; (2) mark PR #12
+ready + squash-merge (both maintainer-only). Then **Phase 4 — Slate review UI +
+select gate (Issue #4)**. **Merge stays maintainer-only** (harness-enforced).
 
 ## Reserved from the agent (maintainer-only)
 
