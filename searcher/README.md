@@ -26,8 +26,8 @@ pip install -r requirements-dev.txt # ruff + pytest (for the gates)
 project. Provide `ANTHROPIC_API_KEY` either by exporting it, or by copying
 [`credentials.env.example`](credentials.env.example) to `credentials.env` (gitignored)
 and filling it in; RiceSearcher loads that file automatically. The scorer defaults
-to the lower-cost `claude-sonnet-4-6`; set `RICESEARCHER_SCORER_MODEL=claude-haiku-4-5`
-(or pass `--model`) to go cheaper still.
+to the lowest-cost `claude-haiku-4-5`; set `RICESEARCHER_SCORER_MODEL` (or pass
+`--model`) for a more capable, pricier model.
 
 ## Usage
 

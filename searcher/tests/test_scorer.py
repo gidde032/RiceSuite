@@ -72,7 +72,7 @@ def test_parse_response_ignores_out_of_range_index() -> None:
 
 def test_model_name_default_and_override(monkeypatch) -> None:
     monkeypatch.delenv("RICESEARCHER_SCORER_MODEL", raising=False)
-    assert AnthropicScorer().model_name == "claude-sonnet-4-6"
-    assert AnthropicScorer(model="claude-haiku-4-5").model_name == "claude-haiku-4-5"
+    assert AnthropicScorer().model_name == "claude-haiku-4-5"
+    assert AnthropicScorer(model="claude-sonnet-4-6").model_name == "claude-sonnet-4-6"
     monkeypatch.setenv("RICESEARCHER_SCORER_MODEL", "env-model")
     assert AnthropicScorer().model_name == "env-model"

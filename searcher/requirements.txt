@@ -9,8 +9,8 @@ yt-dlp>=2024.1.0
 # Transcription (D3) — reuse RiceClipper's local stack:
 faster-whisper>=1.1.1
 
-# Scoring (D4, Phase 2) — enable when the scorer lands:
-# anthropic
+# Scoring (D4, Phase 2) — the only paid-API dependency (used by `score`):
+anthropic>=1.3.0
 
 # Dedup embeddings (D6, Phase 3) — enable when dedup lands:
 # sentence-transformers
