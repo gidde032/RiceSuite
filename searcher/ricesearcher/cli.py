@@ -12,10 +12,12 @@ from collections.abc import Sequence
 
 from ricesearcher.acquire.watchfolder import WatchFolderAcquirer
 from ricesearcher.acquire.ytdlp import YtDlpAcquirer
-from ricesearcher.config import load_config
+from ricesearcher.beat.profile import load_profile
+from ricesearcher.config import load_config, load_env_files
 from ricesearcher.library.cache import MediaCache
 from ricesearcher.library.store import Library
-from ricesearcher.pipeline import NoAcquirerError, pull
+from ricesearcher.pipeline import NoAcquirerError, extract_and_score, pull
+from ricesearcher.score.anthropic_scorer import AnthropicScorer
 from ricesearcher.transcribe.whisper import WhisperTranscriber
 
 
@@ -82,6 +84,76 @@ def _cmd_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def _resolve_source(lib: Library, prefix: str) -> str | None:
+    """Resolve a source-id prefix, printing exactly one clean error on failure.
+
+    Distinguishes an ambiguous prefix from a missing one so the caller never
+    prints a second, contradictory message.
+    """
+    try:
+        sid = lib.resolve_source_id(prefix)
+    except ValueError as exc:  # ambiguous prefix
+        print(f"error: {exc}", file=sys.stderr)
+        return None
+    if sid is None:
+        print(f"error: no source {prefix!r}", file=sys.stderr)
+    return sid
+
+
+def _cmd_score(args: argparse.Namespace) -> int:
+    cfg = load_config()
+    cfg.ensure_dirs()
+    profile = load_profile()
+    with Library(cfg.db_path) as lib:
+        full_id = _resolve_source(lib, args.source_id)
+        if full_id is None:
+            return 2
+        source = lib.get_source(full_id)
+        if source is None:  # defensive: a resolved id should always exist
+            print(f"error: no source {args.source_id!r}", file=sys.stderr)
+            return 2
+        scorer = AnthropicScorer(model=args.model)
+        try:
+            slices = extract_and_score(
+                source, profile=profile, scorer=scorer, library=lib
+            )
+        except Exception as exc:  # noqa: BLE001 - CLI boundary: clean message
+            print(f"error: scoring failed: {exc}", file=sys.stderr)
+            return 2
+    print(
+        f"scored {len(slices)} slices for {source.title!r} "
+        f"(beat {profile.version}, model {scorer.model_name})"
+    )
+    for s in sorted(slices, key=lambda s: -s.score)[:10]:
+        span = s.transcript_span[:60].replace("\n", " ")
+        print(f"  {s.score:.2f}  {s.target_in:6.0f}-{s.target_out:<6.0f}s  {span!r}")
+    return 0
+
+
+def _cmd_slices(args: argparse.Namespace) -> int:
+    cfg = load_config()
+    cfg.ensure_dirs()
+    with Library(cfg.db_path) as lib:
+        source_id = None
+        if args.source:
+            source_id = _resolve_source(lib, args.source)
+            if source_id is None:
+                return 2
+        slices = lib.list_slices(source_id=source_id)
+        titles = lib.source_titles()
+    if not slices:
+        print("no scored slices")
+        return 0
+    for s in slices:
+        span = s.transcript_span[:48].replace("\n", " ")
+        title = (titles.get(s.source_id, "") or s.source_id[:8])[:22]
+        print(
+            f"{s.score:.2f}  {s.rights_risk:4}  {title:22}  "
+            f"{s.target_in:6.0f}-{s.target_out:<6.0f}s  {span!r}"
+        )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ricesearcher")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -98,10 +170,26 @@ def build_parser() -> argparse.ArgumentParser:
     p_show.add_argument("source_id", help="a source id (or its 12-char prefix)")
     p_show.set_defaults(func=_cmd_show)
 
+    p_score = sub.add_parser(
+        "score", help="extract + score candidate slices for a source"
+    )
+    p_score.add_argument("source_id", help="a source id (or prefix) to score")
+    p_score.add_argument(
+        "--model", default=None, help="Anthropic scorer model (else env/default)"
+    )
+    p_score.set_defaults(func=_cmd_score)
+
+    p_slices = sub.add_parser("slices", help="list scored candidate slices")
+    p_slices.add_argument(
+        "--source", default=None, help="filter to one source id (or prefix)"
+    )
+    p_slices.set_defaults(func=_cmd_slices)
+
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    load_env_files()  # pick up ANTHROPIC_API_KEY from a local credentials.env/.env
     parser = build_parser()
     args = parser.parse_args(argv)
     return args.func(args)

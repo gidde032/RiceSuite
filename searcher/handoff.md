@@ -19,12 +19,16 @@ Last updated: 2026-09-02.
 
 ## Next action
 
-**Phase 2 — Extract + score (Issue #2)** on branch `phase-2-extract-score`:
-heuristic prefilter → candidate windows → LLM scoring vs. the versioned
-beat-profile (NL brief + few-shot) → scored candidate slices persisted with the
-SPEC §6 schema (padded window + intended in/out). Also carries deferred **D1**
-(real schema-version migration path). Open a draft PR after the first green commit;
-independent review before ready. **Merge stays maintainer-only** (harness-enforced).
+**Phase 2 — Extract + score (Issue #2): review-ready on draft PR #11**, CI green,
+79 tests / 96.8% cov. Built (beat profile, prefilter, LLM scorer, extract_and_score
+pipeline, `score`/`slices` CLI), closed deferred D1 (real schema migration), and
+completed independent 3-reviewer cold review → maintainer-approved repair batch
+landed with fail-before-fix regressions (deferred C9/C12–C14/C16 noted on #2).
+
+**Maintainer to do:** (1) run the live LLM scoring once — `ricesearcher score <id>`
+with an ANTHROPIC_API_KEY (validates the real Anthropic path end-to-end); (2) mark
+PR #11 ready + squash-merge (both maintainer-only). Then Phase 3 — Dedup signal
+(Issue #3), advisory-only. **Merge stays maintainer-only** (harness-enforced).
 
 ## Reserved from the agent (maintainer-only)
 

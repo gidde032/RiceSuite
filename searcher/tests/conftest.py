@@ -63,6 +63,20 @@ class FakeTranscriber:
         ]
 
 
+class FakeScorer:
+    """A scorer returning deterministic ascending scores, no LLM needed."""
+
+    model_name = "fake-model"
+
+    def score(self, windows, profile):
+        from ricesearcher.score.base import ScoredResult
+
+        return [
+            ScoredResult(score=min(1.0, 0.4 + 0.1 * i), rationale=f"reason {i}")
+            for i, _ in enumerate(windows)
+        ]
+
+
 @pytest.fixture
 def fake_acquirer(media_file: Path) -> FakeAcquirer:
     return FakeAcquirer(media_file)
@@ -71,3 +85,8 @@ def fake_acquirer(media_file: Path) -> FakeAcquirer:
 @pytest.fixture
 def fake_transcriber() -> FakeTranscriber:
     return FakeTranscriber()
+
+
+@pytest.fixture
+def fake_scorer() -> FakeScorer:
+    return FakeScorer()
