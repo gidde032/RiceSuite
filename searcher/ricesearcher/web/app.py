@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from ricesearcher.config import Config, load_config
+from ricesearcher.handoff.writer import HandoffError, hand_off_selected
 from ricesearcher.library.store import Library
 from ricesearcher.models import CandidateSlice, SliceStatus
 
@@ -159,5 +160,18 @@ def create_app(config: Config | None = None) -> FastAPI:
                 raise HTTPException(422, "window is empty after clamping to the pad")
             lib.update_slice_window(slice_id, ti, to)
         return {"id": slice_id, "target_in": ti, "target_out": to}
+
+    @app.post("/api/handoff")
+    def do_handoff() -> dict:
+        """Write all selected slices as a handoff batch for RiceClipper.
+
+        Writes local files only (mirrored manifest-last batch); it never contacts
+        RiceClipper or any posting surface.
+        """
+        with Library(cfg.db_path) as lib:
+            try:
+                return hand_off_selected(lib, config=cfg)
+            except HandoffError as exc:
+                raise HTTPException(409, str(exc)) from exc
 
     return app

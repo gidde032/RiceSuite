@@ -48,6 +48,7 @@ ricesearcher score <id-or-prefix>                 # extract + LLM-score candidat
 ricesearcher slices                               # list scored candidate slices
 ricesearcher dedup [--threshold 0.65]             # advisory possible-duplicate flags
 ricesearcher review                               # Slate web UI: the select-and-approve gate
+ricesearcher handoff                              # write selected slices as a batch for RiceClipper
 ```
 
 `ricesearcher review` serves the local review UI at http://127.0.0.1:8765 — browse
