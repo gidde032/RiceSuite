@@ -111,3 +111,104 @@ def test_cli_dedup_and_slices_marker(tmp_path: Path, monkeypatch, capsys) -> Non
     assert cli.main(["slices"]) == 0
     listing = capsys.readouterr().out
     assert "~cross" in listing  # the advisory marker shows in the listing
+
+
+def test_dedup_output_is_human_readable(tmp_path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("RICESEARCHER_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(cli, "SentenceTransformerEmbedder", lambda: FakeEmbedder())
+    from ricesearcher.config import load_config
+
+    with Library(load_config().db_path) as lib:
+        lib.upsert_source(
+            Source(
+                id="s1",
+                kind=SourceKind.YOUTUBE,
+                ref="r",
+                media_path="/m",
+                title="Person A on Fallon",
+            )
+        )
+        lib.upsert_source(
+            Source(
+                id="s2",
+                kind=SourceKind.YOUTUBE,
+                ref="r",
+                media_path="/m",
+                title="Person B interview reupload",
+            )
+        )
+        lib.upsert_slices(
+            [
+                CandidateSlice(
+                    id="a",
+                    source_id="s1",
+                    pad_in=0,
+                    pad_out=10,
+                    target_in=30,
+                    target_out=48,
+                    transcript_span="the exact same funny moment",
+                    score=0.9,
+                ),
+                CandidateSlice(
+                    id="b",
+                    source_id="s2",
+                    pad_in=0,
+                    pad_out=10,
+                    target_in=61,
+                    target_out=79,
+                    transcript_span="the exact same funny moment",
+                    score=0.4,
+                ),
+            ]
+        )
+    assert cli.main(["dedup"]) == 0
+    out = capsys.readouterr().out
+    # Shows titles, the window, and the transcript snippet — not raw id prefixes.
+    assert "Person A on Fallon" in out
+    assert "Person B interview reupload" in out
+    assert "the exact same funny moment" in out
+    assert "61-79s" in out  # the duped clip's window
+
+
+def test_dedup_threshold_flag_is_honored(tmp_path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("RICESEARCHER_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(cli, "SentenceTransformerEmbedder", lambda: FakeEmbedder())
+    from ricesearcher.config import load_config
+
+    with Library(load_config().db_path) as lib:
+        lib.upsert_source(
+            Source(id="s1", kind=SourceKind.YOUTUBE, ref="r", media_path="/m")
+        )
+        lib.upsert_source(
+            Source(id="s2", kind=SourceKind.YOUTUBE, ref="r", media_path="/m")
+        )
+        lib.upsert_slices(
+            [
+                CandidateSlice(
+                    id="a",
+                    source_id="s1",
+                    pad_in=0,
+                    pad_out=10,
+                    target_in=0,
+                    target_out=10,
+                    transcript_span="same",
+                    score=0.9,
+                ),
+                CandidateSlice(
+                    id="b",
+                    source_id="s2",
+                    pad_in=0,
+                    pad_out=10,
+                    target_in=0,
+                    target_out=10,
+                    transcript_span="same",
+                    score=0.4,
+                ),
+            ]
+        )
+    # Identical span -> cosine 1.0. A threshold above 1.0 flags nothing.
+    assert cli.main(["dedup", "--threshold", "1.5"]) == 0
+    assert "0 of 2" in capsys.readouterr().out
+    # The default (0.65) flags the pair.
+    assert cli.main(["dedup"]) == 0
+    assert "1 of 2" in capsys.readouterr().out

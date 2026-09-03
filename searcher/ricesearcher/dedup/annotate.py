@@ -15,9 +15,9 @@ from dataclasses import replace
 from ricesearcher.models import CandidateSlice, SliceStatus
 
 # Defaults; tuned later against real data (the taste-spike sibling for dedup).
-# Lowered to 0.5 for now to surface more candidates while calibrating against real
-# data (maintainer to reassess); 0.85 was the initial conservative default.
-SIM_THRESHOLD = 0.5  # cosine similarity for a cross-source "possible duplicate"
+# Calibrated to 0.65 against real data (maintainer, 2026-09-03); overridable per-run
+# via `dedup --threshold`. 0.85 was the initial conservative default, 0.5 too loose.
+SIM_THRESHOLD = 0.65  # cosine similarity for a cross-source "possible duplicate"
 OVERLAP_THRESHOLD = 0.5  # fraction of the shorter window that must overlap intra-source
 
 # Canonical (the kept, clean member of a duplicate group) is chosen by status
