@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RiceSearcher — Review</title>
+  <link rel="icon" href="/static/mark.svg">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <span class="mark"><img src="/static/mark.svg" alt="" width="26" height="26"></span>
+    <h1 class="app-title">RiceSearcher <span>· Review</span></h1>
+    <div class="filters" role="group" aria-label="Filter candidate slices by status">
+      <label>Show
+        <select id="statusFilter">
+          <option value="candidate">Candidates</option>
+          <option value="">All</option>
+          <option value="selected">Selected</option>
+          <option value="reviewed">Reviewed</option>
+          <option value="rejected">Rejected</option>
+        </select>
+      </label>
+      <span id="count" class="count" aria-live="polite"></span>
+    </div>
+  </header>
+  <main id="list" class="list" aria-live="polite"></main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
