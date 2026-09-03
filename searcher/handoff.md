@@ -12,31 +12,26 @@ Last updated: 2026-09-02.
   private `gidde032/RiceSearcher`; milestone #1; Issues #1–#9; templates; CI.
 - ✅ **Phase 1 MERGED** (PR #10, `52c386c`): acquire (yt-dlp + watch-folder) →
   content-addressed cache → faster-whisper transcript → SQLite library + CLI.
-- ✅ **Phase 2 MERGED** (PR #11, `c3a8e2b`): beat profile, heuristic prefilter, LLM
-  scorer (Haiku 4.5 default, env/flag overridable; `anthropic` runtime dep; key via
-  `credentials.env`/export), extract_and_score pipeline, `score`/`slices` CLI. Closed
-  deferred D1 (real schema migration). 3-reviewer cold review → repairs with
-  regressions (deferred C9/C12–C16 noted on #2). **Taste-validated live** on real
-  on-beat Person A/Person B content: sensible score spread + rationales, top slices match
-  good moments; Sonnet 4.6 marginally better than Haiku but Haiku kept. Taste-spike
-  protocol recorded on #6.
-- Gates on main: ruff clean; **83 tests, ~96.9% cov** (floor 90%); pinned smoke tier.
+- ✅ **Phase 2 MERGED** (PR #11): beat profile, prefilter, LLM scorer (Haiku 4.5
+  default; key via `credentials.env`/export), extract_and_score, `score`/`slices`
+  CLI. Taste-validated live (protocol on #6). Closed deferred D1.
+- ✅ **Phase 3 MERGED** (PR #12, `a85309c`): advisory dedup signal (intra time-overlap
+  + cross-source transcript embedding via lazy/swappable `sentence-transformers`);
+  `dedup` CLI with `--threshold` + human-readable output; default cosine 0.65.
+  Never filters/hides/reorders. 3-reviewer cold review; repairs with regressions.
+- Gates on main: ruff clean; **101 tests, ~96.7% cov** (floor 90%); pinned smoke tier.
 
 ## Next action
 
-**Phase 3 — Dedup signal (Issue #3): review-ready on draft PR #12**, CI green, 99
-tests / 96.6% cov. Advisory-only "possible duplicate" annotation (intra-source time
-overlap + cross-source transcript embedding via a lazy, swappable local embedder);
-`dedup` CLI + `~cross`/`~intra` marker in `slices`. 3-reviewer cold review confirmed
-the advisory-only invariant + safety boundary clean → maintainer-approved repairs
-landed with regressions (status-aware canonical, sliding-window coverage, CLI
-alignment); deferred C4 noted on #3.
-
-**Maintainer to do:** (1) live-test `ricesearcher dedup` on a real multi-source
-library — note `sentence-transformers` (torch) may not install on Python 3.14; the
-embedder is lazy + swappable behind `dedup.base.Embedder` if so; (2) mark PR #12
-ready + squash-merge (both maintainer-only). Then **Phase 4 — Slate review UI +
-select gate (Issue #4)**. **Merge stays maintainer-only** (harness-enforced).
+**Phase 4 — Slate review UI + select gate (Issue #4)** on branch `phase-4-review-ui`:
+a local FastAPI + vanilla-JS web UI (the human select-and-approve gate, ADR Q5)
+matching the **Slate** design system (dark carbon/grey/rice-grey palette, symbol-only,
+WCAG AA, reduced-motion, no blue — tokens from `../RiceClipper/docs/design/slate-ui-spec.md`).
+Browse scored candidate slices (source title, score, rationale, dup annotation,
+transcript, rights), preview the moment's video window, tighten intended in/out, and
+Select (→ status `selected`) / Reject (→ `rejected`). No auto-select; never posts.
+Draft PR after first green commit; independent review before ready. **Merge stays
+maintainer-only** (harness-enforced).
 
 ## Reserved from the agent (maintainer-only)
 
