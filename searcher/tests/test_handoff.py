@@ -301,3 +301,38 @@ def test_l3_batch_id_collision_is_handoff_error(tmp_path: Path, monkeypatch) -> 
     write_batch([_entry(tmp_path)], extractor=FakeExtractor(), root=root)
     with pytest.raises(HandoffError):
         write_batch([_entry(tmp_path)], extractor=FakeExtractor(), root=root)
+
+
+def test_h2_concurrent_handoff_delivers_once(tmp_path: Path, monkeypatch) -> None:
+    import threading
+    import time
+
+    from fastapi.testclient import TestClient
+
+    from ricesearcher.web.app import create_app
+
+    class SlowExtractor(FakeExtractor):
+        def extract(self, source, start, end, dest):
+            time.sleep(0.15)  # widen the overlap window
+            super().extract(source, start, end, dest)
+
+    monkeypatch.setattr(writer_mod, "FfmpegClipExtractor", SlowExtractor)
+    cfg, lib = _lib_with_selected(tmp_path)
+    lib.close()
+    client = TestClient(create_app(cfg))
+    results: list[dict] = []
+    barrier = threading.Barrier(2)
+
+    def fire() -> None:
+        barrier.wait()
+        results.append(client.post("/api/handoff").json())
+
+    threads = [threading.Thread(target=fire) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    counts = sorted(r["clip_count"] for r in results)
+    assert counts == [0, 1]  # delivered exactly once, not twice
+    assert len(list(cfg.handoff_dir.iterdir())) == 1  # a single batch on disk

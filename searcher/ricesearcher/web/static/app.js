@@ -13,6 +13,8 @@ filterEl.addEventListener("change", load);
 document.getElementById("handoffBtn").addEventListener("click", handoff);
 
 async function handoff() {
+  const btn = document.getElementById("handoffBtn");
+  btn.disabled = true;  // guard against a double-click double-delivering (H2)
   setStatusMsg("writing handoff batch…");
   try {
     const res = await fetch("/api/handoff", { method: "POST" });
@@ -23,6 +25,8 @@ async function handoff() {
     load();  // handed-off slices leave the selected/candidate views
   } catch (err) {
     setStatusMsg("handoff failed: " + err.message, true);
+  } finally {
+    btn.disabled = false;
   }
 }
 
