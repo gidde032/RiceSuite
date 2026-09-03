@@ -23,15 +23,20 @@ Last updated: 2026-09-02.
 
 ## Next action
 
-**Phase 4 — Slate review UI + select gate (Issue #4)** on branch `phase-4-review-ui`:
-a local FastAPI + vanilla-JS web UI (the human select-and-approve gate, ADR Q5)
-matching the **Slate** design system (dark carbon/grey/rice-grey palette, symbol-only,
-WCAG AA, reduced-motion, no blue — tokens from `../RiceClipper/docs/design/slate-ui-spec.md`).
-Browse scored candidate slices (source title, score, rationale, dup annotation,
-transcript, rights), preview the moment's video window, tighten intended in/out, and
-Select (→ status `selected`) / Reject (→ `rejected`). No auto-select; never posts.
-Draft PR after first green commit; independent review before ready. **Merge stays
-maintainer-only** (harness-enforced).
+**Phase 4 — Slate review UI + select gate (Issue #4): review-ready on draft PR #13**,
+CI green, 114 tests / 96.7% cov. Local FastAPI + vanilla-JS Slate UI (the human
+select-and-approve gate): browse scored slices, preview the video window, tighten
+in/out, Select/Reject; `ricesearcher review` (or `python -m ricesearcher.web`).
+3-reviewer cold review confirmed the safety boundary airtight (traversal/symlink/
+containment/no-posting/XSS all clean) → maintainer-approved repairs landed with
+regressions (concurrency targeted-UPDATEs, gate-status allowlist, window NaN/reversed
+validation, focus preservation, aria-live, error feedback). Never posts/uploads.
+
+**Maintainer to do:** (1) **browser-verify** on a real scored library — `ricesearcher
+review` → http://127.0.0.1:8765 — the Slate look, video-window previews, in/out
+tighten, Select/Reject at wide + narrow viewports (Slate acceptance items 5–8, 10);
+(2) mark PR #13 ready + squash-merge (maintainer-only). Then **Phase 5 — Handoff
+writer (Issue #5)**. **Merge stays maintainer-only** (harness-enforced).
 
 ## Reserved from the agent (maintainer-only)
 
