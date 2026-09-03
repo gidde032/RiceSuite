@@ -12,5 +12,8 @@ faster-whisper>=1.1.1
 # Scoring (D4, Phase 2) — the only paid-API dependency (used by `score`):
 anthropic>=1.3.0
 
-# Dedup embeddings (D6, Phase 3) — enable when dedup lands:
-# sentence-transformers
+# Dedup embeddings (D6, Phase 3) — local transcript embeddings for `dedup`.
+# Heavy (pulls torch); imported lazily and swappable via the Embedder protocol,
+# so the core + tests run without it. If it won't install on your Python, a
+# lighter embedder can be dropped in behind ricesearcher.dedup.base.Embedder.
+sentence-transformers>=2.2.0

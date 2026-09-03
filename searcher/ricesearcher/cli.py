@@ -14,9 +14,15 @@ from ricesearcher.acquire.watchfolder import WatchFolderAcquirer
 from ricesearcher.acquire.ytdlp import YtDlpAcquirer
 from ricesearcher.beat.profile import load_profile
 from ricesearcher.config import load_config, load_env_files
+from ricesearcher.dedup.embed import SentenceTransformerEmbedder
 from ricesearcher.library.cache import MediaCache
 from ricesearcher.library.store import Library
-from ricesearcher.pipeline import NoAcquirerError, extract_and_score, pull
+from ricesearcher.pipeline import (
+    NoAcquirerError,
+    annotate_library_duplicates,
+    extract_and_score,
+    pull,
+)
 from ricesearcher.score.anthropic_scorer import AnthropicScorer
 from ricesearcher.transcribe.whisper import WhisperTranscriber
 
@@ -145,11 +151,33 @@ def _cmd_slices(args: argparse.Namespace) -> int:
         print("no scored slices")
         return 0
     for s in slices:
-        span = s.transcript_span[:48].replace("\n", " ")
+        span = s.transcript_span[:44].replace("\n", " ")
         title = (titles.get(s.source_id, "") or s.source_id[:8])[:22]
+        dup = f"~{s.dup_kind}" if s.dup_of else "    "  # advisory duplicate flag
         print(
-            f"{s.score:.2f}  {s.rights_risk:4}  {title:22}  "
+            f"{s.score:.2f}  {dup:5}  {s.rights_risk:4}  {title:22}  "
             f"{s.target_in:6.0f}-{s.target_out:<6.0f}s  {span!r}"
+        )
+    return 0
+
+
+def _cmd_dedup(_args: argparse.Namespace) -> int:
+    cfg = load_config()
+    cfg.ensure_dirs()
+    with Library(cfg.db_path) as lib:
+        try:
+            annotated = annotate_library_duplicates(lib, SentenceTransformerEmbedder())
+        except Exception as exc:  # noqa: BLE001 - CLI boundary: clean message
+            print(f"error: dedup failed: {exc}", file=sys.stderr)
+            return 2
+    flagged = [s for s in annotated if s.dup_of]
+    print(
+        f"dedup: {len(flagged)} of {len(annotated)} slices flagged as possible "
+        "duplicates (advisory only — nothing removed or hidden)"
+    )
+    for s in flagged:
+        print(
+            f"  {s.dup_kind:5} {s.dup_score:.2f}  {s.id[:24]}  ~dup of  {s.dup_of[:24]}"
         )
     return 0
 
@@ -184,6 +212,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--source", default=None, help="filter to one source id (or prefix)"
     )
     p_slices.set_defaults(func=_cmd_slices)
+
+    p_dedup = sub.add_parser(
+        "dedup", help="recompute advisory possible-duplicate annotations"
+    )
+    p_dedup.set_defaults(func=_cmd_dedup)
 
     return parser
 
