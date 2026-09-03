@@ -13,6 +13,7 @@ posting, publishing, or upload path exists anywhere in it.
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -25,6 +26,15 @@ from ricesearcher.library.store import Library
 from ricesearcher.models import CandidateSlice, SliceStatus
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+# The review gate may only move a slice between these; `handed_off` is Phase 5's
+# to set (marking a slice handed off here would bypass the actual handoff).
+_GATE_STATUSES = {
+    SliceStatus.CANDIDATE,
+    SliceStatus.REVIEWED,
+    SliceStatus.SELECTED,
+    SliceStatus.REJECTED,
+}
 
 
 class _StatusIn(BaseModel):
@@ -100,12 +110,16 @@ def create_app(config: Config | None = None) -> FastAPI:
             media_urls = {
                 src.id: _media_url(src.media_path) for src in lib.list_sources()
             }
-            # Human label for whatever a slice points at as its canonical.
-            dup_labels = {
-                s.id: f"{titles.get(s.source_id) or s.source_id[:8]} "
-                f"@ {s.target_in:.0f}-{s.target_out:.0f}s"
-                for s in lib.list_slices()
-            }
+            # A slice's canonical may lie outside the current filter, so resolve a
+            # human label only for the dup_of ids actually referenced here.
+            dup_labels: dict[str, str] = {}
+            for dup_id in {s.dup_of for s in slices if s.dup_of}:
+                canon = lib.get_slice(dup_id)
+                if canon is not None:
+                    dup_labels[dup_id] = (
+                        f"{titles.get(canon.source_id) or canon.source_id[:8]} "
+                        f"@ {canon.target_in:.0f}-{canon.target_out:.0f}s"
+                    )
         return [_slice_dto(s, titles, media_urls, dup_labels) for s in slices]
 
     @app.post("/api/slices/{slice_id}/status")
@@ -114,29 +128,36 @@ def create_app(config: Config | None = None) -> FastAPI:
             new = SliceStatus(body.status)
         except ValueError as exc:
             raise HTTPException(422, f"invalid status {body.status!r}") from exc
+        if new not in _GATE_STATUSES:
+            raise HTTPException(
+                422, f"status {new.value!r} is not settable from review"
+            )
         with Library(cfg.db_path) as lib:
-            s = lib.get_slice(slice_id)
-            if s is None:
+            if not lib.update_slice_status(slice_id, new):
                 raise HTTPException(404, "no such slice")
-            s.status = new
-            lib.upsert_slices([s])
         return {"id": slice_id, "status": new.value}
 
     @app.patch("/api/slices/{slice_id}/window")
     def set_window(slice_id: str, body: _WindowIn) -> dict:
+        # Reject NaN/Infinity here (stdlib JSON parsing accepts them) with a plain
+        # string detail, rather than via a pydantic constraint whose 422 body would
+        # try — and fail — to serialize the NaN input.
+        if not (math.isfinite(body.target_in) and math.isfinite(body.target_out)):
+            raise HTTPException(422, "target_in/target_out must be finite numbers")
+        if body.target_in >= body.target_out:
+            raise HTTPException(422, "target_out must exceed target_in")
         with Library(cfg.db_path) as lib:
             s = lib.get_slice(slice_id)
             if s is None:
                 raise HTTPException(404, "no such slice")
-            # The intended cut is tightenable but must stay inside the padded
-            # window and keep in < out (ADR Q4b).
-            lo, hi = sorted((body.target_in, body.target_out))
-            ti = max(s.pad_in, lo)
-            to = min(s.pad_out, hi)
+            # The intended cut is tightenable but stays inside the padded window
+            # (ADR Q4b). pad_in/pad_out are immutable, so reading them here can't
+            # be clobbered; the write itself is a targeted UPDATE (finding W1).
+            ti = max(s.pad_in, body.target_in)
+            to = min(s.pad_out, body.target_out)
             if to <= ti:
-                raise HTTPException(422, "target_out must exceed target_in")
-            s.target_in, s.target_out = ti, to
-            lib.upsert_slices([s])
+                raise HTTPException(422, "window is empty after clamping to the pad")
+            lib.update_slice_window(slice_id, ti, to)
         return {"id": slice_id, "target_in": ti, "target_out": to}
 
     return app
