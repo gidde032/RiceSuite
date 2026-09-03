@@ -153,9 +153,9 @@ def _cmd_slices(args: argparse.Namespace) -> int:
     for s in slices:
         span = s.transcript_span[:44].replace("\n", " ")
         title = (titles.get(s.source_id, "") or s.source_id[:8])[:22]
-        dup = f"~{s.dup_kind}" if s.dup_of else "    "  # advisory duplicate flag
+        dup = f"~{s.dup_kind}" if s.dup_of else ""  # advisory duplicate flag
         print(
-            f"{s.score:.2f}  {dup:5}  {s.rights_risk:4}  {title:22}  "
+            f"{s.score:.2f}  {dup:6}  {s.rights_risk:4}  {title:22}  "
             f"{s.target_in:6.0f}-{s.target_out:<6.0f}s  {span!r}"
         )
     return 0

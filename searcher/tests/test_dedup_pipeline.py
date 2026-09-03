@@ -82,8 +82,12 @@ def test_annotate_preserves_human_status(tmp_path: Path, fake_embedder) -> None:
         b.status = SliceStatus.SELECTED
         lib.upsert_slices([b])
         annotate_library_duplicates(lib, fake_embedder)
-        assert lib.get_slice("b").status is SliceStatus.SELECTED
-        assert lib.get_slice("b").dup_of == "a"  # still annotated, not filtered
+        assert lib.get_slice("b").status is SliceStatus.SELECTED  # status preserved
+        # The kept (selected) slice 'b' is now the canonical; the candidate 'a' is
+        # flagged as its duplicate — the group is still detected, never filtered.
+        assert lib.get_slice("b").dup_of is None
+        assert lib.get_slice("a").dup_of == "b"
+        assert len(lib.list_slices()) == 3  # nothing dropped
 
 
 def test_empty_library_dedup_is_noop(tmp_path: Path, fake_embedder) -> None:

@@ -12,11 +12,22 @@ from __future__ import annotations
 import math
 from dataclasses import replace
 
-from ricesearcher.models import CandidateSlice
+from ricesearcher.models import CandidateSlice, SliceStatus
 
 # Defaults; tuned later against real data (the taste-spike sibling for dedup).
 SIM_THRESHOLD = 0.85  # cosine similarity for a cross-source "possible duplicate"
 OVERLAP_THRESHOLD = 0.5  # fraction of the shorter window that must overlap intra-source
+
+# Canonical (the kept, clean member of a duplicate group) is chosen by status
+# first — a human-kept slice should never be flagged as the duplicate of one the
+# human rejected — then by score. Lower rank = preferred as canonical.
+_STATUS_PRIORITY = {
+    SliceStatus.SELECTED: 0,
+    SliceStatus.HANDED_OFF: 0,
+    SliceStatus.REVIEWED: 1,
+    SliceStatus.CANDIDATE: 2,
+    SliceStatus.REJECTED: 3,
+}
 
 
 def cosine(a: list[float], b: list[float]) -> float:
@@ -52,34 +63,45 @@ def annotate_duplicates(
     time overlap (``dup_kind='intra'``); cross-source pairs on transcript-embedding
     cosine similarity (``dup_kind='cross'``). Nothing is removed or reordered.
     """
-    # Canonical order: highest score first, then a deterministic tie-break.
-    order = sorted(slices, key=lambda s: (-s.score, s.created_at, s.id))
+    # Canonical order: kept status first, then highest score, then a deterministic
+    # tie-break. The first slice of a duplicate group in this order is canonical.
+    order = sorted(
+        slices,
+        key=lambda s: (_STATUS_PRIORITY.get(s.status, 2), -s.score, s.created_at, s.id),
+    )
     cleared = {
         s.id: replace(s, dup_of=None, dup_score=0.0, dup_kind="") for s in slices
     }
-    canonicals: list[CandidateSlice] = []
+    processed: list[CandidateSlice] = []
+    root_of: dict[str, str] = {}  # slice id -> canonical (root) id of its group
 
     for s in order:
-        match: tuple[str, float, str] | None = None
-        for c in canonicals:
-            if s.source_id == c.source_id:
-                frac = _overlap_fraction(s, c)
+        match: tuple[CandidateSlice, float, str] | None = None
+        # Compare against ALL already-processed slices (not just canonicals), so a
+        # sliding-window duplicate that overlaps a *dup* — but not the group's
+        # canonical — is still caught, then resolved to the canonical root.
+        for p in processed:
+            if s.source_id == p.source_id:
+                frac = _overlap_fraction(s, p)
                 if frac >= overlap_threshold:
-                    match = (c.id, round(frac, 4), "intra")
+                    match = (p, round(frac, 4), "intra")
                     break
             else:
-                emb_s, emb_c = embeddings.get(s.id), embeddings.get(c.id)
-                if emb_s and emb_c:
-                    sim = cosine(emb_s, emb_c)
+                emb_s, emb_p = embeddings.get(s.id), embeddings.get(p.id)
+                if emb_s and emb_p:
+                    sim = cosine(emb_s, emb_p)
                     if sim >= sim_threshold:
-                        match = (c.id, round(sim, 4), "cross")
+                        match = (p, round(sim, 4), "cross")
                         break
         if match is None:
-            canonicals.append(s)
+            root_of[s.id] = s.id  # s is its own canonical
         else:
-            dup_of, dup_score, dup_kind = match
+            p, dup_score, dup_kind = match
+            canonical_id = root_of[p.id]  # resolve to the group's root (no chains)
+            root_of[s.id] = canonical_id
             r = cleared[s.id]
-            r.dup_of, r.dup_score, r.dup_kind = dup_of, dup_score, dup_kind
+            r.dup_of, r.dup_score, r.dup_kind = canonical_id, dup_score, dup_kind
+        processed.append(s)
 
     # Preserve the caller's original ordering.
     return [cleared[s.id] for s in slices]

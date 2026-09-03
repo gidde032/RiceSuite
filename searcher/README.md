@@ -6,8 +6,9 @@ library, handed off to RiceClipper for rendering. **Never posts, publishes, or
 uploads content; local-first.** See [SPEC.md](SPEC.md) (decisions D1–D8) and
 [ADR-001.md](ADR-001.md) (the three-pillar boundary).
 
-> Status: **Phase 1** (acquire + transcribe skeleton). Scoring, dedup, the review
-> UI, and the handoff writer are later phases — see [ROADMAP.md](ROADMAP.md).
+> Status: **Phases 1–2 merged** (acquire + transcribe; extract + LLM scoring),
+> **Phase 3 in progress** (advisory dedup signal). The review UI and handoff writer
+> are later phases — see [ROADMAP.md](ROADMAP.md).
 
 ## Install (local, editable)
 
