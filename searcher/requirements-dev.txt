@@ -2,3 +2,6 @@
 ruff==0.16.5
 pytest==9.1.1
 pytest-cov==7.1.0
+# For the FastAPI TestClient (web UI tests) and CI:
+fastapi>=0.115.0
+httpx>=0.27.0

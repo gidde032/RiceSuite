@@ -277,6 +277,31 @@ class Library:
             for r in self._conn.execute("SELECT id, title FROM sources")
         }
 
+    def update_slice_status(self, slice_id: str, status: SliceStatus) -> bool:
+        """Set only a slice's ``status`` (targeted UPDATE). Returns False if absent.
+
+        A single-column UPDATE (not a full-row rewrite) so a concurrent window edit
+        can't be clobbered by a stale read (review finding W1).
+        """
+        with self._conn:
+            cur = self._conn.execute(
+                "UPDATE candidate_slices SET status = ? WHERE id = ?",
+                (status.value, slice_id),
+            )
+        return cur.rowcount > 0
+
+    def update_slice_window(
+        self, slice_id: str, target_in: float, target_out: float
+    ) -> bool:
+        """Set only a slice's intended in/out (targeted UPDATE). False if absent."""
+        with self._conn:
+            cur = self._conn.execute(
+                "UPDATE candidate_slices SET target_in = ?, target_out = ? "
+                "WHERE id = ?",
+                (target_in, target_out, slice_id),
+            )
+        return cur.rowcount > 0
+
     def close(self) -> None:
         self._conn.close()
 

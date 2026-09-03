@@ -44,7 +44,15 @@ ricesearcher pull "https://youtu.be/VIDEO_ID"     # short form also works
 ricesearcher pull ./interview.mp4                 # local file (watch-folder door)
 ricesearcher list                                 # list library sources
 ricesearcher show <id-or-prefix>                  # print a source's transcript
+ricesearcher score <id-or-prefix>                 # extract + LLM-score candidate slices
+ricesearcher slices                               # list scored candidate slices
+ricesearcher dedup [--threshold 0.65]             # advisory possible-duplicate flags
+ricesearcher review                               # Slate web UI: the select-and-approve gate
 ```
+
+`ricesearcher review` serves the local review UI at http://127.0.0.1:8765 — browse
+scored moments, preview each window, tighten in/out, and Select / Reject. It reads
+and annotates the local library only; it never posts, publishes, or uploads.
 
 (`python -m ricesearcher <cmd> …` works identically if you prefer.)
 

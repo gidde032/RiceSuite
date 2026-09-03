@@ -196,6 +196,16 @@ def _cmd_dedup(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_review(args: argparse.Namespace) -> int:  # pragma: no cover - live server
+    import uvicorn
+
+    from ricesearcher.web.app import create_app
+
+    print(f"RiceSearcher review UI → http://{args.host}:{args.port}  (Ctrl-C to stop)")
+    uvicorn.run(create_app(), host=args.host, port=args.port, log_level="warning")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ricesearcher")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -237,6 +247,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="cross-source cosine similarity threshold (default %(default)s)",
     )
     p_dedup.set_defaults(func=_cmd_dedup)
+
+    p_review = sub.add_parser(
+        "review", help="launch the local Slate review UI (select-and-approve gate)"
+    )
+    p_review.add_argument("--host", default="127.0.0.1")
+    p_review.add_argument("--port", type=int, default=8765)
+    p_review.set_defaults(func=_cmd_review)
 
     return parser
 
