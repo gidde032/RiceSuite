@@ -16,6 +16,14 @@ class SourceKind(StrEnum):
     LOCAL = "local"
 
 
+class SliceStatus(StrEnum):
+    CANDIDATE = "candidate"
+    REVIEWED = "reviewed"
+    SELECTED = "selected"
+    HANDED_OFF = "handed_off"
+    REJECTED = "rejected"
+
+
 @dataclass(frozen=True)
 class TranscriptWord:
     """One word with timing pinned to the source timeline, in seconds."""
@@ -46,3 +54,50 @@ class Source:
     def transcript_text(self) -> str:
         """Plain-text transcript joined from words."""
         return " ".join(w.text for w in self.words)
+
+
+@dataclass
+class CandidateWindow:
+    """A pre-scoring candidate span emitted by the heuristic prefilter (FR-3).
+
+    Times are seconds on the source timeline. ``features`` holds the cheap
+    heuristic signals; ``heuristic_score`` is their combined shortlist score.
+    """
+
+    source_id: str
+    start: float
+    end: float
+    text: str
+    features: dict[str, float] = field(default_factory=dict)
+    heuristic_score: float = 0.0
+
+
+@dataclass
+class CandidateSlice:
+    """A scored candidate slice in the library (SPEC §6, FR-4/FR-5).
+
+    The window is a **padded** span (``pad_in``/``pad_out``) around the intended
+    in/out (``target_in``/``target_out``); the intended cut is metadata to be
+    tightened at review, not a final cut (ADR Q4b). Dedup fields stay null until
+    Phase 3; ``rights_risk`` defaults from the source kind.
+    """
+
+    id: str
+    source_id: str
+    pad_in: float
+    pad_out: float
+    target_in: float
+    target_out: float
+    transcript_span: str
+    score: float = 0.0
+    rationale: str = ""
+    heuristic_score: float = 0.0
+    heuristic_features: dict[str, float] = field(default_factory=dict)
+    beat_profile_version: str = ""
+    scorer_model: str = ""
+    dup_of: str | None = None
+    dup_score: float = 0.0
+    dup_kind: str = ""
+    rights_risk: str = "med"
+    status: SliceStatus = SliceStatus.CANDIDATE
+    created_at: str = ""
