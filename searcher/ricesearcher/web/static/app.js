@@ -22,7 +22,7 @@ async function handoff() {
     if (!res.ok) { setStatusMsg("handoff failed: " + (d.detail || res.status), true); return; }
     if (!d.clip_count) { setStatusMsg("nothing selected to hand off", false); return; }
     setStatusMsg("handed off " + d.clip_count + " clip(s) as " + d.batch_id, false);
-    load();  // handed-off slices leave the selected/candidate views
+    await load(true);  // handed-off slices leave the selected/candidate views
   } catch (err) {
     setStatusMsg("handoff failed: " + err.message, true);
   } finally {
@@ -35,7 +35,7 @@ function setStatusMsg(text, isError) {
   statusEl.classList.toggle("error", !!isError);
 }
 
-async function load() {
+async function load(preserveStatus = false) {
   const status = filterEl.value;
   const url = "/api/slices" + (status ? "?status=" + encodeURIComponent(status) : "");
   let slices;
@@ -50,7 +50,7 @@ async function load() {
   }
   slices.sort((a, b) => b.score - a.score);
   countEl.textContent = slices.length + (slices.length === 1 ? " slice" : " slices");
-  setStatusMsg("");
+  if (!preserveStatus) setStatusMsg("");
   if (!slices.length) {
     listEl.replaceChildren(
       el("div", { class: "empty" }, [
@@ -95,6 +95,7 @@ function card(s) {
     if (s.status === "selected") kids.push(el("span", { class: "badge status-selected" }, "selected"));
     if (s.status === "rejected") kids.push(el("span", { class: "badge status-rejected" }, "rejected"));
     if (s.status === "reviewed") kids.push(el("span", { class: "badge" }, "reviewed"));
+    if (s.status === "handed_off") kids.push(el("span", { class: "badge" }, "handed off"));
     if (s.dup_of) {
       kids.push(el("span", { class: "badge dup", title: "advisory only — nothing is filtered" },
         "possible dup (" + s.dup_kind + " " + s.dup_score.toFixed(2) + ") of " + (s.dup_label || s.dup_of)));
@@ -167,6 +168,14 @@ function card(s) {
   const selectBtn = el("button", { class: "primary" }, "Select");
   const rejectBtn = el("button", { class: "danger" }, "Reject");
   const resetBtn = el("button", {}, "Reset");
+  if (s.status === "handed_off") {
+    inIn.disabled = true;
+    outIn.disabled = true;
+    selectBtn.disabled = true;
+    rejectBtn.disabled = true;
+    resetBtn.disabled = true;
+    cardMsg(msg, "handed off — this slice is terminal", false);
+  }
   selectBtn.addEventListener("click", () => setStatus("selected"));
   rejectBtn.addEventListener("click", () => setStatus("rejected"));
   resetBtn.addEventListener("click", () => setStatus("candidate"));

@@ -39,7 +39,7 @@ files only.
 
 | # | Decision | Settled as |
 |---|----------|-----------|
-| D1 | Discovery source & acquisition | **yt-dlp pull (URL/channel/search) + local watch-folder**, one thin acquisition layer → shared pipeline |
+| D1 | Discovery source & acquisition | **yt-dlp pull (URL/channel) + local watch-folder**, one thin acquisition layer → shared pipeline; search-query acquisition deferred to [#15](https://github.com/gidde032/RiceSearcher/issues/15) |
 | D2 | Niche definition | Versioned **beat-profile**: NL brief + few-shot good/bad exemplars |
 | D3 | Transcription ownership | **RiceSearcher owns it** via local faster-whisper; source captions optional, never depended on |
 | D4 | Scoring | **Hybrid**: heuristic prefilter shortlists windows → LLM scores + explains the shortlist |
@@ -50,8 +50,8 @@ files only.
 
 ## 4. Functional requirements
 
-- **FR-1 — Acquire (D1).** `pull` accepts a YouTube URL/channel/search query
-  (via yt-dlp) **or** ingests a file dropped in the local watch-folder. Both
+- **FR-1 — Acquire (D1).** `pull` accepts a YouTube URL/channel (via yt-dlp)
+  **or** ingests a file dropped in the local watch-folder. Both
   produce a normalized source record + cached media in the content-addressed
   store. Acquisition never posts or authenticates to any posting surface.
 - **FR-2 — Transcribe (D3).** Each acquired source is transcribed locally with
@@ -71,9 +71,10 @@ files only.
   **"possible duplicate" annotation** (with the matched slice id + score) when
   above threshold. This annotation **never** removes, hides, blocks, or
   deprioritizes the slice; it is display metadata only.
-- **FR-7 — Inspect via CLI (D7).** CLI commands list/inspect library slices
-  (filter by source, score, status, duplicate-flag) and print slice detail
-  including transcript span and rationale.
+- **FR-7 — Inspect via CLI (D7).** CLI commands list/show library sources and
+  transcripts, and list scored slices with an optional source filter. Detailed
+  slice review, status filtering, rationale, and duplicate context belong to the
+  review UI (FR-8), not a parallel CLI surface.
 - **FR-8 — Review & select (D7, ADR Q5).** A local web review UI (Slate design
   system) shows candidate moments (thumbnail + transcript span + score +
   rationale + duplicate annotation), lets the human tighten the intended in/out
@@ -242,6 +243,9 @@ gate when the consumer is built.
 - **Taste spike** (routed forward) — design it as a prototype; gates auto-select.
 - **Scheduled-monitor watcher** (ADR Q2) — future-enhancement Issue; on-demand
   pull is the v1 foundation.
+- **Search-query acquisition** — deferred to
+  [Issue #15](https://github.com/gidde032/RiceSearcher/issues/15) as the first
+  post-v1 feature; v1 accepts YouTube URLs/channels and local files.
 - **RiceClipper "Pull from Searcher" consumer** — routed-forward cross-repo item.
 - **RiceClipper roadmap edit** — retire Path 1/Path 2 extraction into RiceSearcher
   (ADR Action Item #4), against the real Clipper repo with approval.

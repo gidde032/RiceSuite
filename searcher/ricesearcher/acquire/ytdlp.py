@@ -7,6 +7,7 @@ media for local extraction — it never authenticates to or posts on any account
 
 from __future__ import annotations
 
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -30,35 +31,53 @@ class YtDlpAcquirer:
         # Lazy import: yt-dlp is a heavy optional dependency.
         import yt_dlp
 
-        out_dir = self._download_dir or Path(tempfile.mkdtemp(prefix="ricesearcher_"))
-        out_dir.mkdir(parents=True, exist_ok=True)
-        opts = {
-            "outtmpl": str(out_dir / "%(id)s.%(ext)s"),
-            # A transcription-first tool MUST get audio: YouTube serves video and
-            # audio as separate DASH streams, so select the best of each and let
-            # ffmpeg merge them. The bare "mp4/best" fallback can yield a
-            # video-only stream (no audio → transcription fails).
-            "format": "bestvideo*+bestaudio/best",
-            "merge_output_format": "mp4",
-            "quiet": True,
-            "noplaylist": True,
-        }
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(request, download=True)
-            # After a merge, the real output path is in requested_downloads;
-            # prepare_filename can still report a pre-merge extension.
-            downloads = info.get("requested_downloads") or []
-            if downloads and downloads[0].get("filepath"):
-                media_path = Path(downloads[0]["filepath"])
-            else:
-                media_path = Path(ydl.prepare_filename(info))
-        return AcquiredSource(
-            kind=SourceKind.YOUTUBE,
-            ref=request,
-            media_path=media_path,
-            title=info.get("title", ""),
-            channel=info.get("uploader", ""),
-            published_at=str(info.get("upload_date", "")),
-            duration_s=float(info.get("duration") or 0.0),
-            extra={"video_id": info.get("id", "")},
-        )
+        owns_download_dir = self._download_dir is None
+        out_dir = self._download_dir
+        if out_dir is None:
+            out_dir = Path(tempfile.mkdtemp(prefix="ricesearcher_"))
+        try:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            opts = {
+                "outtmpl": str(out_dir / "%(id)s.%(ext)s"),
+                # A transcription-first tool MUST get audio: YouTube serves video and
+                # audio as separate DASH streams, so select the best of each and let
+                # ffmpeg merge them. The bare "mp4/best" fallback can yield a
+                # video-only stream (no audio → transcription fails).
+                "format": "bestvideo*+bestaudio/best",
+                "merge_output_format": "mp4",
+                "quiet": True,
+                "noplaylist": True,
+            }
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(request, download=True)
+                # After a merge, the real output path is in requested_downloads;
+                # prepare_filename can still report a pre-merge extension.
+                downloads = info.get("requested_downloads") or []
+                if downloads and downloads[0].get("filepath"):
+                    media_path = Path(downloads[0]["filepath"])
+                else:
+                    media_path = Path(ydl.prepare_filename(info))
+            return AcquiredSource(
+                kind=SourceKind.YOUTUBE,
+                ref=request,
+                media_path=media_path,
+                title=info.get("title", ""),
+                channel=info.get("uploader", ""),
+                published_at=str(info.get("upload_date", "")),
+                duration_s=float(info.get("duration") or 0.0),
+                extra={"video_id": info.get("id", "")},
+                owned_temp_dir=out_dir if owns_download_dir else None,
+            )
+        except Exception:
+            if owns_download_dir:
+                _remove_owned_download_dir(out_dir)
+            raise
+
+
+def _remove_owned_download_dir(path: Path) -> None:
+    """Best-effort removal for a temporary directory owned by this adapter."""
+    try:
+        shutil.rmtree(path)
+    except Exception:
+        # Cleanup must never replace the acquisition error with a cleanup error.
+        pass

@@ -21,6 +21,10 @@ class AcquiredSource:
     published_at: str = ""
     duration_s: float = 0.0
     extra: dict = field(default_factory=dict)
+    # When set, this directory was created by the acquirer for this pull and
+    # the pipeline may remove it once the media has entered the cache. Paths
+    # supplied by callers and local-file sources leave this unset.
+    owned_temp_dir: Path | None = None
 
 
 class Acquirer(Protocol):

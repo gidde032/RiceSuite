@@ -93,9 +93,9 @@ def parse_response(text: str, n: int) -> list[ScoredResult]:
 
     Robust to prose before/after the array: decodes the JSON value starting at the
     first ``[`` (so a stray ``]`` in trailing commentary can't truncate it). Raises
-    ``ScorerParseError`` when no array can be parsed at all, so a total failure is
-    visible rather than silently returning all-zero scores. Within a valid array,
-    missing/invalid indices default to score 0; scores are clamped to [0, 1].
+    ``ScorerParseError`` when the response cannot provide one valid result for every
+    candidate, so malformed-but-parseable output cannot silently become all-zero
+    scoring. Scores are clamped to [0, 1].
     """
     results = [ScoredResult(0.0, "") for _ in range(n)]
     start = text.find("[")
@@ -107,15 +107,22 @@ def parse_response(text: str, n: int) -> list[ScoredResult]:
         raise ScorerParseError(f"could not parse the model response: {exc}") from exc
     if not isinstance(parsed, list):
         raise ScorerParseError("the model response was not a JSON array")
+    seen_indices: set[int] = set()
     for item in parsed:
         if not isinstance(item, dict):
             continue
         idx = _coerce_index(item.get("index"))
         if idx is None or not (0 <= idx < n):
             continue
+        seen_indices.add(idx)
         results[idx] = ScoredResult(
             score=_coerce_score(item.get("score")),
             rationale=str(item.get("rationale", "")),
+        )
+    missing = sorted(set(range(n)) - seen_indices)
+    if missing:
+        raise ScorerParseError(
+            f"model response missing valid results for indices {missing}"
         )
     return results
 

@@ -117,13 +117,27 @@ class Library:
     # -- sources ----------------------------------------------------------
 
     def upsert_source(self, source: Source) -> None:
-        """Insert or replace a source and its transcript words (one txn)."""
+        """Insert or update a source and its transcript words (one txn).
+
+        Updating the existing parent row in place preserves candidate-slice
+        children, unlike SQLite's ``INSERT OR REPLACE`` which deletes the
+        parent first and cascades to those children.
+        """
         with self._conn:
             self._conn.execute(
-                """INSERT OR REPLACE INTO sources
+                """INSERT INTO sources
                    (id, kind, ref, media_path, title, channel,
                     published_at, acquired_at, duration_s)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?)
+                   ON CONFLICT(id) DO UPDATE SET
+                       kind = excluded.kind,
+                       ref = excluded.ref,
+                       media_path = excluded.media_path,
+                       title = excluded.title,
+                       channel = excluded.channel,
+                       published_at = excluded.published_at,
+                       acquired_at = excluded.acquired_at,
+                       duration_s = excluded.duration_s""",
                 (
                     source.id,
                     source.kind.value,

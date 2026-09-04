@@ -8,8 +8,10 @@ testable without yt-dlp or faster-whisper.
 
 from __future__ import annotations
 
+import shutil
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from pathlib import Path
 
 from ricesearcher.acquire.base import Acquirer
 from ricesearcher.beat.profile import BeatProfile
@@ -32,6 +34,18 @@ _RIGHTS_BY_KIND = {SourceKind.YOUTUBE: "med", SourceKind.LOCAL: "low"}
 
 class NoAcquirerError(RuntimeError):
     """No registered acquirer can handle the request."""
+
+
+def _cleanup_owned_download_dir(path: Path | None) -> None:
+    """Best-effort cleanup for a producer-owned acquisition directory."""
+    if path is None:
+        return
+    try:
+        shutil.rmtree(path)
+    except Exception:
+        # Preserve the cache/transcription/persistence error, if any. Cleanup is
+        # opportunistic and must not turn a successful pull into a failure.
+        pass
 
 
 def _now_iso() -> str:
@@ -57,23 +71,26 @@ def pull(
         raise NoAcquirerError(f"no acquirer can handle: {request!r}")
 
     acquired = acquirer.acquire(request)
-    digest, cached_path = cache.put(acquired.media_path)
-    words = transcriber.transcribe(cached_path)
+    try:
+        digest, cached_path = cache.put(acquired.media_path)
+        words = transcriber.transcribe(cached_path)
 
-    source = Source(
-        id=digest,
-        kind=acquired.kind,
-        ref=acquired.ref,
-        media_path=str(cached_path),
-        title=acquired.title,
-        channel=acquired.channel,
-        published_at=acquired.published_at,
-        acquired_at=_now_iso(),
-        duration_s=acquired.duration_s,
-        words=list(words),
-    )
-    library.upsert_source(source)
-    return source
+        source = Source(
+            id=digest,
+            kind=acquired.kind,
+            ref=acquired.ref,
+            media_path=str(cached_path),
+            title=acquired.title,
+            channel=acquired.channel,
+            published_at=acquired.published_at,
+            acquired_at=_now_iso(),
+            duration_s=acquired.duration_s,
+            words=list(words),
+        )
+        library.upsert_source(source)
+        return source
+    finally:
+        _cleanup_owned_download_dir(acquired.owned_temp_dir)
 
 
 def _slice_id(source_id: str, target_in: float, target_out: float) -> str:

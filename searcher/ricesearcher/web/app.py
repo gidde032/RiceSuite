@@ -14,6 +14,7 @@ posting, publishing, or upload path exists anywhere in it.
 from __future__ import annotations
 
 import math
+import subprocess
 import threading
 from pathlib import Path
 
@@ -141,6 +142,13 @@ def create_app(config: Config | None = None) -> FastAPI:
                 422, f"status {new.value!r} is not settable from review"
             )
         with Library(cfg.db_path) as lib:
+            current = lib.get_slice(slice_id)
+            if current is None:
+                raise HTTPException(404, "no such slice")
+            if current.status is SliceStatus.HANDED_OFF:
+                raise HTTPException(
+                    409, "handed_off slices are terminal and cannot be changed"
+                )
             if not lib.update_slice_status(slice_id, new):
                 raise HTTPException(404, "no such slice")
         return {"id": slice_id, "status": new.value}
@@ -180,5 +188,11 @@ def create_app(config: Config | None = None) -> FastAPI:
                 return hand_off_selected(lib, config=cfg)
             except HandoffError as exc:
                 raise HTTPException(409, str(exc)) from exc
+            except (OSError, subprocess.SubprocessError) as exc:
+                raise HTTPException(
+                    503,
+                    "handoff execution failed; selected slices remain selected "
+                    f"for retry: {exc}",
+                ) from exc
 
     return app

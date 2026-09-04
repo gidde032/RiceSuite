@@ -47,11 +47,13 @@ def test_parse_response_maps_by_index_and_clamps() -> None:
     assert results[1].score == 1.0  # clamped to [0,1]
 
 
-def test_parse_response_defaults_missing_indices_to_zero() -> None:
-    results = parse_response('[{"index": 1, "score": 0.5, "rationale": "x"}]', 3)
-    assert results[0].score == 0.0 and results[0].rationale == ""
-    assert results[1].score == 0.5
-    assert results[2].score == 0.0
+def test_parse_response_rejects_missing_indices() -> None:
+    import pytest
+
+    from ricesearcher.score.anthropic_scorer import ScorerParseError
+
+    with pytest.raises(ScorerParseError, match="missing valid results"):
+        parse_response('[{"index": 1, "score": 0.5, "rationale": "x"}]', 3)
 
 
 def test_parse_response_raises_on_unparseable_output() -> None:
@@ -64,10 +66,13 @@ def test_parse_response_raises_on_unparseable_output() -> None:
         parse_response("no json here at all", 2)
 
 
-def test_parse_response_ignores_out_of_range_index() -> None:
-    # A valid array with only an out-of-range index parses fine → all default 0.
-    results = parse_response('[{"index": 9, "score": 0.8, "rationale": "x"}]', 2)
-    assert [r.score for r in results] == [0.0, 0.0]
+def test_parse_response_rejects_only_out_of_range_indices() -> None:
+    import pytest
+
+    from ricesearcher.score.anthropic_scorer import ScorerParseError
+
+    with pytest.raises(ScorerParseError, match="missing valid results"):
+        parse_response('[{"index": 9, "score": 0.8, "rationale": "x"}]', 2)
 
 
 def test_model_name_default_and_override(monkeypatch) -> None:

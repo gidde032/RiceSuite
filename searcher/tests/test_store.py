@@ -7,7 +7,13 @@ from pathlib import Path
 import pytest
 
 from ricesearcher.library.store import SCHEMA_VERSION, Library
-from ricesearcher.models import Source, SourceKind, TranscriptWord
+from ricesearcher.models import (
+    CandidateSlice,
+    SliceStatus,
+    Source,
+    SourceKind,
+    TranscriptWord,
+)
 
 
 def _source(sid: str = "abc123", words: list[TranscriptWord] | None = None) -> Source:
@@ -50,6 +56,51 @@ def test_upsert_replaces_transcript(tmp_path: Path) -> None:
         got = lib.get_source("abc123")
     assert got is not None
     assert got.transcript_text == "new"
+
+
+def test_upsert_source_refresh_preserves_existing_slice_lifecycle(
+    tmp_path: Path,
+) -> None:
+    """Library boundary (HIGH): refreshing a source must not delete its slices.
+
+    Fix: update the source row in place instead of replacing it, preserving
+    candidate-slice children while refreshing source and transcript data.
+    """
+    with Library(tmp_path / "lib.sqlite3") as lib:
+        original = _source(words=[TranscriptWord("old", 0.0, 0.1)])
+        lib.upsert_source(original)
+        lib.upsert_slices(
+            [
+                CandidateSlice(
+                    id=f"slice-{status.value}",
+                    source_id=original.id,
+                    pad_in=0.0,
+                    pad_out=10.0,
+                    target_in=1.0,
+                    target_out=5.0,
+                    transcript_span="old",
+                    status=status,
+                )
+                for status in SliceStatus
+            ]
+        )
+
+        refreshed = _source(words=[TranscriptWord("new", 0.0, 0.2)])
+        refreshed.title = "Refreshed interview"
+        refreshed.channel = "New channel"
+        refreshed.duration_s = 200.0
+        lib.upsert_source(refreshed)
+
+        source = lib.get_source(original.id)
+        slices = lib.list_slices(source_id=original.id)
+
+    assert source is not None
+    assert source.title == "Refreshed interview"
+    assert source.channel == "New channel"
+    assert source.duration_s == 200.0
+    assert source.transcript_text == "new"
+    assert {slice_.status for slice_ in slices} == set(SliceStatus)
+    assert len(slices) == len(SliceStatus)
 
 
 def test_get_missing_returns_none(tmp_path: Path) -> None:
