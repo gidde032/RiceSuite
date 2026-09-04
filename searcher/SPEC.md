@@ -133,9 +133,13 @@ cache dir keyed by hash, referenced by the row — never inlined in SQLite.
 ## 7. Handoff — Searcher→Clipper contract (D8, seeds from Phase 1)
 
 Mirrors the RiceClipper→RicePoster **mechanism** (see
-`RiceClipper/docs/integration/riceposter-handoff.md`): a shared, env-configurable
-handoff root; one directory per batch; media files + `manifest.json` written
-**last** via atomic rename as the completeness signal; FIFO by `created_at`;
+`RiceClipper/docs/integration/riceposter-handoff.md`) — **not its directory**.
+RiceSearcher writes to its **own** handoff root, `RICESEARCHER_HANDOFF_DIR`
+(default `~/ricesearcher-handoff`), which RiceClipper reads from; RiceClipper's
+rendered output goes to the **separate** `~/riceclipper-handoff` (where RicePoster
+pulls). RiceSearcher and RicePoster never share a directory — RiceClipper is the
+intermediary. The mechanism: one directory per batch; media files + `manifest.json`
+written **last** via atomic rename as the completeness signal; FIFO by `created_at`;
 dedupe by stable `batch_id`; **producer only writes** and never manages lifecycle.
 
 **Superset manifest schema** (adds what Clipper's already-cut-clip manifest lacks):
@@ -151,7 +155,8 @@ dedupe by stable `batch_id`; **producer only writes** and never manages lifecycl
       "file": "clip_1.mp4",
       "position": 1,
       "source_ref": "<url|path>", "source_title": "...", "published_at": "...",
-      "window": { "pad_in": 0.0, "pad_out": 0.0, "target_in": 0.0, "target_out": 0.0 },
+      "source_window": { "pad_in": 0.0, "pad_out": 0.0, "target_in": 0.0, "target_out": 0.0 },
+      "clip":          { "duration": 0.0, "target_in": 0.0, "target_out": 0.0 },
       "transcript": "plain-text transcript span",
       "score": 0.0, "rationale": "...",
       "rights_risk": "low|med|high",
@@ -161,10 +166,25 @@ dedupe by stable `batch_id`; **producer only writes** and never manages lifecycl
 }
 ```
 
+The clip file **is** the padded window, so `source_window` is provenance on the
+source timeline and `clip.target_in`/`target_out` are the intended cut **relative
+to the clip's start** (`duration = pad_out − pad_in`) — the boundary Clipper
+tightens around.
+
 **Consumer:** RiceClipper has **no pickup side** today (it ingests via its upload
 UI). A "Pull from Searcher" consumer is a **routed-forward cross-repo item**
-(ADR-style Action Item, its own approval, against the real RiceClipper repo).
+(Issue #8), planned in
+[`docs/integration/riceclipper-pickup-plan.md`](docs/integration/riceclipper-pickup-plan.md).
 Until it ships, the maintainer bridges selected clips into Clipper manually.
+
+> **Residual two-phase gap (accepted).** The handoff writes the batch to disk,
+> then marks the slices `handed_off` in one DB transaction — but there is no
+> transaction spanning the filesystem write and the DB mark. If the process dies
+> strictly between them, a complete batch exists on disk while the slices remain
+> `selected`, so a retry re-delivers them as a **new** `batch_id`. The window is
+> tiny (a human-driven action) and both are individually correct; the consumer
+> should therefore be robust to the same source content arriving in two batches
+> (content-level idempotency, not only `batch_id` dedup).
 
 **Integration-ledger lessons applied up front** (from
 `RiceClipper/internal/riceposter-integration-review.md`): stable idempotent batch

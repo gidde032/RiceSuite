@@ -12,10 +12,12 @@ from pathlib import Path
 _DATA_ENV = "RICESEARCHER_DATA_DIR"
 _DEFAULT_DATA_DIR = "~/.ricesearcher"
 
-# Mirrors RiceClipper's handoff-root convention so the shared root lines up
-# (SPEC §7). RiceSearcher only ever *writes* here.
+# RiceSearcher's OWN handoff root (SPEC §7). It only ever *writes* here; RiceClipper
+# reads from it and writes its rendered output to the SEPARATE ~/riceclipper-handoff
+# (where RicePoster pulls). RiceSearcher and RicePoster never share a directory —
+# RiceClipper is the intermediary. Do NOT point this at ~/riceclipper-handoff.
 _HANDOFF_ENV = "RICESEARCHER_HANDOFF_DIR"
-_DEFAULT_HANDOFF_DIR = "~/riceclipper-handoff"
+_DEFAULT_HANDOFF_DIR = "~/ricesearcher-handoff"
 
 
 @dataclass(frozen=True)

@@ -14,6 +14,7 @@ posting, publishing, or upload path exists anywhere in it.
 from __future__ import annotations
 
 import math
+import threading
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -22,10 +23,17 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from ricesearcher.config import Config, load_config
+from ricesearcher.handoff.writer import HandoffError, hand_off_selected
 from ricesearcher.library.store import Library
 from ricesearcher.models import CandidateSlice, SliceStatus
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+# Serialize handoff writes: two concurrent POSTs (double-click / two tabs) would
+# otherwise both read `selected` before either marks, double-delivering a batch
+# (finding H2). Sync routes run in Starlette's threadpool, so a threading.Lock
+# serializes them; the second then re-reads an empty selected set (a no-op).
+_handoff_lock = threading.Lock()
 
 # The review gate may only move a slice between these; `handed_off` is Phase 5's
 # to set (marking a slice handed off here would bypass the actual handoff).
@@ -159,5 +167,18 @@ def create_app(config: Config | None = None) -> FastAPI:
                 raise HTTPException(422, "window is empty after clamping to the pad")
             lib.update_slice_window(slice_id, ti, to)
         return {"id": slice_id, "target_in": ti, "target_out": to}
+
+    @app.post("/api/handoff")
+    def do_handoff() -> dict:
+        """Write all selected slices as a handoff batch for RiceClipper.
+
+        Writes local files only (mirrored manifest-last batch); it never contacts
+        RiceClipper or any posting surface.
+        """
+        with _handoff_lock, Library(cfg.db_path) as lib:
+            try:
+                return hand_off_selected(lib, config=cfg)
+            except HandoffError as exc:
+                raise HTTPException(409, str(exc)) from exc
 
     return app

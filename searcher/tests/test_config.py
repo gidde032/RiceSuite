@@ -43,3 +43,14 @@ def test_strips_quotes(in_tmp: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_no_file_is_noop(in_tmp: Path) -> None:
     load_env_files()  # must not raise when neither file exists
+
+
+def test_default_handoff_dir_is_ricesearcher_own(monkeypatch) -> None:
+    # RiceSearcher must write to its OWN handoff root, never riceclipper-handoff
+    # (where RicePoster pulls). RiceClipper is the intermediary.
+    monkeypatch.delenv("RICESEARCHER_HANDOFF_DIR", raising=False)
+    from ricesearcher.config import load_config
+
+    hd = load_config().handoff_dir
+    assert hd.name == "ricesearcher-handoff"
+    assert "riceclipper-handoff" not in str(hd)

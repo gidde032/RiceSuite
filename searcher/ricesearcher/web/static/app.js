@@ -10,6 +10,25 @@ const statusEl = document.getElementById("status");
 const filterEl = document.getElementById("statusFilter");
 
 filterEl.addEventListener("change", load);
+document.getElementById("handoffBtn").addEventListener("click", handoff);
+
+async function handoff() {
+  const btn = document.getElementById("handoffBtn");
+  btn.disabled = true;  // guard against a double-click double-delivering (H2)
+  setStatusMsg("writing handoff batch…");
+  try {
+    const res = await fetch("/api/handoff", { method: "POST" });
+    const d = await res.json();
+    if (!res.ok) { setStatusMsg("handoff failed: " + (d.detail || res.status), true); return; }
+    if (!d.clip_count) { setStatusMsg("nothing selected to hand off", false); return; }
+    setStatusMsg("handed off " + d.clip_count + " clip(s) as " + d.batch_id, false);
+    load();  // handed-off slices leave the selected/candidate views
+  } catch (err) {
+    setStatusMsg("handoff failed: " + err.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
 
 function setStatusMsg(text, isError) {
   statusEl.textContent = text || "";

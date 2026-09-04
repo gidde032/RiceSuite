@@ -16,6 +16,7 @@ from ricesearcher.beat.profile import load_profile
 from ricesearcher.config import load_config, load_env_files
 from ricesearcher.dedup.annotate import SIM_THRESHOLD
 from ricesearcher.dedup.embed import SentenceTransformerEmbedder
+from ricesearcher.handoff.writer import hand_off_selected
 from ricesearcher.library.cache import MediaCache
 from ricesearcher.library.store import Library
 from ricesearcher.pipeline import (
@@ -196,6 +197,25 @@ def _cmd_dedup(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_handoff(_args: argparse.Namespace) -> int:
+    cfg = load_config()
+    cfg.ensure_dirs()
+    with Library(cfg.db_path) as lib:
+        try:
+            result = hand_off_selected(lib, config=cfg)
+        except Exception as exc:  # noqa: BLE001 - CLI boundary: clean message
+            print(f"error: handoff failed: {exc}", file=sys.stderr)
+            return 2
+    if result["clip_count"] == 0:
+        print("no selected slices to hand off (select some in `review` first)")
+        return 0
+    print(
+        f"handed off {result['clip_count']} clip(s) as {result['batch_id']} "
+        f"→ {cfg.handoff_dir}"
+    )
+    return 0
+
+
 def _cmd_review(args: argparse.Namespace) -> int:  # pragma: no cover - live server
     import uvicorn
 
@@ -254,6 +274,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_review.add_argument("--host", default="127.0.0.1")
     p_review.add_argument("--port", type=int, default=8765)
     p_review.set_defaults(func=_cmd_review)
+
+    p_handoff = sub.add_parser(
+        "handoff", help="write selected slices as a handoff batch for RiceClipper"
+    )
+    p_handoff.set_defaults(func=_cmd_handoff)
 
     return parser
 

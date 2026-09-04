@@ -23,20 +23,33 @@ Last updated: 2026-09-02.
 
 ## Next action
 
-**Phase 4 — Slate review UI + select gate (Issue #4): review-ready on draft PR #13**,
-CI green, 114 tests / 96.7% cov. Local FastAPI + vanilla-JS Slate UI (the human
-select-and-approve gate): browse scored slices, preview the video window, tighten
-in/out, Select/Reject; `ricesearcher review` (or `python -m ricesearcher.web`).
-3-reviewer cold review confirmed the safety boundary airtight (traversal/symlink/
-containment/no-posting/XSS all clean) → maintainer-approved repairs landed with
-regressions (concurrency targeted-UPDATEs, gate-status allowlist, window NaN/reversed
-validation, focus preservation, aria-live, error feedback). Never posts/uploads.
+- ✅ **Phase 4 MERGED** (PR #13, `eb2f6e7`): Slate review UI + select gate
+  (`ricesearcher review`). 3-reviewer cold review; repairs with regressions.
 
-**Maintainer to do:** (1) **browser-verify** on a real scored library — `ricesearcher
-review` → http://127.0.0.1:8765 — the Slate look, video-window previews, in/out
-tighten, Select/Reject at wide + narrow viewports (Slate acceptance items 5–8, 10);
-(2) mark PR #13 ready + squash-merge (maintainer-only). Then **Phase 5 — Handoff
-writer (Issue #5)**. **Merge stays maintainer-only** (harness-enforced).
+**Phase 5 — Handoff writer (Issue #5): review-ready on branch `phase-5-handoff`**,
+draft PR pending. Searcher-side only (per maintainer: Clipper side planned, not
+built). On select, `hand_off_selected` extracts each selected slice's padded window
+(ffmpeg, lazy/injectable) and writes a mirrored **manifest-last** batch to the shared
+handoff root (superset schema: source_ref/provenance, source_window +
+**clip-relative** intended in/out, transcript, score, rationale, rights_risk,
+beat_profile_version; stable batch_id; path containment; no orphan on failure), then
+marks the slices `handed_off`. Surfaced via `ricesearcher handoff` + a "Send selected"
+button in the review UI (`POST /api/handoff`). **RiceClipper "Pull from Searcher"
+consumer is PLANNED in `docs/integration/riceclipper-pickup-plan.md` (Issue #8) — to
+build after Phase 5 merges, as the targeted RiceClipper edit that wraps v1.**
+
+### PR #14 repairs DONE (3-reviewer cold review; approved 2026-09-03). Review-ready.
+Safety confirmed clean by all three. All fixes landed with regressions:
+- [x] **H1** atomic mark (`Library.bulk_update_status`, one txn).
+- [x] **L1/L2/L3** reject inverted clip window; guard rmtree; mkdir collision → HandoffError.
+- [x] **H2** in-process lock around `/api/handoff` + UI button disabled in-flight.
+- [x] **D1** SPEC §7 reconciled (source_window + clip) + residual two-phase gap documented (SPEC §7 + pickup plan → consumer content-idempotency).
+128 tests, ~96.1% cov, ruff + JS clean. CI green on the pre-repair head; re-verify on the repair commits.
+
+**Maintainer to do:** (1) live-test `ricesearcher handoff` on a real selected library
+(needs ffmpeg — already a system dep); (2) mark the Phase-5 PR ready + merge; then the
+**routed-forward Clipper pickup (#8)** + **Clipper roadmap edit (#9)** wrap v1.
+**Merge stays maintainer-only** (harness-enforced).
 
 ## Reserved from the agent (maintainer-only)
 
