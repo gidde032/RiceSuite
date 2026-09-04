@@ -9,12 +9,25 @@ made in that repo, with maintainer approval — not from RiceSearcher.
 
 ## What RiceSearcher now produces (the contract to consume)
 
-RiceSearcher writes a batch to the shared handoff root
-(`RICESEARCHER_HANDOFF_DIR`, default `~/riceclipper-handoff/`), mirroring the
-RiceClipper→RicePoster mechanism:
+**Directory topology (three distinct roots — RiceClipper is the intermediary):**
 
 ```
-<handoff_root>/
+RiceSearcher --writes--> ~/ricesearcher-handoff/   (RICESEARCHER_HANDOFF_DIR)
+RiceClipper  --reads --> ~/ricesearcher-handoff/    (this pickup — NEW)
+             --writes--> ~/riceclipper-handoff/     (RICECLIPPER_HANDOFF_DIR, unchanged)
+RicePoster   --reads --> ~/riceclipper-handoff/     (unchanged)
+```
+
+RiceSearcher and RicePoster **never share a directory.** RiceSearcher writes to its
+own `~/ricesearcher-handoff` (default of `RICESEARCHER_HANDOFF_DIR`); this pickup
+reads from that same dir; RiceClipper's existing rendered-output writer to
+`~/riceclipper-handoff` is **unchanged**.
+
+RiceSearcher writes a batch to `~/ricesearcher-handoff/`, mirroring the
+RiceClipper→RicePoster *mechanism* (not its directory):
+
+```
+<ricesearcher-handoff>/
   batch_<ts>_<rand>/
     clip_1.mp4          # the padded window [pad_in, pad_out] of the source
     clip_2.mp4
@@ -55,11 +68,15 @@ RiceClipper→RicePoster mechanism:
 
 RiceClipper today ingests only via its web-UI upload and has **no pickup side**
 (confirmed Phase 1). Add a "Pull from Searcher" consumer that mirrors
-RicePoster's `backend/handoff_pickup.py` pattern:
+RicePoster's `backend/handoff_pickup.py` pattern. Its **input** dir is a new
+config (e.g. `RICECLIPPER_SEARCHER_INBOX`, default `~/ricesearcher-handoff`) that
+must equal RiceSearcher's `RICESEARCHER_HANDOFF_DIR`. RiceClipper's **existing**
+writer to `RICECLIPPER_HANDOFF_DIR` (`~/riceclipper-handoff`, for RicePoster) is
+**unchanged** — this only adds a read side, making RiceClipper the intermediary.
 
-1. **Scan** the handoff root for batch dirs containing `manifest.json` (ignore
-   manifest-less dirs — they're mid-write). **FIFO** by `created_at`, one batch
-   per pull.
+1. **Scan** the searcher-inbox (`~/ricesearcher-handoff`) for batch dirs
+   containing `manifest.json` (ignore manifest-less dirs — they're mid-write).
+   **FIFO** by `created_at`, one batch per pull.
 2. **Validate** the manifest: `schema_version == 1`, `producer == "ricesearcher"`,
    nonempty `clips`, a top-level object, string/safe `batch_id`, unique positive
    integer `position`s, string file/text fields — every malformed field → a

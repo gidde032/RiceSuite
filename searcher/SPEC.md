@@ -133,9 +133,13 @@ cache dir keyed by hash, referenced by the row — never inlined in SQLite.
 ## 7. Handoff — Searcher→Clipper contract (D8, seeds from Phase 1)
 
 Mirrors the RiceClipper→RicePoster **mechanism** (see
-`RiceClipper/docs/integration/riceposter-handoff.md`): a shared, env-configurable
-handoff root; one directory per batch; media files + `manifest.json` written
-**last** via atomic rename as the completeness signal; FIFO by `created_at`;
+`RiceClipper/docs/integration/riceposter-handoff.md`) — **not its directory**.
+RiceSearcher writes to its **own** handoff root, `RICESEARCHER_HANDOFF_DIR`
+(default `~/ricesearcher-handoff`), which RiceClipper reads from; RiceClipper's
+rendered output goes to the **separate** `~/riceclipper-handoff` (where RicePoster
+pulls). RiceSearcher and RicePoster never share a directory — RiceClipper is the
+intermediary. The mechanism: one directory per batch; media files + `manifest.json`
+written **last** via atomic rename as the completeness signal; FIFO by `created_at`;
 dedupe by stable `batch_id`; **producer only writes** and never manages lifecycle.
 
 **Superset manifest schema** (adds what Clipper's already-cut-clip manifest lacks):

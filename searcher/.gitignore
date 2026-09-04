@@ -24,7 +24,7 @@ credentials.env
 *.sqlite3
 *.db
 /handoff/
-/riceclipper-handoff/
+/ricesearcher-handoff/
 
 # OS
 .DS_Store
