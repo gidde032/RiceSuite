@@ -170,12 +170,13 @@ function buildCard(clip) {
   node.querySelector(".header-label").htmlFor = clip.headerEl.id;
   clip.headerEl.setAttribute("aria-describedby", headerHelp.id);
 
-  clip.titleEl.textContent = `Clip ${clip.ord} — ${clip.file.name}`;
+  const clipName = clip.file ? clip.file.name : (clip.name || "Searcher clip");
+  clip.titleEl.textContent = `Clip ${clip.ord} — ${clipName}`;
   clip.titleEl.id = `clip-title-${clip.localId}`;
   node.setAttribute("aria-labelledby", clip.titleEl.id);
-  node.querySelector(".clip-remove").setAttribute("aria-label", `Remove ${clip.file.name}`);
-  clip.sourceVideoEl.setAttribute("aria-label", `Source preview for ${clip.file.name}`);
-  clip.outputVideoEl.setAttribute("aria-label", `Rendered output for ${clip.file.name}`);
+  node.querySelector(".clip-remove").setAttribute("aria-label", `Remove ${clipName}`);
+  clip.sourceVideoEl.setAttribute("aria-label", `Source preview for ${clipName}`);
+  clip.outputVideoEl.setAttribute("aria-label", `Rendered output for ${clipName}`);
 
   // Inherit the batch defaults; a manual change marks the field "touched" so a
   // later batch-default change no longer overrides this clip.
@@ -200,8 +201,13 @@ function buildCard(clip) {
     clip.previewStatusEl.textContent =
       `Can't preview this file in-browser (${mediaErrText(clip.sourceVideoEl)}). The rendered output is always H.264/AAC and will play here regardless.`;
   };
-  clip.sourceUrl = URL.createObjectURL(clip.file);
-  clip.sourceVideoEl.src = clip.sourceUrl;
+  if (clip.file) {
+    clip.sourceUrl = URL.createObjectURL(clip.file);
+    clip.sourceVideoEl.src = clip.sourceUrl;
+  } else if (clip.jobId) {
+    // Pulled clip: no local blob — preview from the server's stored source.
+    clip.sourceVideoEl.src = `/api/jobs/${clip.jobId}/source`;
+  }
   clip.previewStatusEl.textContent = "Preview starts muted (unmute with the player controls).";
 
   clip.outputVideoEl.onerror = () => {
@@ -294,6 +300,68 @@ function addFiles(fileList) {
   processIngestQueue();
 }
 
+function setPullStatus(text, isError = false) {
+  const el = $("pull-status");
+  el.textContent = text || "";
+  el.className = isError ? "status error" : "status";
+}
+
+// Add jobs pulled from RiceSearcher as review cards. They already have a server
+// job (source stored + geometry probed), so they skip the upload and go straight
+// to transcription via the normal ingest queue.
+function addPulledJobs(pulled) {
+  if (!pulled.length) return;
+  $("upload-panel").classList.add("hidden");
+  $("batch-panel").classList.remove("hidden");
+  for (const state of pulled) {
+    clipSeq += 1;
+    const clip = {
+      localId: clipSeq,
+      ord: clips.length + 1,
+      file: null,
+      name: state.title || "Searcher clip",
+      jobId: state.id,
+      status: "queued",
+      words: [],
+      sourceUrl: null,
+      outputUrl: null,
+      captionStyleTouched: false,
+      headerStyleTouched: false,
+    };
+    clips.push(clip);
+    buildCard(clip);
+    setGeoNote(clip, state);
+    setClipStatus(clip, "Queued…");
+  }
+  updateRenderAllButton();
+  updateCacheControls();
+  processIngestQueue();
+}
+
+$("pull-searcher-btn").addEventListener("click", async () => {
+  const btn = $("pull-searcher-btn");
+  btn.disabled = true;
+  setPullStatus("Pulling the next batch from RiceSearcher…");
+  try {
+    const res = await fetch("/api/pull-from-searcher", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) {
+      setPullStatus(data.detail || "pull failed", true);
+      return;
+    }
+    if (!data.clip_count) {
+      setPullStatus("No batches waiting in ~/ricesearcher-handoff.");
+      return;
+    }
+    setPullStatus(`Pulled ${data.clip_count} clip(s) from batch ${data.batch_id}.`);
+    addPulledJobs(data.jobs || []);
+  } catch (err) {
+    setPullStatus("pull failed: " + err.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 async function processIngestQueue() {
   if (ingesting) return; // a running drain picks up newly-queued clips itself
   ingesting = true;
@@ -314,20 +382,22 @@ async function processIngestQueue() {
 }
 
 async function ingestClip(clip) {
-  clip.status = "uploading";
-  setClipStatus(clip, "Uploading…");
-  updateCacheControls();
-
-  const form = new FormData();
-  form.append("file", clip.file);
   try {
-    const up = await fetch("/api/upload", { method: "POST", body: form });
-    const updata = await up.json();
-    if (!up.ok || updata.status === "error") {
-      throw new Error(updata.error || updata.detail || "upload failed");
+    if (!clip.jobId) {
+      // Normal upload path. A pulled clip already has a server job, so skip it.
+      clip.status = "uploading";
+      setClipStatus(clip, "Uploading…");
+      updateCacheControls();
+      const form = new FormData();
+      form.append("file", clip.file);
+      const up = await fetch("/api/upload", { method: "POST", body: form });
+      const updata = await up.json();
+      if (!up.ok || updata.status === "error") {
+        throw new Error(updata.error || updata.detail || "upload failed");
+      }
+      clip.jobId = updata.id;
+      setGeoNote(clip, updata);
     }
-    clip.jobId = updata.id;
-    setGeoNote(clip, updata);
 
     clip.status = "transcribing";
     setClipStatus(clip, "Transcribing… (first run downloads the model)");

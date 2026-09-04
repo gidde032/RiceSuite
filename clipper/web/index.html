@@ -26,6 +26,12 @@
         <input id="file-input" class="file-input-accessible" type="file" accept="video/*" multiple />
       </label>
 
+      <div class="searcher-pull">
+        <button id="pull-searcher-btn" type="button">Pull from RiceSearcher</button>
+        <span class="hint">Ingest the next batch of selected clips from <code>~/ricesearcher-handoff</code>.</span>
+        <p id="pull-status" class="status" role="status"></p>
+      </div>
+
       <div class="batch-defaults">
         <span class="hint">Batch defaults (each clip can override below):</span>
         <div class="batch-defaults-row">

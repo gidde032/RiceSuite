@@ -17,7 +17,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import handoff, jobs, probe
+from app import handoff, jobs, probe, searcher_pickup
 from app.models import HandoffRequest, JobState, RenderRequest
 from app.process import terminate_all_owned_processes
 from render.pipeline import render
@@ -236,6 +236,21 @@ def handoff_batch(req: HandoffRequest) -> dict:
     try:
         return handoff.write_batch(entries)
     except handoff.HandoffError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/pull-from-searcher")
+def pull_from_searcher() -> dict:
+    """Ingest the oldest RiceSearcher handoff batch as new review jobs.
+
+    Reads local files from the searcher inbox (``~/ricesearcher-handoff``) and
+    copies each clip into a job work dir — no posting, no network. The clips then
+    flow through the normal review → render → "Send to RicePoster" path (which
+    writes the separate ``~/riceclipper-handoff``).
+    """
+    try:
+        return searcher_pickup.pull_next_batch()
+    except searcher_pickup.PickupError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
