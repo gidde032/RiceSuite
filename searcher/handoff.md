@@ -4,7 +4,7 @@
 lines. Shipped history → `CHANGELOG.md` (created when versioned); product
 contract → `SPEC.md`/`ADR-001.md`; planned work → GitHub Issues.
 
-Last updated: 2026-09-04.
+Last updated: 2026-09-09.
 
 ## Current state
 
@@ -45,13 +45,22 @@ a PR):
 Local integrated gates: ruff + JS clean; **142 tests, 96.05% coverage** (floor 90%);
 smoke tier **5 passed** with `pytest -m smoke --no-cov`.
 
+Round 2's approved practical repair batch is also integrated locally:
+
+- correct, duration-matched H.264/AAC handoff clips for offset source streams;
+- merged yt-dlp output selection and normalized publication dates;
+- terminal handed-off windows, strict scorer results, and atomic re-scoring;
+- failed-pull cache cleanup and contextual lazy transcription failures.
+
+Round 3 caught and repaired merged-output selection, model-load context, and the
+first timing repair's duration/performance regressions. Current gates: ruff + JS
+clean; **155 tests, 95.59% coverage**; smoke tier **5 passed**.
+
 ## Next action
 
-Maintainer reviews the Round 1 repair handoff and authorizes the publication boundary
-(push/draft PR as desired). Then freeze the repaired head and run targeted
-Round 2: cross-pillar cleanup/custody, acquisition/transcription adapter reliability,
-media timing/handoff precision, and repeat-use lifecycle/error recovery. RiceClipper
-and RicePoster access in the cleanup lens is read-only and uses no live data.
+Finish the targeted Round 3 verification, commit the local repair batch, then let
+the maintainer exercise normal YouTube → review → Clipper use before the separate
+push/draft-PR publication boundary.
 
 ## Reserved from the agent (maintainer-only)
 

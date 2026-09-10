@@ -9,12 +9,37 @@ from __future__ import annotations
 
 import shutil
 import tempfile
+from datetime import date, datetime
 from pathlib import Path
 
 from ricesearcher.acquire.base import AcquiredSource
 from ricesearcher.models import SourceKind
 
 _URL_MARKERS = ("http://", "https://", "www.", "youtube.com", "youtu.be")
+
+
+def _normalize_upload_date(value: object) -> str:
+    """Return upload metadata as ISO date, or empty when it is unusable.
+
+    Reviewer lens: provenance metadata normalization (MEDIUM). yt-dlp exposes
+    YouTube's upload date as ``YYYYMMDD``; normalizing it here keeps persisted
+    source metadata consistent without inventing a date for missing or invalid
+    values.
+    """
+    if not isinstance(value, str):
+        return ""
+    raw = value.strip()
+    if len(raw) == 8 and raw.isdigit():
+        try:
+            return datetime.strptime(raw, "%Y%m%d").date().isoformat()
+        except ValueError:
+            return ""
+    if not raw:
+        return ""
+    try:
+        return date.fromisoformat(raw).isoformat()
+    except ValueError:
+        return ""
 
 
 class YtDlpAcquirer:
@@ -50,20 +75,38 @@ class YtDlpAcquirer:
             }
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(request, download=True)
-                # After a merge, the real output path is in requested_downloads;
-                # prepare_filename can still report a pre-merge extension.
-                downloads = info.get("requested_downloads") or []
-                if downloads and downloads[0].get("filepath"):
-                    media_path = Path(downloads[0]["filepath"])
-                else:
-                    media_path = Path(ydl.prepare_filename(info))
+                # Prefer yt-dlp's final post-processed path. requested_downloads
+                # can point at a video-only intermediate from a DASH merge.
+                prepared = (
+                    ydl.prepare_filename(info)
+                    if hasattr(ydl, "prepare_filename")
+                    else None
+                )
+                candidates = [info.get("filepath"), prepared]
+                candidates.extend(
+                    item.get("filepath")
+                    for item in info.get("requested_downloads") or []
+                    if isinstance(item, dict)
+                )
+                media_path = next(
+                    (
+                        Path(path)
+                        for path in candidates
+                        if path and Path(path).is_file()
+                    ),
+                    None,
+                )
+                if media_path is None:
+                    raise FileNotFoundError(
+                        "yt-dlp did not produce a usable media file"
+                    )
             return AcquiredSource(
                 kind=SourceKind.YOUTUBE,
                 ref=request,
                 media_path=media_path,
                 title=info.get("title", ""),
                 channel=info.get("uploader", ""),
-                published_at=str(info.get("upload_date", "")),
+                published_at=_normalize_upload_date(info.get("upload_date")),
                 duration_s=float(info.get("duration") or 0.0),
                 extra={"video_id": info.get("id", "")},
                 owned_temp_dir=out_dir if owns_download_dir else None,

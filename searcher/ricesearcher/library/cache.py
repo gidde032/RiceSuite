@@ -41,6 +41,16 @@ class MediaCache:
         Idempotent: if the digest is already present the existing copy is kept
         and no second copy is written.
         """
+        digest, dest, _created = self.put_with_status(source)
+        return digest, dest
+
+    def put_with_status(self, source: Path) -> tuple[str, Path, bool]:
+        """Copy media and report whether this call created the cache file.
+
+        Reviewer lens: cache custody (HIGH). The creation bit lets the pipeline
+        remove only a newly-created, unreferenced copy if later transcription or
+        persistence fails; pre-existing content remains shared and untouched.
+        """
         source = Path(source)
         if not source.is_file():
             raise FileNotFoundError(f"no such media file: {source}")
@@ -53,20 +63,25 @@ class MediaCache:
         if not dest.exists():
             dest.parent.mkdir(parents=True, exist_ok=True)
             # Copy to a per-call-unique temp file in the same dir, then
-            # atomically rename onto dest. A unique tmp name (not one derived
-            # from the digest) means concurrent puts of the same bytes can't
-            # race on a shared tmp path; the atomic replace still guarantees a
-            # reader never sees a half-copied entry. A crash between copy and
-            # replace can leave a stray ``*.tmp`` (bounded, swept opportunistically).
+            # atomically link it into place. A unique tmp name (not one derived
+            # from the digest) means concurrent puts of the same bytes cannot
+            # race on a shared tmp path; link-without-replace also ensures only
+            # the winner reports ownership of a newly-created destination. A
+            # crash before linking can leave a stray ``*.tmp`` (bounded, swept
+            # opportunistically).
             fd, tmp_name = tempfile.mkstemp(dir=dest.parent, suffix=".tmp")
             os.close(fd)
             tmp = Path(tmp_name)
             try:
                 shutil.copy2(source, tmp)
-                tmp.replace(dest)
+                try:
+                    os.link(tmp, dest)
+                except FileExistsError:
+                    return digest, dest, False
             finally:
                 tmp.unlink(missing_ok=True)
-        return digest, dest
+            return digest, dest, True
+        return digest, dest, False
 
     def path_for(self, digest: str, suffix: str) -> Path:
         """Return the cache path for a known digest + suffix (may not exist).

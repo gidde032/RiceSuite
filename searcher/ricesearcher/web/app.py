@@ -155,6 +155,11 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     @app.patch("/api/slices/{slice_id}/window")
     def set_window(slice_id: str, body: _WindowIn) -> dict:
+        """Tighten a slice's target window while it is still reviewable.
+
+        Reviewer lens: HIGH — ``handed_off`` is terminal, so a stale review
+        client must not mutate the target interval after it is manifested.
+        """
         # Reject NaN/Infinity here (stdlib JSON parsing accepts them) with a plain
         # string detail, rather than via a pydantic constraint whose 422 body would
         # try — and fail — to serialize the NaN input.
@@ -166,6 +171,10 @@ def create_app(config: Config | None = None) -> FastAPI:
             s = lib.get_slice(slice_id)
             if s is None:
                 raise HTTPException(404, "no such slice")
+            if s.status is SliceStatus.HANDED_OFF:
+                raise HTTPException(
+                    409, "handed_off slices are terminal and cannot be changed"
+                )
             # The intended cut is tightenable but stays inside the padded window
             # (ADR Q4b). pad_in/pad_out are immutable, so reading them here can't
             # be clobbered; the write itself is a targeted UPDATE (finding W1).
