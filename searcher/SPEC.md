@@ -79,6 +79,19 @@ files only.
   system) shows candidate moments (thumbnail + transcript span + score +
   rationale + duplicate annotation), lets the human tighten the intended in/out
   by eye, and **select** slices for handoff. This is the human gate.
+  - **FR-8a — Media management.** The UI includes a media-management page listing
+    every stored source (url, cached media, size, slice count) with a per-source
+    **delete** and a whole-cache **clear**. These are **full-purge** (maintainer-
+    ratified 2026-09-10): deleting a source cascades to its transcript and *all*
+    its candidate slices — including `selected` and `handed_off` rows — and
+    unlinks the on-disk media once no other source references it. This is
+    **local-only** (SQLite rows + local files; no external surface) and is the
+    one deliberate exception to §7's "durable custody before any purge" lesson:
+    it destroys *library* state, never a written handoff batch (those stay
+    producer-write-only, and a re-pull re-delivers under a new `batch_id`). The
+    destructive controls are gated by a two-step confirm in the UI; because the
+    API endpoints themselves are unguarded, the review server must stay bound to
+    `127.0.0.1` (its default) — do not expose it on a shared interface.
 - **FR-9 — Write handoff (D8, ADR Q4b).** On select, write a filesystem handoff
   batch to the shared root: `clip`/source media + `manifest.json` written **last**
   as the atomicity signal, with the superset schema in §7. Producer only ever

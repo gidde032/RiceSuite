@@ -11,6 +11,10 @@ const statusEl = document.getElementById("status");
 
 document.getElementById("clearAllBtn").addEventListener("click", confirmClearAll);
 
+// Tracks the 5s "disarm" timer for the clear-all confirm so a stale timer from
+// an earlier arm cycle can never silently disarm a later one (review finding).
+let clearArmTimer = null;
+
 function setStatusMsg(text, isError) {
   statusEl.textContent = text || "";
   statusEl.classList.toggle("error", !!isError);
@@ -100,22 +104,30 @@ async function doDelete(r, s, msg, confirmBtn, cancelBtn) {
 
 function confirmClearAll() {
   const btn = document.getElementById("clearAllBtn");
-  if (btn.dataset.armed === "1") return;
+  if (btn.dataset.armed === "1") return;  // the armed click is handled by clearAll
   btn.dataset.armed = "1";
   btn.textContent = "Click again to purge everything";
   setStatusMsg("clearing the cache deletes every source, transcript, and scored slice — click again to confirm.", true);
-  const disarm = () => {
-    btn.dataset.armed = "";
-    btn.textContent = "Clear entire cache…";
-    btn.removeEventListener("click", clearAll);
-  };
-  // second click within 5s purges; otherwise disarm
+  // second click within 5s purges; otherwise disarm. Clear any prior timer so a
+  // re-arm never leaves an older timer running against the new cycle.
   btn.addEventListener("click", clearAll, { once: true });
-  setTimeout(disarm, 5000);
+  clearTimeout(clearArmTimer);
+  clearArmTimer = setTimeout(() => disarmClearAll(btn), 5000);
+}
+
+function disarmClearAll(btn) {
+  clearTimeout(clearArmTimer);
+  clearArmTimer = null;
+  btn.dataset.armed = "";
+  btn.textContent = "Clear entire cache…";
+  btn.removeEventListener("click", clearAll);
 }
 
 async function clearAll() {
   const btn = document.getElementById("clearAllBtn");
+  // Cancel the pending disarm so it can't fire against a fresh cycle mid-purge.
+  clearTimeout(clearArmTimer);
+  clearArmTimer = null;
   btn.dataset.armed = "";
   btn.textContent = "Clear entire cache…";
   btn.disabled = true;

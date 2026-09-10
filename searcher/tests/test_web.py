@@ -231,6 +231,35 @@ def test_list_sources_dto(client: TestClient) -> None:
     assert src["media_url"] == "/cache/ab/abc123.mp4"
     assert src["size_bytes"] == len(b"\x00fake video bytes\x01")
     assert src["slice_count"] == 2  # sl1 + sl2
+    assert "media_path" not in src  # absolute local path is not surfaced (skeptic #3)
+
+
+def test_list_sources_reports_missing_media(client: TestClient, tmp_path: Path) -> None:
+    # A source whose cached media has been unlinked stays listed (size None) and
+    # remains deletable — the media page shows "media missing" (frontend #2).
+    media = tmp_path / "data" / "cache" / "ab" / "abc123.mp4"
+    media.unlink()
+    rows = {s["id"]: s for s in client.get("/api/sources").json()}
+    assert rows["src1"]["size_bytes"] is None
+    assert client.post("/api/sources/src1/delete").status_code == 200
+
+
+def test_delete_source_survives_cache_unlink_oserror(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Regression (F4): the DB row is purged before the media unlink; if the
+    # unlink hits a real OSError the endpoint must still report 200 honestly
+    # (media_removed False), not 500 while the row is already gone.
+    import ricesearcher.web.app as web_app
+
+    def boom(self: object, path: object) -> bool:
+        raise OSError("read-only filesystem")
+
+    monkeypatch.setattr(web_app.MediaCache, "delete", boom)
+    r = client.post("/api/sources/src1/delete")
+    assert r.status_code == 200
+    assert r.json()["media_removed"] is False
+    assert client.get("/api/sources").json() == []  # row still purged
 
 
 def test_delete_source_full_purge(client: TestClient, tmp_path: Path) -> None:
