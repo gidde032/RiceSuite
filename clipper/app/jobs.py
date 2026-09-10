@@ -7,7 +7,9 @@ track, the generated ASS, and the rendered output. The dir is gitignored.
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import stat
 import threading
 import uuid
@@ -19,6 +21,9 @@ from app.models import JobState, Word
 from app.probe import MediaInfo
 
 WORK_ROOT = Path(__file__).resolve().parent.parent / ".riceclipper_work"
+JOB_METADATA_FILENAME = "job.json"
+_JOB_METADATA_SCHEMA = 1
+_SAFE_JOB_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
 @dataclass
@@ -31,6 +36,11 @@ class Job:
     status: str = "transcribing"
     error: str | None = None
     output_path: Path | None = None
+    # Searcher imports retain the source manifest on the job so review remains
+    # independent of the inbox after the source batch is removed.
+    searcher_title: str = ""
+    searcher_metadata: dict[str, object] | None = None
+    searcher_manifest: dict[str, object] | None = None
 
     def state(self) -> JobState:
         return JobState(
@@ -88,6 +98,116 @@ def _ensure_work_root() -> Path:
     if stat.S_ISLNK(root_stat.st_mode) or not stat.S_ISDIR(root_stat.st_mode):
         raise CachePathError(f"work root must be a directory: {root}")
     return root
+
+
+def persist_searcher_job(job: Job) -> None:
+    """Atomically persist imported custody metadata for restart recovery (HIGH)."""
+    if job.source_path is None or job.info is None:
+        raise OSError("Searcher job has no source or probe information")
+    if job.source_path.parent != job.dir:
+        raise OSError("Searcher source must be a direct job file")
+    if not _SAFE_JOB_ID.fullmatch(job.id):
+        raise OSError("unsafe job id")
+    payload = {
+        "schema_version": _JOB_METADATA_SCHEMA,
+        "id": job.id,
+        "source": job.source_path.name,
+        "info": {
+            "width": job.info.width,
+            "height": job.info.height,
+            "duration": job.info.duration,
+            "has_audio": job.info.has_audio,
+        },
+        "title": job.searcher_title,
+        "clip": job.searcher_metadata,
+        "manifest": job.searcher_manifest,
+    }
+    metadata = job.dir / JOB_METADATA_FILENAME
+    temporary = metadata.with_suffix(".json.tmp")
+    try:
+        temporary.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        os.replace(temporary, metadata)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _recover_searcher_job(job_dir: Path) -> Job | None:
+    """Recover a compact Searcher custody sidecar, or skip malformed data."""
+    metadata = job_dir / JOB_METADATA_FILENAME
+    try:
+        payload = json.loads(metadata.read_text(encoding="utf-8"))
+        job_id = payload["id"]
+        source_name = payload["source"]
+        info = MediaInfo(**payload["info"])
+        clip = payload["clip"]
+        manifest = payload["manifest"]
+        title = payload.get("title", "")
+        if (
+            payload["schema_version"] != _JOB_METADATA_SCHEMA
+            or not isinstance(job_id, str)
+            or not _SAFE_JOB_ID.fullmatch(job_id)
+            or job_id != job_dir.name
+            or not isinstance(source_name, str)
+            or not source_name
+            or "/" in source_name
+            or "\\" in source_name
+            or Path(source_name).name != source_name
+            or not isinstance(clip, dict)
+            or not isinstance(manifest, dict)
+            or not isinstance(title, str)
+        ):
+            return None
+    except (KeyError, OSError, TypeError, ValueError):
+        return None
+    source_path = job_dir / source_name
+    try:
+        source_stat = source_path.lstat()
+    except OSError:
+        return None
+    if stat.S_ISLNK(source_stat.st_mode) or not stat.S_ISREG(source_stat.st_mode):
+        return None
+    return Job(
+        id=job_id,
+        dir=job_dir,
+        source_path=source_path,
+        info=info,
+        status="ready",
+        searcher_title=title,
+        searcher_metadata=clip,
+        searcher_manifest=manifest,
+    )
+
+
+def recover_jobs() -> tuple[Job, ...]:
+    """Load Searcher jobs from direct work directories after a restart."""
+    with _JOBS_LOCK:
+        try:
+            entries = tuple(_ensure_work_root().iterdir())
+        except OSError:
+            return ()
+        recovered: list[Job] = []
+        for entry in entries:
+            try:
+                entry_stat = entry.lstat()
+            except OSError:
+                continue
+            if entry.name in _JOBS or not stat.S_ISDIR(entry_stat.st_mode):
+                continue
+            job = _recover_searcher_job(entry)
+            if job is None:
+                continue
+            _JOBS[job.id] = job
+            recovered.append(job)
+        return tuple(recovered)
+
+
+def find_searcher_job(clip: dict, manifest: dict) -> Job | None:
+    """Find a custody job to resume an interrupted Searcher pull (HIGH)."""
+    with _JOBS_LOCK:
+        for job in _JOBS.values():
+            if job.searcher_metadata == clip and job.searcher_manifest == manifest:
+                return job
+        return None
 
 
 def _open_directory(path: Path | str, *, dir_fd: int | None = None) -> int:
@@ -155,6 +275,8 @@ def _remove_directory_contents(dir_fd: int) -> None:
 def active_jobs() -> tuple[Job, ...]:
     """Return jobs whose transcription or render work is still in progress."""
     with _JOBS_LOCK:
+        # Cache protection must see durable jobs after a process restart too.
+        recover_jobs()
         return tuple(job for job in _JOBS.values() if job.status in _ACTIVE_STATUSES)
 
 
@@ -282,14 +404,31 @@ def _clear_cache_unlocked() -> dict[str, int]:
 
 def create_job() -> Job:
     with _JOBS_LOCK:
-        job_id = uuid.uuid4().hex[:12]
-        job_dir = _ensure_work_root() / job_id
-        job_dir.mkdir(parents=True, exist_ok=True)
-        job = Job(id=job_id, dir=job_dir)
-        _JOBS[job_id] = job
-        return job
+        root = _ensure_work_root()
+        # A durable directory may outlive the in-memory process.  Avoid even
+        # an improbable UUID collision rather than attaching a new live job to
+        # somebody else's custody.
+        while True:
+            job_id = uuid.uuid4().hex[:12]
+            job_dir = root / job_id
+            if job_id in _JOBS or job_dir.exists():
+                continue
+            job_dir.mkdir()
+            job = Job(id=job_id, dir=job_dir)
+            _JOBS[job_id] = job
+            return job
 
 
 def get_job(job_id: str) -> Job | None:
     with _JOBS_LOCK:
-        return _JOBS.get(job_id)
+        if not isinstance(job_id, str) or not _SAFE_JOB_ID.fullmatch(job_id):
+            return None
+        existing = _JOBS.get(job_id)
+        if existing is not None:
+            return existing
+        root = _ensure_work_root()
+        job_dir = root / job_id
+        job = _recover_searcher_job(job_dir)
+        if job is not None:
+            _JOBS[job.id] = job
+        return job

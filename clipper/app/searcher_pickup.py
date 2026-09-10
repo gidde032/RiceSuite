@@ -132,18 +132,23 @@ def _validated_clips(batch_dir: Path, data: dict) -> list[dict]:
 
 
 def pull_next_batch() -> dict:
-    """Ingest the oldest un-consumed batch into new review jobs.
+    """Ingest the oldest un-consumed batch into durable review jobs.
 
     Returns ``{"batch_id", "clip_count", "jobs": [ {job state + "title"} ]}``.
     ``batch_id`` is None / ``clip_count`` 0 when there is nothing to pull. On any
-    failure, no partial ingest survives (created jobs are rolled back and the
-    batch is left in place, un-consumed) so the pull is retryable.
+    ingest failure, newly created jobs are rolled back and the batch is left in
+    place, un-consumed, so the pull is retryable. If recording consumption fails
+    after custody, durable job sidecars allow a later process to resume without
+    creating duplicate live jobs (review lens: HIGH).
     """
     root = inbox_root()
     if not root.is_dir():
         return {"batch_id": None, "clip_count": 0, "jobs": []}
 
     with jobs.job_operation_lock():
+        # Rehydrate sidecars before selecting a batch.  This closes the normal
+        # restart gap between custody and the consumed registry update.
+        jobs.recover_jobs()
         consumed = _load_consumed(root)
         selected = _oldest_unconsumed(root, consumed)
         if selected is None:
@@ -152,10 +157,23 @@ def pull_next_batch() -> dict:
         clips = _validated_clips(batch_dir, data)  # full validation first
         batch_id = data["batch_id"]
 
-        created: list = []
+        created: list[jobs.Job] = []
+        batch_jobs: list[jobs.Job] = []
         try:
             for clip in clips:
                 src = batch_dir / clip["file"]
+                job = jobs.find_searcher_job(clip, data)
+                if job is not None:
+                    # A sidecar may be the only record left after a restart or
+                    # a failed consumed-registry write.  Never copy the same
+                    # clip into a second live job.
+                    if job.source_path is None or not job.source_path.is_file():
+                        raise PickupError(
+                            f"custody for clip {clip['position']} is unavailable"
+                        )
+                    batch_jobs.append(job)
+                    continue
+
                 job = jobs.create_job()
                 created.append(job)
                 dest = job.dir / f"source{Path(clip['file']).suffix or '.mp4'}"
@@ -164,21 +182,39 @@ def pull_next_batch() -> dict:
                 job.info = probe.probe(str(dest))
                 job.status = "ready"
                 job.searcher_title = str(clip.get("source_title", ""))
+                # Keep the complete clip object and source manifest.  In
+                # particular, do not trim the padded clip or import Searcher's
+                # transcript timings; Clipper's transcription remains the v1
+                # source of word timing.
+                job.searcher_metadata = dict(clip)
+                job.searcher_manifest = data
+                jobs.persist_searcher_job(job)
+                batch_jobs.append(job)
         except Exception as exc:
             _rollback(created)
             raise PickupError(f"ingest failed: {exc}") from exc
 
         # Custody is durable → record consumed and remove the source batch.
         consumed.add(batch_id)
-        _save_consumed(root, consumed)
+        try:
+            _save_consumed(root, consumed)
+        except Exception as exc:
+            # Keep the durable jobs and source batch.  A retry can match the
+            # sidecars and finish this commit without duplicating live jobs.
+            raise PickupError(f"could not record consumed batch: {exc}") from exc
         shutil.rmtree(batch_dir, ignore_errors=True)
 
     return {
         "batch_id": batch_id,
-        "clip_count": len(created),
+        "clip_count": len(batch_jobs),
         "jobs": [
-            {**job.state().model_dump(), "title": getattr(job, "searcher_title", "")}
-            for job in created
+            {
+                **job.state().model_dump(),
+                "title": job.searcher_title,
+                "searcher_metadata": job.searcher_metadata,
+                "searcher_manifest": job.searcher_manifest,
+            }
+            for job in batch_jobs
         ],
     }
 

@@ -48,10 +48,11 @@ carried for future use.
   `ricesearcher`, safe `batch_id`, nonempty clips, unique positive integer
   positions, bare filenames contained within the batch dir); malformed → HTTP 400
   and **zero** jobs created.
-- **Durable custody before purge:** each clip's bytes are copied into a job work
-  dir and probed (`status = ready`) before the source batch dir is removed. On any
-  failure the created jobs are rolled back and the batch is left un-consumed
-  (retryable).
+- **Durable custody before purge:** each clip's bytes, probe result, and complete
+  Searcher manifest metadata are written into its job directory before the source
+  batch is removed. Imported jobs recover as `ready` after a server restart;
+  Clipper still creates its own word timings and does not auto-trim the padded clip.
+  Failed intake remains retryable without creating duplicate jobs.
 - The ingested clips become normal review jobs; the human reviews and renders,
   then "Send to RicePoster" writes the separate `~/riceclipper-handoff` as before.
 
