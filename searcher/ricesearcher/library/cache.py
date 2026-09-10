@@ -83,6 +83,49 @@ class MediaCache:
             return digest, dest, True
         return digest, dest, False
 
+    def delete(self, path: Path) -> bool:
+        """Unlink one cached media file, returning whether a file was removed.
+
+        Refuses any path that does not resolve inside ``root`` (a guard so a
+        stray or hand-edited ``media_path`` can never make the media page unlink
+        something outside the content-addressed tree). Prunes the now-empty
+        shard directory opportunistically; a non-empty or shared shard is left
+        alone.
+        """
+        path = Path(path)
+        try:
+            path.resolve().relative_to(self.root.resolve())
+        except ValueError:
+            return False
+        if not path.is_file():
+            return False
+        path.unlink()
+        shard = path.parent
+        try:
+            if shard != self.root.resolve() and not any(shard.iterdir()):
+                shard.rmdir()
+        except OSError:
+            pass  # a concurrent put may have re-populated the shard; harmless
+        return True
+
+    def clear(self) -> int:
+        """Delete every cached file under ``root``, returning the count removed.
+
+        Backs the media page's "clear the whole cache" control. The root itself
+        is recreated empty so the cache stays usable immediately afterward.
+        """
+        count = 0
+        if self.root.exists():
+            for child in self.root.iterdir():
+                if child.is_dir():
+                    count += sum(1 for p in child.rglob("*") if p.is_file())
+                    shutil.rmtree(child)
+                elif child.is_file():
+                    count += 1
+                    child.unlink()
+        self.root.mkdir(parents=True, exist_ok=True)
+        return count
+
     def path_for(self, digest: str, suffix: str) -> Path:
         """Return the cache path for a known digest + suffix (may not exist).
 

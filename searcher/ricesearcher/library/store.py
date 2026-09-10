@@ -214,6 +214,52 @@ class Library:
         ).fetchall()
         return [_row_to_source(r, []) for r in rows]
 
+    def slice_counts(self) -> dict[str, int]:
+        """Map source id -> number of candidate slices, for the media page.
+
+        A left-outer view isn't needed: sources with zero slices simply don't
+        appear, and the media page defaults a missing id to 0.
+        """
+        return {
+            r["source_id"]: r["n"]
+            for r in self._conn.execute(
+                "SELECT source_id, COUNT(*) AS n FROM candidate_slices "
+                "GROUP BY source_id"
+            )
+        }
+
+    def delete_source(self, source_id: str) -> str | None:
+        """Delete a source and everything under it, returning its media_path.
+
+        Full-purge semantics (maintainer-ratified 2026-09-10): the transcript
+        words and every candidate slice cascade away via ``ON DELETE CASCADE``
+        (foreign keys are ON), including slices a human has already selected.
+        This is only ever reached from the deliberate media-management delete
+        controls — never from the pipeline. Returns ``None`` if no such source
+        so the caller can answer 404 without a second lookup.
+        """
+        with self._conn:
+            row = self._conn.execute(
+                "SELECT media_path FROM sources WHERE id = ?", (source_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            self._conn.execute("DELETE FROM sources WHERE id = ?", (source_id,))
+        return row["media_path"]
+
+    def delete_all_sources(self) -> int:
+        """Purge every source (transcripts + slices cascade). Returns the count.
+
+        Backs the media page's "clear the whole cache" control. Disk media is
+        the caller's to wipe afterward (via ``MediaCache.clear``); this only
+        clears the index.
+        """
+        with self._conn:
+            cur = self._conn.execute("SELECT COUNT(*) AS n FROM sources")
+            n = cur.fetchone()["n"]
+            self._conn.execute("DELETE FROM sources")
+        return n
+
     # -- candidate slices -------------------------------------------------
 
     def _upsert_slices(self, slices: list[CandidateSlice]) -> None:

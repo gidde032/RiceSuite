@@ -39,6 +39,12 @@ body {
 .mark { display: inline-flex; width: 26px; height: 26px; }
 .app-title { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: .01em; }
 .app-title span { color: var(--muted); font-weight: 500; }
+.nav { display: flex; gap: 4px; margin-left: 4px; }
+.nav-link {
+  color: var(--muted); text-decoration: none; font-size: 14px;
+  padding: 4px 9px; border-radius: 6px;
+}
+.nav-link:hover { color: var(--text); background: var(--interior); }
 .filters { margin-left: auto; display: flex; align-items: center; gap: 12px; }
 .count { color: var(--muted); font-variant-numeric: tabular-nums; }
 
@@ -75,11 +81,19 @@ select, input[type="number"] {
 .preview video { width: 100%; border-radius: 6px; background: var(--backdrop); display: block; }
 .preview .win { color: var(--muted); font-size: 13px; margin-top: 8px; font-variant-numeric: tabular-nums; }
 
-.meta { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.meta-top { display: flex; align-items: baseline; gap: 12px; }
-.score { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.title { color: var(--rice); font-weight: 600; overflow-wrap: anywhere; }
-.rationale { color: var(--text); }
+.meta { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+/* Score + title share a top edge so both texts start on the same y-line; the
+   score's larger cap-height is nudged up a hair to sit optically level. */
+.meta-top { display: flex; align-items: flex-start; gap: 12px; }
+.score {
+  font-size: 24px; font-weight: 700; line-height: 1.1; letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums; margin-top: -1px; flex: none;
+}
+.title {
+  color: var(--rice); font-weight: 600; font-size: 16px; line-height: 1.3;
+  letter-spacing: -.005em; overflow-wrap: anywhere; margin: 0;
+}
+.rationale { color: var(--text); line-height: 1.55; }
 .transcript { color: var(--muted); font-size: 13px; max-height: 5.5em; overflow: auto; }
 
 .badges { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -107,8 +121,23 @@ button[disabled] { opacity: .5; cursor: default; }
 /* Rice-grey focus ring, distinct from hover/selection */
 :focus-visible { outline: 2px solid var(--rice); outline-offset: 2px; }
 
+/* Media-management page */
+.media-list { max-width: 1100px; margin: 0 auto; padding: 20px; display: grid; gap: 12px; }
+.media-row {
+  display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: start;
+  background: var(--interior); border: 1px solid var(--hairline);
+  border-radius: var(--radius); padding: 14px 16px;
+}
+.media-main { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.media-title { font-weight: 600; font-size: 15px; color: var(--text); letter-spacing: -.005em; }
+.media-ref { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.media-facts { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.media-actions { display: flex; gap: 8px; align-items: start; }
+.media-row .card-msg { grid-column: 1 / -1; margin: 0; }
+
 @media (max-width: 720px) {
   .card { grid-template-columns: 1fr; }
+  .media-row { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: no-preference) {
   .card { transition: border-color .12s ease; }

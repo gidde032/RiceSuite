@@ -36,3 +36,34 @@ def test_put_missing_file_raises(tmp_path: Path) -> None:
     cache = MediaCache(tmp_path / "cache")
     with pytest.raises(FileNotFoundError):
         cache.put(tmp_path / "nope.mp4")
+
+
+def test_delete_removes_file_and_prunes_shard(tmp_path: Path, media_file: Path) -> None:
+    cache = MediaCache(tmp_path / "cache")
+    _digest, dest = cache.put(media_file)
+    shard = dest.parent
+    assert cache.delete(dest) is True
+    assert not dest.exists()
+    assert not shard.exists()  # empty shard dir is pruned
+    # deleting an already-gone file is a no-op, not an error
+    assert cache.delete(dest) is False
+
+
+def test_delete_refuses_path_outside_root(tmp_path: Path) -> None:
+    # A media_path that escaped the content-addressed tree must never be unlinked.
+    cache = MediaCache(tmp_path / "cache")
+    cache.root.mkdir(parents=True, exist_ok=True)
+    outside = tmp_path / "precious.txt"
+    outside.write_text("do not delete")
+    assert cache.delete(outside) is False
+    assert outside.is_file()
+
+
+def test_clear_wipes_all_and_recreates_root(tmp_path: Path, media_file: Path) -> None:
+    cache = MediaCache(tmp_path / "cache")
+    cache.put(media_file)
+    (cache.root / "loose.bin").write_bytes(b"x")  # a non-sharded stray file too
+    removed = cache.clear()
+    assert removed == 2
+    assert cache.root.is_dir()
+    assert not any(cache.root.iterdir())
