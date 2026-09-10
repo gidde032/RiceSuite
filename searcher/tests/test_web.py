@@ -112,6 +112,74 @@ def test_set_status_is_the_gate(client: TestClient) -> None:
     )
 
 
+def test_handed_off_slice_is_terminal_in_review_api(tmp_path: Path) -> None:
+    cfg = Config(data_dir=tmp_path / "data", handoff_dir=tmp_path / "handoff")
+    cfg.ensure_dirs()
+    with Library(cfg.db_path) as lib:
+        lib.upsert_source(
+            Source(
+                id="src1",
+                kind=SourceKind.YOUTUBE,
+                ref="https://y/x",
+                media_path="/media.mp4",
+            )
+        )
+        lib.upsert_slices(
+            [
+                CandidateSlice(
+                    id="sl1",
+                    source_id="src1",
+                    pad_in=0,
+                    pad_out=10,
+                    target_in=2,
+                    target_out=8,
+                    transcript_span="a moment",
+                    status=SliceStatus.HANDED_OFF,
+                )
+            ]
+        )
+
+    client = TestClient(create_app(cfg))
+    response = client.post(
+        "/api/slices/sl1/status", json={"status": SliceStatus.SELECTED.value}
+    )
+
+    assert response.status_code == 409
+    assert "terminal" in response.json()["detail"]
+    with Library(cfg.db_path) as lib:
+        assert lib.get_slice("sl1").status is SliceStatus.HANDED_OFF
+
+
+def test_handoff_execution_failure_is_structured_and_retryable(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ricesearcher.web.app as web_app
+
+    assert (
+        client.post("/api/slices/sl1/status", json={"status": "selected"}).status_code
+        == 200
+    )
+
+    def fail(*args: object, **kwargs: object) -> dict:
+        raise OSError("ffmpeg: encoder unavailable")
+
+    monkeypatch.setattr(web_app, "hand_off_selected", fail)
+    response = client.post("/api/handoff")
+
+    assert response.status_code == 503
+    assert "retry" in response.json()["detail"]
+    assert "ffmpeg" in response.json()["detail"]
+    got = {s["id"]: s for s in client.get("/api/slices").json()}
+    assert got["sl1"]["status"] == SliceStatus.SELECTED.value
+
+
+def test_static_handoff_refresh_preserves_success_message(client: TestClient) -> None:
+    script = client.get("/static/app.js")
+    assert script.status_code == 200
+    assert "await load(true)" in script.text
+    assert "if (!preserveStatus)" in script.text
+
+
 def test_window_tighten_clamps_to_pad(client: TestClient) -> None:
     # Ask for an out beyond the pad and an in below it → clamped to [pad_in, pad_out].
     r = client.patch("/api/slices/sl1/window", json={"target_in": 0, "target_out": 999})

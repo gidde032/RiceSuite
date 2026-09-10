@@ -26,9 +26,23 @@ class WhisperTranscriber:
         return self._model
 
     def transcribe(self, media_path: Path) -> list[TranscriptWord]:  # pragma: no cover
-        model = self._load()
+        """Transcribe one file and turn adapter failures into actionable errors.
+
+        Reviewer lens: lazy adapter error boundary (MEDIUM). faster-whisper
+        returns a lazy segment iterator, so iteration belongs inside the same
+        contextual boundary as the model call; otherwise decode failures leak
+        as opaque third-party exceptions.
+        """
         try:
+            model = self._load()
             segments, _info = model.transcribe(str(media_path), word_timestamps=True)
+            words: list[TranscriptWord] = []
+            for seg in segments:
+                for w in seg.words or []:
+                    words.append(
+                        TranscriptWord(text=w.word.strip(), start=w.start, end=w.end)
+                    )
+            return words
         except IndexError as exc:
             # faster-whisper's PyAV demux raises a bare IndexError when the file
             # has no decodable audio stream. Surface a clear, actionable error.
@@ -36,10 +50,7 @@ class WhisperTranscriber:
                 f"no decodable audio stream in {media_path.name}; "
                 "the source must contain audio to transcribe"
             ) from exc
-        words: list[TranscriptWord] = []
-        for seg in segments:
-            for w in seg.words or []:
-                words.append(
-                    TranscriptWord(text=w.word.strip(), start=w.start, end=w.end)
-                )
-        return words
+        except Exception as exc:
+            raise RuntimeError(
+                f"transcription failed for {media_path.name}: {exc}"
+            ) from exc

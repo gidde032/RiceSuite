@@ -77,12 +77,16 @@ def _coerce_index(value: object) -> int | None:
     return None
 
 
-def _coerce_score(value: object) -> float:
-    """Return a finite score clamped to [0, 1]; non-finite/garbage -> 0.0."""
-    try:
-        score = float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return 0.0
+def _coerce_score(value: object) -> float | None:
+    """Validate numeric scores, retaining the established range policy.
+
+    Reviewer lens: scorer schema integrity (MEDIUM). JSON booleans and strings
+    are not numeric scores; finite numeric values keep the existing [0, 1]
+    clamp, while non-finite numeric values keep the established zero policy.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    score = float(value)
     if not math.isfinite(score):  # rejects NaN / +-inf (json.loads accepts them)
         return 0.0
     return max(0.0, min(1.0, score))
@@ -93,9 +97,9 @@ def parse_response(text: str, n: int) -> list[ScoredResult]:
 
     Robust to prose before/after the array: decodes the JSON value starting at the
     first ``[`` (so a stray ``]`` in trailing commentary can't truncate it). Raises
-    ``ScorerParseError`` when no array can be parsed at all, so a total failure is
-    visible rather than silently returning all-zero scores. Within a valid array,
-    missing/invalid indices default to score 0; scores are clamped to [0, 1].
+    ``ScorerParseError`` when the response cannot provide one valid result for every
+    candidate, so malformed-but-parseable output cannot silently become all-zero
+    scoring. Scores are clamped to [0, 1].
     """
     results = [ScoredResult(0.0, "") for _ in range(n)]
     start = text.find("[")
@@ -107,15 +111,37 @@ def parse_response(text: str, n: int) -> list[ScoredResult]:
         raise ScorerParseError(f"could not parse the model response: {exc}") from exc
     if not isinstance(parsed, list):
         raise ScorerParseError("the model response was not a JSON array")
+    seen_indices: set[int] = set()
     for item in parsed:
         if not isinstance(item, dict):
-            continue
+            raise ScorerParseError("each model result must be a JSON object")
         idx = _coerce_index(item.get("index"))
         if idx is None or not (0 <= idx < n):
-            continue
+            raise ScorerParseError(
+                f"model response missing valid results: invalid candidate index: "
+                f"{item.get('index')!r}"
+            )
+        if idx in seen_indices:
+            raise ScorerParseError(f"model response contains duplicate index {idx}")
+        score = _coerce_score(item.get("score"))
+        if score is None:
+            raise ScorerParseError(
+                f"model response has an invalid score for index {idx}"
+            )
+        rationale = item.get("rationale")
+        if not isinstance(rationale, str) or not rationale.strip():
+            raise ScorerParseError(
+                f"model response has an empty rationale for index {idx}"
+            )
+        seen_indices.add(idx)
         results[idx] = ScoredResult(
-            score=_coerce_score(item.get("score")),
-            rationale=str(item.get("rationale", "")),
+            score=score,
+            rationale=rationale,
+        )
+    missing = sorted(set(range(n)) - seen_indices)
+    if missing:
+        raise ScorerParseError(
+            f"model response missing valid results for indices {missing}"
         )
     return results
 

@@ -14,6 +14,7 @@ posting, publishing, or upload path exists anywhere in it.
 from __future__ import annotations
 
 import math
+import subprocess
 import threading
 from pathlib import Path
 
@@ -141,12 +142,24 @@ def create_app(config: Config | None = None) -> FastAPI:
                 422, f"status {new.value!r} is not settable from review"
             )
         with Library(cfg.db_path) as lib:
+            current = lib.get_slice(slice_id)
+            if current is None:
+                raise HTTPException(404, "no such slice")
+            if current.status is SliceStatus.HANDED_OFF:
+                raise HTTPException(
+                    409, "handed_off slices are terminal and cannot be changed"
+                )
             if not lib.update_slice_status(slice_id, new):
                 raise HTTPException(404, "no such slice")
         return {"id": slice_id, "status": new.value}
 
     @app.patch("/api/slices/{slice_id}/window")
     def set_window(slice_id: str, body: _WindowIn) -> dict:
+        """Tighten a slice's target window while it is still reviewable.
+
+        Reviewer lens: HIGH — ``handed_off`` is terminal, so a stale review
+        client must not mutate the target interval after it is manifested.
+        """
         # Reject NaN/Infinity here (stdlib JSON parsing accepts them) with a plain
         # string detail, rather than via a pydantic constraint whose 422 body would
         # try — and fail — to serialize the NaN input.
@@ -158,6 +171,10 @@ def create_app(config: Config | None = None) -> FastAPI:
             s = lib.get_slice(slice_id)
             if s is None:
                 raise HTTPException(404, "no such slice")
+            if s.status is SliceStatus.HANDED_OFF:
+                raise HTTPException(
+                    409, "handed_off slices are terminal and cannot be changed"
+                )
             # The intended cut is tightenable but stays inside the padded window
             # (ADR Q4b). pad_in/pad_out are immutable, so reading them here can't
             # be clobbered; the write itself is a targeted UPDATE (finding W1).
@@ -180,5 +197,11 @@ def create_app(config: Config | None = None) -> FastAPI:
                 return hand_off_selected(lib, config=cfg)
             except HandoffError as exc:
                 raise HTTPException(409, str(exc)) from exc
+            except (OSError, subprocess.SubprocessError) as exc:
+                raise HTTPException(
+                    503,
+                    "handoff execution failed; selected slices remain selected "
+                    f"for retry: {exc}",
+                ) from exc
 
     return app

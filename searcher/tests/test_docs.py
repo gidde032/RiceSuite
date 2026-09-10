@@ -13,6 +13,11 @@ def test_readme_documents_cli_commands() -> None:
         assert token in readme, f"README must document `{token}`"
 
 
+def test_readme_documents_runnable_smoke_command() -> None:
+    readme = (_ROOT / "README.md").read_text()
+    assert "pytest -m smoke --no-cov" in readme
+
+
 def test_handoff_has_single_reserved_section() -> None:
     handoff = (_ROOT / "handoff.md").read_text()
     assert handoff.count("## Reserved from the agent (maintainer-only)") == 1

@@ -8,8 +8,10 @@ testable without yt-dlp or faster-whisper.
 
 from __future__ import annotations
 
+import shutil
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from pathlib import Path
 
 from ricesearcher.acquire.base import Acquirer
 from ricesearcher.beat.profile import BeatProfile
@@ -34,6 +36,59 @@ class NoAcquirerError(RuntimeError):
     """No registered acquirer can handle the request."""
 
 
+def _cleanup_owned_download_dir(path: Path | None) -> None:
+    """Best-effort cleanup for a producer-owned acquisition directory."""
+    if path is None:
+        return
+    try:
+        shutil.rmtree(path)
+    except Exception:
+        # Preserve the cache/transcription/persistence error, if any. Cleanup is
+        # opportunistic and must not turn a successful pull into a failure.
+        pass
+
+
+def _put_cached_media(cache: MediaCache, media_path: Path) -> tuple[str, Path, bool]:
+    """Put media and report whether this call created its cache destination."""
+    put_with_status = getattr(cache, "put_with_status", None)
+    if put_with_status is None:
+        # Keep injected/minimal cache doubles compatible with the original API;
+        # without an ownership signal, never remove their returned path.
+        digest, cached_path = cache.put(media_path)
+        return digest, cached_path, False
+    return put_with_status(media_path)
+
+
+def _cleanup_new_cache_file(
+    path: Path | None,
+    created: bool,
+    created_identity: tuple[int, int] | None,
+    library: Library,
+) -> None:
+    """Remove only an unreferenced cache file created by this pull.
+
+    Reviewer lens: cache custody (HIGH). The identity and single-link checks
+    protect against deleting a path that was replaced or shared meanwhile;
+    cleanup errors are intentionally ignored so they cannot mask the primary
+    transcription/persistence failure.
+    """
+    if not created or path is None or created_identity is None:
+        return
+    try:
+        if library.is_media_path_referenced(path):
+            return
+        current = path.stat()
+        if (current.st_dev, current.st_ino) != created_identity:
+            return
+        if current.st_nlink != 1:
+            return
+        path.unlink()
+    except Exception:
+        # Failure cleanup is best-effort and must never replace the primary
+        # transcription/persistence error.
+        pass
+
+
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
@@ -51,29 +106,50 @@ def pull(
     The first acquirer whose ``can_handle`` returns True wins. Media is keyed by
     content hash so re-pulling the same bytes de-duplicates the cache copy; the
     source id IS that hash, so re-pulling refreshes the same library row.
+
+    Reviewer lens: acquisition custody (HIGH). A newly-created cache copy is
+    removed on a later transcription/persistence failure only while it remains
+    unreferenced and unchanged.
     """
     acquirer = next((a for a in acquirers if a.can_handle(request)), None)
     if acquirer is None:
         raise NoAcquirerError(f"no acquirer can handle: {request!r}")
 
     acquired = acquirer.acquire(request)
-    digest, cached_path = cache.put(acquired.media_path)
-    words = transcriber.transcribe(cached_path)
+    cached_path: Path | None = None
+    cache_created = False
+    cache_identity: tuple[int, int] | None = None
+    try:
+        digest, cached_path, cache_created = _put_cached_media(
+            cache, acquired.media_path
+        )
+        if cache_created:
+            try:
+                stat = cached_path.stat()
+                cache_identity = (stat.st_dev, stat.st_ino)
+            except OSError:
+                cache_created = False
+        words = transcriber.transcribe(cached_path)
 
-    source = Source(
-        id=digest,
-        kind=acquired.kind,
-        ref=acquired.ref,
-        media_path=str(cached_path),
-        title=acquired.title,
-        channel=acquired.channel,
-        published_at=acquired.published_at,
-        acquired_at=_now_iso(),
-        duration_s=acquired.duration_s,
-        words=list(words),
-    )
-    library.upsert_source(source)
-    return source
+        source = Source(
+            id=digest,
+            kind=acquired.kind,
+            ref=acquired.ref,
+            media_path=str(cached_path),
+            title=acquired.title,
+            channel=acquired.channel,
+            published_at=acquired.published_at,
+            acquired_at=_now_iso(),
+            duration_s=acquired.duration_s,
+            words=list(words),
+        )
+        library.upsert_source(source)
+        return source
+    except Exception:
+        _cleanup_new_cache_file(cached_path, cache_created, cache_identity, library)
+        raise
+    finally:
+        _cleanup_owned_download_dir(acquired.owned_temp_dir)
 
 
 def _slice_id(source_id: str, target_in: float, target_out: float) -> str:
@@ -142,9 +218,8 @@ def extract_and_score(
         for s in library.list_slices(source_id=source.id)
         if s.status is not SliceStatus.CANDIDATE
     }
-    library.delete_candidate_slices(source.id)
     fresh = [s for s in slices if s.id not in protected]
-    library.upsert_slices(fresh)
+    library.replace_candidate_slices(source.id, fresh)
     return fresh
 
 

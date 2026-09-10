@@ -117,13 +117,27 @@ class Library:
     # -- sources ----------------------------------------------------------
 
     def upsert_source(self, source: Source) -> None:
-        """Insert or replace a source and its transcript words (one txn)."""
+        """Insert or update a source and its transcript words (one txn).
+
+        Updating the existing parent row in place preserves candidate-slice
+        children, unlike SQLite's ``INSERT OR REPLACE`` which deletes the
+        parent first and cascades to those children.
+        """
         with self._conn:
             self._conn.execute(
-                """INSERT OR REPLACE INTO sources
+                """INSERT INTO sources
                    (id, kind, ref, media_path, title, channel,
                     published_at, acquired_at, duration_s)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?)
+                   ON CONFLICT(id) DO UPDATE SET
+                       kind = excluded.kind,
+                       ref = excluded.ref,
+                       media_path = excluded.media_path,
+                       title = excluded.title,
+                       channel = excluded.channel,
+                       published_at = excluded.published_at,
+                       acquired_at = excluded.acquired_at,
+                       duration_s = excluded.duration_s""",
                 (
                     source.id,
                     source.kind.value,
@@ -164,6 +178,17 @@ class Library:
         ]
         return _row_to_source(row, words)
 
+    def is_media_path_referenced(self, media_path: Path) -> bool:
+        """Return whether a persisted source currently references ``media_path``.
+
+        Reviewer lens: cache custody (HIGH). Failure cleanup must not unlink a
+        newly-created path that another source has already adopted.
+        """
+        row = self._conn.execute(
+            "SELECT 1 FROM sources WHERE media_path = ? LIMIT 1", (str(media_path),)
+        ).fetchone()
+        return row is not None
+
     def resolve_source_id(self, prefix: str) -> str | None:
         """Resolve a full source id from an id prefix.
 
@@ -191,41 +216,62 @@ class Library:
 
     # -- candidate slices -------------------------------------------------
 
+    def _upsert_slices(self, slices: list[CandidateSlice]) -> None:
+        """Insert or replace slices within the caller's transaction."""
+        self._conn.executemany(
+            """INSERT OR REPLACE INTO candidate_slices
+               (id, source_id, pad_in, pad_out, target_in, target_out,
+                transcript_span, score, rationale, heuristic_score,
+                heuristic_features, beat_profile_version, scorer_model,
+                dup_of, dup_score, dup_kind, rights_risk, status, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            [
+                (
+                    s.id,
+                    s.source_id,
+                    s.pad_in,
+                    s.pad_out,
+                    s.target_in,
+                    s.target_out,
+                    s.transcript_span,
+                    s.score,
+                    s.rationale,
+                    s.heuristic_score,
+                    json.dumps(s.heuristic_features),
+                    s.beat_profile_version,
+                    s.scorer_model,
+                    s.dup_of,
+                    s.dup_score,
+                    s.dup_kind,
+                    s.rights_risk,
+                    s.status.value,
+                    s.created_at,
+                )
+                for s in slices
+            ],
+        )
+
     def upsert_slices(self, slices: list[CandidateSlice]) -> None:
         """Insert or replace scored candidate slices (one txn)."""
         with self._conn:
-            self._conn.executemany(
-                """INSERT OR REPLACE INTO candidate_slices
-                   (id, source_id, pad_in, pad_out, target_in, target_out,
-                    transcript_span, score, rationale, heuristic_score,
-                    heuristic_features, beat_profile_version, scorer_model,
-                    dup_of, dup_score, dup_kind, rights_risk, status, created_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                [
-                    (
-                        s.id,
-                        s.source_id,
-                        s.pad_in,
-                        s.pad_out,
-                        s.target_in,
-                        s.target_out,
-                        s.transcript_span,
-                        s.score,
-                        s.rationale,
-                        s.heuristic_score,
-                        json.dumps(s.heuristic_features),
-                        s.beat_profile_version,
-                        s.scorer_model,
-                        s.dup_of,
-                        s.dup_score,
-                        s.dup_kind,
-                        s.rights_risk,
-                        s.status.value,
-                        s.created_at,
-                    )
-                    for s in slices
-                ],
+            self._upsert_slices(slices)
+
+    def replace_candidate_slices(
+        self, source_id: str, slices: list[CandidateSlice]
+    ) -> None:
+        """Atomically replace a source's candidate rows.
+
+        Reviewer lens: candidate data integrity (HIGH). The delete and insert
+        share one transaction, so a failed replacement rolls back to the prior
+        shortlist while human-touched rows remain untouched.
+        """
+        with self._conn:
+            self._conn.execute(
+                "DELETE FROM candidate_slices "
+                "WHERE source_id = ? AND status = 'candidate'",
+                (source_id,),
             )
+            self._upsert_slices(slices)
 
     def list_slices(
         self, *, source_id: str | None = None, status: SliceStatus | None = None

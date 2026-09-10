@@ -11,11 +11,12 @@ The five-phase ladder from `SPEC.md §9`. Each phase ends in a usable increment.
 2. ✅ **Phase 2 — Extract + score** ([#2](https://github.com/gidde032/RiceSearcher/issues/2), merged PR #11). Heuristic prefilter → LLM scoring (Haiku 4.5 default) vs. beat-profile → scored candidate slices with padded + intended in/out. Taste-validated on real on-beat content.
 3. ✅ **Phase 3 — Dedup signal** ([#3](https://github.com/gidde032/RiceSearcher/issues/3), merged PR #12). Advisory possible-duplicate annotation (intra-source overlap + cross-source embedding, threshold 0.65); never filters. `dedup` CLI with `--threshold`.
 4. ✅ **Phase 4 — Slate review UI + select gate** ([#4](https://github.com/gidde032/RiceSearcher/issues/4), merged PR #13). `ricesearcher review` — browse, preview, tighten in/out, Select/Reject.
-5. **Phase 5 — Handoff writer** ([#5](https://github.com/gidde032/RiceSearcher/issues/5)). Mirrored superset manifest batch on select (`handoff` CLI + UI button). Clipper-side pickup planned in [docs/integration/riceclipper-pickup-plan.md](docs/integration/riceclipper-pickup-plan.md) ([#8](https://github.com/gidde032/RiceSearcher/issues/8), built after Phase 5).
+5. ✅ **Phase 5 — Handoff writer** ([#5](https://github.com/gidde032/RiceSearcher/issues/5), merged PR #14). Mirrored superset manifest batch on select (`handoff` CLI + UI button). Clipper-side pickup is tracked separately in [#8](https://github.com/gidde032/RiceSearcher/issues/8).
 
 ## Routed forward (tracked, not in the v1 arc)
 
 - **Taste spike** ([#6](https://github.com/gidde032/RiceSearcher/issues/6)) — LLM segment-scoring prototype on real episodes; gates any move toward auto-select.
 - **Scheduled-monitor watcher** ([#7](https://github.com/gidde032/RiceSearcher/issues/7)) — future enhancement; on-demand pull is the v1 base.
+- **Search-query acquisition** ([#15](https://github.com/gidde032/RiceSearcher/issues/15)) — first post-v1 feature; v1 supports YouTube URLs/channels and local files.
 - **RiceClipper "Pull from Searcher" consumer** ([#8](https://github.com/gidde032/RiceSearcher/issues/8)) — cross-repo work, its own approval.
 - **RiceClipper roadmap edit** ([#9](https://github.com/gidde032/RiceSearcher/issues/9)) — retire Path 1/Path 2 extraction into RiceSearcher.

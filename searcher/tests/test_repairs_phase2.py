@@ -68,11 +68,9 @@ def test_c10_float_index_applies_bool_rejected() -> None:
     assert (
         parse_response('[{"index":0.0,"score":0.7,"rationale":"z"}]', 1)[0].score == 0.7
     )
-    # bool index must not land on index 1
-    assert (
-        parse_response('[{"index":true,"score":0.5,"rationale":"x"}]', 2)[1].score
-        == 0.0
-    )
+    # A bool must not land on index 1, and an incomplete response must fail visibly.
+    with pytest.raises(ScorerParseError, match="missing valid results"):
+        parse_response('[{"index":true,"score":0.5,"rationale":"x"}]', 2)
 
 
 # -- C3: padded window always brackets the intended out, even on duration drift --
