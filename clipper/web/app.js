@@ -146,6 +146,9 @@ function buildCard(clip) {
   clip.geoEl = node.querySelector(".geo-note");
   clip.sourceVideoEl = node.querySelector(".source-video");
   clip.headerEl = node.querySelector(".header-input");
+  clip.headerGenerateEl = node.querySelector(".header-generate");
+  clip.headerFeedbackEl = node.querySelector(".header-feedback");
+  clip.headerGenStatusEl = node.querySelector(".header-gen-status");
   clip.headerStyleEl = node.querySelector(".header-style");
   clip.captionsToggleEl = node.querySelector(".captions-toggle");
   clip.captionStyleEl = node.querySelector(".caption-style");
@@ -191,6 +194,7 @@ function buildCard(clip) {
   clip.captionsToggleEl.addEventListener("change", () => {
     setRadioDisabled(clip.captionStyleEl, !clip.captionsToggleEl.checked);
   });
+  clip.headerGenerateEl.addEventListener("click", () => regenerateHeader(clip));
   node.querySelector(".clip-remove").addEventListener("click", () => removeClip(clip));
 
   // Preview from the File (blob), muted — some re-encoded sources throw
@@ -263,6 +267,61 @@ function removeClip(clip) {
   }
   updateRenderAllButton();
   updateCacheControls();
+}
+
+// --- auto-header generation -------------------------------------------------
+
+function setHeaderGenStatus(clip, text, isError = false) {
+  if (!clip.headerGenStatusEl) return;
+  clip.headerGenStatusEl.className = isError ? "header-gen-status status error" : "header-gen-status status";
+  clip.headerGenStatusEl.textContent = text || "";
+}
+
+// Ask the server for a header (SPEC §6.2). The design's only outbound call —
+// it generates text and posts nothing. Failures stay soft: the manual header
+// field is untouched so a render is never blocked.
+async function requestHeader(clip, { feedback = "", avoid = "" } = {}) {
+  if (!clip.jobId || clip.headerGenBusy) return;
+  clip.headerGenBusy = true;
+  clip.headerGenerateEl.disabled = true;
+  setHeaderGenStatus(clip, "Generating header…");
+  try {
+    const payload = {
+      transcript: collectWords(clip).map((w) => w.text).join(" ").trim(),
+      feedback,
+      avoid,
+    };
+    const res = await fetch(`/api/jobs/${clip.jobId}/header`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "header generation failed");
+    if (data.header) clip.headerEl.value = data.header;
+    setHeaderGenStatus(clip, "");
+  } catch (err) {
+    setHeaderGenStatus(clip, err.message, true);
+  } finally {
+    clip.headerGenBusy = false;
+    clip.headerGenerateEl.disabled = false;
+  }
+}
+
+// Fired once per clip after transcription; never clobbers a header the user
+// already typed.
+function autoGenerateHeader(clip) {
+  if (clip.headerEl.value.trim()) return Promise.resolve();
+  return requestHeader(clip);
+}
+
+// Manual button: regenerate a meaningfully different header, honoring the
+// optional guidance field (mirrors RicePoster's caption regenerate-with-feedback).
+function regenerateHeader(clip) {
+  return requestHeader(clip, {
+    feedback: clip.headerFeedbackEl.value.trim(),
+    avoid: clip.headerEl.value.trim(),
+  });
 }
 
 // --- upload + transcribe (sequential queue) ---------------------------------
@@ -411,6 +470,9 @@ async function ingestClip(clip) {
     renderTranscript(clip);
     clip.status = "ready";
     setClipStatus(clip, "Ready — review & render");
+    // Auto-fill the header from the frame + transcript. Soft-fails on its own
+    // status line, so a header hiccup never fails the clip.
+    await autoGenerateHeader(clip);
   } catch (err) {
     clip.status = "error";
     clip.error = err.message;

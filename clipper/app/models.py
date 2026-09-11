@@ -57,6 +57,21 @@ class RenderRequest(BaseModel):
     music: MusicSettings = Field(default_factory=MusicSettings)
 
 
+class HeaderRequest(BaseModel):
+    """Auto-header generation request (SPEC.md §6.2, Wave-1).
+
+    ``transcript`` is the client's reviewed text; when blank the server falls
+    back to the job's transcribed words. ``avoid`` + ``feedback`` drive the
+    regenerate-with-guidance path (mirrors RicePoster's caption regeneration).
+    """
+
+    transcript: str = ""
+    note: str = ""
+    feedback: str = ""
+    avoid: str = ""
+    style: str | None = None
+
+
 class HandoffClip(BaseModel):
     """One rendered clip to write into the RicePoster handoff (SPEC §7 Wave-1 #1).
 

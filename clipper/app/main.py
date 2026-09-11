@@ -17,9 +17,10 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import handoff, jobs, probe, searcher_pickup
-from app.models import HandoffRequest, JobState, RenderRequest
+from app import handoff, header_gen, jobs, probe, searcher_pickup
+from app.models import HandoffRequest, HeaderRequest, JobState, RenderRequest
 from app.process import terminate_all_owned_processes
+from render import frame
 from render.pipeline import render
 from transcribe import whisper
 
@@ -133,6 +134,58 @@ def transcribe_job(job_id: str) -> JobState:
             job.error = "transcription failed"
             raise HTTPException(status_code=500, detail=job.error) from None
         return job.state()
+
+
+def _safe_thumbnail(job: jobs.Job) -> str:
+    """Grab an early frame for the header agent, degrading to text-only on failure.
+
+    A frame is the strongest signal (SPEC §6.2) but must never block header
+    generation: a missing/undecodable frame falls back to a transcript-only hook.
+    """
+    if job.source_path is None:
+        return ""
+    try:
+        return frame.grab_frame_b64(job.source_path, job.info, job.dir)
+    except frame.FrameGrabError:
+        logger.warning("header frame grab failed; using transcript only")
+        return ""
+
+
+@app.post("/api/jobs/{job_id}/header")
+def generate_header(job_id: str, req: HeaderRequest) -> dict:
+    """Generate an on-screen header from an early frame + transcript (SPEC §6.2).
+
+    The design's only outbound call — it generates text and posts nothing. On any
+    failure the review UI keeps the manual header, so this never blocks a render.
+    """
+    with jobs.job_operation_lock():
+        job = jobs.get_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        if job.source_path is None or job.info is None:
+            raise HTTPException(status_code=409, detail="job not ready")
+
+        transcript = (
+            req.transcript.strip() or " ".join(w.text for w in job.words).strip()
+        )
+        thumbnail = _safe_thumbnail(job)
+        try:
+            header = header_gen.generate_header(
+                transcript,
+                thumbnail_b64=thumbnail,
+                note=req.note,
+                feedback=req.feedback,
+                avoid=req.avoid,
+                style=req.style,
+            )
+        except header_gen.HeaderConfigError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except header_gen.HeaderGenerationError as exc:
+            logger.warning("header generation failed: %s", exc)
+            raise HTTPException(
+                status_code=502, detail="header generation failed"
+            ) from exc
+        return {"header": header}
 
 
 @app.get("/api/jobs/{job_id}", response_model=JobState)

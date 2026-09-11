@@ -10,9 +10,9 @@ The full v1 → Wave-1 clip pipeline is implemented, merged, and **confirmed
 working end to end** — upload to RiceClipper, batch review/render, filesystem
 handoff, then RicePoster "Pull from Clipper" and post. The behavior-preserving
 **Slate** browser-interface polish and bounded four-preset lyric-caption
-addition are also merged. There is no currently authorized follow-on
-implementation. Remaining Wave-1 product additions (silence-only trimming and
-auto-header) stay deferred behind an explicit phase change.
+addition are also merged. The **Wave-1 auto-header** (Sonnet vision + transcript)
+is now implemented as well. The one remaining Wave-1 product addition
+(silence-only trimming) stays deferred behind an explicit phase change.
 
 ## Delivered visual polish — Slate
 
@@ -46,9 +46,15 @@ with eleven caption presets and three header treatments.
 2. **Silence-only trimming** — cut long silent gaps via silence detection; keep
    A/V in sync and smooth the jump cuts.
 3. **Auto-header** — Sonnet vision agent: early-frame snapshot + transcript +
-   optional user description → ≤2-line hook, with the manual header as fallback.
-   The emoji spike is resolved in v1 via the PNG-overlay fallback
-   (`docs/spikes/emoji-burn-in.md`).
+   optional user note → one-sentence hook ending in 1–2 emoji, with the manual
+   header as fallback. **Implemented and merged**: `render/frame.py`,
+   `app/header_gen.py`, and `POST /api/jobs/{id}/header`, with per-clip
+   auto-fill + regenerate-with-guidance in the review UI. The emoji spike is
+   resolved via the PNG-overlay fallback (`docs/spikes/emoji-burn-in.md`).
+   Prompt styles live in gitignored `prompts/*.json` (only the neutral
+   `generic-header` seed is tracked); default via `RICECLIPPER_HEADER_STYLE`.
+   RiceClipper still performs no posting — this is its one outbound call and it
+   generates text only.
 
 ## Wave 2 — early additions
 

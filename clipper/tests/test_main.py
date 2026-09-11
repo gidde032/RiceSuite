@@ -8,8 +8,17 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app import jobs, main
-from app.models import RenderRequest
+from app.models import HeaderRequest, RenderRequest, Word
 from app.probe import MediaInfo
+
+
+def _ready_job(root):
+    job = jobs.create_job()
+    job.status = "ready"
+    job.source_path = job.dir / "source.mp4"
+    job.source_path.write_bytes(b"x")
+    job.info = MediaInfo(1080, 1920, 2.0, True)
+    return job
 
 
 @pytest.fixture
@@ -157,3 +166,105 @@ def test_render_request_rejects_unknown_visual_presets():
         RenderRequest(caption_style="not-a-style")
     with pytest.raises(ValidationError):
         RenderRequest(header_style="not-a-header")
+
+
+def test_generate_header_route_returns_header(monkeypatch, isolated_jobs):
+    job = _ready_job(isolated_jobs)
+    monkeypatch.setattr(main.frame, "grab_frame_b64", lambda *a, **k: "ZmFrZQ==")
+    captured: dict = {}
+
+    def fake_gen(transcript, **kwargs):
+        captured["transcript"] = transcript
+        captured.update(kwargs)
+        return "A lovely clip 🎉"
+
+    monkeypatch.setattr(main.header_gen, "generate_header", fake_gen)
+
+    result = main.generate_header(job.id, HeaderRequest(transcript="hello world"))
+
+    assert result == {"header": "A lovely clip 🎉"}
+    assert captured["transcript"] == "hello world"
+    assert captured["thumbnail_b64"] == "ZmFrZQ=="
+
+
+def test_generate_header_falls_back_to_transcribed_words(monkeypatch, isolated_jobs):
+    job = _ready_job(isolated_jobs)
+    job.words = [
+        Word(text="hello", start=0.0, end=0.5),
+        Word(text="there", start=0.5, end=1.0),
+    ]
+    monkeypatch.setattr(main.frame, "grab_frame_b64", lambda *a, **k: "")
+    captured: dict = {}
+
+    def fake_gen(transcript, **kwargs):
+        captured["transcript"] = transcript
+        return "H"
+
+    monkeypatch.setattr(main.header_gen, "generate_header", fake_gen)
+
+    main.generate_header(job.id, HeaderRequest())
+
+    assert captured["transcript"] == "hello there"
+
+
+def test_generate_header_degrades_when_frame_grab_fails(monkeypatch, isolated_jobs):
+    job = _ready_job(isolated_jobs)
+
+    def boom(*a, **k):
+        raise main.frame.FrameGrabError("no frame")
+
+    monkeypatch.setattr(main.frame, "grab_frame_b64", boom)
+    captured: dict = {}
+
+    def fake_gen(transcript, **kwargs):
+        captured.update(kwargs)
+        return "H"
+
+    monkeypatch.setattr(main.header_gen, "generate_header", fake_gen)
+
+    main.generate_header(job.id, HeaderRequest(transcript="hi"))
+
+    assert captured["thumbnail_b64"] == ""
+
+
+def test_generate_header_config_error_returns_503(monkeypatch, isolated_jobs):
+    job = _ready_job(isolated_jobs)
+    monkeypatch.setattr(main.frame, "grab_frame_b64", lambda *a, **k: "")
+
+    def boom(*a, **k):
+        raise main.header_gen.HeaderConfigError("no key")
+
+    monkeypatch.setattr(main.header_gen, "generate_header", boom)
+
+    with pytest.raises(HTTPException) as exc_info:
+        main.generate_header(job.id, HeaderRequest(transcript="hi"))
+
+    assert exc_info.value.status_code == 503
+
+
+def test_generate_header_generation_error_returns_502(monkeypatch, isolated_jobs):
+    job = _ready_job(isolated_jobs)
+    monkeypatch.setattr(main.frame, "grab_frame_b64", lambda *a, **k: "")
+
+    def boom(*a, **k):
+        raise main.header_gen.HeaderGenerationError("api down")
+
+    monkeypatch.setattr(main.header_gen, "generate_header", boom)
+
+    with pytest.raises(HTTPException) as exc_info:
+        main.generate_header(job.id, HeaderRequest(transcript="hi"))
+
+    assert exc_info.value.status_code == 502
+
+
+def test_generate_header_missing_job_returns_404(isolated_jobs):
+    with pytest.raises(HTTPException) as exc_info:
+        main.generate_header("missing", HeaderRequest())
+    assert exc_info.value.status_code == 404
+
+
+def test_generate_header_not_ready_returns_409(isolated_jobs):
+    job = jobs.create_job()  # transcribing, no source/info yet
+    with pytest.raises(HTTPException) as exc_info:
+        main.generate_header(job.id, HeaderRequest())
+    assert exc_info.value.status_code == 409
