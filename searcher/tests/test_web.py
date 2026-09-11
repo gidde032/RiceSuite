@@ -71,6 +71,19 @@ def test_index_serves_html(client: TestClient) -> None:
     assert "/static/app.js" in r.text
 
 
+def test_selected_logo_asset_is_served_and_used(client: TestClient) -> None:
+    for path in ("/", "/media"):
+        html = client.get(path)
+        assert html.status_code == 200
+        assert "/static/mark.png" in html.text
+        assert "/static/mark.svg" not in html.text
+
+    asset = client.get("/static/mark.png")
+    assert asset.status_code == 200
+    assert asset.headers["content-type"].startswith("image/png")
+    assert asset.content.startswith(b"\x89PNG\r\n\x1a\n")
+
+
 def test_list_slices_dto(client: TestClient) -> None:
     r = client.get("/api/slices")
     assert r.status_code == 200
