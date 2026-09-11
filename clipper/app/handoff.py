@@ -74,40 +74,45 @@ def write_batch(entries: list[HandoffEntry], *, root: Path | None = None) -> dic
         raise HandoffError("resolved batch directory escapes the handoff root")
     batch_dir.mkdir()
 
-    manifest_clips = []
-    for entry in sorted(entries, key=lambda e: e.position):
-        source = Path(entry.source)
-        if not source.is_file():
-            raise HandoffError(f"clip {entry.position} has no rendered output")
-        filename = f"clip_{entry.position}.mp4"
-        dest = (batch_dir / filename).resolve()
-        if dest.parent != batch_dir:
-            raise HandoffError("resolved clip path escapes the batch directory")
-        shutil.copy2(source, dest)
-        manifest_clips.append(
-            {
-                "file": filename,
-                "position": entry.position,
-                "transcript": entry.transcript,
-                "header": entry.header,
-                "presets": {
-                    "caption_style": entry.caption_style,
-                    "header_style": entry.header_style,
-                },
-            }
-        )
+    try:
+        manifest_clips = []
+        for entry in sorted(entries, key=lambda e: e.position):
+            source = Path(entry.source)
+            if not source.is_file():
+                raise HandoffError(f"clip {entry.position} has no rendered output")
+            filename = f"clip_{entry.position}.mp4"
+            dest = (batch_dir / filename).resolve()
+            if dest.parent != batch_dir:
+                raise HandoffError("resolved clip path escapes the batch directory")
+            shutil.copy2(source, dest)
+            manifest_clips.append(
+                {
+                    "file": filename,
+                    "position": entry.position,
+                    "transcript": entry.transcript,
+                    "header": entry.header,
+                    "presets": {
+                        "caption_style": entry.caption_style,
+                        "header_style": entry.header_style,
+                    },
+                }
+            )
 
-    manifest = {
-        "schema_version": SCHEMA_VERSION,
-        "batch_id": batch_id,
-        "created_at": _now().isoformat().replace("+00:00", "Z"),
-        "producer": "riceclipper",
-        "clips": manifest_clips,
-    }
-    # Write to a temp file and atomically rename so a reader never sees a
-    # partial manifest — this rename is the "batch is complete" signal.
-    tmp = batch_dir / "manifest.json.tmp"
-    tmp.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    os.replace(tmp, batch_dir / "manifest.json")
+        manifest = {
+            "schema_version": SCHEMA_VERSION,
+            "batch_id": batch_id,
+            "created_at": _now().isoformat().replace("+00:00", "Z"),
+            "producer": "riceclipper",
+            "clips": manifest_clips,
+        }
+        # The atomic rename is the "batch is complete" signal.
+        tmp = batch_dir / "manifest.json.tmp"
+        tmp.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        os.replace(tmp, batch_dir / "manifest.json")
+    except Exception:
+        # A manifest-less directory is invisible to pickup and otherwise leaks
+        # forever. Remove only this newly-created batch; prior batches are safe.
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        raise
 
     return {"batch_id": batch_id, "clip_count": len(manifest_clips)}

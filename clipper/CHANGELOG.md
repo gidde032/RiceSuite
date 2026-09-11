@@ -8,6 +8,18 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Pull from RiceSearcher (content-sourcing intake).** RiceClipper now ingests
+  batches of selected clips that RiceSearcher writes to `~/ricesearcher-handoff`
+  (`RICECLIPPER_SEARCHER_INBOX`), turning each into a normal review job:
+  `app/searcher_pickup.py`, `POST /api/pull-from-searcher`, and a "Pull from
+  RiceSearcher" button in the review UI. Mirrors RicePoster's pickup discipline —
+  manifest-last scan, FIFO, `batch_id` dedupe via a durable consumed registry,
+  validate-before-write (malformed → 400, zero writes), and durable custody (clip
+  bytes copied into the job dir) before the source batch is removed, with
+  rollback on failure. RiceClipper is the intermediary: it *reads* the
+  RiceSearcher inbox and still *writes* the separate `~/riceclipper-handoff` for
+  RicePoster; RiceSearcher and RicePoster never share a directory. Contract in
+  `docs/integration/searcher-pickup.md`.
 - **CI and quality gates.** GitHub Actions workflow (`Python 3.12 tests and
   coverage`) runs ruff lint + format checks and the full test suite with an
   **85% coverage floor** on every PR and push to `main`. A two-tier

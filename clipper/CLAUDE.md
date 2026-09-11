@@ -77,3 +77,15 @@ RiceClipper produces clips and writes them to the implemented local pickup
 contract. RicePoster pulls those files separately and owns all posting behavior.
 RiceClipper still does not post; the posting safety gate stays on the RicePoster
 side. See `ROADMAP.md` and `docs/integration/riceposter-handoff.md`.
+
+## Relationship to RiceSearcher (upstream)
+
+Separate project, separate repo. **RiceSearcher** finds source material and
+surfaces selected clips; it writes them to its **own** handoff root
+`~/ricesearcher-handoff` (`RICESEARCHER_HANDOFF_DIR`). RiceClipper **pulls** from
+that dir (`RICECLIPPER_SEARCHER_INBOX`, same path) via `POST /api/pull-from-searcher`
+/ the "Pull from RiceSearcher" button, ingesting each clip as a review job. Its
+own output to RicePoster (`~/riceclipper-handoff`) is unchanged. So RiceClipper is
+the **intermediary**: it reads `~/ricesearcher-handoff` and writes
+`~/riceclipper-handoff`; RiceSearcher and RicePoster never share a directory. See
+`docs/integration/searcher-pickup.md`. Still no posting or network here.
