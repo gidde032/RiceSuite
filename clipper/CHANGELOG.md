@@ -8,6 +8,18 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Per-slot saved caption/header style.** The universal pre-upload caption and
+  header dropdowns are gone. Each slot (the "Clip N" ordinal that maps to the
+  RicePoster handoff position) now remembers its caption and header style in the
+  browser (`localStorage`, local-first — no server state). A clip in slot N seeds
+  from slot N's saved default, falling back to the v1 Classic/Plain defaults;
+  editing a clip persists that slot's default so it carries to later batches and
+  sessions. The per-clip render and handoff `caption_style`/`header_style`
+  contracts are unchanged.
+- **Music mode convenience default.** Choosing a music file now defaults the mode
+  to *mix under original*, but only while the mode is still untouched, so a
+  deliberate *replace* (or *none*) is never overridden. No new audio mode (D13
+  unchanged).
 - **Auto-header generation (Wave-1).** After transcription, RiceClipper now
   auto-fills the on-screen header from an early frame snapshot plus the reviewed
   transcript via an Anthropic Sonnet vision model (`app/header_gen.py`,
@@ -65,6 +77,11 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   per-clip human-in-the-loop gate is unchanged.
 
 ### Changed
+- **Upload-page layout.** Removed the batch-defaults block and its dead space,
+  and moved the media-cache controls up into the upload panel — paired with the
+  RiceSearcher intake in one tool row — retiring the standalone bottom cache
+  panel. The upload state now fits without scroll across wide, mid, and narrow
+  viewports.
 - **Slate browser interface.** Reworked the local review UI into the ratified
   dark, compact editing-console layout with rice-grey interaction states,
   treatment-preview cards, the selected rice-and-shears production mark, and

@@ -93,9 +93,14 @@ both the visible toolbar symbol and the favicon.
 ### Upload state
 
 - The drop target remains the primary element.
-- Existing multi-file upload and batch defaults remain unchanged.
-- Batch defaults stay compact for quick repeated use; they do not expand into a
-  second full editor before clips exist.
+- Existing multi-file upload remains unchanged.
+- The universal pre-upload caption/header dropdowns are removed; per-clip style
+  now seeds from a per-slot saved default (see Component contract). No visual
+  preset control appears before clips exist.
+- A single tool row below the drop target pairs the RiceSearcher intake (left)
+  with the media-cache controls (right); the standalone bottom cache panel is
+  retired. The row stays subordinate to the drop target and collapses to a
+  single stack on narrow screens without introducing scroll in the upload state.
 
 ### Review state
 
@@ -128,8 +133,12 @@ both the visible toolbar symbol and the favicon.
 - The underlying values and API payload shapes remain the existing
   `header_style` and `caption_style` contracts; the bounded catalog now includes
   the four approved lyric preset identifiers.
-- Batch-default controls remain compact selects unless a later approved design
-  explicitly expands them.
+- There is no universal batch-default select. Each slot (the "Clip N" ordinal,
+  which maps to the RicePoster handoff position) has a saved caption/header
+  default persisted in the browser (`localStorage`, local-first — no server
+  state). A clip in slot N seeds from slot N's saved default, falling back to
+  the v1 **Classic**/**Plain text** defaults when unset; changing a clip writes
+  that slot's default back so it carries to the next batch and session.
 
 ### Transcript
 
@@ -141,6 +150,9 @@ both the visible toolbar symbol and the favicon.
 
 - Preserve the existing file input, mode choices, and volume range.
 - Present them as one compact music section with aligned rows and a clear value.
+- Choosing a music file defaults the mode to **Mix under original**, but only
+  while the mode is still untouched, so a deliberate mode choice is never
+  overridden. This is a convenience default, not a new mode.
 - Do not add playback preview, waveform, auto-ducking, or new audio modes.
 
 ### Actions and states

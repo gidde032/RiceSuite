@@ -15,8 +15,9 @@ def test_review_ui_exposes_all_visual_choices_and_sends_them():
     html = _html()
     javascript = _js()
 
-    # All three header treatments and all eleven caption presets are offered
-    # (they appear in both the batch-default selects and the per-clip template).
+    # All three header treatments and all eleven caption presets are offered as
+    # per-clip radio-card tiles. The universal pre-upload batch-default selects
+    # were removed in favor of per-slot saved defaults.
     assert 'value="plain"' in html
     assert 'value="black_plate"' in html
     assert 'value="white_plate"' in html
@@ -40,7 +41,7 @@ def test_review_ui_exposes_all_visual_choices_and_sends_them():
     assert "header_style: radioValue(clip.headerStyleEl)" in javascript
     assert 'class="choice-grid header-choice-grid"' in html
     assert 'class="choice-grid caption-choice-grid"' in html
-    assert 'value="din_condensed">Powder / powder blue</option>' in html
+    assert 'value="din_condensed"' in html
     assert '<span class="choice-label">Powder</span>' in html
     assert "setRadioValue(clip.captionStyleEl" in javascript
     assert "setRadioValue(clip.headerStyleEl" in javascript
@@ -118,15 +119,58 @@ def test_batch_review_ui_supports_multiple_clips():
     assert 'id="clip-card-template"' in html
     assert 'id="render-all-btn"' in html
 
-    # Batch-default preset controls exist and per-clip cards can override them.
-    assert 'id="batch-caption-style"' in html
-    assert 'id="batch-header-style"' in html
-    assert "captionStyleTouched" in javascript
-    assert "headerStyleTouched" in javascript
+    # The universal pre-upload batch-default selects are gone; per-clip cards now
+    # seed from per-slot saved defaults instead.
+    assert 'id="batch-caption-style"' not in html
+    assert 'id="batch-header-style"' not in html
+    assert "batch-caption-style" not in javascript
+    assert "batch-header-style" not in javascript
 
     # A client-side clip list drives the existing per-job routes sequentially.
     assert "const clips = []" in javascript
     assert "processIngestQueue" in javascript
+
+
+def test_per_slot_saved_styles_seed_and_persist():
+    html = _html()
+    javascript = _js()
+
+    # No universal caption/header dropdown remains on the upload page.
+    assert 'class="batch-defaults"' not in html
+    assert "<select id=" not in html
+
+    # Each clip seeds its caption/header choice from the slot ordinal's saved
+    # default (v1 classic/plain fallback), keyed in browser localStorage.
+    assert 'slotDefault(clip.ord, "caption", "classic")' in javascript
+    assert 'slotDefault(clip.ord, "header", "plain")' in javascript
+    assert "localStorage" in javascript
+    assert "riceclipper.slotStyles" in javascript
+
+    # Changing a clip writes that slot's default back so it carries forward.
+    assert 'rememberSlotStyle(clip.ord, "caption"' in javascript
+    assert 'rememberSlotStyle(clip.ord, "header"' in javascript
+
+
+def test_music_upload_auto_switches_to_mix_when_untouched():
+    javascript = _js()
+
+    # Picking a music file defaults the mode to "mix" — but only while the mode
+    # is still untouched, so a deliberate choice is respected.
+    assert "musicModeTouched" in javascript
+    assert 'clip.musicModeEl.value = "mix"' in javascript
+    assert "!clip.musicModeTouched" in javascript
+
+
+def test_cache_controls_live_in_the_upload_panel():
+    html = _html()
+
+    # The media-cache controls moved up into the upload panel (no standalone
+    # bottom cache panel), grouped with the RiceSearcher intake.
+    assert 'id="cache-panel"' not in html
+    assert 'class="upload-tools"' in html
+    assert 'class="cache-tools"' in html
+    assert 'id="cache-info"' in html
+    assert 'id="clear-cache-btn"' in html
 
 
 def test_handoff_send_button_posts_the_batch():

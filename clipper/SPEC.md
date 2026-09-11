@@ -116,6 +116,15 @@ Plain text is the default. Headers with emoji use the existing Pillow PNG
 overlay path and apply the same selected treatment; text-only headers remain on
 libass.
 
+Caption and header style are chosen per clip, seeded from a **per-slot saved
+default** rather than a universal pre-upload dropdown: each slot (the "Clip N"
+ordinal that maps to the RicePoster handoff position) remembers its style in the
+browser (`localStorage`, local-first), starting from the v1 Classic/Plain
+defaults, and editing a clip persists that slot's default for later batches. On
+the audio side, choosing a music file defaults the mode to *mix under original*
+while the mode is still untouched — a convenience default that never overrides a
+deliberate choice and adds no new mode (D13 unchanged).
+
 ### 5.2 Slate browser-interface polish
 
 **Slate** is the ratified visual theme for the local browser review UI. It

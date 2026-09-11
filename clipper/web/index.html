@@ -26,37 +26,18 @@
         <input id="file-input" class="file-input-accessible" type="file" accept="video/*" multiple />
       </label>
 
-      <div class="searcher-pull">
-        <button id="pull-searcher-btn" type="button">Pull from RiceSearcher</button>
-        <span class="hint">Ingest the next batch of selected clips from <code>~/ricesearcher-handoff</code>.</span>
-        <p id="pull-status" class="status" role="status"></p>
-      </div>
-
-      <div class="batch-defaults">
-        <span class="hint">Batch defaults (each clip can override below):</span>
-        <div class="batch-defaults-row">
-          <label class="inline">Caption style
-            <select id="batch-caption-style">
-              <option value="classic">Classic (v1 default)</option>
-              <option value="clean">Clean / amber</option>
-              <option value="punch">Punch / pink</option>
-              <option value="friendly">Friendly / mint</option>
-              <option value="sunset">Sunset / coral</option>
-              <option value="mono">Mono / violet</option>
-              <option value="editorial">Editorial / yellow</option>
-              <option value="lyric_block">Lyric Block / cyan</option>
-              <option value="velvet_serif">Velvet Serif / red</option>
-              <option value="din_condensed">Powder / powder blue</option>
-              <option value="baskerville">Baskerville / teal</option>
-            </select>
-          </label>
-          <label class="inline">Header style
-            <select id="batch-header-style">
-              <option value="plain">Plain text (recommended)</option>
-              <option value="black_plate">Black plate</option>
-              <option value="white_plate">White plate</option>
-            </select>
-          </label>
+      <div class="upload-tools">
+        <div class="searcher-pull">
+          <button id="pull-searcher-btn" type="button">Pull from RiceSearcher</button>
+          <span class="hint">Ingest the next batch of selected clips from <code>~/ricesearcher-handoff</code>.</span>
+          <p id="pull-status" class="status" role="status"></p>
+        </div>
+        <div class="cache-tools">
+          <div class="cache-actions">
+            <span id="cache-info" class="hint">Media cache: loading…</span>
+            <button id="clear-cache-btn" type="button">Clear media cache</button>
+          </div>
+          <p id="cache-status" class="status" role="status"></p>
         </div>
       </div>
 
@@ -72,14 +53,6 @@
         <button id="render-all-btn" class="primary">Render all</button>
       </div>
       <p id="batch-status" class="status" role="status"></p>
-    </section>
-
-    <section id="cache-panel" class="panel">
-      <div class="cache-actions">
-        <span id="cache-info" class="hint">Media cache: loading…</span>
-        <button id="clear-cache-btn" type="button">Clear media cache</button>
-      </div>
-      <p id="cache-status" class="status" role="status"></p>
     </section>
   </main>
 

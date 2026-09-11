@@ -23,6 +23,37 @@ let clearInProgress = false;
 const MEDIA_CACHE_INFO_ENDPOINT = "/api/media-info";
 const ACTIVE_JOB_STATUSES = new Set(["transcribing", "rendering"]);
 
+// --- per-slot saved visual defaults -----------------------------------------
+// Replaces the old universal pre-upload dropdown: each slot (the "Clip N"
+// ordinal, which maps to RicePoster's handoff position) remembers its caption
+// and header style in the browser (local-first, no server state). A clip in
+// slot N is seeded from slot N's saved default; classic/plain when never set.
+const SLOT_STYLE_KEY = "riceclipper.slotStyles.v1";
+
+function loadSlotStyles() {
+  try {
+    return JSON.parse(localStorage.getItem(SLOT_STYLE_KEY)) || {};
+  } catch {
+    return {};
+  }
+}
+
+function slotDefault(ord, kind, fallback) {
+  const slot = loadSlotStyles()[String(ord)];
+  return (slot && slot[kind]) || fallback;
+}
+
+function rememberSlotStyle(ord, kind, value) {
+  const all = loadSlotStyles();
+  const key = String(ord);
+  all[key] = { ...(all[key] || {}), [kind]: value };
+  try {
+    localStorage.setItem(SLOT_STYLE_KEY, JSON.stringify(all));
+  } catch {
+    // Storage may be unavailable/full; in-session seeding still works.
+  }
+}
+
 function anyClipActive() {
   return clips.some((c) => ACTIVE_JOB_STATUSES.has(c.status));
 }
@@ -181,16 +212,29 @@ function buildCard(clip) {
   clip.sourceVideoEl.setAttribute("aria-label", `Source preview for ${clipName}`);
   clip.outputVideoEl.setAttribute("aria-label", `Rendered output for ${clipName}`);
 
-  // Inherit the batch defaults; a manual change marks the field "touched" so a
-  // later batch-default change no longer overrides this clip.
-  setRadioValue(clip.captionStyleEl, $("batch-caption-style").value);
-  setRadioValue(clip.headerStyleEl, $("batch-header-style").value);
-  clip.captionStyleEl.addEventListener("change", () => { clip.captionStyleTouched = true; });
-  clip.headerStyleEl.addEventListener("change", () => { clip.headerStyleTouched = true; });
+  // Seed the visual choices from this slot's saved default (SLOT ordinal =
+  // clip.ord), falling back to the v1 defaults. Changing a clip writes that
+  // slot's default back so it carries to the next batch/session.
+  setRadioValue(clip.captionStyleEl, slotDefault(clip.ord, "caption", "classic"));
+  setRadioValue(clip.headerStyleEl, slotDefault(clip.ord, "header", "plain"));
+  clip.captionStyleEl.addEventListener("change", () => {
+    rememberSlotStyle(clip.ord, "caption", radioValue(clip.captionStyleEl));
+  });
+  clip.headerStyleEl.addEventListener("change", () => {
+    rememberSlotStyle(clip.ord, "header", radioValue(clip.headerStyleEl));
+  });
 
   clip.musicVolumeEl.addEventListener("input", (e) => {
     clip.volLabelEl.textContent = Number(e.target.value).toFixed(2);
   });
+  // First music pick defaults the mode to "mix under original" — but only while
+  // the mode is still untouched, so a deliberate "replace" (or "none") stands.
+  clip.musicInputEl.addEventListener("change", () => {
+    if (clip.musicInputEl.files.length && !clip.musicModeTouched) {
+      clip.musicModeEl.value = "mix";
+    }
+  });
+  clip.musicModeEl.addEventListener("change", () => { clip.musicModeTouched = true; });
   clip.captionsToggleEl.addEventListener("change", () => {
     setRadioDisabled(clip.captionStyleEl, !clip.captionsToggleEl.checked);
   });
@@ -347,8 +391,7 @@ function addFiles(fileList) {
       words: [],
       sourceUrl: null,
       outputUrl: null,
-      captionStyleTouched: false,
-      headerStyleTouched: false,
+      musicModeTouched: false,
     };
     clips.push(clip);
     buildCard(clip);
@@ -384,8 +427,7 @@ function addPulledJobs(pulled) {
       words: [],
       sourceUrl: null,
       outputUrl: null,
-      captionStyleTouched: false,
-      headerStyleTouched: false,
+      musicModeTouched: false,
     };
     clips.push(clip);
     buildCard(clip);
@@ -655,19 +697,6 @@ function resetAll() {
   updateRenderAllButton();
   updateCacheControls();
 }
-
-// --- batch-default preset propagation ---------------------------------------
-
-$("batch-caption-style").addEventListener("change", (e) => {
-  clips.forEach((c) => {
-    if (!c.captionStyleTouched && c.captionStyleEl) setRadioValue(c.captionStyleEl, e.target.value);
-  });
-});
-$("batch-header-style").addEventListener("change", (e) => {
-  clips.forEach((c) => {
-    if (!c.headerStyleTouched && c.headerStyleEl) setRadioValue(c.headerStyleEl, e.target.value);
-  });
-});
 
 // --- clear media cache ------------------------------------------------------
 
