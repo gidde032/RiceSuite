@@ -103,6 +103,26 @@ def test_write_batch_leaves_no_orphan_on_failure(tmp_path: Path) -> None:
     assert list(root.iterdir()) == []
 
 
+def test_write_batch_cleans_up_on_keyboard_interrupt(tmp_path: Path) -> None:
+    # A Ctrl-C while ffmpeg is extracting a clip raises KeyboardInterrupt, which
+    # is a BaseException — an `except Exception` cleanup would skip and orphan a
+    # manifest-less partial batch. Cleanup must still run on interrupt.
+    root = tmp_path / "handoff"
+
+    class InterruptOnSecond(FakeExtractor):
+        def extract(self, source: Path, start: float, end: float, dest: Path) -> None:
+            if self.calls:  # first clip already written; interrupt the second
+                self.calls.append((Path(source), start, end, Path(dest)))
+                raise KeyboardInterrupt
+            super().extract(source, start, end, dest)
+
+    entries = [_entry(tmp_path, 1), _entry(tmp_path, 2)]
+    with pytest.raises(KeyboardInterrupt):
+        write_batch(entries, extractor=InterruptOnSecond(), root=root)
+    # The partially-written, manifest-less batch dir was removed, not orphaned.
+    assert list(root.iterdir()) == []
+
+
 # -- hand_off_selected --------------------------------------------------------
 
 

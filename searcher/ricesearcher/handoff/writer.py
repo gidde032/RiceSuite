@@ -81,6 +81,7 @@ def write_batch(
         batch_dir.mkdir()
     except FileExistsError as exc:  # batch_id collision (negligibly rare)
         raise HandoffError(f"batch id {batch_id} already exists") from exc
+    committed = False
     try:
         manifest_clips = []
         for entry in sorted(entries, key=lambda e: e.position):
@@ -114,14 +115,20 @@ def write_batch(
         tmp = batch_dir / "manifest.json.tmp"
         tmp.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         os.replace(tmp, batch_dir / "manifest.json")
-    except Exception:
+        committed = True
+    finally:
         # Leave no half-written batch behind (integration-ledger lesson M-05).
-        # Guard cleanup so a rmtree failure can't mask the original error (L2).
-        try:
-            shutil.rmtree(batch_dir, ignore_errors=True)
-        except Exception:
-            pass
-        raise
+        # A ``finally`` (not ``except Exception``) so cleanup also runs on
+        # KeyboardInterrupt/SystemExit — e.g. Ctrl-C while ffmpeg is extracting a
+        # clip — which BaseException-derived interrupts would otherwise skip,
+        # orphaning a manifest-less batch dir.
+        if not committed:
+            # Swallow any cleanup failure so it can't mask the propagating
+            # error (L2); in a ``finally`` a raised rmtree would replace it.
+            try:
+                shutil.rmtree(batch_dir, ignore_errors=True)
+            except Exception:
+                pass
 
     return {"batch_id": batch_id, "clip_count": len(manifest_clips)}
 
