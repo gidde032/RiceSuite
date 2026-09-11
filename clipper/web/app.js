@@ -561,6 +561,16 @@ $("restart-btn").addEventListener("click", resetAll);
 
 function resetAll() {
   if (batchBusy || ingesting) return;
+  // Guard the irreversible wipe: transcript edits, headers, and rendered-but-unsent
+  // clips live only in the browser, so confirm before discarding a loaded batch.
+  if (
+    clips.length &&
+    !window.confirm(
+      "Start over? This discards the current batch — transcript edits, headers, and any rendered clips you haven't sent to RicePoster yet.",
+    )
+  ) {
+    return;
+  }
   clips.forEach((c) => {
     ["sourceVideoEl", "outputVideoEl"].forEach((k) => {
       const v = c[k];
