@@ -9,6 +9,4 @@ python-multipart==0.0.20  # file uploads in the review UI
 faster-whisper==1.1.1     # word-level transcription
 requests==2.32.3          # faster-whisper imports requests at runtime
 Pillow==12.3.0            # emoji header image (libass can't burn color emoji)
-
-# Deferred — enable when the Wave-1 auto-header is built:
-# anthropic               # Sonnet vision agent for auto-generated headers
+anthropic==1.5.0          # Sonnet vision agent for the Wave-1 auto-header

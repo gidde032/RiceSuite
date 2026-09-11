@@ -8,6 +8,20 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Auto-header generation (Wave-1).** After transcription, RiceClipper now
+  auto-fills the on-screen header from an early frame snapshot plus the reviewed
+  transcript via an Anthropic Sonnet vision model (`app/header_gen.py`,
+  `render/frame.py`, `POST /api/jobs/{id}/header`). One sentence ending in one or
+  two emoji; emoji burn in via the existing Pillow PNG-overlay path. A per-clip
+  **Generate** button regenerates with optional guidance (mirrors RicePoster's
+  caption regenerate-with-feedback), and manual entry remains the fallback — any
+  failure (missing key, API error, undecodable frame) leaves the header field
+  manual and never blocks a render. This is the design's only outbound call; it
+  generates text and posts nothing (SPEC §3). Prompt styles live in
+  `prompts/*.json`: only the neutral `generic-header` seed is tracked, a
+  maintainer-specific style stays local and gitignored (pinned by
+  `tests/test_prompts.py`), and the default style is chosen by
+  `RICECLIPPER_HEADER_STYLE`. Requires `ANTHROPIC_API_KEY`.
 - **Pull from RiceSearcher (content-sourcing intake).** RiceClipper now ingests
   batches of selected clips that RiceSearcher writes to `~/ricesearcher-handoff`
   (`RICECLIPPER_SEARCHER_INBOX`), turning each into a normal review job:

@@ -138,3 +138,8 @@ button:focus-visible, .primary:focus-visible, textarea:focus-visible, select:foc
   gap: 8px;
   align-items: flex-start;
 }
+
+/* Auto-header generate control (Wave-1). */
+.header-gen { display: flex; gap: 8px; margin-top: 8px; align-items: stretch; }
+.header-generate { min-height: 36px; padding: 6px 12px; flex: 0 0 auto; white-space: nowrap; }
+.header-feedback { flex: 1 1 auto; min-width: 0; padding: 6px 10px; }

@@ -32,6 +32,12 @@ outputs/*
 # Session-continuity handoff (not part of a fresh clone)
 internal/
 
+# Header-agent prompts: only the neutral seed is tracked. Maintainer-specific
+# styles name real people and tie this repo to the accounts it serves, so they
+# stay local and gitignored. Pinned by test_prompts.py.
+prompts/*.json
+!prompts/generic-header.json
+
 # OS / editor
 .DS_Store
 Thumbs.db

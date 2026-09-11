@@ -134,7 +134,15 @@ A text box in the review gate. User types a 1–2 line on-screen hook. Present o
 **every** clip, captioned or silent — which is why v1 needs no hand-timing editor
 for silent clips: the header is the text layer.
 
-### 6.2 Deferred (Wave 1) — auto-generated with manual fallback
+### 6.2 Auto-generated with manual fallback (Wave 1 — implemented)
+**Status: implemented.** After transcription the header auto-fills from an early
+frame snapshot + transcript via an Anthropic Sonnet vision model
+(`app/header_gen.py`, `render/frame.py`, `POST /api/jobs/{id}/header`); a per-clip
+**Generate** button regenerates with optional guidance, and manual entry stays
+the fallback. Prompt styles live in gitignored `prompts/*.json` (only the neutral
+`generic-header` seed is tracked); the default is selected by
+`RICECLIPPER_HEADER_STYLE`. The design is unchanged from the note below.
+
 A **new, distinct** generator modeled on RicePoster's caption-writer *pattern*
 but a separate artifact (RicePoster writes the post-caption *field* text;
 RiceClipper's header is *burned into the frame*). Inputs: early-frame snapshot +

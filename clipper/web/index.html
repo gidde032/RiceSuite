@@ -104,7 +104,12 @@
             <label class="header-label">Header</label>
             <div>
               <textarea class="header-input" rows="2" placeholder="Your on-screen hook…" aria-describedby="header-help"></textarea>
-              <p id="header-help" class="hint">1–2 lines, burned into the top of the frame.</p>
+              <div class="header-gen">
+                <button class="header-generate" type="button" title="Generate a header from the frame + transcript">✨ Generate</button>
+                <input class="header-feedback" type="text" placeholder="Optional guidance for regenerate…" aria-label="Header regeneration guidance" />
+              </div>
+              <p class="header-gen-status status" role="status"></p>
+              <p id="header-help" class="hint">1–2 lines, burned into the top of the frame. Auto-filled after transcription; edit freely.</p>
             </div>
           </div>
 

@@ -140,6 +140,21 @@ def test_handoff_send_button_posts_the_batch():
     assert "header_style: radioValue(c.headerStyleEl)" in javascript
 
 
+def test_auto_header_control_is_wired_to_the_generation_endpoint():
+    html = _html()
+    javascript = _js()
+
+    # The per-clip card exposes a generate button and an optional guidance field.
+    assert 'class="header-generate"' in html
+    assert 'class="header-feedback"' in html
+
+    # It posts to the header endpoint, auto-fills after transcription, and
+    # regenerates a different header on demand (avoid + feedback).
+    assert "/header" in javascript
+    assert "await autoGenerateHeader(clip)" in javascript
+    assert "function regenerateHeader" in javascript
+
+
 def test_render_runs_one_clip_at_a_time():
     # Render-all iterates clips sequentially (awaits each) rather than firing
     # concurrent renders — the SPEC §9 bounded-batch guarantee.
