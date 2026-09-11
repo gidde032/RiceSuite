@@ -2,18 +2,24 @@
 
 Endpoints:
 - ``GET /``                       the Slate review UI.
+- ``GET /media``                  the media-management page.
 - ``GET /api/slices``             scored candidate slices (JSON), newest-scored first.
 - ``POST /api/slices/{id}/status`` set status (the select/reject gate).
 - ``PATCH /api/slices/{id}/window`` tighten the intended in/out (within the pad).
+- ``GET /api/sources``            stored sources (url, media file, slice count).
+- ``POST /api/sources/{id}/delete`` full-purge one source + its media file.
+- ``POST /api/cache/clear``       full-purge every source + wipe the media cache.
 - ``/static`` and ``/cache``      UI assets and range-served local media.
 
-The app only reads/annotates the local library and serves local files — no
-posting, publishing, or upload path exists anywhere in it.
+The app only reads/annotates/deletes the local library and serves local files —
+no posting, publishing, or upload path exists anywhere in it. The delete/clear
+controls remove *local* data only.
 """
 
 from __future__ import annotations
 
 import math
+import os
 import subprocess
 import threading
 from pathlib import Path
@@ -25,6 +31,7 @@ from pydantic import BaseModel
 
 from ricesearcher.config import Config, load_config
 from ricesearcher.handoff.writer import HandoffError, hand_off_selected
+from ricesearcher.library.cache import MediaCache
 from ricesearcher.library.store import Library
 from ricesearcher.models import CandidateSlice, SliceStatus
 
@@ -104,6 +111,10 @@ def create_app(config: Config | None = None) -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:
         return (_STATIC_DIR / "index.html").read_text(encoding="utf-8")
+
+    @app.get("/media", response_class=HTMLResponse)
+    def media_page() -> str:
+        return (_STATIC_DIR / "media.html").read_text(encoding="utf-8")
 
     @app.get("/api/slices")
     def list_slices(status: str | None = None) -> list[dict]:
@@ -203,5 +214,70 @@ def create_app(config: Config | None = None) -> FastAPI:
                     "handoff execution failed; selected slices remain selected "
                     f"for retry: {exc}",
                 ) from exc
+
+    # -- media management (local-only delete/clear) -----------------------
+    # These remove local library rows and cached bytes; they never contact any
+    # external surface. "Full-purge" semantics were ratified by the maintainer
+    # (2026-09-10): deleting a source also removes its scored slices.
+
+    @app.get("/api/sources")
+    def list_sources() -> list[dict]:
+        with Library(cfg.db_path) as lib:
+            sources = lib.list_sources()
+            counts = lib.slice_counts()
+        out: list[dict] = []
+        for s in sources:
+            try:
+                size: int | None = os.path.getsize(s.media_path)
+            except OSError:
+                size = None  # media already gone; row still listable/deletable
+            out.append(
+                {
+                    "id": s.id,
+                    "ref": s.ref,
+                    "title": s.title,
+                    "kind": s.kind.value,
+                    "channel": s.channel,
+                    "media_url": _media_url(s.media_path),
+                    "size_bytes": size,
+                    "duration_s": s.duration_s,
+                    "acquired_at": s.acquired_at,
+                    "slice_count": counts.get(s.id, 0),
+                }
+            )
+        return out
+
+    @app.post("/api/sources/{source_id}/delete")
+    def delete_source(source_id: str) -> dict:
+        """Full-purge one source: its row, transcript, slices, and media file.
+
+        The media file is only unlinked once no *other* source still references
+        it (the cache is content-addressed, so two sources can share one file).
+        """
+        cache = MediaCache(cfg.cache_dir)
+        with Library(cfg.db_path) as lib:
+            media_path = lib.delete_source(source_id)
+            if media_path is None:
+                raise HTTPException(404, "no such source")
+            still_shared = lib.is_media_path_referenced(Path(media_path))
+        # The DB row is already gone; a failure to unlink the file (permissions,
+        # read-only mount) must not 500 and imply the source survived — report
+        # media_removed False and let the maintainer retry/clean up.
+        media_removed = False
+        if not still_shared:
+            try:
+                media_removed = cache.delete(Path(media_path))
+            except OSError:
+                media_removed = False
+        return {"id": source_id, "deleted": True, "media_removed": media_removed}
+
+    @app.post("/api/cache/clear")
+    def clear_cache() -> dict:
+        """Full-purge the whole library: every source, slice, and cached file."""
+        cache = MediaCache(cfg.cache_dir)
+        with Library(cfg.db_path) as lib:
+            sources_deleted = lib.delete_all_sources()
+        files_removed = cache.clear()
+        return {"sources_deleted": sources_deleted, "files_removed": files_removed}
 
     return app

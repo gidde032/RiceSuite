@@ -83,6 +83,62 @@ class MediaCache:
             return digest, dest, True
         return digest, dest, False
 
+    def delete(self, path: Path) -> bool:
+        """Unlink one cached media file, returning whether a file was removed.
+
+        Refuses any path that does not resolve inside ``root`` (a guard so a
+        stray or hand-edited ``media_path`` can never make the media page unlink
+        something outside the content-addressed tree). Prunes the now-empty
+        shard directory opportunistically; a non-empty or shared shard is left
+        alone.
+        """
+        # Resolve once and derive the shard from the resolved path, so the
+        # containment guard and the empty-shard prune agree even when cache_dir
+        # is itself a symlink or relative path (review finding: shard/root were
+        # compared resolved-vs-unresolved).
+        resolved = Path(path).resolve()
+        root = self.root.resolve()
+        try:
+            resolved.relative_to(root)
+        except ValueError:
+            return False
+        if not resolved.is_file():
+            return False
+        try:
+            resolved.unlink()
+        except FileNotFoundError:
+            return False  # a concurrent delete won the race; nothing to remove
+        shard = resolved.parent
+        try:
+            if shard != root and not any(shard.iterdir()):
+                shard.rmdir()
+        except OSError:
+            pass  # a concurrent put may have re-populated the shard; harmless
+        return True
+
+    def clear(self) -> int:
+        """Delete every cached file under ``root``, returning the count removed.
+
+        Backs the media page's "clear the whole cache" control. The root itself
+        is recreated empty so the cache stays usable immediately afterward.
+        """
+        count = 0
+        if self.root.exists():
+            for child in self.root.iterdir():
+                # Symlinks first: unlink the link itself, never follow it into
+                # (and delete) an external target. shutil.rmtree also refuses a
+                # symlinked dir, which would otherwise raise mid-clear.
+                if child.is_symlink() or child.is_file():
+                    count += 1
+                    child.unlink(missing_ok=True)
+                elif child.is_dir():
+                    count += sum(1 for p in child.rglob("*") if p.is_file())
+                    # ignore_errors: a concurrent delete removing a file mid-walk
+                    # must not turn a whole-cache purge into a 500.
+                    shutil.rmtree(child, ignore_errors=True)
+        self.root.mkdir(parents=True, exist_ok=True)
+        return count
+
     def path_for(self, digest: str, suffix: str) -> Path:
         """Return the cache path for a known digest + suffix (may not exist).
 

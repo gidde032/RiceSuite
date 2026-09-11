@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RiceSearcher — Media</title>
+  <link rel="icon" href="/static/mark.png">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <span class="mark"><img src="/static/mark.png" alt="" width="26" height="26"></span>
+    <h1 class="app-title">RiceSearcher <span>· Media</span></h1>
+    <nav class="nav" aria-label="Primary">
+      <a class="nav-link" href="/">Review</a>
+    </nav>
+    <div class="filters">
+      <span id="count" class="count" aria-live="polite"></span>
+      <button id="clearAllBtn" class="danger" type="button">Clear entire cache…</button>
+    </div>
+  </header>
+  <p id="status" class="status" role="status" aria-live="polite"></p>
+  <main id="list" class="media-list"></main>
+  <script src="/static/media.js"></script>
+</body>
+</html>

@@ -4,7 +4,7 @@
 lines. Shipped history → `CHANGELOG.md` (created when versioned); product
 contract → `SPEC.md`/`ADR-001.md`; planned work → GitHub Issues.
 
-Last updated: 2026-09-09.
+Last updated: 2026-09-10.
 
 ## Current state
 
@@ -56,11 +56,26 @@ Round 3 caught and repaired merged-output selection, model-load context, and the
 first timing repair's duration/performance regressions. Current gates: ruff + JS
 clean; **155 tests, 95.59% coverage**; smoke tier **5 passed**.
 
+## Active work — review-UI polish (PR #18, Issue #17)
+
+Branch `feat/media-mgmt-logo-ui-polish` (off merged main `e9ee092`): a
+media-management page (`/media`) that lists stored sources and **full-purges**
+one source or the whole cache (local-only; SPEC FR-8a), the selected
+magnifier-over-rice PNG logo (`/static/mark.png`), and review-card alignment
+fixes. The earlier SVG mark and unselected logo concepts were cleared in the
+follow-up. 3-reviewer cold review complete; accepted findings repaired with
+fail-before-fix regressions (F2/media_path-normalization and a JS test harness
+deferred to Issues). Follow-up gates: ruff format/lint clean, frontend syntax
+checks clean; **168 tests, 95.74% coverage**; smoke tier **5 passed**. PR remains
+open and ready for maintainer review — **not merged** (merge is the maintainer's).
+
+Overnight, 3 Person B Bianco YouTube clips were pulled + scored (Haiku 4.5) + dedup'd
+into the library for the maintainer to review/select in the morning; no auto-select.
+
 ## Next action
 
-Finish the targeted Round 3 verification, commit the local repair batch, then let
-the maintainer exercise normal YouTube → review → Clipper use before the separate
-push/draft-PR publication boundary.
+Maintainer: review PR #18 and select from the newly loaded candidate slices in
+`ricesearcher review`.
 
 ## Reserved from the agent (maintainer-only)
 

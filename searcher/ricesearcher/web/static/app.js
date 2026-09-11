@@ -180,7 +180,9 @@ function card(s) {
   rejectBtn.addEventListener("click", () => setStatus("rejected"));
   resetBtn.addEventListener("click", () => setStatus("candidate"));
   actions.append(selectBtn, rejectBtn, resetBtn);
-  meta.append(actions, msg);
+  // msg sits ABOVE the actions so the buttons anchor flush to the card bottom
+  // (via .actions margin-top:auto) instead of leaving a dead gap beneath them.
+  meta.append(msg, actions);
 
   c.append(meta);
   return c;

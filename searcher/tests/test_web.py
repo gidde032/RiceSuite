@@ -71,6 +71,19 @@ def test_index_serves_html(client: TestClient) -> None:
     assert "/static/app.js" in r.text
 
 
+def test_selected_logo_asset_is_served_and_used(client: TestClient) -> None:
+    for path in ("/", "/media"):
+        html = client.get(path)
+        assert html.status_code == 200
+        assert "/static/mark.png" in html.text
+        assert "/static/mark.svg" not in html.text
+
+    asset = client.get("/static/mark.png")
+    assert asset.status_code == 200
+    assert asset.headers["content-type"].startswith("image/png")
+    assert asset.content.startswith(b"\x89PNG\r\n\x1a\n")
+
+
 def test_list_slices_dto(client: TestClient) -> None:
     r = client.get("/api/slices")
     assert r.status_code == 200
@@ -202,7 +215,7 @@ def test_window_tighten_clamps_to_pad(client: TestClient) -> None:
 
 
 def test_no_posting_surface(tmp_path: Path) -> None:
-    # The app exposes only review endpoints — no post/publish/upload route.
+    # The app exposes only review + local-media endpoints — no post/publish/upload.
     cfg = Config(data_dir=tmp_path / "d", handoff_dir=tmp_path / "h")
     cfg.ensure_dirs()
     app = create_app(cfg)
@@ -211,3 +224,109 @@ def test_no_posting_surface(tmp_path: Path) -> None:
         kw in p.lower() for p in paths for kw in ("publish", "upload", "/post")
     )
     assert "/api/slices" in paths
+    assert "/api/sources" in paths  # media-management routes must not be a surface
+
+
+def test_media_page_serves_html(client: TestClient) -> None:
+    r = client.get("/media")
+    assert r.status_code == 200
+    assert "RiceSearcher" in r.text
+    assert "/static/media.js" in r.text
+
+
+def test_list_sources_dto(client: TestClient) -> None:
+    r = client.get("/api/sources")
+    assert r.status_code == 200
+    rows = {s["id"]: s for s in r.json()}
+    src = rows["src1"]
+    assert src["ref"] == "https://y/x"
+    assert src["title"] == "Person A interview"
+    assert src["media_url"] == "/cache/ab/abc123.mp4"
+    assert src["size_bytes"] == len(b"\x00fake video bytes\x01")
+    assert src["slice_count"] == 2  # sl1 + sl2
+    assert "media_path" not in src  # absolute local path is not surfaced (skeptic #3)
+
+
+def test_list_sources_reports_missing_media(client: TestClient, tmp_path: Path) -> None:
+    # A source whose cached media has been unlinked stays listed (size None) and
+    # remains deletable — the media page shows "media missing" (frontend #2).
+    media = tmp_path / "data" / "cache" / "ab" / "abc123.mp4"
+    media.unlink()
+    rows = {s["id"]: s for s in client.get("/api/sources").json()}
+    assert rows["src1"]["size_bytes"] is None
+    assert client.post("/api/sources/src1/delete").status_code == 200
+
+
+def test_delete_source_survives_cache_unlink_oserror(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Regression (F4): the DB row is purged before the media unlink; if the
+    # unlink hits a real OSError the endpoint must still report 200 honestly
+    # (media_removed False), not 500 while the row is already gone.
+    import ricesearcher.web.app as web_app
+
+    def boom(self: object, path: object) -> bool:
+        raise OSError("read-only filesystem")
+
+    monkeypatch.setattr(web_app.MediaCache, "delete", boom)
+    r = client.post("/api/sources/src1/delete")
+    assert r.status_code == 200
+    assert r.json()["media_removed"] is False
+    assert client.get("/api/sources").json() == []  # row still purged
+
+
+def test_delete_source_full_purge(client: TestClient, tmp_path: Path) -> None:
+    # Delete removes the source row, its slices, AND the on-disk media file.
+    media = tmp_path / "data" / "cache" / "ab" / "abc123.mp4"
+    assert media.is_file()
+    r = client.post("/api/sources/src1/delete")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["deleted"] is True and body["media_removed"] is True
+    assert not media.exists()
+    assert client.get("/api/sources").json() == []
+    assert client.get("/api/slices").json() == []  # slices cascaded away
+    # deleting a missing source is a clean 404
+    assert client.post("/api/sources/ghost/delete").status_code == 404
+
+
+def test_delete_keeps_media_file_shared_by_another_source(tmp_path: Path) -> None:
+    # Content-addressed cache: two sources can share one file. Deleting one must
+    # not unlink a file the other still references.
+    cfg = Config(data_dir=tmp_path / "data", handoff_dir=tmp_path / "handoff")
+    cfg.ensure_dirs()
+    media = cfg.cache_dir / "cd" / "shared.mp4"
+    media.parent.mkdir(parents=True, exist_ok=True)
+    media.write_bytes(b"shared bytes")
+    with Library(cfg.db_path) as lib:
+        for sid in ("srcA", "srcB"):
+            lib.upsert_source(
+                Source(
+                    id=sid,
+                    kind=SourceKind.YOUTUBE,
+                    ref=f"https://y/{sid}",
+                    media_path=str(media),
+                )
+            )
+    client = TestClient(create_app(cfg))
+
+    first = client.post("/api/sources/srcA/delete").json()
+    assert first["media_removed"] is False  # srcB still references it
+    assert media.is_file()
+
+    second = client.post("/api/sources/srcB/delete").json()
+    assert second["media_removed"] is True  # last reference gone
+    assert not media.exists()
+
+
+def test_clear_cache_purges_everything(client: TestClient, tmp_path: Path) -> None:
+    cache_dir = tmp_path / "data" / "cache"
+    assert any(cache_dir.rglob("*.mp4"))
+    r = client.post("/api/cache/clear")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["sources_deleted"] == 1 and body["files_removed"] >= 1
+    assert client.get("/api/sources").json() == []
+    assert client.get("/api/slices").json() == []
+    assert not any(cache_dir.rglob("*.mp4"))  # disk wiped
+    assert cache_dir.is_dir()  # ...but the cache root is recreated, still usable
