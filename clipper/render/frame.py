@@ -11,6 +11,7 @@ API payload small.
 from __future__ import annotations
 
 import base64
+from contextlib import suppress
 from pathlib import Path
 
 from app.probe import MediaInfo
@@ -64,23 +65,30 @@ def grab_frame_b64(
         str(out_path),
     ]
     try:
-        run_owned(
-            args,
-            cwd=work_dir,
-            capture_output=True,
-            text=True,
-            timeout=_FRAME_TIMEOUT_S,
-            check=True,
-        )
-    except ProcessTimeoutError as exc:
-        raise FrameGrabError("frame grab timed out") from exc
-    except Exception as exc:
-        raise FrameGrabError("frame grab failed") from exc
+        try:
+            run_owned(
+                args,
+                cwd=work_dir,
+                capture_output=True,
+                text=True,
+                timeout=_FRAME_TIMEOUT_S,
+                check=True,
+            )
+        except ProcessTimeoutError as exc:
+            raise FrameGrabError("frame grab timed out") from exc
+        except Exception as exc:
+            raise FrameGrabError("frame grab failed") from exc
 
-    try:
-        data = out_path.read_bytes()
-    except OSError as exc:
-        raise FrameGrabError("frame file was not written") from exc
-    if not data:
-        raise FrameGrabError("frame file was empty")
-    return base64.b64encode(data).decode("ascii")
+        try:
+            data = out_path.read_bytes()
+        except OSError as exc:
+            raise FrameGrabError("frame file was not written") from exc
+        if not data:
+            raise FrameGrabError("frame file was empty")
+        return base64.b64encode(data).decode("ascii")
+    finally:
+        # The caller receives the encoded bytes, never the file path.  Keep this
+        # producer-owned snapshot out of the durable job cache on every normal
+        # and interrupting exit; a cleanup failure must not mask the real result.
+        with suppress(OSError):
+            out_path.unlink(missing_ok=True)
