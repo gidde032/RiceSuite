@@ -38,9 +38,8 @@ main { width: min(100%, 1540px); margin: 0 auto; padding: clamp(12px, 1.5vw, 24p
 .dropzone strong { font-size: 18px; font-weight: 560; }
 .dropzone span:not(.upload-icon) { max-width: 620px; color: var(--muted); font-size: 13px; }
 .upload-icon { display: grid; width: 42px; height: 42px; margin-bottom: 4px; place-items: center; border: 1px solid var(--hairline); border-radius: 50%; color: var(--rice); font-size: 25px; }
-.batch-defaults { margin-top: 18px; }
-.batch-defaults-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
-label.inline { display: grid; min-width: 210px; gap: 5px; color: var(--muted); font-size: 12px; }
+.upload-tools { display: flex; flex-wrap: wrap; gap: 24px; margin-top: 16px; padding-top: 16px; align-items: flex-start; justify-content: space-between; border-top: 1px solid var(--hairline); }
+.cache-tools { flex: 1 1 320px; min-width: 260px; }
 #batch-panel { border: 0; background: transparent; box-shadow: none; }
 
 .clip-card { margin-bottom: 18px; overflow: hidden; border: 1px solid var(--hairline); border-radius: 10px; background: var(--midground); box-shadow: var(--shadow); }
@@ -119,7 +118,6 @@ button:focus-visible, .primary:focus-visible, textarea:focus-visible, select:foc
 .status { min-height: 18px; margin: 8px 0 0; color: var(--muted); font-size: 12px; }
 .status.error { color: var(--danger); }
 .result-actions { display: flex; align-items: center; gap: 12px; }
-#cache-panel { padding: 10px 14px; border-color: rgb(43 49 54 / 65%); background: transparent; box-shadow: none; }
 .cache-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .cache-actions button { min-height: 36px; padding: 6px 12px; color: var(--muted); }
 
@@ -128,11 +126,10 @@ button:focus-visible, .primary:focus-visible, textarea:focus-visible, select:foc
 @media (max-width: 620px) { main { padding: 8px; } .topbar { padding-inline: 12px; } .clip-head { padding-left: 12px; } .edit-col { padding-inline: 12px; } .field-row { grid-template-columns: 1fr; gap: 7px; } .field > label, .field-label, .field legend { padding-top: 0; } .field legend { float: none; width: auto; } .field legend + * { margin-left: 0; margin-top: 7px; } .header-choice-grid { grid-template-columns: 1fr; } .caption-choice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .choice-card { min-height: 96px; } .batch-actions { position: static; grid-template-columns: 1fr; } .cache-actions { align-items: stretch; flex-direction: column; } .dropzone { min-height: 200px; padding-inline: 16px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }
 
-/* RiceSearcher intake control on the upload panel. */
+/* RiceSearcher intake control on the upload panel (paired with cache tools in
+   the same .upload-tools row). */
 .searcher-pull {
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid var(--hairline, #2b3136);
+  flex: 0 1 auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
