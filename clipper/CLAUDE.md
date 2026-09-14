@@ -56,7 +56,7 @@ but is no longer blocked by that spike.
 
 ## Source-of-truth map
 
-- **`SPEC.md`** — v1 design, decision log (D1–D13), boundary/safety, tech stack.
+- **`SPEC.md`** — v1 design, decision log (D1–D15), boundary/safety, tech stack.
 - **`ROADMAP.md`** — post-v1 sequencing (Wave 1 / Wave 2 / deferred).
 - **`CHANGELOG.md`** — what actually shipped.
 - **`docs/spikes/`** — de-risking investigations and their pass/fail results.

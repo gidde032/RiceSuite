@@ -29,7 +29,8 @@ from longer video) sit directly on top of it.
 
 **In scope (v1):**
 decode → transcribe (word-level) → word-highlight captions → manual on-screen
-header → blur-pad any non-9:16 vertical input → optional added-music track →
+header → normalize geometry (pass-through 9:16; subject crop or blur-pad for
+landscape, D15) → optional added-music track →
 export 1080×1920 H.264 — all through a local web review UI with a
 human-in-the-loop gate.
 
@@ -55,8 +56,13 @@ agent's API request (§6.2), which generates text and posts nothing.
 ## 4. Pipeline (data flow)
 
 1. **Ingest** — user uploads a clip via the local UI.
-2. **Normalize geometry** — if exactly 9:16 (1080×1920), pass through untouched;
-   otherwise **blur-pad** the same-frame fill to 1080×1920 (never crop).
+2. **Normalize geometry** — if exactly 9:16 (1080×1920), pass through untouched.
+   Landscape input runs local face detection at ingest and, per clip, resolves
+   `auto` / `blur_pad` / `crop`: **subject crop** slides a full-height 9:16
+   window that keeps the speaker inside a central safe zone; otherwise
+   **blur-pad** the same-frame fill to 1080×1920 (D12, D15,
+   [ADR-001](docs/adr/ADR-001-subject-crop.md),
+   [design spec](docs/design/subject-crop-spec.md)).
 3. **Transcribe** — faster-whisper produces caption text with **word-level
    timestamps**, pinned to the clip timeline in seconds.
 4. **Review gate (human-in-the-loop)** — user edits transcript text (timing
@@ -183,7 +189,8 @@ model earns its keep. Revisit at build if desired.
     color, position) exposed in the UI.
 - **Deferred (longer-term):**
   - Filler-word trimming ("um/uh", transcript-driven cuts).
-  - Landscape / mixed input + active-speaker reframe (arguably a separate project).
+  - Active-speaker reframe and zoom for landscape input. Single-subject crop
+    is ratified (D15); multi-speaker switching stays deferred.
   - Tier-3 animated captions (behind a deliberate render-engine decision).
   - Auto-ducking + source vocal isolation for music.
   - **Path 2** (5–10 min → clip extraction) and **Path 1** (30+ min → chunked
@@ -227,7 +234,7 @@ model earns its keep. Revisit at build if desired.
 | # | Decision | Settled as | Why |
 |---|----------|-----------|-----|
 | D1 | Fit | Standalone v1; output contract compatible for RicePoster drop-in | Prove the render chassis fast without coupling risk; integration is Wave-1 #1 |
-| D2 | Source geometry | Vertical-only; landscape/mixed deferred | Keeps Path 3 genuinely low-difficulty; reframe rivals the cost of everything else |
+| D2 | Source geometry | Vertical-first; **landscape accepted via single-subject crop (D15, 2026-09-14)**; active-speaker reframe deferred | Original: keep Path 3 low-difficulty. Revised: interview footage is real supply; the crop is bounded by a kill criterion |
 | D3 | Caption source | Auto-transcribe (word-level) + manual override | Transcription is the backbone; override is cheap insurance |
 | D4 | Manual override | Edit transcript text (timing locked); captions-off → header-only. Hand-timed custom body captions cut from v1 | Header already covers "text on a silent clip", so no hand-timing UI needed |
 | D5 | Trimming | None in v1 | The "maybe" and the riskiest component; silence-trim is Wave-1 |
@@ -237,6 +244,7 @@ model earns its keep. Revisit at build if desired.
 | D9 | Transcription | faster-whisper, local | Free, private, word timestamps built in; fits local-first setup |
 | D10 | Interface | FastAPI + vanilla HTML/JS localhost, review gate | Hosts override + header entry; matches RicePoster for easy merge |
 | D11 | Styling | One Tier-1 preset v1; style/position config Wave-2; Tier-3 deferred behind engine decision | Config is a time sink; template already parameterized for cheap later exposure |
-| D12 | Non-9:16 handling | Blur-pad fill | Never loses content; avoids the edge-crop failure fought in RicePoster |
+| D12 | Non-9:16 handling | Blur-pad fill as the **fallback and explicit choice**; subject crop when detection passes (D15) | Never loses content. The RicePoster "edge-crop failure" was withdrawn 2026-07-27 (TikTok trims edges itself); the surviving rule is a safe zone for the subject |
 | D13 | Music | Optional added audio; replace **or** mix-under toggle with volume slider; v1. Auto-ducking + vocal isolation deferred | Central to actual usage; cheap since encoding already exists; adding after sync can't affect timing |
 | D14 | Browser theme | Slate: dark carbon/grey chrome, rice-grey state accents, visual per-clip preset cards, symbol-only rice-and-shears mark | Makes the daily-driver review path faster to scan without changing behavior or adding editor features |
+| D15 | Subject crop | Local YuNet face detection at ingest; full-height 9:16 window with dead zone, smoothing, pan cap; snap only at cuts; face box inside the central 70%; blur-pad when `face_rate < 0.80` or `safe_rate < 0.95`; per-clip `geometry` = `auto`/`blur_pad`/`crop`; kill criterion: fewer than 5 of 6 fixtures pass after two tuning rounds | Ratified 2026-09-14; [ADR-001](docs/adr/ADR-001-subject-crop.md) |
