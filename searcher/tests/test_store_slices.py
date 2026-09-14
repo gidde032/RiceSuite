@@ -48,7 +48,7 @@ def _slice(sid: str, source_id: str = "src1", score: float = 0.5) -> CandidateSl
 
 def test_fresh_db_is_at_current_version(tmp_path: Path) -> None:
     with Library(tmp_path / "lib.sqlite3") as lib:
-        assert lib._stored_version() == SCHEMA_VERSION == 2
+        assert lib._stored_version() == SCHEMA_VERSION == 3
 
 
 def test_slice_roundtrip_and_features_json(tmp_path: Path) -> None:
@@ -89,7 +89,7 @@ def test_upsert_replaces_existing_slice(tmp_path: Path) -> None:
         assert len(lib.list_slices()) == 1
 
 
-def test_v1_database_upgrades_in_place_to_v2(tmp_path: Path) -> None:
+def test_v1_database_upgrades_in_place_to_current(tmp_path: Path) -> None:
     # Build a Phase-1 (v1) database by hand, with data, then open it with Library.
     db = tmp_path / "old.sqlite3"
     conn = sqlite3.connect(db)
@@ -112,7 +112,7 @@ def test_v1_database_upgrades_in_place_to_v2(tmp_path: Path) -> None:
     assert "candidate_slices" not in tables_before
 
     with Library(db) as lib:
-        assert lib._stored_version() == 2
+        assert lib._stored_version() == SCHEMA_VERSION
         # Pre-existing data survived the upgrade.
         assert lib.get_source("old1") is not None
         # New table is usable.

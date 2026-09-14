@@ -21,7 +21,11 @@ from ricesearcher.models import (
     TranscriptWord,
 )
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+
+# The profile id every pre-v3 slice belongs to (ADR-002). The v3 migration
+# stamps it on every row and folds it into the slice id.
+LEGACY_PROFILE_ID = "example-beat"
 
 # version -> DDL that migrates the schema UP to that version.
 MIGRATIONS: dict[int, str] = {
@@ -72,6 +76,23 @@ MIGRATIONS: dict[int, str] = {
     CREATE INDEX IF NOT EXISTS idx_slices_score ON candidate_slices(score DESC);
     """,
 }
+
+# v3 (ADR-002): partition slices by profile. Stamp the legacy id on every row and
+# fold it into the slice id and dup_of, both of the form {source}:{in}-{out}.
+MIGRATIONS[3] = f"""
+    ALTER TABLE candidate_slices ADD COLUMN profile_id TEXT NOT NULL DEFAULT '';
+    UPDATE candidate_slices SET profile_id = '{LEGACY_PROFILE_ID}';
+    UPDATE candidate_slices
+       SET id = source_id || ':{LEGACY_PROFILE_ID}:'
+                || substr(id, length(source_id) + 2);
+    UPDATE candidate_slices
+       SET dup_of = substr(dup_of, 1, instr(dup_of, ':') - 1)
+                    || ':{LEGACY_PROFILE_ID}:'
+                    || substr(dup_of, instr(dup_of, ':') + 1)
+     WHERE dup_of IS NOT NULL AND dup_of != '';
+    CREATE INDEX IF NOT EXISTS idx_slices_profile_status
+        ON candidate_slices(profile_id, status);
+    """
 
 
 class Library:
@@ -228,6 +249,32 @@ class Library:
             )
         }
 
+    def profile_counts(self) -> dict[str, dict[str, int]]:
+        """Map profile id -> counts, for the ``profiles`` command and API.
+
+        Each value has ``sources`` (distinct source ids), ``candidates`` (all
+        slices in the profile), ``selected``, and ``handed_off``. Counts stay
+        inside one profile; slices of other profiles never leak in.
+        """
+        rows = self._conn.execute(
+            """SELECT profile_id,
+                      COUNT(DISTINCT source_id) AS sources,
+                      COUNT(*) AS candidates,
+                      SUM(status = 'selected') AS selected,
+                      SUM(status = 'handed_off') AS handed_off
+                 FROM candidate_slices
+                GROUP BY profile_id"""
+        ).fetchall()
+        return {
+            r["profile_id"]: {
+                "sources": r["sources"],
+                "candidates": r["candidates"],
+                "selected": r["selected"] or 0,
+                "handed_off": r["handed_off"] or 0,
+            }
+            for r in rows
+        }
+
     def delete_source(self, source_id: str) -> str | None:
         """Delete a source and everything under it, returning its media_path.
 
@@ -268,9 +315,10 @@ class Library:
             """INSERT OR REPLACE INTO candidate_slices
                (id, source_id, pad_in, pad_out, target_in, target_out,
                 transcript_span, score, rationale, heuristic_score,
-                heuristic_features, beat_profile_version, scorer_model,
-                dup_of, dup_score, dup_kind, rights_risk, status, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                heuristic_features, beat_profile_version, profile_id,
+                scorer_model, dup_of, dup_score, dup_kind, rights_risk,
+                status, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             [
                 (
                     s.id,
@@ -285,6 +333,7 @@ class Library:
                     s.heuristic_score,
                     json.dumps(s.heuristic_features),
                     s.beat_profile_version,
+                    s.profile_id,
                     s.scorer_model,
                     s.dup_of,
                     s.dup_score,
@@ -303,27 +352,44 @@ class Library:
             self._upsert_slices(slices)
 
     def replace_candidate_slices(
-        self, source_id: str, slices: list[CandidateSlice]
+        self,
+        source_id: str,
+        slices: list[CandidateSlice],
+        *,
+        profile_id: str | None = None,
     ) -> None:
         """Atomically replace a source's candidate rows.
 
         Reviewer lens: candidate data integrity (HIGH). The delete and insert
         share one transaction, so a failed replacement rolls back to the prior
-        shortlist while human-touched rows remain untouched.
+        shortlist while human-touched rows remain untouched. When ``profile_id``
+        is given, the delete is scoped to that source **and** profile, so rows of
+        other profiles are never touched (ADR-002 partition).
         """
+        clauses = ["source_id = ?", "status = 'candidate'"]
+        params: list[str] = [source_id]
+        if profile_id is not None:
+            clauses.append("profile_id = ?")
+            params.append(profile_id)
         with self._conn:
             self._conn.execute(
-                "DELETE FROM candidate_slices "
-                "WHERE source_id = ? AND status = 'candidate'",
-                (source_id,),
+                f"DELETE FROM candidate_slices WHERE {' AND '.join(clauses)}",
+                params,
             )
             self._upsert_slices(slices)
 
     def list_slices(
-        self, *, source_id: str | None = None, status: SliceStatus | None = None
+        self,
+        *,
+        profile_id: str | None = None,
+        source_id: str | None = None,
+        status: SliceStatus | None = None,
     ) -> list[CandidateSlice]:
         clauses = []
         params: list[str] = []
+        if profile_id is not None:
+            clauses.append("profile_id = ?")
+            params.append(profile_id)
         if source_id is not None:
             clauses.append("source_id = ?")
             params.append(source_id)
@@ -454,6 +520,7 @@ def _row_to_slice(row: sqlite3.Row) -> CandidateSlice:
         heuristic_score=row["heuristic_score"],
         heuristic_features=json.loads(row["heuristic_features"]),
         beat_profile_version=row["beat_profile_version"],
+        profile_id=row["profile_id"],
         scorer_model=row["scorer_model"],
         dup_of=row["dup_of"],
         dup_score=row["dup_score"],

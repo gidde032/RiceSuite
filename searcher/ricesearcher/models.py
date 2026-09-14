@@ -94,6 +94,7 @@ class CandidateSlice:
     heuristic_score: float = 0.0
     heuristic_features: dict[str, float] = field(default_factory=dict)
     beat_profile_version: str = ""
+    profile_id: str = ""
     scorer_model: str = ""
     dup_of: str | None = None
     dup_score: float = 0.0
