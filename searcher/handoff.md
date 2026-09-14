@@ -68,8 +68,7 @@ full-purge, FR-8a), the PNG logo, review-card alignment. Deferred: #19
 Ratified 2026-09-14. Contract: `docs/design/profiles-spec.md`. Milestone 2.
 
 - Issue **#22** backend P1–P4, branch `feat/profiles-backend` (off `f5cdd8a`).
-  First commit: `docs: ratify ADR-002`. Draft PR opens after the first green
-  coherent code commit.
+  Draft **PR #24** open. P1 landed (loader, profiles dir, seed, id rule).
 - Issue **#23** UI P5. Second branch `feat/profiles-ui` after #22 merges.
 
 Verified: main gates green at `f5cdd8a` (168 tests, 95.74%, smoke 5).
