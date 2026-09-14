@@ -356,25 +356,21 @@ class Library:
         source_id: str,
         slices: list[CandidateSlice],
         *,
-        profile_id: str | None = None,
+        profile_id: str,
     ) -> None:
-        """Atomically replace a source's candidate rows.
+        """Atomically replace a source's candidate rows within one profile.
 
         Reviewer lens: candidate data integrity (HIGH). The delete and insert
         share one transaction, so a failed replacement rolls back to the prior
-        shortlist while human-touched rows remain untouched. When ``profile_id``
-        is given, the delete is scoped to that source **and** profile, so rows of
+        shortlist while human-touched rows remain untouched. ``profile_id`` is
+        required: the delete is scoped to that source **and** profile, so rows of
         other profiles are never touched (ADR-002 partition).
         """
-        clauses = ["source_id = ?", "status = 'candidate'"]
-        params: list[str] = [source_id]
-        if profile_id is not None:
-            clauses.append("profile_id = ?")
-            params.append(profile_id)
         with self._conn:
             self._conn.execute(
-                f"DELETE FROM candidate_slices WHERE {' AND '.join(clauses)}",
-                params,
+                "DELETE FROM candidate_slices "
+                "WHERE source_id = ? AND status = 'candidate' AND profile_id = ?",
+                (source_id, profile_id),
             )
             self._upsert_slices(slices)
 

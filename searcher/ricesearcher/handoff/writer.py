@@ -181,13 +181,13 @@ def _entry_for(slice_: CandidateSlice, source: Source, position: int) -> Handoff
 def hand_off_selected(
     library: Library,
     *,
+    profile_id: str,
     extractor: ClipExtractor | None = None,
     config: Config | None = None,
-    profile_id: str | None = None,
 ) -> dict:
     """Write ``selected`` slices as one handoff batch, then mark them handed_off.
 
-    When ``profile_id`` is given, only that profile's selected slices are handed
+    ``profile_id`` is required: only that profile's selected slices are handed
     off, so a handoff never touches another profile's rows (ADR-002 partition).
     On success the slices move to ``handed_off`` so they leave the selected queue
     and aren't re-sent; on any failure nothing is marked (retryable) and no

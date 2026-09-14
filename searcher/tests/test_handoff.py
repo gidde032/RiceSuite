@@ -164,7 +164,7 @@ def _lib_with_selected(tmp_path: Path) -> tuple[Config, Library]:
 def test_hand_off_selected_writes_and_marks(tmp_path: Path) -> None:
     cfg, lib = _lib_with_selected(tmp_path)
     ex = FakeExtractor()
-    res = hand_off_selected(lib, extractor=ex, config=cfg)
+    res = hand_off_selected(lib, extractor=ex, config=cfg, profile_id=LEGACY_PROFILE_ID)
     assert res["clip_count"] == 1  # only the selected slice
     # The selected slice is now handed_off; the candidate is untouched.
     assert lib.get_slice("a").status is SliceStatus.HANDED_OFF
@@ -172,18 +172,34 @@ def test_hand_off_selected_writes_and_marks(tmp_path: Path) -> None:
     lib.close()
 
 
+def test_hand_off_selected_requires_profile_id(tmp_path: Path) -> None:
+    # FA-1: profile_id is a required keyword-only str. Without it the handoff
+    # must raise, never fall back to handing off every profile's selected rows.
+    cfg, lib = _lib_with_selected(tmp_path)
+    with pytest.raises(TypeError):
+        hand_off_selected(lib, extractor=FakeExtractor(), config=cfg)
+    lib.close()
+
+
 def test_hand_off_nothing_selected_is_noop(tmp_path: Path) -> None:
     cfg = Config(data_dir=tmp_path / "d", handoff_dir=tmp_path / "h")
     cfg.ensure_dirs()
     with Library(cfg.db_path) as lib:
-        res = hand_off_selected(lib, extractor=FakeExtractor(), config=cfg)
+        res = hand_off_selected(
+            lib, extractor=FakeExtractor(), config=cfg, profile_id=LEGACY_PROFILE_ID
+        )
     assert res == {"batch_id": None, "clip_count": 0}
 
 
 def test_hand_off_failure_does_not_mark(tmp_path: Path) -> None:
     cfg, lib = _lib_with_selected(tmp_path)
     with pytest.raises(RuntimeError):
-        hand_off_selected(lib, extractor=FakeExtractor(fail=True), config=cfg)
+        hand_off_selected(
+            lib,
+            extractor=FakeExtractor(fail=True),
+            config=cfg,
+            profile_id=LEGACY_PROFILE_ID,
+        )
     # Nothing marked handed_off — the batch is retryable.
     assert lib.get_slice("a").status is SliceStatus.SELECTED
     assert list((cfg.handoff_dir).iterdir()) == []  # no orphan
@@ -273,10 +289,13 @@ def test_h1_all_selected_marked_atomically(tmp_path: Path) -> None:
                 transcript_span="c",
                 score=0.7,
                 status=SliceStatus.SELECTED,
+                profile_id=LEGACY_PROFILE_ID,
             ),
         ]
     )
-    hand_off_selected(lib, extractor=FakeExtractor(), config=cfg)
+    hand_off_selected(
+        lib, extractor=FakeExtractor(), config=cfg, profile_id=LEGACY_PROFILE_ID
+    )
     assert lib.get_slice("a").status is SliceStatus.HANDED_OFF
     assert lib.get_slice("c").status is SliceStatus.HANDED_OFF
     lib.close()

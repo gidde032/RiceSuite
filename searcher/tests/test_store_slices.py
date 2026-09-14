@@ -5,6 +5,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from ricesearcher.library.store import MIGRATIONS, SCHEMA_VERSION, Library
 from ricesearcher.models import (
     CandidateSlice,
@@ -87,6 +89,15 @@ def test_upsert_replaces_existing_slice(tmp_path: Path) -> None:
         got = lib.get_slice("sl1")
         assert got is not None and got.score == 0.8
         assert len(lib.list_slices()) == 1
+
+
+def test_replace_candidate_slices_requires_profile_id(tmp_path: Path) -> None:
+    # FA-1: profile_id is a required keyword-only str. A call without it must
+    # raise, so a replace can never delete candidate rows across every profile.
+    with Library(tmp_path / "lib.sqlite3") as lib:
+        lib.upsert_source(_source())
+        with pytest.raises(TypeError):
+            lib.replace_candidate_slices("src1", [_slice("a")])
 
 
 def test_v1_database_upgrades_in_place_to_current(tmp_path: Path) -> None:
