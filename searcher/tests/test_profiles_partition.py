@@ -1,9 +1,13 @@
 """Partition regression (profiles-spec "First reliability risk").
 
 A re-score, dedup pass, or handoff under one profile must never touch another
-profile's rows. First half here: score one source under two profiles, re-score
-the second, assert the first profile's rows are byte-identical. The handoff half
-lands with P4.
+profile's rows. Three guards:
+
+- ``test_profile_id_is_stamped``: scoring stamps each row with its profile id.
+- ``test_rescore_other_profile_leaves_first_untouched``: re-scoring one profile
+  leaves the other profile's rows byte-identical. It snapshots rows by id and
+  never filters by ``profile_id``, so the leak cannot hide behind that column.
+- ``test_handoff_one_profile_leaves_other_selected``: handoff is scoped too.
 """
 
 from __future__ import annotations
@@ -58,6 +62,30 @@ def _source() -> Source:
     )
 
 
+def _snapshot_by_id(lib: Library) -> dict[str, tuple]:
+    """Every candidate row as a full-field tuple, keyed by id.
+
+    Reads the stored bytes directly and never filters by ``profile_id``, so a
+    cross-profile overwrite cannot hide behind the very column under test.
+    """
+    rows = lib._conn.execute("SELECT * FROM candidate_slices").fetchall()
+    return {row["id"]: tuple(row) for row in rows}
+
+
+def test_profile_id_is_stamped(tmp_path, fake_scorer) -> None:
+    profiles = tmp_path / "profiles"
+    _write_profile(profiles, "alpha")
+    prof_a = load_profile("alpha", profiles_dir=profiles)
+    source = _source()
+
+    with Library(tmp_path / "lib.sqlite3") as lib:
+        lib.upsert_source(source)
+        extract_and_score(source, profile=prof_a, scorer=fake_scorer, library=lib)
+        rows = lib.list_slices(profile_id="alpha")
+        assert rows, "alpha slices must be stamped with its profile id"
+        assert all(s.profile_id == "alpha" for s in rows)
+
+
 def test_rescore_other_profile_leaves_first_untouched(tmp_path, fake_scorer) -> None:
     profiles = tmp_path / "profiles"
     _write_profile(profiles, "alpha")
@@ -69,16 +97,19 @@ def test_rescore_other_profile_leaves_first_untouched(tmp_path, fake_scorer) -> 
     with Library(tmp_path / "lib.sqlite3") as lib:
         lib.upsert_source(source)
         extract_and_score(source, profile=prof_a, scorer=fake_scorer, library=lib)
-        a_before = lib.list_slices(profile_id="alpha")
-        assert a_before, "alpha slices must be stamped with its profile id"
+        # Only alpha's rows exist now. Snapshot them by id, not by profile_id:
+        # the leak this guards would corrupt or delete rows the filter relies on.
+        alpha_before = _snapshot_by_id(lib)
+        assert alpha_before, "alpha must produce rows to guard"
+        alpha_ids = set(alpha_before)
 
         extract_and_score(source, profile=prof_b, scorer=fake_scorer, library=lib)
-        a_after = lib.list_slices(profile_id="alpha")
-        b_after = lib.list_slices(profile_id="beta")
+        extract_and_score(source, profile=prof_b, scorer=fake_scorer, library=lib)
 
-        assert a_after == a_before, "re-scoring beta changed alpha's rows"
-        assert b_after, "beta must be scored into its own partition"
-        assert not ({s.id for s in a_after} & {s.id for s in b_after})
+        after = _snapshot_by_id(lib)
+        alpha_after = {rid: row for rid, row in after.items() if rid in alpha_ids}
+        assert alpha_after == alpha_before, "scoring beta changed alpha's rows"
+        assert len(alpha_after) == len(alpha_before), "alpha row count changed"
 
 
 def test_handoff_one_profile_leaves_other_selected(tmp_path, fake_scorer) -> None:
