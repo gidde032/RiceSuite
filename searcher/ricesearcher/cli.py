@@ -12,7 +12,7 @@ from collections.abc import Sequence
 
 from ricesearcher.acquire.watchfolder import WatchFolderAcquirer
 from ricesearcher.acquire.ytdlp import YtDlpAcquirer
-from ricesearcher.beat.profile import load_profile
+from ricesearcher.beat.profile import ensure_seed, load_profile
 from ricesearcher.config import load_config, load_env_files
 from ricesearcher.dedup.annotate import SIM_THRESHOLD
 from ricesearcher.dedup.embed import SentenceTransformerEmbedder
@@ -111,7 +111,9 @@ def _resolve_source(lib: Library, prefix: str) -> str | None:
 def _cmd_score(args: argparse.Namespace) -> int:
     cfg = load_config()
     cfg.ensure_dirs()
-    profile = load_profile()
+    ensure_seed(cfg.profiles_dir)
+    # P3 adds the required --profile flag; bridge on the seeded profile until then.
+    profile = load_profile("example-beat", profiles_dir=cfg.profiles_dir)
     with Library(cfg.db_path) as lib:
         full_id = _resolve_source(lib, args.source_id)
         if full_id is None:
