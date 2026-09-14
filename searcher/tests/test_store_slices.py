@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import sqlite3
 from pathlib import Path
 
@@ -89,6 +90,33 @@ def test_upsert_replaces_existing_slice(tmp_path: Path) -> None:
         got = lib.get_slice("sl1")
         assert got is not None and got.score == 0.8
         assert len(lib.list_slices()) == 1
+
+
+def test_profile_counts_candidates_counts_only_candidate_status(
+    tmp_path: Path,
+) -> None:
+    # FB-1: `candidates` is the count of rows awaiting review (status='candidate'),
+    # not COUNT(*) over every status.
+    statuses = [
+        SliceStatus.CANDIDATE,
+        SliceStatus.CANDIDATE,
+        SliceStatus.REVIEWED,
+        SliceStatus.SELECTED,
+        SliceStatus.HANDED_OFF,
+        SliceStatus.REJECTED,
+    ]
+    with Library(tmp_path / "lib.sqlite3") as lib:
+        lib.upsert_source(_source())
+        lib.upsert_slices(
+            [
+                dataclasses.replace(_slice(f"s{i}"), status=st, profile_id="p1")
+                for i, st in enumerate(statuses)
+            ]
+        )
+        counts = lib.profile_counts()["p1"]
+    assert counts["candidates"] == 2  # only the two status='candidate' rows
+    assert counts["selected"] == 1
+    assert counts["handed_off"] == 1
 
 
 def test_replace_candidate_slices_requires_profile_id(tmp_path: Path) -> None:

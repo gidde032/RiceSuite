@@ -252,14 +252,16 @@ class Library:
     def profile_counts(self) -> dict[str, dict[str, int]]:
         """Map profile id -> counts, for the ``profiles`` command and API.
 
-        Each value has ``sources`` (distinct source ids), ``candidates`` (all
-        slices in the profile), ``selected``, and ``handed_off``. Counts stay
-        inside one profile; slices of other profiles never leak in.
+        Each value has ``sources`` (distinct source ids over all rows),
+        ``candidates`` (rows awaiting review, ``status = 'candidate'`` only),
+        ``selected``, and ``handed_off``. Counts stay inside one profile; slices
+        of other profiles never leak in. #23 (the profiles page) reuses this
+        reading of ``candidates``.
         """
         rows = self._conn.execute(
             """SELECT profile_id,
                       COUNT(DISTINCT source_id) AS sources,
-                      COUNT(*) AS candidates,
+                      SUM(status = 'candidate') AS candidates,
                       SUM(status = 'selected') AS selected,
                       SUM(status = 'handed_off') AS handed_off
                  FROM candidate_slices
@@ -268,7 +270,7 @@ class Library:
         return {
             r["profile_id"]: {
                 "sources": r["sources"],
-                "candidates": r["candidates"],
+                "candidates": r["candidates"] or 0,
                 "selected": r["selected"] or 0,
                 "handed_off": r["handed_off"] or 0,
             }

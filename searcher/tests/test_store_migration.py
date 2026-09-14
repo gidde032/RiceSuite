@@ -68,7 +68,10 @@ def test_migration_scopes_counts_to_legacy_profile(tmp_path: Path) -> None:
         assert set(counts) == {LEGACY_PROFILE_ID}
         c = counts[LEGACY_PROFILE_ID]
         assert c["sources"] == 2
-        assert c["candidates"] == len(FIXTURE_SLICES)
+        # FB-1: `candidates` counts only rows awaiting review, not every status.
+        assert c["candidates"] == sum(
+            1 for s in FIXTURE_SLICES if s["status"] == "candidate"
+        )
         assert c["selected"] == 1
         assert c["handed_off"] == 1
         assert len(lib.list_slices(profile_id=LEGACY_PROFILE_ID)) == len(FIXTURE_SLICES)
