@@ -107,6 +107,8 @@ class JobState(BaseModel):
     error: str | None = None
     # True once an output mp4 exists for download.
     has_output: bool = False
+    # Subject-crop framing decision (ADR-001). Only set for landscape input.
+    crop_plan: CropPlan | None = None
 
 
 # --- Subject crop (ADR-001) ---------------------------------------------------
@@ -151,3 +153,8 @@ class CropPlan(BaseModel):
     window_h: int
     samples: list[CropSample] = Field(default_factory=list)
     warning: Literal["header_zone", "caption_zone"] | None = None
+
+
+# JobState references CropPlan by forward reference; resolve it now that CropPlan
+# is defined.
+JobState.model_rebuild()

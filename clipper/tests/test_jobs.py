@@ -5,6 +5,20 @@ import os
 import pytest
 
 from app import jobs
+from app.models import CropPlan, CropSample
+from app.probe import MediaInfo
+
+
+def _searcher_job_with_plan(root, crop_plan):
+    job = jobs.create_job()
+    job.source_path = job.dir / "source.mp4"
+    job.source_path.write_bytes(b"video")
+    job.info = MediaInfo(1920, 1080, 5.0, True)
+    job.searcher_title = "clip"
+    job.searcher_metadata = {"id": "c1"}
+    job.searcher_manifest = {"batch": "b1"}
+    job.crop_plan = crop_plan
+    return job
 
 
 @pytest.fixture
@@ -96,3 +110,33 @@ def test_clear_cache_refuses_active_jobs(isolated_cache):
 
     assert active.dir.is_dir()
     assert (active.dir / "output.mp4").exists()
+
+
+def test_persist_recover_round_trips_crop_plan(isolated_cache):
+    plan = CropPlan(
+        decision="crop",
+        reason="ok",
+        face_rate=0.9,
+        safe_rate=0.99,
+        window_w=608,
+        window_h=1080,
+        samples=[CropSample(t=0.0, x=100), CropSample(t=0.2, x=104)],
+        warning="header_zone",
+    )
+    job = _searcher_job_with_plan(isolated_cache, plan)
+
+    jobs.persist_searcher_job(job)
+    recovered = jobs._recover_searcher_job(job.dir)
+
+    assert recovered is not None
+    assert recovered.crop_plan == plan
+
+
+def test_recover_without_crop_plan_key_yields_none(isolated_cache):
+    job = _searcher_job_with_plan(isolated_cache, None)
+
+    jobs.persist_searcher_job(job)
+    recovered = jobs._recover_searcher_job(job.dir)
+
+    assert recovered is not None
+    assert recovered.crop_plan is None

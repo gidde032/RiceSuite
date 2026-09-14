@@ -8,8 +8,9 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app import jobs, main
-from app.models import HeaderRequest, RenderRequest, Word
+from app.models import CropPlan, HeaderRequest, RenderRequest, Word
 from app.probe import MediaInfo
+from render import framing
 
 
 def _ready_job(root):
@@ -268,3 +269,67 @@ def test_generate_header_not_ready_returns_409(isolated_jobs):
     with pytest.raises(HTTPException) as exc_info:
         main.generate_header(job.id, HeaderRequest())
     assert exc_info.value.status_code == 409
+
+
+def _landscape_plan() -> CropPlan:
+    return CropPlan(
+        decision="crop",
+        reason="ok",
+        face_rate=0.96,
+        safe_rate=0.99,
+        window_w=608,
+        window_h=1080,
+    )
+
+
+def test_transcribe_builds_crop_plan_for_landscape(monkeypatch, isolated_jobs):
+    job = jobs.create_job()
+    job.status = "ready"
+    job.source_path = job.dir / "source.mp4"
+    job.source_path.write_bytes(b"source")
+    job.info = MediaInfo(1920, 1080, 4.0, True)
+    monkeypatch.setattr(main.whisper, "transcribe", lambda path: [])
+    plan = _landscape_plan()
+    monkeypatch.setattr(main.subject, "build_plan", lambda *a, **k: plan)
+
+    result = main.transcribe_job(job.id)
+
+    assert result.status == "ready"
+    assert result.crop_plan == plan
+
+
+def test_transcribe_leaves_crop_plan_none_for_vertical(monkeypatch, isolated_jobs):
+    job = jobs.create_job()
+    job.status = "ready"
+    job.source_path = job.dir / "source.mp4"
+    job.source_path.write_bytes(b"source")
+    job.info = MediaInfo(1080, 1920, 4.0, True)
+    monkeypatch.setattr(main.whisper, "transcribe", lambda path: [])
+
+    def fail(*a, **k):
+        raise AssertionError("build_plan must not run for vertical input")
+
+    monkeypatch.setattr(main.subject, "build_plan", fail)
+
+    result = main.transcribe_job(job.id)
+
+    assert result.status == "ready"
+    assert result.crop_plan is None
+
+
+def test_transcribe_ready_even_when_analysis_failed(monkeypatch, isolated_jobs):
+    job = jobs.create_job()
+    job.status = "ready"
+    job.source_path = job.dir / "source.mp4"
+    job.source_path.write_bytes(b"source")
+    job.info = MediaInfo(1920, 1080, 4.0, True)
+    monkeypatch.setattr(main.whisper, "transcribe", lambda path: [])
+    failed = framing.failed_plan("analysis_failed", 1920, 1080)
+    monkeypatch.setattr(main.subject, "build_plan", lambda *a, **k: failed)
+
+    result = main.transcribe_job(job.id)
+
+    assert result.status == "ready"
+    assert result.crop_plan is not None
+    assert result.crop_plan.reason == "analysis_failed"
+    assert result.crop_plan.decision == "blur_pad"

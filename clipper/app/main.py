@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from app import handoff, header_gen, jobs, probe, searcher_pickup
 from app.models import HandoffRequest, HeaderRequest, JobState, RenderRequest
 from app.process import terminate_all_owned_processes
-from render import frame
+from render import frame, subject
 from render.pipeline import render
 from transcribe import whisper
 
@@ -127,6 +127,10 @@ def transcribe_job(job_id: str) -> JobState:
         job.error = None
         try:
             job.words = whisper.transcribe(str(job.source_path))
+            # Landscape input gets a subject-crop plan at ingest. build_plan
+            # never raises; a failure stores an analysis_failed blur-pad plan.
+            if job.info and job.info.width > job.info.height:
+                job.crop_plan = subject.build_plan(job.source_path, job.info)
             job.status = "ready"
         except Exception:
             logger.exception("transcription failed")

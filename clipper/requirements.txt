@@ -10,3 +10,6 @@ faster-whisper==1.1.1     # word-level transcription
 requests==2.32.3          # faster-whisper imports requests at runtime
 Pillow==12.3.0            # emoji header image (libass can't burn color emoji)
 anthropic==1.5.0          # Sonnet vision agent for the Wave-1 auto-header
+# YuNet face detector for the subject-focused 9:16 crop (ADR-001). Headless: no
+# GUI libs, local-only inference, no network at runtime.
+opencv-python-headless==5.0.0.93
