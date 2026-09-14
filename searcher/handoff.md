@@ -25,7 +25,7 @@ Last updated: 2026-09-14.
 - Maintainer live-verified the full chain through RiceClipper render and RicePoster
   caption generation.
 
-## Active work — v1 multi-lens hardening
+## Shipped — v1 multi-lens hardening (PR #16)
 
 Round 1 reviewed frozen main `05e2d79` with five independent lenses. The approved
 repair batch is integrated locally on `review/v1-round1-repairs` (not pushed or in
