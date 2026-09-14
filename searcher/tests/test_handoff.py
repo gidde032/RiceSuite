@@ -16,7 +16,7 @@ from ricesearcher.handoff.writer import (
     hand_off_selected,
     write_batch,
 )
-from ricesearcher.library.store import Library
+from ricesearcher.library.store import LEGACY_PROFILE_ID, Library
 from ricesearcher.models import CandidateSlice, SliceStatus, Source, SourceKind
 
 
@@ -133,6 +133,7 @@ def _lib_with_selected(tmp_path: Path) -> tuple[Config, Library]:
                 transcript_span="hi",
                 score=0.9,
                 status=SliceStatus.SELECTED,
+                profile_id=LEGACY_PROFILE_ID,
             ),
             CandidateSlice(
                 id="b",
@@ -144,6 +145,7 @@ def _lib_with_selected(tmp_path: Path) -> tuple[Config, Library]:
                 transcript_span="yo",
                 score=0.4,
                 status=SliceStatus.CANDIDATE,
+                profile_id=LEGACY_PROFILE_ID,
             ),
         ]
     )
@@ -214,16 +216,17 @@ def test_cli_handoff(tmp_path: Path, monkeypatch, capsys) -> None:
                     transcript_span="hi",
                     score=0.9,
                     status=SliceStatus.SELECTED,
+                    profile_id=LEGACY_PROFILE_ID,
                 )
             ]
         )
-    assert cli.main(["handoff"]) == 0
+    assert cli.main(["handoff", "--profile", "example-beat"]) == 0
     assert "handed off 1 clip" in capsys.readouterr().out
 
 
 def test_cli_handoff_nothing_selected(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.setenv("RICESEARCHER_DATA_DIR", str(tmp_path / "data"))
-    assert cli.main(["handoff"]) == 0
+    assert cli.main(["handoff", "--profile", "example-beat"]) == 0
     assert "no selected slices" in capsys.readouterr().out
 
 

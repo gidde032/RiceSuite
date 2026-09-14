@@ -152,9 +152,17 @@ def pull(
         _cleanup_owned_download_dir(acquired.owned_temp_dir)
 
 
-def _slice_id(source_id: str, target_in: float, target_out: float) -> str:
-    """Deterministic id from the intended window, so re-scoring replaces in place."""
-    return f"{source_id}:{int(round(target_in * 1000))}-{int(round(target_out * 1000))}"
+def _slice_id(
+    source_id: str, profile_id: str, target_in: float, target_out: float
+) -> str:
+    """Deterministic id from the profile and intended window.
+
+    The profile id partitions slices (ADR-002), so re-scoring one profile
+    replaces its own rows in place and never collides with another profile's.
+    """
+    in_ms = int(round(target_in * 1000))
+    out_ms = int(round(target_out * 1000))
+    return f"{source_id}:{profile_id}:{in_ms}-{out_ms}"
 
 
 def extract_and_score(
@@ -190,7 +198,7 @@ def extract_and_score(
             pad_out = min(pad_out, duration)
         slices.append(
             CandidateSlice(
-                id=_slice_id(source.id, target_in, target_out),
+                id=_slice_id(source.id, profile.id, target_in, target_out),
                 source_id=source.id,
                 pad_in=max(0.0, target_in - pad_s),
                 pad_out=pad_out,
@@ -202,6 +210,7 @@ def extract_and_score(
                 heuristic_score=window.heuristic_score,
                 heuristic_features=window.features,
                 beat_profile_version=profile.version,
+                profile_id=profile.id,
                 scorer_model=scorer.model_name,
                 rights_risk=rights,
                 status=SliceStatus.CANDIDATE,
@@ -215,11 +224,11 @@ def extract_and_score(
     # deleted, and we don't overwrite one back to candidate.
     protected = {
         s.id
-        for s in library.list_slices(source_id=source.id)
+        for s in library.list_slices(profile_id=profile.id, source_id=source.id)
         if s.status is not SliceStatus.CANDIDATE
     }
     fresh = [s for s in slices if s.id not in protected]
-    library.replace_candidate_slices(source.id, fresh)
+    library.replace_candidate_slices(source.id, fresh, profile_id=profile.id)
     return fresh
 
 
@@ -227,17 +236,19 @@ def annotate_library_duplicates(
     library: Library,
     embedder: Embedder,
     *,
+    profile_id: str,
     sim_threshold: float = SIM_THRESHOLD,
     overlap_threshold: float = OVERLAP_THRESHOLD,
 ) -> list[CandidateSlice]:
-    """Recompute advisory duplicate annotations across the whole library (FR-6).
+    """Recompute advisory duplicate annotations inside one profile (FR-6, ADR-002).
 
     Embeds every slice's transcript span, annotates duplicates (intra-source by
     time overlap, cross-source by embedding similarity), and persists the updated
-    ``dup_*`` fields. This is a SIGNAL only — no slice is removed, hidden, or
-    reordered; re-running it recomputes from scratch (idempotent).
+    ``dup_*`` fields. Only the given profile's slices are read or written, so a
+    dedup pass never compares across profiles. This is a SIGNAL only — no slice is
+    removed, hidden, or reordered; re-running it recomputes from scratch.
     """
-    slices = library.list_slices()
+    slices = library.list_slices(profile_id=profile_id)
     if not slices:
         return []
     vectors = embedder.embed([s.transcript_span for s in slices])

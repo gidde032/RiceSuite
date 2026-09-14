@@ -12,7 +12,7 @@ from collections.abc import Sequence
 
 from ricesearcher.acquire.watchfolder import WatchFolderAcquirer
 from ricesearcher.acquire.ytdlp import YtDlpAcquirer
-from ricesearcher.beat.profile import ensure_seed, load_profile
+from ricesearcher.beat.profile import ensure_seed, list_profiles, load_profile
 from ricesearcher.config import load_config, load_env_files
 from ricesearcher.dedup.annotate import SIM_THRESHOLD
 from ricesearcher.dedup.embed import SentenceTransformerEmbedder
@@ -112,8 +112,11 @@ def _cmd_score(args: argparse.Namespace) -> int:
     cfg = load_config()
     cfg.ensure_dirs()
     ensure_seed(cfg.profiles_dir)
-    # P3 adds the required --profile flag; bridge on the seeded profile until then.
-    profile = load_profile("example-beat", profiles_dir=cfg.profiles_dir)
+    try:
+        profile = load_profile(args.profile, profiles_dir=cfg.profiles_dir)
+    except (ValueError, OSError) as exc:
+        print(f"error: profile {args.profile!r}: {exc}", file=sys.stderr)
+        return 2
     with Library(cfg.db_path) as lib:
         full_id = _resolve_source(lib, args.source_id)
         if full_id is None:
@@ -149,7 +152,7 @@ def _cmd_slices(args: argparse.Namespace) -> int:
             source_id = _resolve_source(lib, args.source)
             if source_id is None:
                 return 2
-        slices = lib.list_slices(source_id=source_id)
+        slices = lib.list_slices(profile_id=args.profile, source_id=source_id)
         titles = lib.source_titles()
     if not slices:
         print("no scored slices")
@@ -178,7 +181,10 @@ def _cmd_dedup(args: argparse.Namespace) -> int:
     with Library(cfg.db_path) as lib:
         try:
             annotated = annotate_library_duplicates(
-                lib, SentenceTransformerEmbedder(), sim_threshold=args.threshold
+                lib,
+                SentenceTransformerEmbedder(),
+                profile_id=args.profile,
+                sim_threshold=args.threshold,
             )
         except Exception as exc:  # noqa: BLE001 - CLI boundary: clean message
             print(f"error: dedup failed: {exc}", file=sys.stderr)
@@ -199,12 +205,12 @@ def _cmd_dedup(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_handoff(_args: argparse.Namespace) -> int:
+def _cmd_handoff(args: argparse.Namespace) -> int:
     cfg = load_config()
     cfg.ensure_dirs()
     with Library(cfg.db_path) as lib:
         try:
-            result = hand_off_selected(lib, config=cfg)
+            result = hand_off_selected(lib, config=cfg, profile_id=args.profile)
         except Exception as exc:  # noqa: BLE001 - CLI boundary: clean message
             print(f"error: handoff failed: {exc}", file=sys.stderr)
             return 2
@@ -215,6 +221,27 @@ def _cmd_handoff(_args: argparse.Namespace) -> int:
         f"handed off {result['clip_count']} clip(s) as {result['batch_id']} "
         f"→ {cfg.handoff_dir}"
     )
+    return 0
+
+
+def _cmd_profiles(_args: argparse.Namespace) -> int:
+    cfg = load_config()
+    cfg.ensure_dirs()
+    ensure_seed(cfg.profiles_dir)
+    profiles = list_profiles(cfg.profiles_dir)
+    with Library(cfg.db_path) as lib:
+        counts = lib.profile_counts()
+    if not profiles:
+        print("no profiles")
+        return 0
+    for p in profiles:
+        c = counts.get(p.id, {})
+        print(
+            f"{p.id:20}  {p.name:20}  {p.version:12}  "
+            f"{c.get('sources', 0):3} sources  "
+            f"{c.get('candidates', 0):4} candidates  "
+            f"{c.get('selected', 0):3} selected"
+        )
     return 0
 
 
@@ -248,12 +275,14 @@ def build_parser() -> argparse.ArgumentParser:
         "score", help="extract + score candidate slices for a source"
     )
     p_score.add_argument("source_id", help="a source id (or prefix) to score")
+    p_score.add_argument("--profile", required=True, help="profile id to score under")
     p_score.add_argument(
         "--model", default=None, help="Anthropic scorer model (else env/default)"
     )
     p_score.set_defaults(func=_cmd_score)
 
     p_slices = sub.add_parser("slices", help="list scored candidate slices")
+    p_slices.add_argument("--profile", required=True, help="profile id to list")
     p_slices.add_argument(
         "--source", default=None, help="filter to one source id (or prefix)"
     )
@@ -262,6 +291,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_dedup = sub.add_parser(
         "dedup", help="recompute advisory possible-duplicate annotations"
     )
+    p_dedup.add_argument("--profile", required=True, help="profile id to dedup within")
     p_dedup.add_argument(
         "--threshold",
         type=float,
@@ -269,6 +299,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="cross-source cosine similarity threshold (default %(default)s)",
     )
     p_dedup.set_defaults(func=_cmd_dedup)
+
+    p_profiles = sub.add_parser("profiles", help="list saved profiles and their counts")
+    p_profiles.set_defaults(func=_cmd_profiles)
 
     p_review = sub.add_parser(
         "review", help="launch the local Slate review UI (select-and-approve gate)"
@@ -280,6 +313,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_handoff = sub.add_parser(
         "handoff", help="write selected slices as a handoff batch for RiceClipper"
     )
+    p_handoff.add_argument("--profile", required=True, help="profile id to hand off")
     p_handoff.set_defaults(func=_cmd_handoff)
 
     return parser

@@ -195,7 +195,7 @@ def test_c8_ambiguous_prefix_single_error(tmp_path: Path, monkeypatch, capsys) -
         lib.upsert_source(
             Source(id="bbbb2222", kind=SourceKind.LOCAL, ref="r", media_path="/m")
         )
-    rc = cli.main(["slices", "--source", "bbbb"])
+    rc = cli.main(["slices", "--profile", "example-beat", "--source", "bbbb"])
     err = capsys.readouterr().err
     assert rc == 2
     assert "ambiguous" in err
@@ -245,9 +245,10 @@ def test_c17_slices_shows_source_title(tmp_path: Path, monkeypatch, capsys) -> N
                     target_out=1,
                     transcript_span="x",
                     score=0.5,
+                    profile_id="example-beat",
                 )
             ]
         )
     capsys.readouterr()
-    assert cli.main(["slices"]) == 0
+    assert cli.main(["slices", "--profile", "example-beat"]) == 0
     assert "My Great Interview" in capsys.readouterr().out

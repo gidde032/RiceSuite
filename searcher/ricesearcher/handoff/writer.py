@@ -180,17 +180,19 @@ def hand_off_selected(
     *,
     extractor: ClipExtractor | None = None,
     config: Config | None = None,
+    profile_id: str | None = None,
 ) -> dict:
-    """Write all ``selected`` slices as one handoff batch, then mark them handed_off.
+    """Write ``selected`` slices as one handoff batch, then mark them handed_off.
 
-    Whole-batch by default. On success the slices move to ``handed_off`` so they
-    leave the selected queue and aren't re-sent; on any failure nothing is marked
-    (retryable) and no partial batch is left behind. Returns
-    ``{"batch_id", "clip_count"}`` (``clip_count`` 0 and ``batch_id`` None if
-    nothing is selected).
+    When ``profile_id`` is given, only that profile's selected slices are handed
+    off, so a handoff never touches another profile's rows (ADR-002 partition).
+    On success the slices move to ``handed_off`` so they leave the selected queue
+    and aren't re-sent; on any failure nothing is marked (retryable) and no
+    partial batch is left behind. Returns ``{"batch_id", "clip_count"}``
+    (``clip_count`` 0 and ``batch_id`` None if nothing is selected).
     """
     cfg = config or load_config()
-    selected = library.list_slices(status=SliceStatus.SELECTED)
+    selected = library.list_slices(profile_id=profile_id, status=SliceStatus.SELECTED)
     if not selected:
         return {"batch_id": None, "clip_count": 0}
 

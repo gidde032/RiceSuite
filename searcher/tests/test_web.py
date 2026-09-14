@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from ricesearcher.config import Config
-from ricesearcher.library.store import Library
+from ricesearcher.library.store import LEGACY_PROFILE_ID, Library
 from ricesearcher.models import CandidateSlice, SliceStatus, Source, SourceKind
 from ricesearcher.web.app import create_app
 
@@ -47,6 +47,7 @@ def client(tmp_path: Path) -> TestClient:
                     heuristic_score=0.6,
                     rights_risk="med",
                     status=SliceStatus.CANDIDATE,
+                    profile_id=LEGACY_PROFILE_ID,
                 ),
                 CandidateSlice(
                     id="sl2",
@@ -58,6 +59,7 @@ def client(tmp_path: Path) -> TestClient:
                     transcript_span="filler",
                     score=0.2,
                     status=SliceStatus.CANDIDATE,
+                    profile_id=LEGACY_PROFILE_ID,
                 ),
             ]
         )
@@ -148,6 +150,7 @@ def test_handed_off_slice_is_terminal_in_review_api(tmp_path: Path) -> None:
                     target_out=8,
                     transcript_span="a moment",
                     status=SliceStatus.HANDED_OFF,
+                    profile_id=LEGACY_PROFILE_ID,
                 )
             ]
         )

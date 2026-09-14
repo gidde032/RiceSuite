@@ -23,6 +23,10 @@ jobs:
       - name: Ruff lint
         run: ruff check .
       - name: JS syntax check (review UI)
-        run: node --check ricesearcher/web/static/app.js
+        run: |
+          for f in ricesearcher/web/static/*.js; do
+            echo "node --check $f"
+            node --check "$f"
+          done
       - name: Tests + coverage floor
         run: pytest
