@@ -35,18 +35,19 @@ active-speaker reframe is a later reinvestigation. RiceSearcher **never posts,
 publishes, or uploads** content anywhere — it reads sources and writes local
 files only.
 
-## 3. Ratified decisions (D1–D8)
+## 3. Ratified decisions (D1–D9)
 
 | # | Decision | Settled as |
 |---|----------|-----------|
 | D1 | Discovery source & acquisition | **yt-dlp pull (URL/channel) + local watch-folder**, one thin acquisition layer → shared pipeline; search-query acquisition deferred to [#15](https://github.com/gidde032/RiceSearcher/issues/15) |
-| D2 | Niche definition | Versioned **beat-profile**: NL brief + few-shot good/bad exemplars |
+| D2 | Niche definition | Versioned **beat-profile**: NL brief + few-shot good/bad exemplars; many **saved profiles**, one JSON file each (D9) |
 | D3 | Transcription ownership | **RiceSearcher owns it** via local faster-whisper; source captions optional, never depended on |
 | D4 | Scoring | **Hybrid**: heuristic prefilter shortlists windows → LLM scores + explains the shortlist |
 | D5 | Library store | **SQLite** slice index + **content-addressed disk cache** for source/clips |
 | D6 | Moment dedup | Hybrid (intra-source time-overlap + cross-source transcript embedding), **advisory-only — never filters, discards, or blocks** |
 | D7 | Interface | **CLI pipeline first**, then a minimal **Slate-styled** local review UI for the select gate |
 | D8 | Handoff | RiceSearcher **writes** a mirrored filesystem handoff (manifest-last) with a **superset schema**; Clipper pickup is routed-forward |
+| D9 | Saved profiles | Profiles are JSON files in `<data_dir>/profiles/`; id = file stem; library, dedup, review, and handoff **partition by `profile_id`**; sources shared; every scoring run names its profile; legacy rows adopt `example-beat` (ratified 2026-09-14, [ADR-002](ADR-002.md), [design spec](docs/design/profiles-spec.md)) |
 
 ## 4. Functional requirements
 
@@ -62,23 +63,32 @@ files only.
   with cheap feature scores. The LLM never sees the whole transcript.
 - **FR-4 — Score (D4, D2).** An LLM scores + explains each shortlisted window
   against the versioned beat-profile, producing a clippability score (0–1) and a
-  short rationale. The beat-profile version and model id are recorded on the slice.
+  short rationale. The `profile_id`, beat-profile version, and model id are
+  recorded on the slice. A scoring run names one profile (D9); a re-score
+  replaces candidate rows of that profile only.
 - **FR-5 — Store scored slices (D5, ADR Q3/Q4b).** Each scored candidate slice is
   written to the SQLite library with the schema in §6, including a **padded
-  window** and the **intended in/out** as metadata (not a final cut).
+  window** and the **intended in/out** as metadata (not a final cut). Rows are
+  partitioned by `profile_id`; one source may hold slices under several profiles.
 - **FR-6 — Dedup signal (D6).** For each new slice, compute an intra-source
   overlap check and a cross-source transcript-embedding similarity; attach a
   **"possible duplicate" annotation** (with the matched slice id + score) when
   above threshold. This annotation **never** removes, hides, blocks, or
-  deprioritizes the slice; it is display metadata only.
+  deprioritizes the slice; it is display metadata only. Dedup compares slices
+  inside one profile only (D9).
 - **FR-7 — Inspect via CLI (D7).** CLI commands list/show library sources and
-  transcripts, and list scored slices with an optional source filter. Detailed
+  transcripts, and list scored slices with an optional source filter. `score`,
+  `slices`, `dedup`, and `handoff` require `--profile`; `profiles` lists every
+  profile with its counts (D9). Detailed
   slice review, status filtering, rationale, and duplicate context belong to the
   review UI (FR-8), not a parallel CLI surface.
 - **FR-8 — Review & select (D7, ADR Q5).** A local web review UI (Slate design
   system) shows candidate moments (thumbnail + transcript span + score +
   rationale + duplicate annotation), lets the human tighten the intended in/out
-  by eye, and **select** slices for handoff. This is the human gate.
+  by eye, and **select** slices for handoff. This is the human gate. The UI
+  shows one profile at a time: a profile select in the topbar and a Profiles
+  page listing name, version, sources, candidates, and selected per profile
+  (D9). A slice whose version differs from its profile file is marked stale.
   - **FR-8a — Media management.** The UI includes a media-management page listing
     every stored source (url, cached media, size, slice count) with a per-source
     **delete** and a whole-cache **clear**. These are **full-purge** (maintainer-
@@ -94,7 +104,8 @@ files only.
     `127.0.0.1` (its default) — do not expose it on a shared interface.
 - **FR-9 — Write handoff (D8, ADR Q4b).** On select, write a filesystem handoff
   batch to the shared root: `clip`/source media + `manifest.json` written **last**
-  as the atomicity signal, with the superset schema in §7. Producer only ever
+  as the atomicity signal, with the superset schema in §7. A batch holds the
+  selected slices of one profile and carries `profile_id` per clip. Producer only ever
   writes; it never deletes or ingests. Batch identity is stable and idempotent.
 - **FR-10 — Safety.** No network call posts, publishes, or uploads content. The
   only outbound calls are source acquisition (yt-dlp fetch) and the scoring LLM
@@ -127,8 +138,11 @@ word-level transcript) is recovered by joining `sources` / `transcript_words`
 rather than copied onto every slice. The handoff writer (Phase 5) resolves these
 at write time.
 
-- `id` — stable slice id (deterministic from `source_id` + the intended window).
+- `id` — stable slice id (deterministic from `source_id` + `profile_id` + the
+  intended window: `{source_id}:{profile_id}:{in_ms}-{out_ms}`).
 - **Provenance:** `source_id` (FK → `sources`).
+- **Profile (D9):** `profile_id` (file stem of the profile; legacy rows carry
+  `example-beat` after the schema v3 migration).
 - **Window (ADR Q4b):** `pad_in`, `pad_out` (padded window, seconds on source
   timeline) and `target_in`, `target_out` (intended in/out — metadata, tightenable
   at review, *not* a final cut).
@@ -174,7 +188,8 @@ dedupe by stable `batch_id`; **producer only writes** and never manages lifecycl
       "transcript": "plain-text transcript span",
       "score": 0.0, "rationale": "...",
       "rights_risk": "low|med|high",
-      "beat_profile_version": "..."
+      "beat_profile_version": "...",
+      "profile_id": "..."
     }
   ]
 }

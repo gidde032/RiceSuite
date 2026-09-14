@@ -13,6 +13,12 @@ The five-phase ladder from `SPEC.md §9`. Each phase ends in a usable increment.
 4. ✅ **Phase 4 — Slate review UI + select gate** ([#4](https://github.com/gidde032/RiceSearcher/issues/4), merged PR #13). `ricesearcher review` — browse, preview, tighten in/out, Select/Reject.
 5. ✅ **Phase 5 — Handoff writer** ([#5](https://github.com/gidde032/RiceSearcher/issues/5), merged PR #14). Mirrored superset manifest batch on select (`handoff` CLI + UI button). Clipper-side pickup is tracked separately in [#8](https://github.com/gidde032/RiceSearcher/issues/8).
 
+## Milestone: Saved profiles (ADR-002, SPEC D9)
+
+- **Profiles backend P1–P4** ([#22](https://github.com/gidde032/RiceSearcher/issues/22)) — loader, schema v3 migration, partitioned pipeline/CLI, `profile_id` in the manifest.
+- **Profiles UI P5** ([#23](https://github.com/gidde032/RiceSearcher/issues/23)) — profile select, `/profiles` page, stale badge, scoped handoff. After #22 merges.
+- Routed forward inside ADR-002: per-profile prefilter weights, profile edit in the UI, cross-profile advisory dedup. Issues open when the need appears.
+
 ## Routed forward (tracked, not in the v1 arc)
 
 - **Taste spike** ([#6](https://github.com/gidde032/RiceSearcher/issues/6)) — LLM segment-scoring prototype on real episodes; gates any move toward auto-select.

@@ -4,7 +4,7 @@
 lines. Shipped history → `CHANGELOG.md` (created when versioned); product
 contract → `SPEC.md`/`ADR-001.md`; planned work → GitHub Issues.
 
-Last updated: 2026-09-10.
+Last updated: 2026-09-14.
 
 ## Current state
 
@@ -56,26 +56,36 @@ Round 3 caught and repaired merged-output selection, model-load context, and the
 first timing repair's duration/performance regressions. Current gates: ruff + JS
 clean; **155 tests, 95.59% coverage**; smoke tier **5 passed**.
 
-## Active work — review-UI polish (PR #18, Issue #17)
+## Shipped since — review-UI polish
 
-Branch `feat/media-mgmt-logo-ui-polish` (off merged main `e9ee092`): a
-media-management page (`/media`) that lists stored sources and **full-purges**
-one source or the whole cache (local-only; SPEC FR-8a), the selected
-magnifier-over-rice PNG logo (`/static/mark.png`), and review-card alignment
-fixes. The earlier SVG mark and unselected logo concepts were cleared in the
-follow-up. 3-reviewer cold review complete; accepted findings repaired with
-fail-before-fix regressions (F2/media_path-normalization and a JS test harness
-deferred to Issues). Follow-up gates: ruff format/lint clean, frontend syntax
-checks clean; **168 tests, 95.74% coverage**; smoke tier **5 passed**. PR remains
-open and ready for maintainer review — **not merged** (merge is the maintainer's).
+PR #18 (Issue #17) **merged** at `f5cdd8a`: media-management page (`/media`,
+full-purge, FR-8a), the PNG logo, review-card alignment. Deferred: #19
+(media_path normalization), #20 (JS test harness). Gates at merge: 168 tests,
+95.74% coverage, smoke tier 5.
 
-Overnight, 3 Person B Bianco YouTube clips were pulled + scored (Haiku 4.5) + dedup'd
-into the library for the maintainer to review/select in the morning; no auto-select.
+## Active work — saved profiles (ADR-002, SPEC D9)
+
+Ratified 2026-09-14. Contract: `docs/design/profiles-spec.md`. Milestone 2.
+
+- Issue **#22** backend P1–P4, branch `feat/profiles-backend` (off `f5cdd8a`).
+  First commit: `docs: ratify ADR-002`. Draft PR opens after the first green
+  coherent code commit.
+- Issue **#23** UI P5. Second branch `feat/profiles-ui` after #22 merges.
+
+Verified: main gates green at `f5cdd8a` (168 tests, 95.74%, smoke 5).
+Assumed: the maintainer's live library is schema v2 with `selected`/`handed_off`
+rows; the v3 migration must keep them (fixture DB proves it).
+
+Known gaps found at phase start (not blockers):
+- No type-check tool is installed. "type-check" in the spec gate list is not
+  enforced today. Do not add one inside #22.
+- CI runs `node --check` on `app.js` only. #22 or #23 extends it to every
+  `web/static/*.js`.
 
 ## Next action
 
-Maintainer: review PR #18 and select from the newly loaded candidate slices in
-`ricesearcher review`.
+Implementer session on `feat/profiles-backend`: build P1→P4 per #22. Exact
+first command: `git checkout feat/profiles-backend && pytest -q`.
 
 ## Reserved from the agent (maintainer-only)
 
