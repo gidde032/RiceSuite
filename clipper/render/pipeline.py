@@ -15,7 +15,7 @@ import math
 import os
 from pathlib import Path
 
-from app.models import RenderRequest
+from app.models import CropPlan, RenderRequest
 from app.probe import MediaInfo
 from app.process import ProcessTimeoutError, run_owned
 from render import geometry
@@ -172,8 +172,15 @@ def render(
     info: MediaInfo,
     req: RenderRequest,
     style: StyleConfig | None = None,
+    plan: CropPlan | None = None,
 ) -> Path:
-    """Render one clip; returns the output mp4 path. Raises RenderError."""
+    """Render one clip; returns the output mp4 path. Raises RenderError.
+
+    ``plan`` is a resolved :class:`CropPlan`. When its ``decision`` is ``crop``
+    the video uses the subject-crop path (a moving 9:16 window) instead of
+    blur-pad. The caller resolves the plan (ADR-001, F4). ``None`` keeps the
+    blur-pad / pass-through behaviour.
+    """
     job_dir = Path(job_dir)
     source_path = Path(source_path)
     if not math.isfinite(info.duration) or info.duration <= 0:
@@ -213,9 +220,18 @@ def render(
         raise RenderError(f"music file not found: {req.music.filename}")
     audio_stmts, audio_map = _audio_graph(req, info.has_audio, has_music, info.duration)
 
-    # 3. Video graph: blur-pad (if needed) → burn subtitles → optional header overlay.
+    # 3. Video graph: crop / blur-pad / pass-through → burn subtitles → header.
     sub_out = "[subbed]" if overlay_header else "[vout]"
-    if geometry.is_target(info.width, info.height):
+    if plan is not None and plan.decision == "crop":
+        # Subject crop: write the sendcmd command file, then drive a moving 9:16
+        # window over the source. Detection only runs on landscape input, so a
+        # crop plan never coexists with 1080x1920 pass-through (ADR-001).
+        (job_dir / geometry.CROP_CMD_NAME).write_text(
+            geometry.crop_command_file(plan), encoding="utf-8"
+        )
+        video_stmts = geometry.crop_statements(plan, "[0:v]", "[base]")
+        video_stmts.append(f"[base]subtitles={ASS_NAME}{sub_out}")
+    elif geometry.is_target(info.width, info.height):
         video_stmts = [f"[0:v]subtitles={ASS_NAME}{sub_out}"]
     else:
         video_stmts = geometry.blur_pad_statements("[0:v]", "[base]")
