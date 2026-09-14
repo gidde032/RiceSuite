@@ -47,6 +47,7 @@ class HandoffEntry:
     rationale: str
     rights_risk: str
     beat_profile_version: str
+    profile_id: str
 
 
 def _now() -> datetime:
@@ -153,6 +154,7 @@ def _manifest_clip(entry: HandoffEntry, filename: str) -> dict:
         "rationale": entry.rationale,
         "rights_risk": entry.rights_risk,
         "beat_profile_version": entry.beat_profile_version,
+        "profile_id": entry.profile_id,
     }
 
 
@@ -172,6 +174,7 @@ def _entry_for(slice_: CandidateSlice, source: Source, position: int) -> Handoff
         rationale=slice_.rationale,
         rights_risk=slice_.rights_risk,
         beat_profile_version=slice_.beat_profile_version,
+        profile_id=slice_.profile_id,
     )
 
 

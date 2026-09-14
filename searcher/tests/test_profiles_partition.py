@@ -12,9 +12,18 @@ import json
 from pathlib import Path
 
 from ricesearcher.beat.profile import load_profile
+from ricesearcher.config import Config
+from ricesearcher.handoff.writer import hand_off_selected
 from ricesearcher.library.store import Library
-from ricesearcher.models import Source, SourceKind, TranscriptWord
+from ricesearcher.models import SliceStatus, Source, SourceKind, TranscriptWord
 from ricesearcher.pipeline import extract_and_score
+
+
+class _FakeExtractor:
+    """Write a placeholder clip file; no ffmpeg needed."""
+
+    def extract(self, source, start, end, dest) -> None:
+        dest.write_bytes(b"clip")
 
 
 def _write_profile(profiles_dir: Path, profile_id: str) -> None:
@@ -70,3 +79,35 @@ def test_rescore_other_profile_leaves_first_untouched(tmp_path, fake_scorer) -> 
         assert a_after == a_before, "re-scoring beta changed alpha's rows"
         assert b_after, "beta must be scored into its own partition"
         assert not ({s.id for s in a_after} & {s.id for s in b_after})
+
+
+def test_handoff_one_profile_leaves_other_selected(tmp_path, fake_scorer) -> None:
+    profiles = tmp_path / "profiles"
+    _write_profile(profiles, "alpha")
+    _write_profile(profiles, "beta")
+    prof_a = load_profile("alpha", profiles_dir=profiles)
+    prof_b = load_profile("beta", profiles_dir=profiles)
+
+    media = tmp_path / "src.mp4"
+    media.write_bytes(b"media-bytes")
+    src = _source()
+    src.media_path = str(media)
+
+    cfg = Config(data_dir=tmp_path / "data", handoff_dir=tmp_path / "handoff")
+    cfg.ensure_dirs()
+    with Library(cfg.db_path) as lib:
+        lib.upsert_source(src)
+        extract_and_score(src, profile=prof_a, scorer=fake_scorer, library=lib)
+        extract_and_score(src, profile=prof_b, scorer=fake_scorer, library=lib)
+        # Select one slice in each profile.
+        a_slice = lib.list_slices(profile_id="alpha")[0]
+        b_slice = lib.list_slices(profile_id="beta")[0]
+        lib.update_slice_status(a_slice.id, SliceStatus.SELECTED)
+        lib.update_slice_status(b_slice.id, SliceStatus.SELECTED)
+
+        result = hand_off_selected(
+            lib, extractor=_FakeExtractor(), config=cfg, profile_id="alpha"
+        )
+        assert result["clip_count"] == 1  # only alpha's selected slice
+        assert lib.get_slice(a_slice.id).status is SliceStatus.HANDED_OFF
+        assert lib.get_slice(b_slice.id).status is SliceStatus.SELECTED  # untouched

@@ -52,6 +52,7 @@ def _entry(tmp: Path, position: int = 1) -> HandoffEntry:
         rationale="good",
         rights_risk="med",
         beat_profile_version="v1",
+        profile_id="example-beat",
     )
 
 
@@ -83,6 +84,14 @@ def test_write_batch_layout_and_manifest_last(tmp_path: Path) -> None:
     assert clip["rights_risk"] == "med"
     # No leftover temp manifest.
     assert not (batch_dir / "manifest.json.tmp").exists()
+
+
+def test_manifest_clip_carries_profile_id(tmp_path: Path) -> None:
+    root = tmp_path / "handoff"
+    res = write_batch([_entry(tmp_path)], extractor=FakeExtractor(), root=root)
+    manifest = json.loads((root / res["batch_id"] / "manifest.json").read_text())
+    assert manifest["schema_version"] == 1  # additive change; version unchanged
+    assert manifest["clips"][0]["profile_id"] == "example-beat"
 
 
 def test_write_batch_rejects_empty_and_dup_positions(tmp_path: Path) -> None:
