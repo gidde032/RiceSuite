@@ -298,6 +298,13 @@ def test_no_posting_surface(tmp_path: Path) -> None:
     assert "/api/sources" in paths  # media-management routes must not be a surface
 
 
+def test_profiles_page_serves_html(client: TestClient) -> None:
+    r = client.get("/profiles")
+    assert r.status_code == 200
+    assert "RiceSearcher" in r.text
+    assert "/static/profiles.js" in r.text
+
+
 def test_media_page_serves_html(client: TestClient) -> None:
     r = client.get("/media")
     assert r.status_code == 200

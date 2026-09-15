@@ -140,6 +140,19 @@ button[disabled] { opacity: .5; cursor: default; }
 .media-actions { display: flex; gap: 8px; align-items: start; }
 .media-row .card-msg { grid-column: 1 / -1; margin: 0; }
 
+/* Profiles page */
+.profile-list { max-width: 1100px; margin: 0 auto; padding: 20px; display: grid; gap: 12px; }
+.profile-row {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: var(--interior); border: 1px solid var(--hairline);
+  border-radius: var(--radius); padding: 14px 16px; color: var(--text); font: inherit;
+}
+.profile-row:hover { border-color: var(--control-line); }
+.profile-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.profile-name { font-weight: 600; font-size: 15px; color: var(--text); letter-spacing: -.005em; }
+.profile-id { color: var(--rice); font-size: 13px; font-variant-numeric: tabular-nums; }
+.profile-facts { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+
 @media (max-width: 720px) {
   .card { grid-template-columns: 1fr; }
   .media-row { grid-template-columns: 1fr; }
