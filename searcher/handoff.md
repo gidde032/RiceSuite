@@ -83,9 +83,10 @@ Known gaps found at phase start (not blockers):
 
 ## Next action
 
-Implement #23 UI P5 on `feat/profiles-ui` (PR #26). Build order: API (done) →
-topbar select → stale badge → `/profiles` page → screenshots. One commit per
-step, each green. Then cold review before ready.
+Maintainer: decide on PR #26 (draft, head `8996aab`, CI green, 3-reviewer
+cold review done, 4 LOW findings repaired by the orchestrator with regressions;
+195 tests, 94.50%, smoke 5). Merge closes #23 and milestone 2. Type-check gate
+is #25.
 
 ## Reserved from the agent (maintainer-only)
 
