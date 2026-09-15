@@ -67,10 +67,9 @@ full-purge, FR-8a), the PNG logo, review-card alignment. Deferred: #19
 
 Ratified 2026-09-14. Contract: `docs/design/profiles-spec.md`. Milestone 2.
 
-- Issue **#22** backend P1–P4, branch `feat/profiles-backend` (off `f5cdd8a`).
-  Draft **PR #24** open. P1–P4 landed and green (177 tests, 94.41%, smoke 5).
-  Awaiting cold review before ready.
-- Issue **#23** UI P5. Second branch `feat/profiles-ui` after #22 merges.
+- Issue **#22** backend P1–P4, branch `feat/profiles-backend`. **PR #24 merged**
+  to `main` at `8719f65`.
+- Issue **#23** UI P5, branch `feat/profiles-ui`. Draft **PR #26** open.
 
 Verified: main gates green at `f5cdd8a` (168 tests, 95.74%, smoke 5).
 Assumed: the maintainer's live library is schema v2 with `selected`/`handed_off`
@@ -84,10 +83,9 @@ Known gaps found at phase start (not blockers):
 
 ## Next action
 
-Maintainer: decide on PR #24 (draft, head `3a6c859`, CI green, 3-reviewer
-cold review done, 3 accepted findings repaired with fail-before-fix
-regressions; 181 tests, 94.39%, smoke 5). After merge, run
-`~/fable-scan/slotE/prompts/04-impl-profiles-ui.md` for #23 on `feat/profiles-ui`.
+Implement #23 UI P5 on `feat/profiles-ui` (PR #26). Build order: API (done) →
+topbar select → stale badge → `/profiles` page → screenshots. One commit per
+step, each green. Then cold review before ready.
 
 ## Reserved from the agent (maintainer-only)
 
