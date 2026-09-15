@@ -4,7 +4,7 @@
 lines. Shipped history → `CHANGELOG.md` (created when versioned); product
 contract → `SPEC.md`/`ADR-001.md`; planned work → GitHub Issues.
 
-Last updated: 2026-09-14.
+Last updated: 2026-09-15.
 
 ## Current state
 
@@ -84,8 +84,10 @@ Known gaps found at phase start (not blockers):
 
 ## Next action
 
-Implementer session on `feat/profiles-backend`: build P1→P4 per #22. Exact
-first command: `git checkout feat/profiles-backend && pytest -q`.
+Maintainer: decide on PR #24 (draft, head `3a6c859`, CI green, 3-reviewer
+cold review done, 3 accepted findings repaired with fail-before-fix
+regressions; 181 tests, 94.39%, smoke 5). After merge, run
+`~/fable-scan/slotE/prompts/04-impl-profiles-ui.md` for #23 on `feat/profiles-ui`.
 
 ## Reserved from the agent (maintainer-only)
 
