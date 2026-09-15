@@ -324,6 +324,18 @@ def test_profiles_page_serves_html(client: TestClient) -> None:
     assert "/static/profiles.js" in r.text
 
 
+def test_profiles_and_review_scripts_share_the_storage_key(client: TestClient) -> None:
+    # FC-2 (PR #26 review): both pages scope by the same localStorage key, and
+    # a profiles-page row click writes it before it navigates to the review page.
+    profiles_js = client.get("/static/profiles.js").text
+    app_js = client.get("/static/app.js").text
+    key = 'PROFILE_KEY = "ricesearcher.profile"'
+    assert key in profiles_js and key in app_js
+    assert profiles_js.index("localStorage.setItem(PROFILE_KEY") < profiles_js.index(
+        'window.location.assign("/")'
+    )
+
+
 def test_media_page_serves_html(client: TestClient) -> None:
     r = client.get("/media")
     assert r.status_code == 200
