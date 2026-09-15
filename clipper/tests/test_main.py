@@ -8,8 +8,9 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app import jobs, main
-from app.models import HeaderRequest, RenderRequest, Word
+from app.models import CropPlan, CropSample, HeaderRequest, RenderRequest, Word
 from app.probe import MediaInfo
+from render import framing
 
 
 def _ready_job(root):
@@ -268,3 +269,118 @@ def test_generate_header_not_ready_returns_409(isolated_jobs):
     with pytest.raises(HTTPException) as exc_info:
         main.generate_header(job.id, HeaderRequest())
     assert exc_info.value.status_code == 409
+
+
+def _landscape_plan() -> CropPlan:
+    return CropPlan(
+        decision="crop",
+        reason="ok",
+        face_rate=0.96,
+        safe_rate=0.99,
+        window_w=608,
+        window_h=1080,
+        samples=[CropSample(t=0.0, x=0)],
+    )
+
+
+def test_transcribe_builds_crop_plan_for_landscape(monkeypatch, isolated_jobs):
+    job = jobs.create_job()
+    job.status = "ready"
+    job.source_path = job.dir / "source.mp4"
+    job.source_path.write_bytes(b"source")
+    job.info = MediaInfo(1920, 1080, 4.0, True)
+    monkeypatch.setattr(main.whisper, "transcribe", lambda path: [])
+    plan = _landscape_plan()
+    monkeypatch.setattr(main.subject, "build_plan", lambda *a, **k: plan)
+
+    result = main.transcribe_job(job.id)
+
+    assert result.status == "ready"
+    assert result.crop_plan == plan
+
+
+def test_transcribe_leaves_crop_plan_none_for_vertical(monkeypatch, isolated_jobs):
+    job = jobs.create_job()
+    job.status = "ready"
+    job.source_path = job.dir / "source.mp4"
+    job.source_path.write_bytes(b"source")
+    job.info = MediaInfo(1080, 1920, 4.0, True)
+    monkeypatch.setattr(main.whisper, "transcribe", lambda path: [])
+
+    def fail(*a, **k):
+        raise AssertionError("build_plan must not run for vertical input")
+
+    monkeypatch.setattr(main.subject, "build_plan", fail)
+
+    result = main.transcribe_job(job.id)
+
+    assert result.status == "ready"
+    assert result.crop_plan is None
+
+
+def test_transcribe_ready_even_when_analysis_failed(monkeypatch, isolated_jobs):
+    job = jobs.create_job()
+    job.status = "ready"
+    job.source_path = job.dir / "source.mp4"
+    job.source_path.write_bytes(b"source")
+    job.info = MediaInfo(1920, 1080, 4.0, True)
+    monkeypatch.setattr(main.whisper, "transcribe", lambda path: [])
+    failed = framing.failed_plan("analysis_failed", 1920, 1080)
+    monkeypatch.setattr(main.subject, "build_plan", lambda *a, **k: failed)
+
+    result = main.transcribe_job(job.id)
+
+    assert result.status == "ready"
+    assert result.crop_plan is not None
+    assert result.crop_plan.reason == "analysis_failed"
+    assert result.crop_plan.decision == "blur_pad"
+
+
+def _landscape_ready_job():
+    job = jobs.create_job()
+    job.status = "ready"
+    job.source_path = job.dir / "source.mp4"
+    job.source_path.write_bytes(b"source")
+    job.info = MediaInfo(1920, 1080, 4.0, True)
+    return job
+
+
+def test_render_crop_on_vertical_job_returns_400(isolated_jobs):
+    job = _ready_job(isolated_jobs)  # 1080x1920, no crop plan
+    with pytest.raises(HTTPException) as exc:
+        main.render_job(job.id, RenderRequest(geometry="crop"))
+    assert exc.value.status_code == 400
+    assert job.status == "ready"
+
+
+def test_render_crop_on_analysis_failed_plan_returns_400(isolated_jobs):
+    job = _landscape_ready_job()
+    job.crop_plan = framing.failed_plan("analysis_failed", 1920, 1080)
+    with pytest.raises(HTTPException) as exc:
+        main.render_job(job.id, RenderRequest(geometry="crop"))
+    assert exc.value.status_code == 400
+    assert "analysis failed" in exc.value.detail
+    assert job.status == "ready"
+
+
+def test_render_crop_on_landscape_passes_crop_plan_to_render(
+    monkeypatch, isolated_jobs
+):
+    job = _landscape_ready_job()
+    job.crop_plan = _landscape_plan()
+    captured: dict = {}
+
+    def fake_render(*args, **kwargs):
+        captured["plan"] = kwargs.get("plan")
+        return job.dir / "output.mp4"
+
+    monkeypatch.setattr(main, "render", fake_render)
+
+    main.render_job(job.id, RenderRequest(geometry="crop"))
+
+    assert captured["plan"] is not None
+    assert captured["plan"].decision == "crop"
+
+
+def test_render_default_payload_geometry_is_auto():
+    assert RenderRequest().geometry == "auto"

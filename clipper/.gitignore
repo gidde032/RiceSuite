@@ -19,6 +19,9 @@ htmlcov/
 
 # Model caches (faster-whisper downloads)
 models/
+# Vendored YuNet detector model is tracked (subject crop, ADR-001).
+!render/models/
+!render/models/**
 *.bin
 *.pt
 
@@ -28,6 +31,9 @@ outputs/*
 
 # Per-job work dirs (uploads, generated ASS, renders)
 .riceclipper_work/
+
+# Subject-crop fixture clips (maintainer-local; see subject-crop-spec.md F5)
+fixtures/landscape/
 
 # Session-continuity handoff (not part of a fresh clone)
 internal/

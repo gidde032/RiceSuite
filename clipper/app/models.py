@@ -26,6 +26,9 @@ CaptionStyle = Literal[
     "baskerville",
 ]
 HeaderStyle = Literal["plain", "black_plate", "white_plate"]
+# Per-clip framing choice (ADR-001). "auto" follows the plan decision; "crop"
+# and "blur_pad" override it.
+Geometry = Literal["auto", "blur_pad", "crop"]
 
 
 class Word(BaseModel):
@@ -54,6 +57,7 @@ class RenderRequest(BaseModel):
     captions_on: bool = True
     caption_style: CaptionStyle = "classic"
     header_style: HeaderStyle = "plain"
+    geometry: Geometry = "auto"
     music: MusicSettings = Field(default_factory=MusicSettings)
 
 
@@ -107,3 +111,54 @@ class JobState(BaseModel):
     error: str | None = None
     # True once an output mp4 exists for download.
     has_output: bool = False
+    # Subject-crop framing decision (ADR-001). Only set for landscape input.
+    crop_plan: CropPlan | None = None
+
+
+# --- Subject crop (ADR-001) ---------------------------------------------------
+# Data contracts for the subject-focused 9:16 crop. ``render.framing`` is the
+# pure producer of a ``CropPlan``; ``render.subject`` (F3) produces the track.
+
+
+class TrackSample(BaseModel):
+    """One detected face sample, in source pixels."""
+
+    t: float
+    cx: float
+    cy: float
+    w: float
+    h: float
+
+
+class CropSample(BaseModel):
+    """Resolved crop-window x for one sample. Even int, source pixels."""
+
+    t: float
+    x: int
+
+
+CropReason = Literal[
+    "ok",
+    "low_face_rate",
+    "low_safe_rate",
+    "no_samples",
+    "analysis_failed",
+]
+
+
+class CropPlan(BaseModel):
+    """Framing decision over a track (ADR-001). Pure output of render.framing."""
+
+    decision: Literal["crop", "blur_pad"]
+    reason: CropReason
+    face_rate: float
+    safe_rate: float
+    window_w: int
+    window_h: int
+    samples: list[CropSample] = Field(default_factory=list)
+    warning: Literal["header_zone", "caption_zone"] | None = None
+
+
+# JobState references CropPlan by forward reference; resolve it now that CropPlan
+# is defined.
+JobState.model_rebuild()

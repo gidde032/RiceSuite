@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from app import handoff, header_gen, jobs, probe, searcher_pickup
 from app.models import HandoffRequest, HeaderRequest, JobState, RenderRequest
 from app.process import terminate_all_owned_processes
-from render import frame
+from render import frame, geometry, subject
 from render.pipeline import render
 from transcribe import whisper
 
@@ -127,6 +127,10 @@ def transcribe_job(job_id: str) -> JobState:
         job.error = None
         try:
             job.words = whisper.transcribe(str(job.source_path))
+            # Landscape input gets a subject-crop plan at ingest. build_plan
+            # never raises; a failure stores an analysis_failed blur-pad plan.
+            if job.info and job.info.width > job.info.height:
+                job.crop_plan = subject.build_plan(job.source_path, job.info)
             job.status = "ready"
         except Exception:
             logger.exception("transcription failed")
@@ -231,6 +235,26 @@ def render_job(job_id: str, req: RenderRequest) -> JobState:
             raise HTTPException(status_code=409, detail="job not ready to render")
         if job.status not in {"ready", "done", "error"}:
             raise HTTPException(status_code=409, detail="job is not ready to render")
+        if req.geometry == "crop" and (
+            job.crop_plan is None or not job.crop_plan.samples
+        ):
+            detail = (
+                "crop is unavailable: subject analysis failed"
+                if job.crop_plan is not None
+                else "crop requires a landscape job with a crop plan"
+            )
+            raise HTTPException(status_code=400, detail=detail)
+
+        # Resolve the per-clip geometry to the plan render() receives (ADR-001).
+        # "crop" forces a crop even over a blur_pad decision; everything else
+        # (pass-through / blur_pad) passes no plan.
+        mode = geometry.resolve_geometry(
+            req.geometry, job.crop_plan, job.info.width, job.info.height
+        )
+        if mode == "crop":
+            plan = job.crop_plan.model_copy(update={"decision": "crop"})
+        else:
+            plan = None
 
         job.status = "rendering"
         job.error = None
@@ -238,7 +262,7 @@ def render_job(job_id: str, req: RenderRequest) -> JobState:
             if job.output_path is not None:
                 job.output_path.unlink(missing_ok=True)
                 job.output_path = None
-            out = render(job.dir, job.source_path, job.info, req)
+            out = render(job.dir, job.source_path, job.info, req, plan=plan)
             job.output_path = out
             job.status = "done"
         except Exception as exc:

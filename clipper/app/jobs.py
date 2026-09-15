@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from app.models import JobState, Word
+from app.models import CropPlan, JobState, Word
 from app.probe import MediaInfo
 
 WORK_ROOT = Path(__file__).resolve().parent.parent / ".riceclipper_work"
@@ -36,6 +36,8 @@ class Job:
     status: str = "transcribing"
     error: str | None = None
     output_path: Path | None = None
+    # Subject-crop framing decision (ADR-001), set at ingest for landscape input.
+    crop_plan: CropPlan | None = None
     # Searcher imports retain the source manifest on the job so review remains
     # independent of the inbox after the source batch is removed.
     searcher_title: str = ""
@@ -53,6 +55,7 @@ class Job:
             words=self.words,
             error=self.error,
             has_output=bool(self.output_path and self.output_path.exists()),
+            crop_plan=self.crop_plan,
         )
 
 
@@ -121,6 +124,7 @@ def persist_searcher_job(job: Job) -> None:
         "title": job.searcher_title,
         "clip": job.searcher_metadata,
         "manifest": job.searcher_manifest,
+        "crop_plan": job.crop_plan.model_dump() if job.crop_plan else None,
     }
     metadata = job.dir / JOB_METADATA_FILENAME
     temporary = metadata.with_suffix(".json.tmp")
@@ -142,6 +146,8 @@ def _recover_searcher_job(job_dir: Path) -> Job | None:
         clip = payload["clip"]
         manifest = payload["manifest"]
         title = payload.get("title", "")
+        raw_plan = payload.get("crop_plan")
+        crop_plan = CropPlan.model_validate(raw_plan) if raw_plan is not None else None
         if (
             payload["schema_version"] != _JOB_METADATA_SCHEMA
             or not isinstance(job_id, str)
@@ -175,6 +181,7 @@ def _recover_searcher_job(job_dir: Path) -> Job | None:
         searcher_title=title,
         searcher_metadata=clip,
         searcher_manifest=manifest,
+        crop_plan=crop_plan,
     )
 
 

@@ -66,9 +66,12 @@ with eleven caption presets and three header treatments.
 
 - **Filler-word trimming** ("um"/"uh") — transcript-driven cuts on word
   boundaries. Harder than silence-only.
-- **Landscape / mixed input + reframe** — active-speaker detection and auto-crop
-  to vertical. The single biggest cost in the whole concept; arguably its own
-  project.
+- **Active-speaker reframe + zoom** — active-speaker switching between faces and
+  punch-in zoom on landscape input. The single-subject landscape crop shipped
+  (ADR-001, `docs/adr/ADR-001-subject-crop.md`): landscape sources crop to a
+  moving 9:16 window around one speaker, with a per-clip `geometry` control and a
+  blur-pad fallback. Active-speaker switching (choosing which face to follow in a
+  two-shot) and zoom stay deferred; a two-shot still frames the larger face.
 - **Tier-3 animated captions** — spring/bounce motion, animated resizing boxes.
   Requires adopting a second render engine (compositing / HTML-to-video). This is
   a deliberate engine decision, not a style toggle.
