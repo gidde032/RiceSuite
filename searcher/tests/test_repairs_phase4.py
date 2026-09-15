@@ -47,7 +47,8 @@ def client(tmp_path: Path) -> TestClient:
 
 
 def _get(client: TestClient, sid: str) -> dict:
-    return {s["id"]: s for s in client.get("/api/slices").json()}[sid]
+    url = f"/api/slices?profile={LEGACY_PROFILE_ID}"
+    return {s["id"]: s for s in client.get(url).json()}[sid]
 
 
 # -- W1: targeted updates don't clobber other fields --------------------------

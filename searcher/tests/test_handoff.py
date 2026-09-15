@@ -284,11 +284,14 @@ def test_ui_handoff_endpoint(tmp_path: Path, monkeypatch) -> None:
     cfg, lib = _lib_with_selected(tmp_path)
     lib.close()
     client = TestClient(create_app(cfg))
-    r = client.post("/api/handoff")
+    r = client.post("/api/handoff", json={"profile": LEGACY_PROFILE_ID})
     assert r.status_code == 200
     assert r.json()["clip_count"] == 1
     # slice a is now handed_off (gone from the selected view)
-    assert client.get("/api/slices?status=selected").json() == []
+    assert (
+        client.get(f"/api/slices?profile={LEGACY_PROFILE_ID}&status=selected").json()
+        == []
+    )
 
 
 # -- Repair regressions (H1, L1, L2, L3) --------------------------------------
@@ -376,7 +379,9 @@ def test_h2_concurrent_handoff_delivers_once(tmp_path: Path, monkeypatch) -> Non
 
     def fire() -> None:
         barrier.wait()
-        results.append(client.post("/api/handoff").json())
+        results.append(
+            client.post("/api/handoff", json={"profile": LEGACY_PROFILE_ID}).json()
+        )
 
     threads = [threading.Thread(target=fire) for _ in range(2)]
     for t in threads:
