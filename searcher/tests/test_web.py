@@ -336,6 +336,15 @@ def test_profiles_and_review_scripts_share_the_storage_key(client: TestClient) -
     )
 
 
+def test_status_change_refreshes_the_handoff_count(client: TestClient) -> None:
+    # FA-2 (PR #26 review): the button count comes from /api/profiles, so a
+    # successful select/reject/reset must refresh it, not only init and handoff.
+    app_js = client.get("/static/app.js").text
+    body = app_js[app_js.index("const setStatus = async") :]
+    body = body[: body.index("const selectBtn")]
+    assert "loadProfiles()" in body
+
+
 def test_media_page_serves_html(client: TestClient) -> None:
     r = client.get("/media")
     assert r.status_code == 200

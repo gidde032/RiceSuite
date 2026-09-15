@@ -215,6 +215,7 @@ function card(s) {
       c.setAttribute("data-status", status);
       renderBadges();
       cardMsg(msg, "marked " + status, false);
+      await loadProfiles();  // the button count comes from /api/profiles
     } catch (err) {
       cardMsg(msg, "couldn't set status: " + err.message, true);
     }
