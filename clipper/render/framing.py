@@ -5,8 +5,9 @@ plus a crop-or-blur-pad decision. It is pure. It reads no files and calls no
 cv2 or ffmpeg. Detection and scene cuts belong to ``render.subject`` (F3); the
 ffmpeg statements belong to ``render.geometry`` (F2).
 
-Policy, per sample, in order: snap after a cut, snap on a face returning after a
-loss, hold inside the dead zone, else smooth toward the target under a pan cap.
+Policy, per sample, in order: snap after a cut or face jump, snap on a face
+returning after a loss, hold inside the dead zone, else move toward the target
+under a pan cap.
 See ``docs/design/subject-crop-spec.md`` (Framing policy).
 """
 
@@ -17,8 +18,8 @@ from app.models import CropPlan, CropReason, CropSample, TrackSample
 # Sampling and motion policy (source_w-relative unless noted).
 SAMPLE_FPS = 5
 DEAD_ZONE = 0.10
-SMOOTH = 0.15
-PAN_CAP = 0.08
+PAN_CAP = 0.50
+JUMP_CUT = 0.15
 LOSS_S = 1.0
 SAFE_FRACTION = 0.70
 FACE_RATE_MIN = 0.80
@@ -113,15 +114,21 @@ def plan_crop(
     x: float | None = None
     prev_t: float | None = None
     last_face_t: float | None = None
+    prev_face_cx: float | None = None
     lost = False
 
     for i, sample in enumerate(track):
         t_i = sample_time(i, sample)
         has_face = sample is not None
-        after_cut = prev_t is not None and any(prev_t < c <= t_i for c in cuts)
+        scene_cut = prev_t is not None and any(prev_t < c <= t_i for c in cuts)
+        face_jump = (
+            has_face
+            and prev_face_cx is not None
+            and abs(sample.cx - prev_face_cx) > JUMP_CUT * source_w
+        )
+        after_cut = scene_cut or face_jump
 
         if x is None:
-            # First sample: center on the face, else center the window.
             x = float(target_for(sample)) if has_face else center_x
         elif has_face:
             target = target_for(sample)
@@ -135,13 +142,12 @@ def plan_crop(
                 pass  # dead zone: hold
             else:
                 dt = t_i - prev_t
-                move = SMOOTH * (target - x)
+                move = target - x
                 cap = PAN_CAP * source_w * dt
                 if abs(move) > cap:
                     move = cap if move > 0 else -cap
                 x += move
         else:
-            # No face: hold x. Mark lost once the gap exceeds LOSS_S.
             if last_face_t is not None and (t_i - last_face_t) > LOSS_S:
                 lost = True
 
@@ -152,6 +158,7 @@ def plan_crop(
         if has_face:
             face_records.append((sample, even_x))
             last_face_t = t_i
+            prev_face_cx = sample.cx
         prev_t = t_i
 
     n_all = len(track)
@@ -162,11 +169,9 @@ def plan_crop(
     face_rate = n_face / n_all
     safe = 0
     for sample, xr in face_records:
-        left = sample.cx - sample.w / 2
-        right = sample.cx + sample.w / 2
         lo = xr + _SAFE_MARGIN * window_w
         hi = xr + (1.0 - _SAFE_MARGIN) * window_w
-        if left >= lo and right <= hi:
+        if lo <= sample.cx <= hi:
             safe += 1
     safe_rate = safe / n_face
 

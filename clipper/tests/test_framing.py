@@ -13,6 +13,7 @@ import pytest
 from app.models import TrackSample
 from render.framing import (
     FACE_RATE_MIN,
+    JUMP_CUT,
     PAN_CAP,
     SAFE_RATE_MIN,
     plan_crop,
@@ -99,18 +100,24 @@ def test_pan_speed_never_exceeds_cap(name):
     track, cuts, sw, sh = _load(name)
     plan = plan_crop(track, cuts, sw, sh)
     limit = PAN_CAP * sw
+    prev_face_cx: float | None = track[0].cx if track[0] is not None else None
     for i in range(1, len(track)):
-        # Skip snaps: cut transitions and a face returning after a loss.
         if track[i] is None or track[i - 1] is None:
+            if track[i] is not None:
+                prev_face_cx = track[i].cx
             continue
         t_prev = plan.samples[i - 1].t
         t_cur = plan.samples[i].t
         if any(t_prev < c <= t_cur for c in cuts):
+            prev_face_cx = track[i].cx
+            continue
+        if prev_face_cx is not None and abs(track[i].cx - prev_face_cx) > JUMP_CUT * sw:
+            prev_face_cx = track[i].cx
             continue
         dt = t_cur - t_prev
         speed = abs(plan.samples[i].x - plan.samples[i - 1].x) / dt
-        # Tolerance for even-int rounding (up to 2 px per step).
         assert speed <= limit + 2.0 / dt
+        prev_face_cx = track[i].cx
 
 
 def test_cut_snaps_to_target():
@@ -156,7 +163,8 @@ def test_cut_snap_clears_lost(self=None):
     cx_start = 500.0
 
     # 7 face samples at cx_start, then 8 Nones (1.6 s > LOSS_S), then a
-    # face on a cut at cx_start + 200, then face at cx_start + 500.
+    # face on a cut at cx_start + 200, then face at cx_start + 450
+    # (below JUMP_CUT * 1920 = 288 from the return face).
     track: list[TrackSample | None] = []
     for i in range(7):
         track.append(TrackSample(t=i * step, cx=cx_start, cy=540, w=140, h=180))
@@ -166,7 +174,7 @@ def test_cut_snap_clears_lost(self=None):
     ret_t = null_start + 8 * step
     track.append(TrackSample(t=ret_t, cx=cx_start + 200, cy=540, w=140, h=180))
     after_t = ret_t + step
-    track.append(TrackSample(t=after_t, cx=cx_start + 500, cy=540, w=140, h=180))
+    track.append(TrackSample(t=after_t, cx=cx_start + 450, cy=540, w=140, h=180))
 
     cuts = [ret_t - 0.01]  # cut just before the return sample
 
@@ -201,3 +209,51 @@ def test_non_landscape_source_yields_no_samples():
     plan = plan_crop(track, [], 1000, 1080)
     assert plan.decision == "blur_pad"
     assert plan.reason == "no_samples"
+
+
+# --- face-jump and center-safe (tuning round 2) --------------------------------
+
+
+def test_face_jump_snaps_without_scene_cut():
+    """A face center jump > JUMP_CUT * source_w snaps with no scene cut."""
+    sw, sh = 1920, 1080
+    step = 0.2
+    window_w, _ = window_size(sw, sh)
+    max_x = sw - window_w
+    cx_a = 500.0
+    cx_b = cx_a + 0.20 * sw
+    track = [
+        TrackSample(t=0.0, cx=cx_a, cy=540, w=140, h=180),
+        TrackSample(t=step, cx=cx_b, cy=540, w=140, h=180),
+    ]
+    plan = plan_crop(track, [], sw, sh)
+    assert plan.samples[1].x == _expected_x(cx_b, window_w, max_x)
+
+
+def test_small_face_move_obeys_cap():
+    """A face move below JUMP_CUT does not snap and obeys the pan cap."""
+    sw, sh = 1920, 1080
+    step = 0.2
+    window_w, _ = window_size(sw, sh)
+    max_x = sw - window_w
+    cx_a = 500.0
+    cx_b = 780.0  # 280 px < JUMP_CUT * 1920 = 288
+    track = [
+        TrackSample(t=0.0, cx=cx_a, cy=540, w=140, h=180),
+        TrackSample(t=step, cx=cx_b, cy=540, w=140, h=180),
+    ]
+    plan = plan_crop(track, [], sw, sh)
+    snap_x = _expected_x(cx_b, window_w, max_x)
+    assert plan.samples[1].x != snap_x, "should not snap"
+    dt = plan.samples[1].t - plan.samples[0].t
+    speed = abs(plan.samples[1].x - plan.samples[0].x) / dt
+    assert speed <= PAN_CAP * sw + 2.0 / dt
+
+
+def test_wide_face_centered_is_safe():
+    """A 400 px face centered in the window is safe under the center rule."""
+    sw, sh = 1920, 1080
+    cx = float(sw // 2)
+    track = [TrackSample(t=i * 0.2, cx=cx, cy=540, w=400, h=180) for i in range(10)]
+    plan = plan_crop(track, [], sw, sh)
+    assert plan.safe_rate == 1.0

@@ -104,7 +104,7 @@ def test_detect_track_continuity_prefers_near_box_over_larger():
 
 
 def test_detect_track_none_on_no_box_or_low_score():
-    low = [[300, 300, 40, 40, 0.5]]  # below SCORE_MIN
+    low = [[300, 300, 40, 40, 0.4]]  # below SCORE_MIN
     samples, _ = _track([None, low], fps=5)
 
     assert samples == [None, None]

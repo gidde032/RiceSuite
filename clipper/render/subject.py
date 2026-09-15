@@ -31,9 +31,9 @@ logger = logging.getLogger("riceclipper")
 
 MODEL_PATH = Path(__file__).parent / "models" / "face_detection_yunet_2023mar.onnx"
 DETECT_WIDTH = 640
-SCORE_MIN = 0.7
+SCORE_MIN = 0.5
 CONTINUITY = 0.15
-SCENE_MIN = 0.4
+SCENE_MIN = 0.3
 
 # Effective sampling rate. framing fills a lost sample's time as ``i / 5``, so
 # the sample index must track ~5 samples per second.
