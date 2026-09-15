@@ -163,6 +163,25 @@ def test_slice_fresh_when_version_matches_file(tmp_path: Path) -> None:
         )
     rows = {s["id"]: s for s in client.get(SLICES).json()}
     assert rows["fresh"]["stale"] is False
+    # FC-1 (PR #26 review): when the profile file disappears, the version can no
+    # longer be confirmed, so the same slice reads stale instead of erroring.
+    (cfg.profiles_dir / f"{LEGACY_PROFILE_ID}.json").unlink()
+    rows = {s["id"]: s for s in client.get(SLICES).json()}
+    assert rows["fresh"]["stale"] is True
+
+
+@pytest.mark.parametrize("bad", ["../x", "UPPER", "a" * 41, "-lead", "sp ace"])
+def test_invalid_profile_id_is_400_on_slices_and_handoff(
+    client: TestClient, bad: str
+) -> None:
+    # FA-1 (PR #26 review): an id that fails the profile-id rule is a client
+    # error, not an empty 200 that hides a typo in the UI's stored choice.
+    r = client.get("/api/slices", params={"profile": bad})
+    assert r.status_code == 400, r.text
+    assert "profile" in r.json()["detail"]
+    r = client.post("/api/handoff", json={"profile": bad})
+    assert r.status_code == 400, r.text
+    assert "profile" in r.json()["detail"]
 
 
 def test_media_is_served_with_range(client: TestClient) -> None:

@@ -29,7 +29,12 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from ricesearcher.beat.profile import ensure_seed, list_profiles, load_profile
+from ricesearcher.beat.profile import (
+    PROFILE_ID_PATTERN,
+    ensure_seed,
+    list_profiles,
+    load_profile,
+)
 from ricesearcher.config import Config, load_config
 from ricesearcher.handoff.writer import HandoffError, hand_off_selected
 from ricesearcher.library.cache import MediaCache
@@ -100,6 +105,19 @@ def _slice_dto(
     }
 
 
+def _require_profile(profile: str | None) -> str:
+    """Return a valid profile id or raise 400.
+
+    The id rule is the loader's (ADR-002 Q1). A bad id is a client error, not
+    an empty result: the UI stores the choice, so a typo must surface.
+    """
+    if not profile:
+        raise HTTPException(400, "profile is required")
+    if not PROFILE_ID_PATTERN.match(profile):
+        raise HTTPException(400, f"invalid profile id {profile!r}")
+    return profile
+
+
 def create_app(config: Config | None = None) -> FastAPI:
     cfg = config or load_config()
     cfg.ensure_dirs()
@@ -160,8 +178,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     def list_slices(
         profile: str | None = None, status: str | None = None
     ) -> list[dict]:
-        if not profile:
-            raise HTTPException(400, "profile is required")
+        profile = _require_profile(profile)
         st = None
         if status:
             try:
@@ -264,9 +281,7 @@ def create_app(config: Config | None = None) -> FastAPI:
         Writes local files only (mirrored manifest-last batch); it never contacts
         RiceClipper or any posting surface.
         """
-        profile_id = body.profile if body else None
-        if not profile_id:
-            raise HTTPException(400, "profile is required")
+        profile_id = _require_profile(body.profile if body else None)
         with _handoff_lock, Library(cfg.db_path) as lib:
             try:
                 return hand_off_selected(lib, config=cfg, profile_id=profile_id)
