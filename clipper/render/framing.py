@@ -127,6 +127,7 @@ def plan_crop(
             target = target_for(sample)
             if after_cut:
                 x = float(target)
+                lost = False
             elif lost:
                 x = float(target)
                 lost = False

@@ -149,6 +149,36 @@ def test_face_returns_after_loss_snaps():
     assert plan.samples[ret].x == _expected_x(track[ret].cx, window_w, max_x)
 
 
+def test_cut_snap_clears_lost(self=None):
+    """A-1: after a cut snap, the next sample must smooth, not snap again."""
+    sw, sh = 1920, 1080
+    step = 0.2
+    cx_start = 500.0
+
+    # 7 face samples at cx_start, then 8 Nones (1.6 s > LOSS_S), then a
+    # face on a cut at cx_start + 200, then face at cx_start + 500.
+    track: list[TrackSample | None] = []
+    for i in range(7):
+        track.append(TrackSample(t=i * step, cx=cx_start, cy=540, w=140, h=180))
+    null_start = 7 * step
+    for _j in range(8):
+        track.append(None)
+    ret_t = null_start + 8 * step
+    track.append(TrackSample(t=ret_t, cx=cx_start + 200, cy=540, w=140, h=180))
+    after_t = ret_t + step
+    track.append(TrackSample(t=after_t, cx=cx_start + 500, cy=540, w=140, h=180))
+
+    cuts = [ret_t - 0.01]  # cut just before the return sample
+
+    plan = plan_crop(track, cuts, sw, sh)
+    ret_idx = 15  # index of the return sample
+    after_idx = 16
+    dt = step
+    cap = PAN_CAP * sw * dt
+    move = abs(plan.samples[after_idx].x - plan.samples[ret_idx].x)
+    assert move <= cap + 2, f"expected smooth (max {cap + 2}), got snap of {move}"
+
+
 # --- warning ------------------------------------------------------------------
 
 
