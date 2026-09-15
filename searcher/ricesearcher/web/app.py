@@ -29,10 +29,16 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from ricesearcher.beat.profile import (
+    PROFILE_ID_PATTERN,
+    ensure_seed,
+    list_profiles,
+    load_profile,
+)
 from ricesearcher.config import Config, load_config
 from ricesearcher.handoff.writer import HandoffError, hand_off_selected
 from ricesearcher.library.cache import MediaCache
-from ricesearcher.library.store import LEGACY_PROFILE_ID, Library
+from ricesearcher.library.store import Library
 from ricesearcher.models import CandidateSlice, SliceStatus
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -71,6 +77,7 @@ def _slice_dto(
     titles: dict[str, str],
     media_urls: dict[str, str],
     dup_labels: dict[str, str],
+    stale: bool,
 ) -> dict:
     return {
         "id": s.id,
@@ -94,12 +101,29 @@ def _slice_dto(
         "scorer_model": s.scorer_model,
         "beat_profile_version": s.beat_profile_version,
         "profile_id": s.profile_id,
+        "stale": stale,
     }
+
+
+def _require_profile(profile: str | None) -> str:
+    """Return a valid profile id or raise 400.
+
+    The id rule is the loader's (ADR-002 Q1). A bad id is a client error, not
+    an empty result: the UI stores the choice, so a typo must surface.
+    """
+    if not profile:
+        raise HTTPException(400, "profile is required")
+    if not PROFILE_ID_PATTERN.match(profile):
+        raise HTTPException(400, f"invalid profile id {profile!r}")
+    return profile
 
 
 def create_app(config: Config | None = None) -> FastAPI:
     cfg = config or load_config()
     cfg.ensure_dirs()
+    # Seed the legacy profile file on first use so migrated rows (all
+    # ``example-beat``) always have a matching profile in the UI (ADR-002 seed).
+    ensure_seed(cfg.profiles_dir)
     app = FastAPI(title="RiceSearcher Review")
 
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
@@ -121,21 +145,56 @@ def create_app(config: Config | None = None) -> FastAPI:
     def media_page() -> str:
         return (_STATIC_DIR / "media.html").read_text(encoding="utf-8")
 
+    @app.get("/profiles", response_class=HTMLResponse)
+    def profiles_page() -> str:
+        return (_STATIC_DIR / "profiles.html").read_text(encoding="utf-8")
+
+    @app.get("/api/profiles")
+    def list_profiles_api() -> list[dict]:
+        """Every profile file, merged with per-profile row counts.
+
+        The list is driven by the profile files; a profile with no scored rows
+        gets zero counts.
+        """
+        with Library(cfg.db_path) as lib:
+            counts = lib.profile_counts()
+        out: list[dict] = []
+        for p in list_profiles(cfg.profiles_dir):
+            c = counts.get(p.id, {})
+            out.append(
+                {
+                    "id": p.id,
+                    "name": p.name,
+                    "version": p.version,
+                    "sources": c.get("sources", 0),
+                    "candidates": c.get("candidates", 0),
+                    "selected": c.get("selected", 0),
+                    "handed_off": c.get("handed_off", 0),
+                }
+            )
+        return out
+
     @app.get("/api/slices")
     def list_slices(
-        status: str | None = None, profile: str | None = None
+        profile: str | None = None, status: str | None = None
     ) -> list[dict]:
+        profile = _require_profile(profile)
         st = None
         if status:
             try:
                 st = SliceStatus(status)
             except ValueError as exc:
                 raise HTTPException(422, f"invalid status {status!r}") from exc
-        profile_id = (
-            profile or LEGACY_PROFILE_ID
-        )  # Bridge until #23 makes profile required.
+        # Load the profile file once. A missing or malformed file marks every
+        # slice stale (its stored version can no longer be confirmed current).
+        try:
+            file_version: str | None = load_profile(
+                profile, profiles_dir=cfg.profiles_dir
+            ).version
+        except (ValueError, OSError):
+            file_version = None
         with Library(cfg.db_path) as lib:
-            slices = lib.list_slices(profile_id=profile_id, status=st)
+            slices = lib.list_slices(profile_id=profile, status=st)
             titles = lib.source_titles()
             media_urls = {
                 src.id: _media_url(src.media_path) for src in lib.list_sources()
@@ -150,7 +209,16 @@ def create_app(config: Config | None = None) -> FastAPI:
                         f"{titles.get(canon.source_id) or canon.source_id[:8]} "
                         f"@ {canon.target_in:.0f}-{canon.target_out:.0f}s"
                     )
-        return [_slice_dto(s, titles, media_urls, dup_labels) for s in slices]
+        return [
+            _slice_dto(
+                s,
+                titles,
+                media_urls,
+                dup_labels,
+                stale=file_version is None or s.beat_profile_version != file_version,
+            )
+            for s in slices
+        ]
 
     @app.post("/api/slices/{slice_id}/status")
     def set_status(slice_id: str, body: _StatusIn) -> dict:
@@ -213,8 +281,7 @@ def create_app(config: Config | None = None) -> FastAPI:
         Writes local files only (mirrored manifest-last batch); it never contacts
         RiceClipper or any posting surface.
         """
-        # Bridge until #23 makes profile required.
-        profile_id = (body.profile if body else None) or LEGACY_PROFILE_ID
+        profile_id = _require_profile(body.profile if body else None)
         with _handoff_lock, Library(cfg.db_path) as lib:
             try:
                 return hand_off_selected(lib, config=cfg, profile_id=profile_id)

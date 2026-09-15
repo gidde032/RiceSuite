@@ -8,20 +8,65 @@ const listEl = document.getElementById("list");
 const countEl = document.getElementById("count");
 const statusEl = document.getElementById("status");
 const filterEl = document.getElementById("statusFilter");
+const profileEl = document.getElementById("profileSelect");
 
-filterEl.addEventListener("change", load);
+// Which profile the review UI is scoped to. Persisted so a reload keeps it.
+const PROFILE_KEY = "ricesearcher.profile";
+let profiles = [];  // last /api/profiles payload, for the handoff-button count
+
+profileEl.addEventListener("change", () => {
+  localStorage.setItem(PROFILE_KEY, profileEl.value);
+  updateHandoffLabel();
+  load();
+});
+filterEl.addEventListener("change", () => load());
 document.getElementById("handoffBtn").addEventListener("click", handoff);
+
+// Fill the profile select from /api/profiles and restore the saved choice.
+async function loadProfiles() {
+  try {
+    const res = await fetch("/api/profiles");
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    profiles = await res.json();
+  } catch (err) {
+    setStatusMsg("Failed to load profiles: " + err.message, true);
+    profiles = [];
+  }
+  const saved = localStorage.getItem(PROFILE_KEY);
+  const ids = profiles.map((p) => p.id);
+  const active = ids.includes(saved) ? saved : ids[0] || "";
+  profileEl.replaceChildren(
+    ...profiles.map((p) => el("option", { value: p.id }, p.name + " (" + p.id + ")"))
+  );
+  profileEl.value = active;
+  if (active) localStorage.setItem(PROFILE_KEY, active);
+  updateHandoffLabel();
+}
+
+function updateHandoffLabel() {
+  const btn = document.getElementById("handoffBtn");
+  const p = profiles.find((x) => x.id === profileEl.value);
+  const n = p ? p.selected : 0;
+  const id = profileEl.value || "—";
+  btn.textContent = "Send " + n + " selected (" + id + ") → RiceClipper";
+}
 
 async function handoff() {
   const btn = document.getElementById("handoffBtn");
+  const profile = profileEl.value;
+  if (!profile) { setStatusMsg("choose a profile first", true); return; }
   btn.disabled = true;  // guard against a double-click double-delivering (H2)
   setStatusMsg("writing handoff batch…");
   try {
-    const res = await fetch("/api/handoff", { method: "POST" });
+    const res = await fetch("/api/handoff", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profile }),
+    });
     const d = await res.json();
     if (!res.ok) { setStatusMsg("handoff failed: " + (d.detail || res.status), true); return; }
     if (!d.clip_count) { setStatusMsg("nothing selected to hand off", false); return; }
     setStatusMsg("handed off " + d.clip_count + " clip(s) as " + d.batch_id, false);
+    await loadProfiles();  // refresh the selected count on the button
     await load(true);  // handed-off slices leave the selected/candidate views
   } catch (err) {
     setStatusMsg("handoff failed: " + err.message, true);
@@ -36,8 +81,15 @@ function setStatusMsg(text, isError) {
 }
 
 async function load(preserveStatus = false) {
+  const profile = profileEl.value;
+  if (!profile) {
+    listEl.replaceChildren(el("div", { class: "empty" }, "No profiles found."));
+    countEl.textContent = "";
+    return;
+  }
   const status = filterEl.value;
-  const url = "/api/slices" + (status ? "?status=" + encodeURIComponent(status) : "");
+  let url = "/api/slices?profile=" + encodeURIComponent(profile);
+  if (status) url += "&status=" + encodeURIComponent(status);
   let slices;
   try {
     const res = await fetch(url);
@@ -96,6 +148,8 @@ function card(s) {
     if (s.status === "rejected") kids.push(el("span", { class: "badge status-rejected" }, "rejected"));
     if (s.status === "reviewed") kids.push(el("span", { class: "badge" }, "reviewed"));
     if (s.status === "handed_off") kids.push(el("span", { class: "badge" }, "handed off"));
+    if (s.stale) kids.push(el("span",
+      { class: "badge stale", title: "scored with version " + s.beat_profile_version }, "stale"));
     if (s.dup_of) {
       kids.push(el("span", { class: "badge dup", title: "advisory only — nothing is filtered" },
         "possible dup (" + s.dup_kind + " " + s.dup_score.toFixed(2) + ") of " + (s.dup_label || s.dup_of)));
@@ -161,6 +215,7 @@ function card(s) {
       c.setAttribute("data-status", status);
       renderBadges();
       cardMsg(msg, "marked " + status, false);
+      await loadProfiles();  // the button count comes from /api/profiles
     } catch (err) {
       cardMsg(msg, "couldn't set status: " + err.message, true);
     }
@@ -218,4 +273,9 @@ function el(tag, attrs, children) {
   return node;
 }
 
-load();
+async function init() {
+  await loadProfiles();
+  await load();
+}
+
+init();

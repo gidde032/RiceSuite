@@ -12,6 +12,9 @@ from ricesearcher.library.store import LEGACY_PROFILE_ID, Library
 from ricesearcher.models import CandidateSlice, SliceStatus, Source, SourceKind
 from ricesearcher.web.app import create_app
 
+# Every fixture slice lives in the legacy profile; the API now requires it.
+SLICES = f"/api/slices?profile={LEGACY_PROFILE_ID}"
+
 
 @pytest.fixture
 def client(tmp_path: Path) -> TestClient:
@@ -87,7 +90,7 @@ def test_selected_logo_asset_is_served_and_used(client: TestClient) -> None:
 
 
 def test_list_slices_dto(client: TestClient) -> None:
-    r = client.get("/api/slices")
+    r = client.get(SLICES)
     assert r.status_code == 200
     data = {s["id"]: s for s in r.json()}
     s = data["sl1"]
@@ -99,9 +102,86 @@ def test_list_slices_dto(client: TestClient) -> None:
 
 
 def test_list_filter_by_status(client: TestClient) -> None:
-    assert client.get("/api/slices?status=selected").json() == []
-    assert client.get("/api/slices?status=candidate").status_code == 200
-    assert client.get("/api/slices?status=bogus").status_code == 422
+    assert client.get(SLICES + "&status=selected").json() == []
+    assert client.get(SLICES + "&status=candidate").status_code == 200
+    assert client.get(SLICES + "&status=bogus").status_code == 422
+
+
+def test_list_slices_requires_profile(client: TestClient) -> None:
+    # The profile bridge is gone; a slices request without `profile` is a 400.
+    r = client.get("/api/slices")
+    assert r.status_code == 400
+    assert "profile" in r.json()["detail"]
+
+
+def test_list_profiles_api(client: TestClient) -> None:
+    rows = {p["id"]: p for p in client.get("/api/profiles").json()}
+    prof = rows[LEGACY_PROFILE_ID]
+    assert prof["name"] == LEGACY_PROFILE_ID
+    assert prof["version"]  # non-empty, from the seeded file
+    assert prof["sources"] == 1  # one source backs the fixture slices
+    assert prof["candidates"] == 2  # sl1 + sl2 both candidate
+    assert prof["selected"] == 0 and prof["handed_off"] == 0
+
+
+def test_slice_stale_flag_tracks_the_file_version(client: TestClient) -> None:
+    # The fixture slices carry no stored version, so they differ from the file.
+    stale = {s["id"]: s["stale"] for s in client.get(SLICES).json()}
+    assert stale["sl1"] is True and stale["sl2"] is True
+
+
+def test_slice_fresh_when_version_matches_file(tmp_path: Path) -> None:
+    # A slice stamped with the current file version is not stale.
+    cfg = Config(data_dir=tmp_path / "data", handoff_dir=tmp_path / "handoff")
+    cfg.ensure_dirs()
+    client = TestClient(create_app(cfg))  # seeds example-beat.json
+    file_version = client.get("/api/profiles").json()[0]["version"]
+    with Library(cfg.db_path) as lib:
+        lib.upsert_source(
+            Source(
+                id="src1",
+                kind=SourceKind.YOUTUBE,
+                ref="https://y/x",
+                media_path="/m.mp4",
+            )
+        )
+        lib.upsert_slices(
+            [
+                CandidateSlice(
+                    id="fresh",
+                    source_id="src1",
+                    pad_in=0,
+                    pad_out=10,
+                    target_in=2,
+                    target_out=8,
+                    transcript_span="a moment",
+                    status=SliceStatus.CANDIDATE,
+                    profile_id=LEGACY_PROFILE_ID,
+                    beat_profile_version=file_version,
+                )
+            ]
+        )
+    rows = {s["id"]: s for s in client.get(SLICES).json()}
+    assert rows["fresh"]["stale"] is False
+    # FC-1 (PR #26 review): when the profile file disappears, the version can no
+    # longer be confirmed, so the same slice reads stale instead of erroring.
+    (cfg.profiles_dir / f"{LEGACY_PROFILE_ID}.json").unlink()
+    rows = {s["id"]: s for s in client.get(SLICES).json()}
+    assert rows["fresh"]["stale"] is True
+
+
+@pytest.mark.parametrize("bad", ["../x", "UPPER", "a" * 41, "-lead", "sp ace"])
+def test_invalid_profile_id_is_400_on_slices_and_handoff(
+    client: TestClient, bad: str
+) -> None:
+    # FA-1 (PR #26 review): an id that fails the profile-id rule is a client
+    # error, not an empty 200 that hides a typo in the UI's stored choice.
+    r = client.get("/api/slices", params={"profile": bad})
+    assert r.status_code == 400, r.text
+    assert "profile" in r.json()["detail"]
+    r = client.post("/api/handoff", json={"profile": bad})
+    assert r.status_code == 400, r.text
+    assert "profile" in r.json()["detail"]
 
 
 def test_media_is_served_with_range(client: TestClient) -> None:
@@ -114,7 +194,7 @@ def test_media_is_served_with_range(client: TestClient) -> None:
 def test_set_status_is_the_gate(client: TestClient) -> None:
     r = client.post("/api/slices/sl1/status", json={"status": "selected"})
     assert r.status_code == 200 and r.json()["status"] == "selected"
-    got = {s["id"]: s for s in client.get("/api/slices").json()}
+    got = {s["id"]: s for s in client.get(SLICES).json()}
     assert got["sl1"]["status"] == "selected"
     # invalid + missing
     assert (
@@ -180,13 +260,20 @@ def test_handoff_execution_failure_is_structured_and_retryable(
         raise OSError("ffmpeg: encoder unavailable")
 
     monkeypatch.setattr(web_app, "hand_off_selected", fail)
-    response = client.post("/api/handoff")
+    response = client.post("/api/handoff", json={"profile": LEGACY_PROFILE_ID})
 
     assert response.status_code == 503
     assert "retry" in response.json()["detail"]
     assert "ffmpeg" in response.json()["detail"]
-    got = {s["id"]: s for s in client.get("/api/slices").json()}
+    got = {s["id"]: s for s in client.get(SLICES).json()}
     assert got["sl1"]["status"] == SliceStatus.SELECTED.value
+
+
+def test_handoff_requires_profile(client: TestClient) -> None:
+    # No body → 400; the legacy fallback is gone.
+    r = client.post("/api/handoff")
+    assert r.status_code == 400
+    assert "profile" in r.json()["detail"]
 
 
 def test_static_handoff_refresh_preserves_success_message(client: TestClient) -> None:
@@ -228,6 +315,34 @@ def test_no_posting_surface(tmp_path: Path) -> None:
     )
     assert "/api/slices" in paths
     assert "/api/sources" in paths  # media-management routes must not be a surface
+
+
+def test_profiles_page_serves_html(client: TestClient) -> None:
+    r = client.get("/profiles")
+    assert r.status_code == 200
+    assert "RiceSearcher" in r.text
+    assert "/static/profiles.js" in r.text
+
+
+def test_profiles_and_review_scripts_share_the_storage_key(client: TestClient) -> None:
+    # FC-2 (PR #26 review): both pages scope by the same localStorage key, and
+    # a profiles-page row click writes it before it navigates to the review page.
+    profiles_js = client.get("/static/profiles.js").text
+    app_js = client.get("/static/app.js").text
+    key = 'PROFILE_KEY = "ricesearcher.profile"'
+    assert key in profiles_js and key in app_js
+    assert profiles_js.index("localStorage.setItem(PROFILE_KEY") < profiles_js.index(
+        'window.location.assign("/")'
+    )
+
+
+def test_status_change_refreshes_the_handoff_count(client: TestClient) -> None:
+    # FA-2 (PR #26 review): the button count comes from /api/profiles, so a
+    # successful select/reject/reset must refresh it, not only init and handoff.
+    app_js = client.get("/static/app.js").text
+    body = app_js[app_js.index("const setStatus = async") :]
+    body = body[: body.index("const selectBtn")]
+    assert "loadProfiles()" in body
 
 
 def test_media_page_serves_html(client: TestClient) -> None:
@@ -288,7 +403,7 @@ def test_delete_source_full_purge(client: TestClient, tmp_path: Path) -> None:
     assert body["deleted"] is True and body["media_removed"] is True
     assert not media.exists()
     assert client.get("/api/sources").json() == []
-    assert client.get("/api/slices").json() == []  # slices cascaded away
+    assert client.get(SLICES).json() == []  # slices cascaded away
     # deleting a missing source is a clean 404
     assert client.post("/api/sources/ghost/delete").status_code == 404
 
@@ -330,6 +445,6 @@ def test_clear_cache_purges_everything(client: TestClient, tmp_path: Path) -> No
     body = r.json()
     assert body["sources_deleted"] == 1 and body["files_removed"] >= 1
     assert client.get("/api/sources").json() == []
-    assert client.get("/api/slices").json() == []
+    assert client.get(SLICES).json() == []
     assert not any(cache_dir.rglob("*.mp4"))  # disk wiped
     assert cache_dir.is_dir()  # ...but the cache root is recreated, still usable
