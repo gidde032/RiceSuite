@@ -154,6 +154,10 @@ button[disabled] { opacity: .5; cursor: default; }
 .profile-facts { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 
 @media (max-width: 720px) {
+  /* The topbar carries more controls now (profile + status + handoff); let it
+     wrap instead of forcing a horizontal scroll on a phone. */
+  .topbar { flex-wrap: wrap; }
+  .filters { margin-left: 0; flex-wrap: wrap; width: 100%; }
   .card { grid-template-columns: 1fr; }
   .media-row { grid-template-columns: 1fr; }
 }
