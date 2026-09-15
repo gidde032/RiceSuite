@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app import jobs, main
-from app.models import CropPlan, HeaderRequest, RenderRequest, Word
+from app.models import CropPlan, CropSample, HeaderRequest, RenderRequest, Word
 from app.probe import MediaInfo
 from render import framing
 
@@ -279,6 +279,7 @@ def _landscape_plan() -> CropPlan:
         safe_rate=0.99,
         window_w=608,
         window_h=1080,
+        samples=[CropSample(t=0.0, x=0)],
     )
 
 
@@ -349,6 +350,16 @@ def test_render_crop_on_vertical_job_returns_400(isolated_jobs):
     with pytest.raises(HTTPException) as exc:
         main.render_job(job.id, RenderRequest(geometry="crop"))
     assert exc.value.status_code == 400
+    assert job.status == "ready"
+
+
+def test_render_crop_on_analysis_failed_plan_returns_400(isolated_jobs):
+    job = _landscape_ready_job()
+    job.crop_plan = framing.failed_plan("analysis_failed", 1920, 1080)
+    with pytest.raises(HTTPException) as exc:
+        main.render_job(job.id, RenderRequest(geometry="crop"))
+    assert exc.value.status_code == 400
+    assert "analysis failed" in exc.value.detail
     assert job.status == "ready"
 
 

@@ -22,7 +22,7 @@ import re
 import time
 from pathlib import Path
 
-from app.models import TrackSample
+from app.models import CropPlan, TrackSample
 from app.probe import MediaInfo
 from app.process import run_owned
 from render import framing
@@ -208,7 +208,7 @@ def scene_cuts(source: Path, timeout: float) -> list[float]:
     return sorted(float(m) for m in _PTS_TIME.findall(stderr))
 
 
-def build_plan(source: Path, info: MediaInfo):
+def build_plan(source: Path, info: MediaInfo) -> CropPlan:
     """Analyse ``source`` and return a :class:`~app.models.CropPlan`.
 
     Rides one deadline over detection and scene cuts. Catches every failure,
