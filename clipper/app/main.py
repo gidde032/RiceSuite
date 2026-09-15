@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from app import handoff, header_gen, jobs, probe, searcher_pickup
 from app.models import HandoffRequest, HeaderRequest, JobState, RenderRequest
 from app.process import terminate_all_owned_processes
-from render import frame, subject
+from render import frame, geometry, subject
 from render.pipeline import render
 from transcribe import whisper
 
@@ -235,6 +235,22 @@ def render_job(job_id: str, req: RenderRequest) -> JobState:
             raise HTTPException(status_code=409, detail="job not ready to render")
         if job.status not in {"ready", "done", "error"}:
             raise HTTPException(status_code=409, detail="job is not ready to render")
+        if req.geometry == "crop" and job.crop_plan is None:
+            raise HTTPException(
+                status_code=400,
+                detail="crop requires a landscape job with a crop plan",
+            )
+
+        # Resolve the per-clip geometry to the plan render() receives (ADR-001).
+        # "crop" forces a crop even over a blur_pad decision; everything else
+        # (pass-through / blur_pad) passes no plan.
+        mode = geometry.resolve_geometry(
+            req.geometry, job.crop_plan, job.info.width, job.info.height
+        )
+        if mode == "crop":
+            plan = job.crop_plan.model_copy(update={"decision": "crop"})
+        else:
+            plan = None
 
         job.status = "rendering"
         job.error = None
@@ -242,7 +258,7 @@ def render_job(job_id: str, req: RenderRequest) -> JobState:
             if job.output_path is not None:
                 job.output_path.unlink(missing_ok=True)
                 job.output_path = None
-            out = render(job.dir, job.source_path, job.info, req)
+            out = render(job.dir, job.source_path, job.info, req, plan=plan)
             job.output_path = out
             job.status = "done"
         except Exception as exc:

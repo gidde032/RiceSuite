@@ -222,17 +222,18 @@ def render(
 
     # 3. Video graph: crop / blur-pad / pass-through → burn subtitles → header.
     sub_out = "[subbed]" if overlay_header else "[vout]"
-    if plan is not None and plan.decision == "crop":
+    if geometry.is_target(info.width, info.height):
+        # A 1080x1920 job passes through, whatever the plan says. Detection only
+        # runs on landscape input, so a vertical job never crops (ADR-001).
+        video_stmts = [f"[0:v]subtitles={ASS_NAME}{sub_out}"]
+    elif plan is not None and plan.decision == "crop":
         # Subject crop: write the sendcmd command file, then drive a moving 9:16
-        # window over the source. Detection only runs on landscape input, so a
-        # crop plan never coexists with 1080x1920 pass-through (ADR-001).
+        # window over the source.
         (job_dir / geometry.CROP_CMD_NAME).write_text(
             geometry.crop_command_file(plan), encoding="utf-8"
         )
         video_stmts = geometry.crop_statements(plan, "[0:v]", "[base]")
         video_stmts.append(f"[base]subtitles={ASS_NAME}{sub_out}")
-    elif geometry.is_target(info.width, info.height):
-        video_stmts = [f"[0:v]subtitles={ASS_NAME}{sub_out}"]
     else:
         video_stmts = geometry.blur_pad_statements("[0:v]", "[base]")
         video_stmts.append(f"[base]subtitles={ASS_NAME}{sub_out}")

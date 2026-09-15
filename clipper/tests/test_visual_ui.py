@@ -47,6 +47,25 @@ def test_review_ui_exposes_all_visual_choices_and_sends_them():
     assert "setRadioValue(clip.headerStyleEl" in javascript
 
 
+def test_geometry_row_is_offered_and_sent_and_toggled_by_orientation():
+    html = _html()
+    javascript = _js()
+
+    # The landscape-only Geometry row: three radio-card tiles named "geometry".
+    assert 'class="field choice-field geometry" hidden' in html
+    assert 'name="geometry" value="auto"' in html
+    assert 'name="geometry" value="blur_pad"' in html
+    assert 'name="geometry" value="crop"' in html
+    # The Auto card carries the plan summary and the near-zone warning badge.
+    assert 'class="geometry-summary"' in html
+    assert 'class="geometry-warning"' in html
+
+    # The render payload carries the per-clip geometry choice.
+    assert "geometry: radioValue(clip.geometryEl)" in javascript
+    # The row is shown only for landscape jobs (width > height).
+    assert "state.width > state.height" in javascript
+
+
 def test_slate_identity_and_theme_contract_are_present():
     html = _html()
     stylesheet = (ROOT / "web/style.css").read_text(encoding="utf-8")

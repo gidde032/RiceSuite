@@ -86,6 +86,29 @@
             </div>
           </div>
 
+          <fieldset class="field choice-field geometry" hidden>
+            <legend>Geometry</legend>
+            <div class="choice-grid geometry-choice-grid">
+              <label class="choice-card">
+                <input type="radio" name="geometry" value="auto" checked />
+                <span class="choice-check" aria-hidden="true">✓</span>
+                <span class="geometry-summary"></span>
+                <span class="geometry-warning" hidden></span>
+                <span class="choice-label">Auto</span>
+              </label>
+              <label class="choice-card">
+                <input type="radio" name="geometry" value="blur_pad" />
+                <span class="choice-check" aria-hidden="true">✓</span>
+                <span class="choice-label">Blur-pad</span>
+              </label>
+              <label class="choice-card">
+                <input type="radio" name="geometry" value="crop" />
+                <span class="choice-check" aria-hidden="true">✓</span>
+                <span class="choice-label">Crop</span>
+              </label>
+            </div>
+          </fieldset>
+
           <fieldset class="field choice-field header-style">
             <legend>Header style</legend>
             <div class="choice-grid header-choice-grid">

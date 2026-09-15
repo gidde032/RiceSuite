@@ -8,6 +8,15 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Subject-focused 9:16 crop for landscape input.** Landscape sources can now
+  be cropped to a moving 9:16 window that keeps one speaker in frame, instead of
+  blur-padding. A per-clip `geometry` control (`auto` / `blur_pad` / `crop`)
+  chooses the framing: `auto` follows the detector's decision, `crop` forces a
+  crop, `blur_pad` keeps the letterboxed fallback. Detection runs at ingest and
+  falls back to blur-pad when it is weak or fails. The review card shows the
+  Geometry row only for landscape jobs, with the plan summary and a near-zone
+  warning. Vertical input is unchanged. See
+  [`docs/adr/ADR-001-subject-crop.md`](./docs/adr/ADR-001-subject-crop.md).
 - **Per-slot saved caption/header style.** The universal pre-upload caption and
   header dropdowns are gone. Each slot (the "Clip N" ordinal that maps to the
   RicePoster handoff position) now remembers its caption and header style in the

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.models import CropPlan, CropSample
 from app.probe import MediaInfo
 from render import geometry
@@ -110,6 +112,78 @@ def test_render_blur_pad_plan_keeps_blur_path_and_writes_no_cmd(monkeypatch, tmp
     fc = _filter_complex(captured["cmd"])
     assert "boxblur" in fc
     assert "sendcmd" not in fc
+    assert not (tmp_path / "crop.cmd").exists()
+
+
+def _blur_pad_plan() -> CropPlan:
+    return CropPlan(
+        decision="blur_pad",
+        reason="low_safe_rate",
+        face_rate=0.9,
+        safe_rate=0.5,
+        window_w=608,
+        window_h=1080,
+        samples=[CropSample(t=0.0, x=0)],
+    )
+
+
+# resolve_geometry over (requested) x (plan) x (orientation). A 1080x1920 job
+# always passes through; a landscape job dispatches on the request and plan.
+@pytest.mark.parametrize(
+    "requested,plan_kind,expected",
+    [
+        # auto follows the plan decision, blur_pad without a plan.
+        ("auto", "crop", "crop"),
+        ("auto", "blur_pad", "blur_pad"),
+        ("auto", "none", "blur_pad"),
+        # blur_pad is always blur_pad.
+        ("blur_pad", "crop", "blur_pad"),
+        ("blur_pad", "blur_pad", "blur_pad"),
+        ("blur_pad", "none", "blur_pad"),
+        # crop crops whenever a plan exists (overriding a blur_pad decision).
+        ("crop", "crop", "crop"),
+        ("crop", "blur_pad", "crop"),
+        ("crop", "none", "blur_pad"),
+    ],
+)
+def test_resolve_geometry_landscape_truth_table(requested, plan_kind, expected):
+    plan = {
+        "crop": _crop_plan([(0.0, 0)]),
+        "blur_pad": _blur_pad_plan(),
+        "none": None,
+    }[plan_kind]
+    assert geometry.resolve_geometry(requested, plan, 1920, 1080) == expected
+
+
+@pytest.mark.parametrize("requested", ["auto", "blur_pad", "crop"])
+@pytest.mark.parametrize("plan_kind", ["crop", "blur_pad", "none"])
+def test_resolve_geometry_target_always_passes(requested, plan_kind):
+    plan = {
+        "crop": _crop_plan([(0.0, 0)]),
+        "blur_pad": _blur_pad_plan(),
+        "none": None,
+    }[plan_kind]
+    assert geometry.resolve_geometry(requested, plan, 1080, 1920) == "pass"
+
+
+def test_render_vertical_with_crop_plan_uses_passthrough(monkeypatch, tmp_path):
+    """A 1080x1920 job never crops, even if handed a forced crop plan."""
+    from app.models import RenderRequest
+
+    captured = _capture_render(monkeypatch)
+
+    render(
+        tmp_path,
+        tmp_path / "source.mp4",
+        MediaInfo(width=1080, height=1920, duration=15.0, has_audio=False),
+        RenderRequest(),
+        plan=_crop_plan([(0.0, 0), (0.2, 120)]),
+    )
+
+    fc = _filter_complex(captured["cmd"])
+    assert fc.startswith("[0:v]subtitles=captions.ass")
+    assert "sendcmd" not in fc
+    assert "boxblur" not in fc
     assert not (tmp_path / "crop.cmd").exists()
 
 

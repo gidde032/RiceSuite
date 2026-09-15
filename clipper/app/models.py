@@ -26,6 +26,9 @@ CaptionStyle = Literal[
     "baskerville",
 ]
 HeaderStyle = Literal["plain", "black_plate", "white_plate"]
+# Per-clip framing choice (ADR-001). "auto" follows the plan decision; "crop"
+# and "blur_pad" override it.
+Geometry = Literal["auto", "blur_pad", "crop"]
 
 
 class Word(BaseModel):
@@ -54,6 +57,7 @@ class RenderRequest(BaseModel):
     captions_on: bool = True
     caption_style: CaptionStyle = "classic"
     header_style: HeaderStyle = "plain"
+    geometry: Geometry = "auto"
     music: MusicSettings = Field(default_factory=MusicSettings)
 
 

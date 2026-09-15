@@ -181,6 +181,7 @@ function buildCard(clip) {
   clip.headerFeedbackEl = node.querySelector(".header-feedback");
   clip.headerGenStatusEl = node.querySelector(".header-gen-status");
   clip.headerStyleEl = node.querySelector(".header-style");
+  clip.geometryEl = node.querySelector(".geometry");
   clip.captionsToggleEl = node.querySelector(".captions-toggle");
   clip.captionStyleEl = node.querySelector(".caption-style");
   clip.transcriptEl = node.querySelector(".transcript");
@@ -197,6 +198,9 @@ function buildCard(clip) {
   });
   node.querySelectorAll('.caption-style input[type="radio"]').forEach((option) => {
     option.name = `caption-style-${clip.localId}`;
+  });
+  node.querySelectorAll('.geometry input[type="radio"]').forEach((option) => {
+    option.name = `geometry-${clip.localId}`;
   });
   const headerHelp = node.querySelector("#header-help");
   headerHelp.id = `header-help-${clip.localId}`;
@@ -272,6 +276,42 @@ function setGeoNote(clip, info) {
     clip.geoEl.textContent = `${info.width}×${info.height} — will be blur-padded to 1080×1920.`;
   } else {
     clip.geoEl.textContent = "";
+  }
+}
+
+// Show the Geometry row only for landscape jobs and fill the Auto card from the
+// crop plan (ADR-001). Vertical jobs keep the row hidden.
+function applyGeometry(clip, state) {
+  if (!clip.geometryEl) return;
+  const landscape = state.width > state.height;
+  clip.geometryEl.hidden = !landscape;
+  if (!landscape) return;
+
+  const plan = state.crop_plan;
+  const summaryEl = clip.geometryEl.querySelector(".geometry-summary");
+  const warnEl = clip.geometryEl.querySelector(".geometry-warning");
+  const pct = (rate) => Math.round(rate * 100);
+
+  if (!plan) {
+    summaryEl.textContent = "";
+  } else if (plan.reason === "analysis_failed") {
+    summaryEl.textContent = "blur-pad · analysis failed";
+  } else if (plan.decision === "crop") {
+    summaryEl.textContent = `crop · face ${pct(plan.face_rate)}% · safe ${pct(plan.safe_rate)}%`;
+  } else {
+    summaryEl.textContent = `blur-pad · face ${pct(plan.face_rate)}%`;
+  }
+
+  const warning = plan ? plan.warning : null;
+  if (warning === "header_zone") {
+    warnEl.textContent = "face near header";
+    warnEl.hidden = false;
+  } else if (warning === "caption_zone") {
+    warnEl.textContent = "face near captions";
+    warnEl.hidden = false;
+  } else {
+    warnEl.textContent = "";
+    warnEl.hidden = true;
   }
 }
 
@@ -510,6 +550,7 @@ async function ingestClip(clip) {
     }
     clip.words = trdata.words || [];
     renderTranscript(clip);
+    applyGeometry(clip, trdata);
     clip.status = "ready";
     setClipStatus(clip, "Ready — review & render");
     // Auto-fill the header from the frame + transcript. Soft-fails on its own
@@ -585,6 +626,7 @@ async function renderClip(clip) {
       captions_on: clip.captionsToggleEl.checked,
       caption_style: radioValue(clip.captionStyleEl),
       header_style: radioValue(clip.headerStyleEl),
+      geometry: radioValue(clip.geometryEl),
       music: { mode: musicFile ? mode : "none", volume: Number(clip.musicVolumeEl.value), filename },
     };
     const res = await fetch(`/api/jobs/${clip.jobId}/render`, {

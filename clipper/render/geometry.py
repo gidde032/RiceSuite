@@ -8,7 +8,9 @@ never cropped.
 
 from __future__ import annotations
 
-from app.models import CropPlan
+from typing import Literal
+
+from app.models import CropPlan, Geometry
 
 TARGET_W = 1080
 TARGET_H = 1920
@@ -20,6 +22,28 @@ CROP_CMD_NAME = "crop.cmd"
 
 def is_target(width: int, height: int) -> bool:
     return width == TARGET_W and height == TARGET_H
+
+
+def resolve_geometry(
+    requested: Geometry,
+    plan: CropPlan | None,
+    width: int,
+    height: int,
+) -> Literal["pass", "blur_pad", "crop"]:
+    """Resolve a per-clip geometry request to a concrete render mode (ADR-001).
+
+    Exactly-9:16 input always passes through, whatever was requested. Otherwise
+    ``blur_pad`` and ``crop`` are honoured (``crop`` degrades to ``blur_pad``
+    with no plan), and ``auto`` follows the plan decision.
+    """
+    if is_target(width, height):
+        return "pass"
+    if requested == "blur_pad":
+        return "blur_pad"
+    if requested == "crop":
+        return "crop" if plan is not None else "blur_pad"
+    # auto
+    return plan.decision if plan is not None else "blur_pad"
 
 
 def blur_pad_statements(
