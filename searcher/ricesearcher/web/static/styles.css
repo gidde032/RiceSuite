@@ -104,6 +104,9 @@ select, input[type="number"] {
   border: 1px solid var(--control-line); color: var(--muted);
 }
 .badge.dup { border-color: var(--rice); color: var(--rice); }
+/* Stale: scored under an older profile version. A dashed rice-grey outline
+   flags "attention" without adding a hue outside Slate. */
+.badge.stale { border-style: dashed; border-color: var(--rice); color: var(--rice); }
 .badge.status-selected { border-color: var(--rice); color: var(--rice); }
 .badge.status-rejected { border-color: var(--danger); color: var(--danger); }
 

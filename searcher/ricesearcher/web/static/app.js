@@ -148,6 +148,8 @@ function card(s) {
     if (s.status === "rejected") kids.push(el("span", { class: "badge status-rejected" }, "rejected"));
     if (s.status === "reviewed") kids.push(el("span", { class: "badge" }, "reviewed"));
     if (s.status === "handed_off") kids.push(el("span", { class: "badge" }, "handed off"));
+    if (s.stale) kids.push(el("span",
+      { class: "badge stale", title: "scored with version " + s.beat_profile_version }, "stale"));
     if (s.dup_of) {
       kids.push(el("span", { class: "badge dup", title: "advisory only — nothing is filtered" },
         "possible dup (" + s.dup_kind + " " + s.dup_score.toFixed(2) + ") of " + (s.dup_label || s.dup_of)));
