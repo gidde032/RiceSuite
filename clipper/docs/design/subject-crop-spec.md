@@ -28,10 +28,10 @@ the fallback and as an explicit per-clip choice.
 
 - Trigger: `info.width > info.height` only. Vertical and square input never run it.
 - Decode with `cv2.VideoCapture`. Sample every `round(fps / 5)` frames. Scale to 640 px wide for the detector. Map boxes back to source pixels.
-- YuNet confidence threshold 0.7. Keep the largest box per sample.
+- YuNet confidence threshold 0.5 (tuning round 2, 2026-09-15; was 0.7). Keep the largest box per sample.
 - Continuity: if a previous target exists and a box center lies within 15% of source width of it, prefer that box over a larger one.
 - Track loss: no box for more than 1.0 s.
-- Scene cuts: `ffmpeg -vf "select='gt(scene,0.4)',showinfo"` on the same source. Record `pts_time` values.
+- Scene cuts: `ffmpeg -vf "select='gt(scene,0.3)',showinfo"` on the same source. Record `pts_time` values.
 - Runs under `run_owned` with timeout `max(60, duration * 2)`. Target: under 10 s for a 60 s 1080p clip.
 - Runs at ingest inside the existing transcribe step, after probe. Result is stored on the job as `crop_plan`. A failure stores `decision: blur_pad, reason: analysis_failed`. It never fails the job.
 
@@ -40,8 +40,9 @@ the fallback and as an explicit per-clip choice.
 - Window: `window_h = source_h`, `window_w = round(source_h * 9 / 16)`, even. For 1920x1080 input that is 608x1080.
 - Target x per sample: `cx - window_w / 2`, clamped to `[0, source_w - window_w]`.
 - Dead zone: if the target lies within 10% of `window_w` of the current x, hold.
-- Smoothing: `x += 0.15 * (target - x)` per sample.
-- Pan cap: at most 8% of `source_w` per second.
+- Smoothing: none (tuning round 2; was `0.15`). The pan cap and the dead zone alone limit motion.
+- Pan cap: at most 50% of `source_w` per second (tuning round 2; was 8%).
+- Inferred cut: a face center jump larger than 15% of `source_w` between consecutive face samples counts as a scene cut (tuning round 2).
 - Scene cut: on the first sample after a cut, set `x = target` with no smoothing.
 - Track loss: hold x. When a face returns after a loss, snap to it.
 - Missing samples inside a loss are filled by hold. The plan has one `x` per sample.
@@ -49,7 +50,7 @@ the fallback and as an explicit per-clip choice.
 ### Decision (`auto`)
 
 - `face_rate` = samples with a face / all samples.
-- `safe_rate` = samples where the face box lies inside the central 70% of the window / samples with a face.
+- `safe_rate` = samples where the face **center** lies inside the central 70% of the window / samples with a face (tuning round 2; the box rule failed every close-up wider than the zone).
 - `decision = crop` when `face_rate >= 0.80` and `safe_rate >= 0.95`. Else `blur_pad`. `reason` names the failed threshold.
 - Warn, do not block, when the face box intersects the header zone (top 450 px of output) or the caption zone (bottom 540 px of output) in over 20% of samples. Store `warning` on the plan.
 

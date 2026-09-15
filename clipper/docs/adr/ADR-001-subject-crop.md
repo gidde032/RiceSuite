@@ -31,7 +31,7 @@ single-subject, and falls back to blur-pad when detection is weak.
 2. **Framing.** A full-height 9:16 window slides horizontally. Dead zone,
    exponential smoothing, and a pan speed cap keep it calm. It snaps only
    at a scene cut or after a track loss.
-3. **Safe zone.** The tracked face box must stay inside the central 70% of
+3. **Safe zone.** The tracked face center must stay inside the central 70% of
    the window. This replaces "never crop" as the edge-loss safeguard.
 4. **Fallback.** If a face is present in under 80% of samples, or the safe
    zone check fails, the clip blur-pads. The reason is stored on the job.
@@ -78,3 +78,13 @@ single-subject, and falls back to blur-pad when detection is weak.
 1. [x] Finn ratified 2026-09-14; SPEC.md §2, §4 step 2, §7, D2, D12, D15 updated.
 2. [ ] Open one Issue. Build from `docs/design/subject-crop-spec.md`.
 3. [ ] Finn supplies six landscape fixture clips to `fixtures/landscape/` (gitignored).
+
+## Tuning round 2 (2026-09-15, approved by Finn)
+
+Round 1 measured the ratified values on five music-video clips and three
+interview clips. Three causes of failure: scene cuts missed at threshold 0.4,
+close-up faces wider than the safe zone, and window lag on fast motion.
+Changes: detector threshold 0.5, scene threshold 0.3, inferred cuts from a
+face jump over 15% of width, no smoothing, pan cap 50% of width per second,
+safe check on the face center. Thresholds 0.80 and 0.95 stand. Music-video
+content stays out of the auto path; see Issue #22.
