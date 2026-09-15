@@ -9,7 +9,13 @@ _ROOT = Path(__file__).resolve().parent.parent
 
 def test_readme_documents_cli_commands() -> None:
     readme = (_ROOT / "README.md").read_text()
-    for token in ("ricesearcher pull", "ricesearcher list", "ricesearcher show"):
+    for token in (
+        "ricesearcher pull",
+        "ricesearcher list",
+        "ricesearcher show",
+        "ricesearcher profiles",
+        "--profile",
+    ):
         assert token in readme, f"README must document `{token}`"
 
 

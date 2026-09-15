@@ -2,6 +2,11 @@
 moment clippable for the beat. A natural-language brief + few-shot exemplars feed
 the LLM scorer; keywords feed the heuristic prefilter."""
 
-from ricesearcher.beat.profile import BeatProfile, load_profile
+from ricesearcher.beat.profile import (
+    BeatProfile,
+    ensure_seed,
+    list_profiles,
+    load_profile,
+)
 
-__all__ = ["BeatProfile", "load_profile"]
+__all__ = ["BeatProfile", "ensure_seed", "list_profiles", "load_profile"]

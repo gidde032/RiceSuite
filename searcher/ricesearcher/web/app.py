@@ -32,7 +32,7 @@ from pydantic import BaseModel
 from ricesearcher.config import Config, load_config
 from ricesearcher.handoff.writer import HandoffError, hand_off_selected
 from ricesearcher.library.cache import MediaCache
-from ricesearcher.library.store import Library
+from ricesearcher.library.store import LEGACY_PROFILE_ID, Library
 from ricesearcher.models import CandidateSlice, SliceStatus
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -62,6 +62,10 @@ class _WindowIn(BaseModel):
     target_out: float
 
 
+class _HandoffIn(BaseModel):
+    profile: str | None = None
+
+
 def _slice_dto(
     s: CandidateSlice,
     titles: dict[str, str],
@@ -89,6 +93,7 @@ def _slice_dto(
         "dup_label": dup_labels.get(s.dup_of) if s.dup_of else None,
         "scorer_model": s.scorer_model,
         "beat_profile_version": s.beat_profile_version,
+        "profile_id": s.profile_id,
     }
 
 
@@ -117,15 +122,20 @@ def create_app(config: Config | None = None) -> FastAPI:
         return (_STATIC_DIR / "media.html").read_text(encoding="utf-8")
 
     @app.get("/api/slices")
-    def list_slices(status: str | None = None) -> list[dict]:
+    def list_slices(
+        status: str | None = None, profile: str | None = None
+    ) -> list[dict]:
         st = None
         if status:
             try:
                 st = SliceStatus(status)
             except ValueError as exc:
                 raise HTTPException(422, f"invalid status {status!r}") from exc
+        profile_id = (
+            profile or LEGACY_PROFILE_ID
+        )  # Bridge until #23 makes profile required.
         with Library(cfg.db_path) as lib:
-            slices = lib.list_slices(status=st)
+            slices = lib.list_slices(profile_id=profile_id, status=st)
             titles = lib.source_titles()
             media_urls = {
                 src.id: _media_url(src.media_path) for src in lib.list_sources()
@@ -197,15 +207,17 @@ def create_app(config: Config | None = None) -> FastAPI:
         return {"id": slice_id, "target_in": ti, "target_out": to}
 
     @app.post("/api/handoff")
-    def do_handoff() -> dict:
-        """Write all selected slices as a handoff batch for RiceClipper.
+    def do_handoff(body: _HandoffIn | None = None) -> dict:
+        """Write a profile's selected slices as a handoff batch for RiceClipper.
 
         Writes local files only (mirrored manifest-last batch); it never contacts
         RiceClipper or any posting surface.
         """
+        # Bridge until #23 makes profile required.
+        profile_id = (body.profile if body else None) or LEGACY_PROFILE_ID
         with _handoff_lock, Library(cfg.db_path) as lib:
             try:
-                return hand_off_selected(lib, config=cfg)
+                return hand_off_selected(lib, config=cfg, profile_id=profile_id)
             except HandoffError as exc:
                 raise HTTPException(409, str(exc)) from exc
             except (OSError, subprocess.SubprocessError) as exc:

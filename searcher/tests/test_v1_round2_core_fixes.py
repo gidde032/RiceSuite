@@ -94,7 +94,7 @@ def test_candidate_replacement_rolls_back_delete_on_insert_failure(
         monkeypatch.setattr(library, "_upsert_slices", fail_insert)
         with pytest.raises(RuntimeError, match="score persistence failed"):
             library.replace_candidate_slices(
-                "source", [_slice("new", SliceStatus.CANDIDATE, 0.7)]
+                "source", [_slice("new", SliceStatus.CANDIDATE, 0.7)], profile_id=""
             )
 
         old = library.get_slice("old")

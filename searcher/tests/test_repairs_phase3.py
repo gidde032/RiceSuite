@@ -10,6 +10,8 @@ from ricesearcher.library.store import Library
 from ricesearcher.models import CandidateSlice, SliceStatus, Source, SourceKind
 from tests.conftest import FakeEmbedder
 
+PROFILE = "p1"
+
 
 def _slice(sid, src, *, score=0.5, ti=0.0, to=10.0, status=SliceStatus.CANDIDATE):
     return CandidateSlice(
@@ -22,6 +24,7 @@ def _slice(sid, src, *, score=0.5, ti=0.0, to=10.0, status=SliceStatus.CANDIDATE
         transcript_span="x",
         score=score,
         status=status,
+        profile_id=PROFILE,
     )
 
 
@@ -76,7 +79,7 @@ def test_c3_slices_columns_aligned(tmp_path: Path, monkeypatch, capsys) -> None:
         dup.dup_of, dup.dup_score, dup.dup_kind = "clean", 0.8, "intra"
         lib.upsert_slices([clean, dup])
 
-    assert cli.main(["slices"]) == 0
+    assert cli.main(["slices", "--profile", PROFILE]) == 0
     lines = [ln for ln in capsys.readouterr().out.splitlines() if "'x'" in ln]
     assert len(lines) == 2
     # The transcript token 'x' must start at the same column on both rows.
@@ -107,6 +110,7 @@ def test_c3_marker_still_shows(tmp_path: Path, monkeypatch, capsys) -> None:
                     target_out=10,
                     transcript_span="x",
                     score=0.4,
+                    profile_id=PROFILE,
                 ),
             ]
         )
@@ -114,6 +118,6 @@ def test_c3_marker_still_shows(tmp_path: Path, monkeypatch, capsys) -> None:
         a = lib.get_slice("a")
         a.transcript_span = "x"
         lib.upsert_slices([a])
-        annotate_library_duplicates(lib, FakeEmbedder())
-    assert cli.main(["slices"]) == 0
+        annotate_library_duplicates(lib, FakeEmbedder(), profile_id=PROFILE)
+    assert cli.main(["slices", "--profile", PROFILE]) == 0
     assert "~cross" in capsys.readouterr().out

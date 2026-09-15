@@ -28,3 +28,6 @@ credentials.env
 
 # OS
 .DS_Store
+
+# Committed schema fixtures (tests/test_store_migration.py)
+!tests/fixtures/library_v2.sqlite3

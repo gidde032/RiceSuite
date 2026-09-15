@@ -16,7 +16,7 @@ from ricesearcher.handoff.writer import (
     hand_off_selected,
     write_batch,
 )
-from ricesearcher.library.store import Library
+from ricesearcher.library.store import LEGACY_PROFILE_ID, Library
 from ricesearcher.models import CandidateSlice, SliceStatus, Source, SourceKind
 
 
@@ -52,6 +52,7 @@ def _entry(tmp: Path, position: int = 1) -> HandoffEntry:
         rationale="good",
         rights_risk="med",
         beat_profile_version="v1",
+        profile_id="example-beat",
     )
 
 
@@ -83,6 +84,14 @@ def test_write_batch_layout_and_manifest_last(tmp_path: Path) -> None:
     assert clip["rights_risk"] == "med"
     # No leftover temp manifest.
     assert not (batch_dir / "manifest.json.tmp").exists()
+
+
+def test_manifest_clip_carries_profile_id(tmp_path: Path) -> None:
+    root = tmp_path / "handoff"
+    res = write_batch([_entry(tmp_path)], extractor=FakeExtractor(), root=root)
+    manifest = json.loads((root / res["batch_id"] / "manifest.json").read_text())
+    assert manifest["schema_version"] == 1  # additive change; version unchanged
+    assert manifest["clips"][0]["profile_id"] == "example-beat"
 
 
 def test_write_batch_rejects_empty_and_dup_positions(tmp_path: Path) -> None:
@@ -153,6 +162,7 @@ def _lib_with_selected(tmp_path: Path) -> tuple[Config, Library]:
                 transcript_span="hi",
                 score=0.9,
                 status=SliceStatus.SELECTED,
+                profile_id=LEGACY_PROFILE_ID,
             ),
             CandidateSlice(
                 id="b",
@@ -164,6 +174,7 @@ def _lib_with_selected(tmp_path: Path) -> tuple[Config, Library]:
                 transcript_span="yo",
                 score=0.4,
                 status=SliceStatus.CANDIDATE,
+                profile_id=LEGACY_PROFILE_ID,
             ),
         ]
     )
@@ -173,7 +184,7 @@ def _lib_with_selected(tmp_path: Path) -> tuple[Config, Library]:
 def test_hand_off_selected_writes_and_marks(tmp_path: Path) -> None:
     cfg, lib = _lib_with_selected(tmp_path)
     ex = FakeExtractor()
-    res = hand_off_selected(lib, extractor=ex, config=cfg)
+    res = hand_off_selected(lib, extractor=ex, config=cfg, profile_id=LEGACY_PROFILE_ID)
     assert res["clip_count"] == 1  # only the selected slice
     # The selected slice is now handed_off; the candidate is untouched.
     assert lib.get_slice("a").status is SliceStatus.HANDED_OFF
@@ -181,18 +192,34 @@ def test_hand_off_selected_writes_and_marks(tmp_path: Path) -> None:
     lib.close()
 
 
+def test_hand_off_selected_requires_profile_id(tmp_path: Path) -> None:
+    # FA-1: profile_id is a required keyword-only str. Without it the handoff
+    # must raise, never fall back to handing off every profile's selected rows.
+    cfg, lib = _lib_with_selected(tmp_path)
+    with pytest.raises(TypeError):
+        hand_off_selected(lib, extractor=FakeExtractor(), config=cfg)
+    lib.close()
+
+
 def test_hand_off_nothing_selected_is_noop(tmp_path: Path) -> None:
     cfg = Config(data_dir=tmp_path / "d", handoff_dir=tmp_path / "h")
     cfg.ensure_dirs()
     with Library(cfg.db_path) as lib:
-        res = hand_off_selected(lib, extractor=FakeExtractor(), config=cfg)
+        res = hand_off_selected(
+            lib, extractor=FakeExtractor(), config=cfg, profile_id=LEGACY_PROFILE_ID
+        )
     assert res == {"batch_id": None, "clip_count": 0}
 
 
 def test_hand_off_failure_does_not_mark(tmp_path: Path) -> None:
     cfg, lib = _lib_with_selected(tmp_path)
     with pytest.raises(RuntimeError):
-        hand_off_selected(lib, extractor=FakeExtractor(fail=True), config=cfg)
+        hand_off_selected(
+            lib,
+            extractor=FakeExtractor(fail=True),
+            config=cfg,
+            profile_id=LEGACY_PROFILE_ID,
+        )
     # Nothing marked handed_off — the batch is retryable.
     assert lib.get_slice("a").status is SliceStatus.SELECTED
     assert list((cfg.handoff_dir).iterdir()) == []  # no orphan
@@ -234,16 +261,17 @@ def test_cli_handoff(tmp_path: Path, monkeypatch, capsys) -> None:
                     transcript_span="hi",
                     score=0.9,
                     status=SliceStatus.SELECTED,
+                    profile_id=LEGACY_PROFILE_ID,
                 )
             ]
         )
-    assert cli.main(["handoff"]) == 0
+    assert cli.main(["handoff", "--profile", "example-beat"]) == 0
     assert "handed off 1 clip" in capsys.readouterr().out
 
 
 def test_cli_handoff_nothing_selected(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.setenv("RICESEARCHER_DATA_DIR", str(tmp_path / "data"))
-    assert cli.main(["handoff"]) == 0
+    assert cli.main(["handoff", "--profile", "example-beat"]) == 0
     assert "no selected slices" in capsys.readouterr().out
 
 
@@ -281,10 +309,13 @@ def test_h1_all_selected_marked_atomically(tmp_path: Path) -> None:
                 transcript_span="c",
                 score=0.7,
                 status=SliceStatus.SELECTED,
+                profile_id=LEGACY_PROFILE_ID,
             ),
         ]
     )
-    hand_off_selected(lib, extractor=FakeExtractor(), config=cfg)
+    hand_off_selected(
+        lib, extractor=FakeExtractor(), config=cfg, profile_id=LEGACY_PROFILE_ID
+    )
     assert lib.get_slice("a").status is SliceStatus.HANDED_OFF
     assert lib.get_slice("c").status is SliceStatus.HANDED_OFF
     lib.close()

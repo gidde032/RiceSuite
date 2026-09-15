@@ -4,7 +4,7 @@
 lines. Shipped history → `CHANGELOG.md` (created when versioned); product
 contract → `SPEC.md`/`ADR-001.md`; planned work → GitHub Issues.
 
-Last updated: 2026-09-10.
+Last updated: 2026-09-15.
 
 ## Current state
 
@@ -25,7 +25,7 @@ Last updated: 2026-09-10.
 - Maintainer live-verified the full chain through RiceClipper render and RicePoster
   caption generation.
 
-## Active work — v1 multi-lens hardening
+## Shipped — v1 multi-lens hardening (PR #16)
 
 Round 1 reviewed frozen main `05e2d79` with five independent lenses. The approved
 repair batch is integrated locally on `review/v1-round1-repairs` (not pushed or in
@@ -56,26 +56,38 @@ Round 3 caught and repaired merged-output selection, model-load context, and the
 first timing repair's duration/performance regressions. Current gates: ruff + JS
 clean; **155 tests, 95.59% coverage**; smoke tier **5 passed**.
 
-## Active work — review-UI polish (PR #18, Issue #17)
+## Shipped since — review-UI polish
 
-Branch `feat/media-mgmt-logo-ui-polish` (off merged main `e9ee092`): a
-media-management page (`/media`) that lists stored sources and **full-purges**
-one source or the whole cache (local-only; SPEC FR-8a), the selected
-magnifier-over-rice PNG logo (`/static/mark.png`), and review-card alignment
-fixes. The earlier SVG mark and unselected logo concepts were cleared in the
-follow-up. 3-reviewer cold review complete; accepted findings repaired with
-fail-before-fix regressions (F2/media_path-normalization and a JS test harness
-deferred to Issues). Follow-up gates: ruff format/lint clean, frontend syntax
-checks clean; **168 tests, 95.74% coverage**; smoke tier **5 passed**. PR remains
-open and ready for maintainer review — **not merged** (merge is the maintainer's).
+PR #18 (Issue #17) **merged** at `f5cdd8a`: media-management page (`/media`,
+full-purge, FR-8a), the PNG logo, review-card alignment. Deferred: #19
+(media_path normalization), #20 (JS test harness). Gates at merge: 168 tests,
+95.74% coverage, smoke tier 5.
 
-Overnight, 3 Person B Bianco YouTube clips were pulled + scored (Haiku 4.5) + dedup'd
-into the library for the maintainer to review/select in the morning; no auto-select.
+## Active work — saved profiles (ADR-002, SPEC D9)
+
+Ratified 2026-09-14. Contract: `docs/design/profiles-spec.md`. Milestone 2.
+
+- Issue **#22** backend P1–P4, branch `feat/profiles-backend` (off `f5cdd8a`).
+  Draft **PR #24** open. P1–P4 landed and green (177 tests, 94.41%, smoke 5).
+  Awaiting cold review before ready.
+- Issue **#23** UI P5. Second branch `feat/profiles-ui` after #22 merges.
+
+Verified: main gates green at `f5cdd8a` (168 tests, 95.74%, smoke 5).
+Assumed: the maintainer's live library is schema v2 with `selected`/`handed_off`
+rows; the v3 migration must keep them (fixture DB proves it).
+
+Known gaps found at phase start (not blockers):
+- No type-check tool is installed. "type-check" in the spec gate list is not
+  enforced today. Do not add one inside #22.
+- CI runs `node --check` on `app.js` only. #22 or #23 extends it to every
+  `web/static/*.js`.
 
 ## Next action
 
-Maintainer: review PR #18 and select from the newly loaded candidate slices in
-`ricesearcher review`.
+Maintainer: decide on PR #24 (draft, head `3a6c859`, CI green, 3-reviewer
+cold review done, 3 accepted findings repaired with fail-before-fix
+regressions; 181 tests, 94.39%, smoke 5). After merge, run
+`~/fable-scan/slotE/prompts/04-impl-profiles-ui.md` for #23 on `feat/profiles-ui`.
 
 ## Reserved from the agent (maintainer-only)
 

@@ -23,7 +23,7 @@ Siblings: `../RiceClipper` (render), `../RicePoster` (posting).
 ## Source-of-truth order
 
 1. Code and tests for implemented behavior.
-2. `SPEC.md` — v1 product contract and decisions D1–D8.
+2. `SPEC.md` — v1 product contract and decisions D1–D9.
 3. `ADR-001.md` — the three-pillar boundary (Q1–Q5).
 4. `ROADMAP.md` — future sequencing (links every actionable entry to an Issue).
 5. GitHub Issues (backlog) / milestones (committed scope) / PRs (delivery record).

@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from ricesearcher.config import Config
-from ricesearcher.library.store import Library
+from ricesearcher.library.store import LEGACY_PROFILE_ID, Library
 from ricesearcher.models import CandidateSlice, SliceStatus, Source, SourceKind
 from ricesearcher.web.app import create_app
 
@@ -39,6 +39,7 @@ def client(tmp_path: Path) -> TestClient:
                     dup_score=0.7,
                     dup_kind="cross",
                     status=SliceStatus.CANDIDATE,
+                    profile_id=LEGACY_PROFILE_ID,
                 ),
             ]
         )

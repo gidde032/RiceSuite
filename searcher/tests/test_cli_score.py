@@ -27,12 +27,12 @@ def pulled_source(tmp_path: Path, media_file: Path, monkeypatch) -> str:
 
 def test_score_then_slices(pulled_source: str, monkeypatch, capsys) -> None:
     monkeypatch.setattr(cli, "AnthropicScorer", lambda model=None: FakeScorer())
-    rc = cli.main(["score", pulled_source[:12]])
+    rc = cli.main(["score", pulled_source[:12], "--profile", "example-beat"])
     assert rc == 0
     out = capsys.readouterr().out
     assert "scored" in out and "fake-model" in out
 
-    assert cli.main(["slices"]) == 0
+    assert cli.main(["slices", "--profile", "example-beat"]) == 0
     listing = capsys.readouterr().out
     assert listing.strip()  # at least one slice line
 
@@ -40,7 +40,7 @@ def test_score_then_slices(pulled_source: str, monkeypatch, capsys) -> None:
 def test_score_unknown_source_errors(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.setenv("RICESEARCHER_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setattr(cli, "AnthropicScorer", lambda model=None: FakeScorer())
-    assert cli.main(["score", "deadbeef"]) == 2
+    assert cli.main(["score", "deadbeef", "--profile", "example-beat"]) == 2
     assert "no source" in capsys.readouterr().err
 
 
@@ -54,12 +54,12 @@ def test_score_reports_clean_error_on_scorer_failure(
             raise RuntimeError("api down")
 
     monkeypatch.setattr(cli, "AnthropicScorer", lambda model=None: BoomScorer())
-    rc = cli.main(["score", pulled_source[:12]])
+    rc = cli.main(["score", pulled_source[:12], "--profile", "example-beat"])
     assert rc == 2
     assert "error" in capsys.readouterr().err.lower()
 
 
 def test_slices_empty(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.setenv("RICESEARCHER_DATA_DIR", str(tmp_path / "data"))
-    assert cli.main(["slices"]) == 0
+    assert cli.main(["slices", "--profile", "example-beat"]) == 0
     assert "no scored slices" in capsys.readouterr().out

@@ -19,6 +19,10 @@ _DEFAULT_DATA_DIR = "~/.ricesearcher"
 _HANDOFF_ENV = "RICESEARCHER_HANDOFF_DIR"
 _DEFAULT_HANDOFF_DIR = "~/ricesearcher-handoff"
 
+# Saved beat profiles (ADR-002). Defaults under the data root; override the
+# directory with this env var.
+_PROFILES_ENV = "RICESEARCHER_PROFILES_DIR"
+
 
 @dataclass(frozen=True)
 class Config:
@@ -36,6 +40,14 @@ class Config:
     def cache_dir(self) -> Path:
         """Content-addressed media cache (source video + extracted clips)."""
         return self.data_dir / "cache"
+
+    @property
+    def profiles_dir(self) -> Path:
+        """Saved beat profiles (ADR-002). Env-overridable directory."""
+        override = os.getenv(_PROFILES_ENV)
+        if override:
+            return Path(override).expanduser()
+        return self.data_dir / "profiles"
 
     def ensure_dirs(self) -> None:
         """Create the data + cache dirs if missing (idempotent)."""

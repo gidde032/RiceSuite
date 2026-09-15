@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import dataclasses
 import sqlite3
 from pathlib import Path
+
+import pytest
 
 from ricesearcher.library.store import MIGRATIONS, SCHEMA_VERSION, Library
 from ricesearcher.models import (
@@ -48,7 +51,7 @@ def _slice(sid: str, source_id: str = "src1", score: float = 0.5) -> CandidateSl
 
 def test_fresh_db_is_at_current_version(tmp_path: Path) -> None:
     with Library(tmp_path / "lib.sqlite3") as lib:
-        assert lib._stored_version() == SCHEMA_VERSION == 2
+        assert lib._stored_version() == SCHEMA_VERSION == 3
 
 
 def test_slice_roundtrip_and_features_json(tmp_path: Path) -> None:
@@ -89,7 +92,43 @@ def test_upsert_replaces_existing_slice(tmp_path: Path) -> None:
         assert len(lib.list_slices()) == 1
 
 
-def test_v1_database_upgrades_in_place_to_v2(tmp_path: Path) -> None:
+def test_profile_counts_candidates_counts_only_candidate_status(
+    tmp_path: Path,
+) -> None:
+    # FB-1: `candidates` is the count of rows awaiting review (status='candidate'),
+    # not COUNT(*) over every status.
+    statuses = [
+        SliceStatus.CANDIDATE,
+        SliceStatus.CANDIDATE,
+        SliceStatus.REVIEWED,
+        SliceStatus.SELECTED,
+        SliceStatus.HANDED_OFF,
+        SliceStatus.REJECTED,
+    ]
+    with Library(tmp_path / "lib.sqlite3") as lib:
+        lib.upsert_source(_source())
+        lib.upsert_slices(
+            [
+                dataclasses.replace(_slice(f"s{i}"), status=st, profile_id="p1")
+                for i, st in enumerate(statuses)
+            ]
+        )
+        counts = lib.profile_counts()["p1"]
+    assert counts["candidates"] == 2  # only the two status='candidate' rows
+    assert counts["selected"] == 1
+    assert counts["handed_off"] == 1
+
+
+def test_replace_candidate_slices_requires_profile_id(tmp_path: Path) -> None:
+    # FA-1: profile_id is a required keyword-only str. A call without it must
+    # raise, so a replace can never delete candidate rows across every profile.
+    with Library(tmp_path / "lib.sqlite3") as lib:
+        lib.upsert_source(_source())
+        with pytest.raises(TypeError):
+            lib.replace_candidate_slices("src1", [_slice("a")])
+
+
+def test_v1_database_upgrades_in_place_to_current(tmp_path: Path) -> None:
     # Build a Phase-1 (v1) database by hand, with data, then open it with Library.
     db = tmp_path / "old.sqlite3"
     conn = sqlite3.connect(db)
@@ -112,7 +151,7 @@ def test_v1_database_upgrades_in_place_to_v2(tmp_path: Path) -> None:
     assert "candidate_slices" not in tables_before
 
     with Library(db) as lib:
-        assert lib._stored_version() == 2
+        assert lib._stored_version() == SCHEMA_VERSION
         # Pre-existing data survived the upgrade.
         assert lib.get_source("old1") is not None
         # New table is usable.

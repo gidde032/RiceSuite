@@ -47,6 +47,7 @@ class HandoffEntry:
     rationale: str
     rights_risk: str
     beat_profile_version: str
+    profile_id: str
 
 
 def _now() -> datetime:
@@ -160,6 +161,7 @@ def _manifest_clip(entry: HandoffEntry, filename: str) -> dict:
         "rationale": entry.rationale,
         "rights_risk": entry.rights_risk,
         "beat_profile_version": entry.beat_profile_version,
+        "profile_id": entry.profile_id,
     }
 
 
@@ -179,25 +181,28 @@ def _entry_for(slice_: CandidateSlice, source: Source, position: int) -> Handoff
         rationale=slice_.rationale,
         rights_risk=slice_.rights_risk,
         beat_profile_version=slice_.beat_profile_version,
+        profile_id=slice_.profile_id,
     )
 
 
 def hand_off_selected(
     library: Library,
     *,
+    profile_id: str,
     extractor: ClipExtractor | None = None,
     config: Config | None = None,
 ) -> dict:
-    """Write all ``selected`` slices as one handoff batch, then mark them handed_off.
+    """Write ``selected`` slices as one handoff batch, then mark them handed_off.
 
-    Whole-batch by default. On success the slices move to ``handed_off`` so they
-    leave the selected queue and aren't re-sent; on any failure nothing is marked
-    (retryable) and no partial batch is left behind. Returns
-    ``{"batch_id", "clip_count"}`` (``clip_count`` 0 and ``batch_id`` None if
-    nothing is selected).
+    ``profile_id`` is required: only that profile's selected slices are handed
+    off, so a handoff never touches another profile's rows (ADR-002 partition).
+    On success the slices move to ``handed_off`` so they leave the selected queue
+    and aren't re-sent; on any failure nothing is marked (retryable) and no
+    partial batch is left behind. Returns ``{"batch_id", "clip_count"}``
+    (``clip_count`` 0 and ``batch_id`` None if nothing is selected).
     """
     cfg = config or load_config()
-    selected = library.list_slices(status=SliceStatus.SELECTED)
+    selected = library.list_slices(profile_id=profile_id, status=SliceStatus.SELECTED)
     if not selected:
         return {"batch_id": None, "clip_count": 0}
 

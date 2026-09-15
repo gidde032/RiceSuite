@@ -44,12 +44,17 @@ ricesearcher pull "https://youtu.be/VIDEO_ID"     # short form also works
 ricesearcher pull ./interview.mp4                 # local file (watch-folder door)
 ricesearcher list                                 # list library sources
 ricesearcher show <id-or-prefix>                  # print a source's transcript
-ricesearcher score <id-or-prefix>                 # extract + LLM-score candidate slices
-ricesearcher slices                               # list scored candidate slices
-ricesearcher dedup [--threshold 0.65]             # advisory possible-duplicate flags
+ricesearcher profiles                             # list saved profiles and their counts
+ricesearcher score <id-or-prefix> --profile ID    # extract + LLM-score under one profile
+ricesearcher slices --profile ID                  # list scored candidate slices in a profile
+ricesearcher dedup --profile ID [--threshold 0.65]  # advisory possible-duplicate flags
 ricesearcher review                               # Slate web UI: the select-and-approve gate
-ricesearcher handoff                              # write selected slices as a batch for RiceClipper
+ricesearcher handoff --profile ID                 # write a profile's selected slices as a batch
 ```
+
+Profiles live in `<data_dir>/profiles/<id>.json` (override the directory with
+`RICESEARCHER_PROFILES_DIR`). `score`, `slices`, `dedup`, and `handoff` require
+`--profile`; each profile keeps its own scored slices, dedup, and handoff.
 
 `ricesearcher review` serves the local review UI at http://127.0.0.1:8765 — browse
 scored moments, preview each window, tighten in/out, and Select / Reject. It reads
