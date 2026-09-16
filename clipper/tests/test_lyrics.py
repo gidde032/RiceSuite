@@ -164,6 +164,17 @@ def test_random_invariants():
     assert len(result.words) == 200
 
 
+# --- 2A-5 empty normalized tokens as anchors ----------------------------------
+
+
+def test_empty_normalized_token_not_anchor():
+    ref = _words(("...", 0.1, 0.2))
+    result = align("...", ref, 1.0)
+    assert result.anchor_rate == 0.0
+    assert result.method == "even_fill"
+    _assert_invariants(result.words, 1.0)
+
+
 # --- 2A-3 zero-duration reference words ---------------------------------------
 
 

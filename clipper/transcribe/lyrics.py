@@ -77,6 +77,9 @@ def align(lyrics: str, reference: list[WordModel], duration: float) -> LyricsRes
 
     norm_ref = [normalize(w.text) for w in ref_clean]
 
+    matchable_lyric = [(i, n) for i, n in enumerate(norm_lyrics) if n]
+    matchable_ref = [(i, n) for i, n in enumerate(norm_ref) if n]
+
     if ref_clean and ref_clean[-1].end > ref_clean[0].start:
         span_start = ref_clean[0].start
         span_end = ref_clean[-1].end
@@ -84,15 +87,18 @@ def align(lyrics: str, reference: list[WordModel], duration: float) -> LyricsRes
         span_start = 0.0
         span_end = duration
 
-    matcher = difflib.SequenceMatcher(None, norm_lyrics, norm_ref, autojunk=False)
+    ml_norms = [n for _, n in matchable_lyric]
+    mr_norms = [n for _, n in matchable_ref]
+    matcher = difflib.SequenceMatcher(None, ml_norms, mr_norms, autojunk=False)
     anchored: dict[int, tuple[float, float]] = {}
     for match in matcher.get_matching_blocks():
         for k in range(match.size):
-            lyric_idx = match.a + k
-            ref_idx = match.b + k
-            anchored[lyric_idx] = (ref_clean[ref_idx].start, ref_clean[ref_idx].end)
+            orig_lyric = matchable_lyric[match.a + k][0]
+            orig_ref = matchable_ref[match.b + k][0]
+            anchored[orig_lyric] = (ref_clean[orig_ref].start, ref_clean[orig_ref].end)
 
-    anchor_rate = len(anchored) / len(tokens)
+    denom = len(matchable_lyric) if matchable_lyric else len(tokens)
+    anchor_rate = len(anchored) / denom
 
     if anchor_rate < ANCHOR_MIN:
         line_tokens: list[list[str]] = []
