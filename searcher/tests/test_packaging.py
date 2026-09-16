@@ -18,7 +18,7 @@ def test_wheel_contains_profile_and_web_assets_and_can_seed(tmp_path: Path) -> N
     shutil.copy2(PROJECT_ROOT / "pyproject.toml", source_root / "pyproject.toml")
     shutil.copytree(PROJECT_ROOT / "ricesearcher", source_root / "ricesearcher")
     wheel_dir = tmp_path / "wheelhouse"
-    subprocess.run(
+    build = subprocess.run(
         [
             sys.executable,
             "-m",
@@ -31,10 +31,10 @@ def test_wheel_contains_profile_and_web_assets_and_can_seed(tmp_path: Path) -> N
             str(wheel_dir),
         ],
         cwd=source_root,
-        check=True,
         capture_output=True,
         text=True,
     )
+    assert build.returncode == 0, build.stdout + build.stderr
     wheel = next(wheel_dir.glob("ricesearcher-*.whl"))
     with zipfile.ZipFile(wheel) as archive:
         names = set(archive.namelist())
