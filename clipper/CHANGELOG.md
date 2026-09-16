@@ -8,6 +8,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Pasted-lyric alignment for music clips.** Music review cards now reveal a
+  session-only lyric textarea and Align action that replaces the editable
+  transcript with locally aligned lyric words, reports anchor coverage (or an
+  even-fill fallback), and preserves pasted line breaks through rendering.
 - **Subject-focused 9:16 crop for landscape input.** Landscape sources can now
   be cropped to a moving 9:16 window that keeps one speaker in frame, instead of
   blur-padding. A per-clip `geometry` control (`auto` / `blur_pad` / `crop`)

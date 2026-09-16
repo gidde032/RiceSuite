@@ -60,6 +60,22 @@ def test_content_row_is_offered_and_sent():
     assert "clip.contentEl.hidden" not in javascript
 
 
+def test_music_content_offers_lyric_alignment_and_preserves_line_breaks():
+    html = _html()
+    javascript = _js()
+
+    assert 'class="lyrics" hidden' in html
+    assert 'class="lyrics-input"' in html
+    assert 'placeholder="Paste lyrics, one line per caption line"' in html
+    assert 'class="lyrics-align"' in html
+    assert 'class="lyrics-badge"' in html
+
+    assert "/api/jobs/${clip.jobId}/lyrics" in javascript
+    assert "aligned · ${Math.round(data.anchor_rate * 100)}% anchors" in javascript
+    assert '"even fill"' in javascript
+    assert "line_start: w.line_start" in javascript
+
+
 def test_geometry_row_is_offered_and_sent_and_toggled_by_orientation():
     html = _html()
     javascript = _js()

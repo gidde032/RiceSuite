@@ -186,6 +186,10 @@ function buildCard(clip) {
   clip.captionsToggleEl = node.querySelector(".captions-toggle");
   clip.captionStyleEl = node.querySelector(".caption-style");
   clip.transcriptEl = node.querySelector(".transcript");
+  clip.lyricsEl = node.querySelector(".lyrics");
+  clip.lyricsInputEl = node.querySelector(".lyrics-input");
+  clip.lyricsAlignEl = node.querySelector(".lyrics-align");
+  clip.lyricsBadgeEl = node.querySelector(".lyrics-badge");
   clip.musicInputEl = node.querySelector(".music-input");
   clip.musicModeEl = node.querySelector(".music-mode");
   clip.musicVolumeEl = node.querySelector(".music-volume");
@@ -232,6 +236,7 @@ function buildCard(clip) {
     rememberSlotStyle(clip.ord, "header", radioValue(clip.headerStyleEl));
   });
   clip.contentEl.addEventListener("change", () => {
+    clip.lyricsEl.hidden = radioValue(clip.contentEl) !== "music";
     if (clip.geoState) applyGeometry(clip, clip.geoState);
   });
 
@@ -250,6 +255,7 @@ function buildCard(clip) {
     setRadioDisabled(clip.captionStyleEl, !clip.captionsToggleEl.checked);
   });
   clip.headerGenerateEl.addEventListener("click", () => regenerateHeader(clip));
+  clip.lyricsAlignEl.addEventListener("click", () => alignLyrics(clip));
   node.querySelector(".clip-remove").addEventListener("click", () => removeClip(clip));
 
   // Preview from the File (blob), muted — some re-encoded sources throw
@@ -355,8 +361,34 @@ function collectWords(clip) {
   const spans = clip.transcriptEl.querySelectorAll(".word");
   return Array.from(spans).map((span) => {
     const w = clip.words[Number(span.dataset.index)];
-    return { text: span.textContent.trim(), start: w.start, end: w.end };
+    return { text: span.textContent.trim(), start: w.start, end: w.end, line_start: w.line_start };
   });
+}
+
+async function alignLyrics(clip) {
+  if (!clip.jobId) return;
+  clip.lyricsAlignEl.disabled = true;
+  setClipStatus(clip, "Aligning lyrics…");
+  try {
+    const res = await fetch(`/api/jobs/${clip.jobId}/lyrics`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lyrics: clip.lyricsInputEl.value }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "lyric alignment failed");
+    clip.words = data.words || [];
+    renderTranscript(clip);
+    clip.lyricsBadgeEl.textContent =
+      data.method === "anchors"
+        ? `aligned · ${Math.round(data.anchor_rate * 100)}% anchors`
+        : "even fill";
+    setClipStatus(clip, "Ready — review & render");
+  } catch (err) {
+    setClipStatus(clip, err.message, true);
+  } finally {
+    clip.lyricsAlignEl.disabled = false;
+  }
 }
 
 function removeClip(clip) {
@@ -563,6 +595,7 @@ async function ingestClip(clip) {
 
     clip.status = "transcribing";
     setClipStatus(clip, "Transcribing… (first run downloads the model)");
+    clip.lyricsBadgeEl.textContent = "";
     clip.transcriptEl.innerHTML = '<span class="hint">Transcribing…</span>';
     const tr = await fetch(`/api/jobs/${clip.jobId}/transcribe`, { method: "POST" });
     const trdata = await tr.json();
