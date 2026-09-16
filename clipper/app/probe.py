@@ -25,10 +25,47 @@ class ProbeError(RuntimeError):
 
 @dataclass
 class MediaInfo:
+    # ``width``/``height`` describe the displayed, square-pixel frame used by
+    # detection and filtering. The coded dimensions and metadata are retained
+    # so every consumer can reason about the same normalization boundary.
     width: int
     height: int
     duration: float
     has_audio: bool
+    coded_width: int | None = None
+    coded_height: int | None = None
+    rotation: int = 0
+    sample_aspect_ratio: float = 1.0
+    field_order: str = "progressive"
+
+
+def _ratio(value: object) -> float:
+    """Parse an ffprobe ratio, returning square pixels for invalid metadata."""
+    try:
+        numerator, denominator = str(value or "1:1").split(":", 1)
+        ratio = float(numerator) / float(denominator)
+    except (TypeError, ValueError, ZeroDivisionError):
+        return 1.0
+    return ratio if math.isfinite(ratio) and ratio > 0 else 1.0
+
+
+def _rotation(video: dict) -> int:
+    """Return ffprobe's display rotation normalized to [0, 360)."""
+    for side_data in video.get("side_data_list", []):
+        try:
+            return round(float(side_data["rotation"])) % 360
+        except (KeyError, TypeError, ValueError):
+            continue
+    try:
+        return round(float(video.get("tags", {})["rotate"])) % 360
+    except (KeyError, TypeError, ValueError):
+        pass
+    return 0
+
+
+def _even(value: float) -> int:
+    rounded = max(2, round(value))
+    return rounded if rounded % 2 == 0 else rounded + 1
 
 
 def _probe_timeout() -> float:
@@ -111,9 +148,24 @@ def probe(path: str) -> MediaInfo:
         # A non-positive/non-finite duration cannot safely bound a render.
         raise ProbeError("could not determine video duration")
 
+    coded_width = int(video["width"])
+    coded_height = int(video["height"])
+    rotation = _rotation(video)
+    sar = _ratio(video.get("sample_aspect_ratio"))
+    quarter_turn = rotation in {90, 270}
+    pixel_width, pixel_height = (
+        (coded_height, coded_width) if quarter_turn else (coded_width, coded_height)
+    )
+    display_sar = 1.0 / sar if quarter_turn else sar
+
     return MediaInfo(
-        width=int(video["width"]),
-        height=int(video["height"]),
+        width=_even(pixel_width * display_sar),
+        height=_even(pixel_height),
         duration=duration,
         has_audio=has_audio,
+        coded_width=coded_width,
+        coded_height=coded_height,
+        rotation=rotation,
+        sample_aspect_ratio=sar,
+        field_order=str(video.get("field_order") or "progressive"),
     )

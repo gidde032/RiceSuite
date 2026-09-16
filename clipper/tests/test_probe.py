@@ -92,3 +92,80 @@ def test_probe_uses_bounded_timeout_and_preserves_json_contract(monkeypatch):
     assert info.duration == 4.5
     assert calls[0][1]["timeout"] == 30.0
     assert calls[0][1]["check"] is True
+
+
+def test_probe_normalizes_rotation_to_display_orientation(monkeypatch):
+    payload = {
+        "streams": [
+            {
+                "codec_type": "video",
+                "width": 1920,
+                "height": 1080,
+                "sample_aspect_ratio": "1:1",
+                "duration": "4.5",
+                "side_data_list": [{"rotation": 90}],
+            }
+        ],
+        "format": {},
+    }
+    monkeypatch.setattr(
+        probe_module,
+        "run_owned",
+        lambda *args, **kwargs: SimpleNamespace(stdout=json.dumps(payload)),
+    )
+
+    info = probe_module.probe("source.mp4")
+
+    assert (info.width, info.height) == (1080, 1920)
+    assert (info.coded_width, info.coded_height) == (1920, 1080)
+    assert info.rotation == 90
+
+
+def test_probe_supports_legacy_rotation_tag(monkeypatch):
+    payload = {
+        "streams": [
+            {
+                "codec_type": "video",
+                "width": 1920,
+                "height": 1080,
+                "duration": "4.5",
+                "tags": {"rotate": "-90"},
+            }
+        ],
+        "format": {},
+    }
+    monkeypatch.setattr(
+        probe_module,
+        "run_owned",
+        lambda *args, **kwargs: SimpleNamespace(stdout=json.dumps(payload)),
+    )
+
+    info = probe_module.probe("source.mp4")
+
+    assert (info.width, info.height) == (1080, 1920)
+    assert info.rotation == 270
+
+
+def test_probe_normalizes_sample_aspect_ratio_to_square_pixels(monkeypatch):
+    payload = {
+        "streams": [
+            {
+                "codec_type": "video",
+                "width": 720,
+                "height": 576,
+                "sample_aspect_ratio": "64:45",
+                "duration": "4.5",
+            }
+        ],
+        "format": {},
+    }
+    monkeypatch.setattr(
+        probe_module,
+        "run_owned",
+        lambda *args, **kwargs: SimpleNamespace(stdout=json.dumps(payload)),
+    )
+
+    info = probe_module.probe("source.mp4")
+
+    assert (info.width, info.height) == (1024, 576)
+    assert info.sample_aspect_ratio == pytest.approx(64 / 45)

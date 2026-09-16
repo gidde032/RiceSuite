@@ -1,6 +1,6 @@
 # RiceClipper
 
-Turns short (**under ~1 minute**) vertical videos into post-ready clips with
+Turns short (**under ~1 minute**) vertical or landscape videos into post-ready clips with
 **word-synced burned-in captions** and an **on-screen header**.
 
 It is the render chassis for a larger clipping concept ("Path 3"): no clip
@@ -16,10 +16,12 @@ with an implemented local-filesystem handoff that RicePoster can pull from.
 
 ## What it does (v1)
 
-Upload a vertical clip → auto-transcribe with word-level timing → review and edit
-the transcript and type a header → burn in captions + header → export
-**1080×1920 H.264**. Non-9:16 vertical inputs are blur-padded (never cropped).
-Optional added-music track can replace or mix under the original audio.
+Upload one or more clips → auto-transcribe with word-level timing → review and
+edit the transcript and header → burn in captions + header → export
+**1080×1920 H.264**. Landscape input uses local face detection to choose a
+moving single-subject crop, with blur-pad as the automatic fallback and an
+explicit per-clip choice. Non-9:16 vertical input is blur-padded. Optional
+added music can replace or mix under the original audio.
 
 Full scope, deferred roadmap, and the decision log are in [`SPEC.md`](./SPEC.md).
 
@@ -35,6 +37,7 @@ RicePoster, which separately pulls from RiceClipper's local handoff. See
 - Python + FastAPI, served locally
 - Vanilla HTML/JS review UI
 - **faster-whisper** for word-level transcription
+- **OpenCV YuNet** for local landscape subject detection
 - **ffmpeg + libass** (ASS subtitles) for caption/header burn-in and audio mix
 - Anthropic Sonnet for the *deferred* auto-header (Wave 1)
 
@@ -68,8 +71,10 @@ pip install -r requirements.txt        # add -dev variant for tests
 uvicorn app.main:app --reload          # serves the review UI at localhost:8000
 ```
 
-Open `localhost:8000`, upload a vertical clip, edit the transcript / type a
-header / (optionally) add music, then render and download. `GET /api/health`
+Open `localhost:8000`, choose one or more clips, edit the transcript / header /
+landscape geometry, optionally add music, then render and download. Failed
+renders remain in the review queue so settings can be changed and **Render all**
+can be tried again. `GET /api/health`
 reports whether ffmpeg + libass are present.
 
 Rendered sources and intermediate files remain in the local `.riceclipper_work/`
@@ -100,6 +105,9 @@ pytest -q                              # pure-Python core; no ffmpeg needed
 ruff check . && ruff format --check .  # lint + format (matches CI)
 pytest -m smoke -q                     # the 6-test fast tier
 pytest tests/ --cov=app --cov=render --cov=transcribe --cov-fail-under=85
+
+# Maintainer-only subject-crop fixture gate (six named roles + sheet review)
+python scripts/crop_check.py fixtures/landscape --contact-sheets-approved
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same ruff checks and the full suite

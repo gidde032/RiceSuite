@@ -27,10 +27,11 @@ custom-preset boundary.
 ## v1 (current — see SPEC.md)
 
 Decode → transcribe (word-level) → word-highlight captions → manual on-screen
-header → blur-pad non-9:16 vertical input → optional added-music (replace / mix
-with volume) → export 1080×1920 H.264, through a local FastAPI review UI with a
-human-in-the-loop gate. Bounded batches are reviewed and processed sequentially,
-with eleven caption presets and three header treatments.
+header → subject crop or blur-pad landscape input and blur-pad non-9:16 vertical
+input → optional added-music (replace / mix with volume) → export 1080×1920
+H.264, through a local FastAPI review UI with a human-in-the-loop gate. Bounded
+batches are reviewed and processed sequentially, with eleven caption presets
+and three header treatments.
 
 ## Wave 1 — fast-follow (the "first improvements" cluster)
 

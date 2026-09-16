@@ -15,7 +15,7 @@
 
 ## 1. Purpose
 
-RiceClipper ingests short (**under ~1 minute**) vertical videos and outputs
+RiceClipper ingests short (**under ~1 minute**) vertical or landscape videos and outputs
 post-ready clips with **burned-in, word-synced captions** and an **on-screen
 header**. It is the "Path 3" of a larger clipping concept: no clip *selection*
 intelligence, just a clean caption/header/export render chassis.
@@ -35,7 +35,7 @@ export 1080×1920 H.264 — all through a local web review UI with a
 human-in-the-loop gate.
 
 **Explicitly out of scope for v1 (see §7 roadmap for when):**
-clip selection/extraction (Paths 2 & 1), landscape/mixed input + reframe,
+clip selection/extraction (Paths 2 & 1), active-speaker switching and zoom,
 dead-space/filler trimming, auto-generated header, RicePoster integration,
 arbitrary caption style/position editing, animated (Tier-3) captions,
 auto-ducking.
@@ -247,4 +247,4 @@ model earns its keep. Revisit at build if desired.
 | D12 | Non-9:16 handling | Blur-pad fill as the **fallback and explicit choice**; subject crop when detection passes (D15) | Never loses content. The RicePoster "edge-crop failure" was withdrawn 2026-07-27 (TikTok trims edges itself); the surviving rule is a safe zone for the subject |
 | D13 | Music | Optional added audio; replace **or** mix-under toggle with volume slider; v1. Auto-ducking + vocal isolation deferred | Central to actual usage; cheap since encoding already exists; adding after sync can't affect timing |
 | D14 | Browser theme | Slate: dark carbon/grey chrome, rice-grey state accents, visual per-clip preset cards, symbol-only rice-and-shears mark | Makes the daily-driver review path faster to scan without changing behavior or adding editor features |
-| D15 | Subject crop | Local YuNet face detection at ingest; full-height 9:16 window with dead zone, smoothing, pan cap; snap only at cuts; face center inside the central 70% (tuned 2026-09-15); blur-pad when `face_rate < 0.80` or `safe_rate < 0.95`; per-clip `geometry` = `auto`/`blur_pad`/`crop`; kill criterion: fewer than 5 of 6 fixtures pass after two tuning rounds | Ratified 2026-09-14; [ADR-001](docs/adr/ADR-001-subject-crop.md) |
+| D15 | Subject crop | Local YuNet face detection at ingest; full-height 9:16 window with dead zone and pan cap (no smoothing after tuning round 2); snap only at cuts or track return; face center inside the central 70% (tuned 2026-09-15); blur-pad when `face_rate < 0.80` or `safe_rate < 0.95`; per-clip `geometry` = `auto`/`blur_pad`/`crop`; kill criterion: fewer than 5 of 6 fixtures pass after two tuning rounds | Ratified 2026-09-14; [ADR-001](docs/adr/ADR-001-subject-crop.md) |

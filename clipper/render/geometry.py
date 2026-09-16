@@ -1,9 +1,8 @@
 """Geometry normalisation for the render (SPEC.md §4 step 2, D12).
 
-Exactly-9:16 (1080x1920) input passes through untouched. Anything else is
-**blur-padded** to 1080x1920 — the same frame is scaled to fill and blurred as a
-background, with the untouched frame scaled to fit and centred on top. Content is
-never cropped.
+Every input first enters one display-oriented, square-pixel coordinate space.
+Exactly-9:16 (1080x1920) input then passes through. Landscape input can use the
+subject-crop plan or **blur-pad** to 1080x1920; other input blur-pads.
 """
 
 from __future__ import annotations
@@ -18,6 +17,16 @@ TARGET_H = 1920
 # Bare filename for the sendcmd crop-window command file. cwd is the job dir at
 # render time, the same convention as the ASS file (spike S1, crop-sendcmd.md).
 CROP_CMD_NAME = "crop.cmd"
+
+
+def normalize_statement(
+    width: int,
+    height: int,
+    input_label: str = "[0:v]",
+    out_label: str = "[src]",
+) -> str:
+    """Normalize autorotated input into the shared square-pixel coordinate space."""
+    return f"{input_label}scale={width}:{height},setsar=1{out_label}"
 
 
 def is_target(width: int, height: int) -> bool:
@@ -57,7 +66,7 @@ def blur_pad_statements(
             f"crop={TARGET_W}:{TARGET_H},boxblur=20:2[bgb]"
         ),
         f"[fg]scale={TARGET_W}:{TARGET_H}:force_original_aspect_ratio=decrease[fgs]",
-        f"[bgb][fgs]overlay=(W-w)/2:(H-h)/2{out_label}",
+        f"[bgb][fgs]overlay=(W-w)/2:(H-h)/2,setsar=1{out_label}",
     ]
 
 
@@ -76,7 +85,7 @@ def crop_statements(
     return [
         f"{input_label}sendcmd=f={CROP_CMD_NAME},"
         f"crop={plan.window_w}:{plan.window_h}:0:0,"
-        f"scale={TARGET_W}:{TARGET_H}{out_label}"
+        f"scale={TARGET_W}:{TARGET_H},setsar=1{out_label}"
     ]
 
 

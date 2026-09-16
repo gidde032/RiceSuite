@@ -22,17 +22,26 @@ the fallback and as an explicit per-clip choice.
 - `render/subject.py` — detection and tracking. Input: source path, probe info. Output: a `Track` (list of `{t, cx, cy, w, h}` or `null` per sample) plus scene-cut times.
 - `render/framing.py` — pure. Input: `Track`, cuts, source size. Output: a `CropPlan`: `{decision, reason, face_rate, safe_rate, window_w, window_h, samples: [{t, x}]}`.
 - `render/geometry.py` — gains `crop_statements(plan, input_label, out_label)`.
-- `render/models/face_detection_yunet_2023mar.onnx` — vendored, Apache-2.0, about 230 KB.
+- `render/models/face_detection_yunet_2023mar.onnx` — vendored, MIT, about 230 KB.
 
 ### Detection (`subject.py`)
 
 - Trigger: `info.width > info.height` only. Vertical and square input never run it.
-- Decode with `cv2.VideoCapture`. Sample every `round(fps / 5)` frames. Scale to 640 px wide for the detector. Map boxes back to source pixels.
+- Probe into one display-oriented, square-pixel coordinate space. Apply rotation
+  and sample-aspect-ratio normalization before detection and rendering. Reject
+  interlaced input from auto crop rather than mixing coordinate models.
+- Decode with `cv2.VideoCapture`. Sample every `round(fps / 5)` frames and keep
+  the decoded presentation timestamp for every sample, including misses. Scale
+  to 640 px wide for the detector. Map boxes back to normalized source pixels.
 - YuNet confidence threshold 0.5 (tuning round 2, 2026-09-15; was 0.7). Keep the largest box per sample.
 - Continuity: if a previous target exists and a box center lies within 15% of source width of it, prefer that box over a larger one.
 - Track loss: no box for more than 1.0 s.
 - Scene cuts: `ffmpeg -vf "select='gt(scene,0.3)',showinfo"` on the same source. Record `pts_time` values.
-- Runs under `run_owned` with timeout `max(60, duration * 2)`. Target: under 10 s for a 60 s 1080p clip.
+- Native OpenCV decode/detection runs in a killable child process; scene
+  detection runs under `run_owned`. Both share a hard deadline of
+  `max(60, duration * 2)`. Target: under 10 s for a 60 s 1080p clip.
+- A non-zero scene-detection exit, no decoded frames, or a materially premature
+  decode EOF is an analysis failure, never a partial successful crop.
 - Runs at ingest inside the existing transcribe step, after probe. Result is stored on the job as `crop_plan`. A failure stores `decision: blur_pad, reason: analysis_failed`. It never fails the job.
 
 ### Framing policy (`framing.py`)
@@ -45,7 +54,9 @@ the fallback and as an explicit per-clip choice.
 - Inferred cut: a face center jump larger than 15% of `source_w` between consecutive face samples counts as a scene cut (tuning round 2).
 - Scene cut: on the first sample after a cut, set `x = target` with no smoothing.
 - Track loss: hold x. When a face returns after a loss, snap to it.
-- Missing samples inside a loss are filled by hold. The plan has one `x` per sample.
+- Missing samples inside a loss are filled by hold. Scene cuts during a missing
+  interval remain pending until the next visible face. The plan has one `x` and
+  the decoded presentation timestamp per sample.
 
 ### Decision (`auto`)
 
@@ -57,14 +68,18 @@ the fallback and as an explicit per-clip choice.
 ### Per-clip control
 
 - `RenderRequest.geometry: Literal["auto", "blur_pad", "crop"] = "auto"`.
-- `crop` with a plan whose `decision` is `blur_pad` still crops. The user overrides on purpose. `crop` with no plan (vertical input) is a 400.
+- `crop` with a plan whose `decision` is `blur_pad` still crops. The user
+  overrides on purpose. An analysis-failed landscape plan carries a centered
+  crop sample for that override. `crop` with no plan (vertical input) is a 400.
 - `HandoffClip` and the RicePoster manifest are unchanged.
 
 ### Pipeline placement (`pipeline.py` step 3)
 
 - Vertical input: unchanged pass-through.
 - Landscape and resolved `blur_pad`: unchanged `blur_pad_statements`.
-- Resolved `crop`: write `crop.cmd` to the job dir. Statements: `[0:v]sendcmd=f=crop.cmd,crop=W:H:0:0,scale=1080:1920[base]`. Then `[base]subtitles=captions.ass...` as today. Header overlay unchanged.
+- Every path first normalizes the autorotated frame to probed display dimensions
+  and square pixels: `[0:v]scale=W:H,setsar=1[src]`.
+- Resolved `crop`: write `crop.cmd` to the job dir. Statements: `[src]sendcmd=f=crop.cmd,crop=W:H:0:0,scale=1080:1920,setsar=1[base]`. Blur-pad likewise sets square pixels after its final overlay. Then `[base]subtitles=captions.ass...` as today. Header overlay unchanged.
 - `crop.cmd` lines: `<t> crop x <x>` per sample. Bare filename, cwd is the job dir, same as the ASS.
 - **Spike S1, first task:** prove `sendcmd` drives `crop` x on ffmpeg 9.0.1 with a two-line command file. If it fails, build `x='if(lt(t,T1),X1,if(lt(t,T2),X2,...))'` from the plan, subsampled to at most 64 segments. Record the result in `docs/spikes/crop-sendcmd.md`.
 - Caption geometry: no change. `PlayResX/Y` stay 1080x1920. Margins stay.
@@ -82,7 +97,7 @@ the fallback and as an explicit per-clip choice.
 - No hosted model. No network.
 - No crop preview before render in this phase.
 - No change to the RiceSearcher manifest or the RicePoster handoff.
-- No SPEC.md edit by the agent.
+- SPEC.md changes require explicit maintainer approval.
 
 ## First reliability risk
 
@@ -97,7 +112,10 @@ run proves them.
 2. **F2 spike + geometry.** Spike S1. `crop_statements`. Pipeline branch with a forced plan. Test the command string.
 3. **F3 detector.** `subject.py`. Ingest hook. `crop_plan` on `JobState`. Unit tests mock the detector.
 4. **F4 control + UI.** `geometry` field. Radio row. Auto badge.
-5. **F5 fixture check.** `scripts/crop_check.py`: for each clip in `fixtures/landscape/`, write a 12-frame contact sheet with the window and face box drawn, plus a JSON report of `face_rate`, `safe_rate`, and max pan speed.
+5. **F5 fixture check.** `scripts/crop_check.py`: require exactly one clip for
+   each named fixture role; write a 12-frame contact sheet with the window and
+   face box drawn, plus a JSON report of `face_rate`, `safe_rate`, analysis time,
+   and total/governed max pan speed. Probe/decode failures count as failures.
 
 F1 to F4 are one PR. F5 runs locally by the maintainer before the PR is ready.
 
@@ -108,5 +126,7 @@ F1 to F4 are one PR. F5 runs locally by the maintainer before the PR is ready.
 - Framing tests: pan speed never exceeds the cap; a cut snaps; a loss holds.
 - Fixture set (maintainer, gitignored): six clips of 20 to 60 s. Static single speaker; walking speaker; two-shot; cut-heavy; b-roll with no face; low light.
 - Pass: the four face clips reach `safe_rate >= 0.95`. The no-face clip falls back. The two-shot holds one face without a switch.
-- Finn reviews the six contact sheets. The report JSON is attached to the PR.
+- Finn reviews the six contact sheets and explicitly attests that all six pass
+  visual review (including two-shot identity continuity) when running the gate.
+  The report JSON is attached to the PR.
 - Kill criterion: fewer than five of six pass after two tuning rounds. Then D12 stands.

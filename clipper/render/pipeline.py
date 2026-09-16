@@ -1,9 +1,10 @@
 """Render orchestration: ASS + geometry + audio → 1080x1920 H.264/AAC mp4.
 
 Builds a single ffmpeg ``filter_complex`` invocation covering SPEC.md §4 steps
-5-8: blur-pad geometry, burn the caption+header ASS via libass, mix audio, and
-encode. Caption timing is already baked to the timeline in seconds, so mixing
-music here cannot affect sync (SPEC.md §4 step 7).
+5-8: normalize source coordinates, apply crop/pass/blur-pad geometry, burn the
+caption+header ASS via libass, mix audio, and encode. Caption timing is already
+baked to the timeline in seconds, so mixing music here cannot affect sync
+(SPEC.md §4 step 7).
 
 ffmpeg runs with ``cwd`` set to the job dir and the ASS referenced by bare
 filename, which sidesteps the notoriously fragile ``subtitles`` path escaping.
@@ -222,20 +223,26 @@ def render(
 
     # 3. Video graph: crop / blur-pad / pass-through → burn subtitles → header.
     sub_out = "[subbed]" if overlay_header else "[vout]"
+    # ffmpeg applies display rotation before the filter graph. Normalize that
+    # result (including non-square sample aspect ratios) to the same square-pixel
+    # dimensions used by probing, detection, and framing.
+    video_stmts = [
+        geometry.normalize_statement(info.width, info.height, "[0:v]", "[src]")
+    ]
     if geometry.is_target(info.width, info.height):
         # A 1080x1920 job passes through, whatever the plan says. Detection only
         # runs on landscape input, so a vertical job never crops (ADR-001).
-        video_stmts = [f"[0:v]subtitles={ASS_NAME}{sub_out}"]
+        video_stmts.append(f"[src]subtitles={ASS_NAME}{sub_out}")
     elif plan is not None and plan.decision == "crop":
         # Subject crop: write the sendcmd command file, then drive a moving 9:16
         # window over the source.
         (job_dir / geometry.CROP_CMD_NAME).write_text(
             geometry.crop_command_file(plan), encoding="utf-8"
         )
-        video_stmts = geometry.crop_statements(plan, "[0:v]", "[base]")
+        video_stmts.extend(geometry.crop_statements(plan, "[src]", "[base]"))
         video_stmts.append(f"[base]subtitles={ASS_NAME}{sub_out}")
     else:
-        video_stmts = geometry.blur_pad_statements("[0:v]", "[base]")
+        video_stmts.extend(geometry.blur_pad_statements("[src]", "[base]"))
         video_stmts.append(f"[base]subtitles={ASS_NAME}{sub_out}")
 
     if overlay_header:

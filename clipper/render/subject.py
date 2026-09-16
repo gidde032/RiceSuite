@@ -17,8 +17,12 @@ unit tests drive :func:`detect_track` with fakes and no OpenCV dependency.
 
 from __future__ import annotations
 
+import json
 import logging
+import math
+import multiprocessing
 import re
+import tempfile
 import time
 from pathlib import Path
 
@@ -35,14 +39,16 @@ SCORE_MIN = 0.5
 CONTINUITY = 0.15
 SCENE_MIN = 0.3
 
-# Effective sampling rate. framing fills a lost sample's time as ``i / 5``, so
-# the sample index must track ~5 samples per second.
+# Effective sampling rate. Decoded presentation timestamps are retained for
+# every sampled frame, including samples without a face.
 SAMPLE_FPS = 5
 
 # OpenCV VideoCaptureProperties enum values, stable across releases. Named here
 # so the fake-capture unit-test path never has to import cv2.
 _CAP_PROP_FPS = 5
 _CAP_PROP_FRAME_COUNT = 7
+_CAP_PROP_POS_MSEC = 0
+_CAP_PROP_ORIENTATION_AUTO = 49
 
 _PTS_TIME = re.compile(r"pts_time:([0-9]+\.?[0-9]*)")
 
@@ -135,6 +141,7 @@ def detect_track(
     capture_factory=None,
     detector_factory=None,
     deadline: float | None = None,
+    sample_times: list[float] | None = None,
 ) -> list[TrackSample | None]:
     """Sample the source and return one face box (or ``None``) per sample.
 
@@ -155,33 +162,142 @@ def detect_track(
     detector = detector_factory()
     scale = info.width / DETECT_WIDTH
     samples: list[TrackSample | None] = []
+    times = sample_times if sample_times is not None else []
     prev_cx: float | None = None
     try:
+        if info.rotation:
+            set_property = getattr(capture, "set", None)
+            if not callable(set_property) or not set_property(
+                _CAP_PROP_ORIENTATION_AUTO, 1
+            ):
+                raise RuntimeError("video backend cannot apply display rotation")
         fps = _capture_fps(capture, info)
         step = max(1, round(fps / SAMPLE_FPS))
+        try:
+            expected_frames = float(capture.get(_CAP_PROP_FRAME_COUNT))
+        except Exception:
+            expected_frames = 0.0
         frame_index = 0
+        last_decoded_t = 0.0
         while True:
             if deadline is not None and time.monotonic() > deadline:
                 raise TimeoutError("subject detection exceeded its deadline")
             ok, frame = capture.read()
             if not ok or frame is None:
                 break
+            try:
+                reported_t = float(capture.get(_CAP_PROP_POS_MSEC)) / 1000.0
+            except Exception:
+                reported_t = float("nan")
+            fallback_t = frame_index / fps
+            if not math.isfinite(reported_t) or reported_t < 0:
+                reported_t = fallback_t
+            if frame_index and reported_t <= last_decoded_t:
+                reported_t = max(fallback_t, last_decoded_t + 1.0 / fps)
+            last_decoded_t = reported_t
             if frame_index % step == 0:
+                shape = getattr(frame, "shape", None)
+                if shape is not None and (shape[1], shape[0]) != (
+                    info.width,
+                    info.height,
+                ):
+                    import cv2
+
+                    frame = cv2.resize(frame, (info.width, info.height))
                 box = _select_box(detector.detect(frame), info, prev_cx, scale)
+                times.append(reported_t)
                 if box is None:
                     samples.append(None)
                 else:
                     cx, cy, w, h = box
-                    samples.append(
-                        TrackSample(t=frame_index / fps, cx=cx, cy=cy, w=w, h=h)
-                    )
+                    samples.append(TrackSample(t=reported_t, cx=cx, cy=cy, w=w, h=h))
                     prev_cx = cx
             frame_index += 1
+        if frame_index == 0:
+            raise RuntimeError("video decode produced no frames")
+        tolerance_frames = max(step * 2, round(fps))
+        has_expected_frames = math.isfinite(expected_frames) and expected_frames > 0
+        if has_expected_frames and frame_index + tolerance_frames < expected_frames:
+            raise RuntimeError("video decode ended early")
+        decoded_end = last_decoded_t + 1.0 / fps
+        if decoded_end + 1.0 < info.duration:
+            raise RuntimeError("video decode ended early")
     finally:
         release = getattr(capture, "release", None)
         if callable(release):
             release()
     return samples
+
+
+def _detect_worker(result_path: str, source: str, info: MediaInfo) -> None:
+    """Run native OpenCV work in a killable child process."""
+    try:
+        sample_times: list[float] = []
+        track = detect_track(Path(source), info, sample_times=sample_times)
+        payload = [
+            sample.model_dump() if sample is not None else None for sample in track
+        ]
+        result = {"ok": True, "track": payload, "sample_times": sample_times}
+    except BaseException as exc:
+        result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    Path(result_path).write_text(json.dumps(result), encoding="utf-8")
+
+
+def _process_context():
+    return multiprocessing.get_context("spawn")
+
+
+def detect_track_owned(
+    source: Path, info: MediaInfo, timeout: float
+) -> tuple[list[TrackSample | None], list[float]]:
+    """Run detection in a subprocess that can be terminated at the hard deadline."""
+    context = _process_context()
+    result_file = tempfile.NamedTemporaryFile(
+        prefix="riceclipper-detect-", suffix=".json", delete=False
+    )
+    result_path = Path(result_file.name)
+    result_file.close()
+    process = None
+    try:
+        process = context.Process(
+            target=_detect_worker,
+            args=(str(result_path), str(source), info),
+            daemon=True,
+        )
+        process.start()
+        process.join(timeout)
+        if process is not None and process.is_alive():
+            process.terminate()
+            process.join(1.0)
+            if process.is_alive():
+                process.kill()
+                process.join(1.0)
+            raise TimeoutError("subject detection exceeded its deadline")
+        if process.exitcode != 0:
+            raise RuntimeError(
+                f"subject detection process exited with code {process.exitcode}"
+            )
+        if result_path.stat().st_size > 5_000_000:
+            raise RuntimeError("subject detection result exceeded its size limit")
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        if not result.get("ok"):
+            raise RuntimeError(
+                f"subject detection failed: {result.get('error', 'unknown')}"
+            )
+        payload = result["track"]
+        sample_times = result["sample_times"]
+        track = [
+            TrackSample(**sample) if sample is not None else None for sample in payload
+        ]
+        return track, sample_times
+    finally:
+        if process.is_alive():
+            process.terminate()
+            process.join(1.0)
+            if process.is_alive():
+                process.kill()
+                process.join(1.0)
+        result_path.unlink(missing_ok=True)
 
 
 def scene_cuts(source: Path, timeout: float) -> list[float]:
@@ -204,6 +320,8 @@ def scene_cuts(source: Path, timeout: float) -> list[float]:
         text=True,
         timeout=timeout,
     )
+    if result.returncode != 0:
+        raise RuntimeError("scene detection failed")
     stderr = result.stderr or ""
     return sorted(float(m) for m in _PTS_TIME.findall(stderr))
 
@@ -218,12 +336,22 @@ def build_plan(source: Path, info: MediaInfo) -> CropPlan:
     timeout = analysis_timeout(info.duration)
     deadline = time.monotonic() + timeout
     try:
-        track = detect_track(source, info, deadline=deadline)
+        if info.field_order not in {"progressive", "unknown"}:
+            raise RuntimeError("interlaced input is not safe for subject detection")
+        track, sample_times = detect_track_owned(source, info, timeout)
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError("analysis deadline passed before scene detection")
         cuts = scene_cuts(source, remaining)
-        return framing.plan_crop(track, cuts, info.width, info.height)
+        if time.monotonic() > deadline:
+            raise TimeoutError("scene detection exceeded the analysis deadline")
+        return framing.plan_crop(
+            track,
+            cuts,
+            info.width,
+            info.height,
+            sample_times=sample_times,
+        )
     except Exception:
         logger.exception("subject-crop analysis failed for %s", source)
         return framing.failed_plan("analysis_failed", info.width, info.height)

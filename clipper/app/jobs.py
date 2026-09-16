@@ -120,10 +120,16 @@ def persist_searcher_job(job: Job) -> None:
             "height": job.info.height,
             "duration": job.info.duration,
             "has_audio": job.info.has_audio,
+            "coded_width": job.info.coded_width,
+            "coded_height": job.info.coded_height,
+            "rotation": job.info.rotation,
+            "sample_aspect_ratio": job.info.sample_aspect_ratio,
+            "field_order": job.info.field_order,
         },
         "title": job.searcher_title,
         "clip": job.searcher_metadata,
         "manifest": job.searcher_manifest,
+        "words": [word.model_dump() for word in job.words],
         "crop_plan": job.crop_plan.model_dump() if job.crop_plan else None,
     }
     metadata = job.dir / JOB_METADATA_FILENAME
@@ -146,6 +152,8 @@ def _recover_searcher_job(job_dir: Path) -> Job | None:
         clip = payload["clip"]
         manifest = payload["manifest"]
         title = payload.get("title", "")
+        raw_words = payload.get("words", [])
+        words = [Word.model_validate(word) for word in raw_words]
         raw_plan = payload.get("crop_plan")
         crop_plan = CropPlan.model_validate(raw_plan) if raw_plan is not None else None
         if (
@@ -161,6 +169,7 @@ def _recover_searcher_job(job_dir: Path) -> Job | None:
             or not isinstance(clip, dict)
             or not isinstance(manifest, dict)
             or not isinstance(title, str)
+            or not isinstance(raw_words, list)
         ):
             return None
     except (KeyError, OSError, TypeError, ValueError):
@@ -177,6 +186,7 @@ def _recover_searcher_job(job_dir: Path) -> Job | None:
         dir=job_dir,
         source_path=source_path,
         info=info,
+        words=words,
         status="ready",
         searcher_title=title,
         searcher_metadata=clip,
