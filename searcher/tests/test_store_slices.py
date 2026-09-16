@@ -128,6 +128,52 @@ def test_replace_candidate_slices_requires_profile_id(tmp_path: Path) -> None:
             lib.replace_candidate_slices("src1", [_slice("a")])
 
 
+def test_replace_candidate_slices_preserves_concurrent_human_status(
+    tmp_path: Path,
+) -> None:
+    existing = dataclasses.replace(
+        _slice("sl1"), profile_id="p1", status=SliceStatus.SELECTED
+    )
+    regenerated = dataclasses.replace(
+        _slice("sl1", score=0.9), profile_id="p1", status=SliceStatus.CANDIDATE
+    )
+    with Library(tmp_path / "lib.sqlite3") as lib:
+        lib.upsert_source(_source())
+        lib.upsert_slices([existing])
+
+        lib.replace_candidate_slices("src1", [regenerated], profile_id="p1")
+
+        got = lib.get_slice("sl1")
+        assert got is not None
+        assert got.status is SliceStatus.SELECTED
+        assert got.score == existing.score
+
+
+def test_review_updates_cannot_mutate_handed_off_slice(tmp_path: Path) -> None:
+    db = tmp_path / "lib.sqlite3"
+    with Library(db) as setup:
+        setup.upsert_source(_source())
+        setup.upsert_slices(
+            [
+                dataclasses.replace(
+                    _slice("sl1"), profile_id="p1", status=SliceStatus.SELECTED
+                )
+            ]
+        )
+
+    with Library(db) as stale, Library(db) as handoff:
+        assert stale.get_slice("sl1").status is SliceStatus.SELECTED
+        handoff.bulk_update_status(["sl1"], SliceStatus.HANDED_OFF)
+        assert stale.update_slice_status("sl1", SliceStatus.SELECTED) is False
+        assert stale.update_slice_window("sl1", 12.0, 30.0) is False
+
+    with Library(db) as check:
+        got = check.get_slice("sl1")
+        assert got is not None
+        assert got.status is SliceStatus.HANDED_OFF
+        assert (got.target_in, got.target_out) == (10.0, 40.0)
+
+
 def test_v1_database_upgrades_in_place_to_current(tmp_path: Path) -> None:
     # Build a Phase-1 (v1) database by hand, with data, then open it with Library.
     db = tmp_path / "old.sqlite3"

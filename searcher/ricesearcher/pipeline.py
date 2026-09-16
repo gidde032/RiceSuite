@@ -259,5 +259,5 @@ def annotate_library_duplicates(
         sim_threshold=sim_threshold,
         overlap_threshold=overlap_threshold,
     )
-    library.upsert_slices(annotated)
+    library.update_duplicate_annotations(annotated)
     return annotated

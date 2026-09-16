@@ -7,6 +7,13 @@ from ricesearcher.beat.profile import (
     ensure_seed,
     list_profiles,
     load_profile,
+    validate_profile_id,
 )
 
-__all__ = ["BeatProfile", "ensure_seed", "list_profiles", "load_profile"]
+__all__ = [
+    "BeatProfile",
+    "ensure_seed",
+    "list_profiles",
+    "load_profile",
+    "validate_profile_id",
+]

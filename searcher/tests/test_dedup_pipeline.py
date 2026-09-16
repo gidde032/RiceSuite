@@ -97,6 +97,21 @@ def test_annotate_preserves_human_status(tmp_path: Path, fake_embedder) -> None:
         assert len(lib.list_slices()) == 3  # nothing dropped
 
 
+def test_annotate_does_not_resurrect_concurrent_handoff(tmp_path: Path) -> None:
+    db = tmp_path / "l.sqlite3"
+    with Library(db) as lib:
+        _seed(lib)
+
+        class HandoffDuringEmbed(FakeEmbedder):
+            def embed(self, texts: list[str]) -> list[list[float]]:
+                with Library(db) as other:
+                    other.bulk_update_status(["b"], SliceStatus.HANDED_OFF)
+                return super().embed(texts)
+
+        annotate_library_duplicates(lib, HandoffDuringEmbed(), profile_id=PROFILE)
+        assert lib.get_slice("b").status is SliceStatus.HANDED_OFF
+
+
 def test_empty_library_dedup_is_noop(tmp_path: Path, fake_embedder) -> None:
     with Library(tmp_path / "l.sqlite3") as lib:
         assert annotate_library_duplicates(lib, fake_embedder, profile_id=PROFILE) == []

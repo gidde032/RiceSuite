@@ -11,15 +11,17 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
-import shutil
+import tempfile
 from dataclasses import dataclass, field
+from importlib import resources
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 # A profile id is the file stem. Lowercase, digits, and hyphens; 1-40 chars.
-PROFILE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
+PROFILE_ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
 
 # Seed target. Kept in sync with ``store.LEGACY_PROFILE_ID`` (the migration uses
 # the same id). Named here so the loader does not import the library layer.
@@ -37,8 +39,12 @@ class BeatProfile:
     negative_examples: list[str] = field(default_factory=list)
 
 
-def _packaged_default_path() -> Path:
-    return Path(__file__).resolve().parent / "profiles" / "default.json"
+def _packaged_default_bytes() -> bytes:
+    return (
+        resources.files("ricesearcher.beat")
+        .joinpath("profiles/default.json")
+        .read_bytes()
+    )
 
 
 def _resolve_dir(profiles_dir: str | Path | None) -> Path:
@@ -49,24 +55,42 @@ def _resolve_dir(profiles_dir: str | Path | None) -> Path:
     return load_config().profiles_dir
 
 
-def _check_id(profile_id: str) -> None:
-    if not PROFILE_ID_PATTERN.match(profile_id):
+def validate_profile_id(profile_id: str) -> str:
+    """Return a profile id only when the whole value matches ADR-002."""
+    if not PROFILE_ID_PATTERN.fullmatch(profile_id):
         raise ValueError(f"invalid profile id: {profile_id!r}")
+    return profile_id
+
+
+def _string_list(data: dict, field_name: str, path: Path) -> list[str]:
+    value = data.get(field_name, [])
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise ValueError(
+            f"beat profile {path} field {field_name!r} must be a list of strings"
+        )
+    return value
 
 
 def _parse_profile(path: Path, profile_id: str) -> BeatProfile:
     data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"beat profile {path} must contain a JSON object")
     missing = {"version", "name", "brief"} - data.keys()
     if missing:
         raise ValueError(f"beat profile {path} missing fields: {sorted(missing)}")
+    for field_name in ("version", "name", "brief"):
+        if not isinstance(data[field_name], str):
+            raise ValueError(
+                f"beat profile {path} field {field_name!r} must be a string"
+            )
     return BeatProfile(
         id=profile_id,
-        version=str(data["version"]),
-        name=str(data["name"]),
-        brief=str(data["brief"]),
-        keywords=[str(k).lower() for k in data.get("keywords", [])],
-        positive_examples=[str(e) for e in data.get("positive_examples", [])],
-        negative_examples=[str(e) for e in data.get("negative_examples", [])],
+        version=data["version"],
+        name=data["name"],
+        brief=data["brief"],
+        keywords=[item.lower() for item in _string_list(data, "keywords", path)],
+        positive_examples=_string_list(data, "positive_examples", path),
+        negative_examples=_string_list(data, "negative_examples", path),
     )
 
 
@@ -78,7 +102,7 @@ def load_profile(
     Raise ``ValueError`` for a bad id. Raise the underlying error if the file is
     missing or malformed (the caller asked for this exact profile).
     """
-    _check_id(profile_id)
+    validate_profile_id(profile_id)
     path = _resolve_dir(profiles_dir) / f"{profile_id}.json"
     return _parse_profile(path, profile_id)
 
@@ -91,7 +115,7 @@ def list_profiles(profiles_dir: str | Path | None = None) -> list[BeatProfile]:
     profiles: list[BeatProfile] = []
     for path in sorted(directory.glob("*.json")):
         profile_id = path.stem
-        if not PROFILE_ID_PATTERN.match(profile_id):
+        if not PROFILE_ID_PATTERN.fullmatch(profile_id):
             logger.warning("skipping profile with invalid id: %s", path)
             continue
         try:
@@ -102,9 +126,27 @@ def list_profiles(profiles_dir: str | Path | None = None) -> list[BeatProfile]:
 
 
 def ensure_seed(profiles_dir: str | Path | None = None) -> None:
-    """Copy the packaged default to ``example-beat.json`` if the dir has no files."""
+    """Atomically install ``example-beat.json`` when that profile is absent."""
     directory = _resolve_dir(profiles_dir)
     directory.mkdir(parents=True, exist_ok=True)
-    if any(directory.glob("*.json")):
+    target = directory / f"{_SEED_PROFILE_ID}.json"
+    if target.exists():
         return
-    shutil.copyfile(_packaged_default_path(), directory / f"{_SEED_PROFILE_ID}.json")
+
+    payload = _packaged_default_bytes()
+    fd, temp_name = tempfile.mkstemp(
+        prefix=f".{_SEED_PROFILE_ID}.", suffix=".tmp", dir=directory
+    )
+    temp_path = Path(temp_name)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        try:
+            os.link(temp_path, target)
+        except FileExistsError:
+            # Another process completed the same seed while this one was writing.
+            pass
+    finally:
+        temp_path.unlink(missing_ok=True)

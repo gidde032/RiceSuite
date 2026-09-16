@@ -2,7 +2,7 @@
 
 > **Status: RATIFIED 2026-09-02.** Boundary contract is `ADR-001.md` (ratified,
 > reconciled against live sibling code 2026-09-02). This document is the
-> implementation contract for the downstream decisions (D1–D8) the ADR routed
+> implementation contract for the downstream decisions (D1–D9) the ADRs routed
 > forward. Implementation is authorized and proceeds by the phase ladder in §9,
 > one owning GitHub Issue per phase.
 >

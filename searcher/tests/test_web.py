@@ -170,7 +170,9 @@ def test_slice_fresh_when_version_matches_file(tmp_path: Path) -> None:
     assert rows["fresh"]["stale"] is True
 
 
-@pytest.mark.parametrize("bad", ["../x", "UPPER", "a" * 41, "-lead", "sp ace"])
+@pytest.mark.parametrize(
+    "bad", ["../x", "UPPER", "a" * 41, "-lead", "sp ace", "alpha\n"]
+)
 def test_invalid_profile_id_is_400_on_slices_and_handoff(
     client: TestClient, bad: str
 ) -> None:
@@ -334,15 +336,6 @@ def test_profiles_and_review_scripts_share_the_storage_key(client: TestClient) -
     assert profiles_js.index("localStorage.setItem(PROFILE_KEY") < profiles_js.index(
         'window.location.assign("/")'
     )
-
-
-def test_status_change_refreshes_the_handoff_count(client: TestClient) -> None:
-    # FA-2 (PR #26 review): the button count comes from /api/profiles, so a
-    # successful select/reject/reset must refresh it, not only init and handoff.
-    app_js = client.get("/static/app.js").text
-    body = app_js[app_js.index("const setStatus = async") :]
-    body = body[: body.index("const selectBtn")]
-    assert "loadProfiles()" in body
 
 
 def test_media_page_serves_html(client: TestClient) -> None:

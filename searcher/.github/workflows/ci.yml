@@ -28,5 +28,7 @@ jobs:
             echo "node --check $f"
             node --check "$f"
           done
+      - name: JS behavior tests (review UI)
+        run: node --test tests/js/*.test.js
       - name: Tests + coverage floor
         run: pytest

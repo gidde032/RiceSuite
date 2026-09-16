@@ -24,7 +24,8 @@ profile at a time. Sources and transcripts are shared.
 - Fields: `version`, `name`, `brief` (required); `keywords`, `positive_examples`, `negative_examples` (optional). Same as today.
 - `BeatProfile` gains `id: str`. `load_profile(profile_id)` replaces the path and env forms. `RICESEARCHER_BEAT_PROFILE` is retired.
 - `list_profiles()` returns every valid file, sorted by id. A malformed file is reported and skipped.
-- Seed: if the directory has no files, copy the packaged `default.json` to `example-beat.json` once.
+- Seed: if `example-beat.json` is absent, atomically install it from the packaged
+  `default.json` once, even when other profile files already exist.
 
 ### Library (schema v3)
 

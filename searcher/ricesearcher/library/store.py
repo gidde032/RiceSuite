@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from ricesearcher.models import (
@@ -123,17 +125,47 @@ class Library:
             "CREATE TABLE IF NOT EXISTS meta "
             "(key TEXT PRIMARY KEY, value TEXT NOT NULL)"
         )
-        current = self._stored_version()
-        for version in sorted(MIGRATIONS):
-            if current < version:
-                self._conn.executescript(MIGRATIONS[version])
+        self._conn.commit()
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            current = self._stored_version()
+            for version in sorted(MIGRATIONS):
+                if current >= version:
+                    continue
+                statement = ""
+                for line in MIGRATIONS[version].splitlines(keepends=True):
+                    statement += line
+                    if sqlite3.complete_statement(statement):
+                        self._conn.execute(statement)
+                        statement = ""
+                if statement.strip():
+                    raise sqlite3.OperationalError(
+                        f"incomplete migration SQL for version {version}"
+                    )
                 self._conn.execute(
                     "INSERT INTO meta(key, value) VALUES ('schema_version', ?) "
                     "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                     (str(version),),
                 )
                 current = version
-        self._conn.commit()
+            self._conn.commit()
+        except BaseException:
+            self._conn.rollback()
+            raise
+
+    @contextmanager
+    def immediate_transaction(self) -> Iterator[None]:
+        """Hold the database write lock across a multi-step state transition."""
+        if self._conn.in_transaction:
+            raise RuntimeError("cannot nest an immediate transaction")
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            yield
+        except BaseException:
+            self._conn.rollback()
+            raise
+        else:
+            self._conn.commit()
 
     # -- sources ----------------------------------------------------------
 
@@ -374,7 +406,28 @@ class Library:
                 "WHERE source_id = ? AND status = 'candidate' AND profile_id = ?",
                 (source_id, profile_id),
             )
-            self._upsert_slices(slices)
+            protected_ids = {
+                row["id"]
+                for row in self._conn.execute(
+                    "SELECT id FROM candidate_slices "
+                    "WHERE source_id = ? AND profile_id = ? AND status != 'candidate'",
+                    (source_id, profile_id),
+                )
+            }
+            self._upsert_slices([s for s in slices if s.id not in protected_ids])
+
+    def update_duplicate_annotations(self, slices: list[CandidateSlice]) -> None:
+        """Persist advisory duplicate fields without rewriting lifecycle state."""
+        with self._conn:
+            self._conn.executemany(
+                "UPDATE candidate_slices "
+                "SET dup_of = ?, dup_score = ?, dup_kind = ? "
+                "WHERE id = ? AND profile_id = ?",
+                [
+                    (s.dup_of, s.dup_score, s.dup_kind, s.id, s.profile_id)
+                    for s in slices
+                ],
+            )
 
     def list_slices(
         self,
@@ -441,7 +494,8 @@ class Library:
         """
         with self._conn:
             cur = self._conn.execute(
-                "UPDATE candidate_slices SET status = ? WHERE id = ?",
+                "UPDATE candidate_slices SET status = ? "
+                "WHERE id = ? AND status != 'handed_off'",
                 (status.value, slice_id),
             )
         return cur.rowcount > 0
@@ -465,7 +519,7 @@ class Library:
         with self._conn:
             cur = self._conn.execute(
                 "UPDATE candidate_slices SET target_in = ?, target_out = ? "
-                "WHERE id = ?",
+                "WHERE id = ? AND status != 'handed_off'",
                 (target_in, target_out, slice_id),
             )
         return cur.rowcount > 0

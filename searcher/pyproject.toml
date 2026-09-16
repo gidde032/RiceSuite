@@ -17,6 +17,10 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["ricesearcher*"]
 
+[tool.setuptools.package-data]
+"ricesearcher.beat" = ["profiles/*.json"]
+"ricesearcher.web" = ["static/*"]
+
 [tool.ruff]
 line-length = 88
 target-version = "py311"
