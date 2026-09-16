@@ -64,7 +64,8 @@ def group_words(
 
     for prev, word in pairwise(clean):
         gap = word.start - prev.end
-        if len(current) >= max_words or gap > max_gap:
+        is_line_start = getattr(word, "line_start", False)
+        if len(current) >= max_words or gap > max_gap or is_line_start:
             phrases.append(Phrase(current))
             current = [word]
         else:

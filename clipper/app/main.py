@@ -18,11 +18,18 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import handoff, header_gen, jobs, probe, searcher_pickup
-from app.models import HandoffRequest, HeaderRequest, JobState, RenderRequest
+from app.models import (
+    HandoffRequest,
+    HeaderRequest,
+    JobState,
+    LyricsRequest,
+    LyricsResult,
+    RenderRequest,
+)
 from app.process import terminate_all_owned_processes
 from render import frame, geometry, subject
 from render.pipeline import render
-from transcribe import whisper
+from transcribe import lyrics, whisper
 
 logger = logging.getLogger("riceclipper")
 
@@ -140,6 +147,26 @@ def transcribe_job(job_id: str) -> JobState:
             job.error = "transcription failed"
             raise HTTPException(status_code=500, detail=job.error) from None
         return job.state()
+
+
+@app.post("/api/jobs/{job_id}/lyrics", response_model=LyricsResult)
+def lyrics_job(job_id: str, req: LyricsRequest) -> LyricsResult:
+    with jobs.job_operation_lock():
+        job = jobs.get_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        if job.status in {"transcribing", "rendering"}:
+            raise HTTPException(status_code=409, detail="job is already active")
+        try:
+            result = lyrics.align(
+                req.lyrics,
+                job.words,
+                job.info.duration if job.info else 0.0,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        job.words = result.words
+        return result
 
 
 def _safe_thumbnail(job: jobs.Job) -> str:

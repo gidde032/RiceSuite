@@ -44,3 +44,25 @@ def test_phrase_bounds():
     phrase = group_words(ws)[0]
     assert phrase.start == 1.0
     assert phrase.end == 1.5
+
+
+def test_line_start_breaks_phrase():
+    from dataclasses import dataclass
+
+    @dataclass
+    class WordLS:
+        text: str
+        start: float
+        end: float
+        line_start: bool = False
+
+    ws = [
+        WordLS("a", 0.0, 0.2),
+        WordLS("b", 0.2, 0.4),
+        WordLS("c", 0.4, 0.6, line_start=True),
+        WordLS("d", 0.6, 0.8),
+    ]
+    phrases = group_words(ws, max_words=10, max_gap=10.0)
+    assert len(phrases) == 2
+    assert phrases[0].text == "a b"
+    assert phrases[1].text == "c d"

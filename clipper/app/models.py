@@ -37,6 +37,21 @@ class Word(BaseModel):
     text: str
     start: float
     end: float
+    line_start: bool = False
+
+
+class LyricsRequest(BaseModel):
+    """Pasted lyric text for alignment against reference timings."""
+
+    lyrics: str
+
+
+class LyricsResult(BaseModel):
+    """Alignment result returned by the lyrics endpoint."""
+
+    words: list[Word]
+    anchor_rate: float
+    method: Literal["anchors", "even_fill"]
 
 
 class MusicSettings(BaseModel):
