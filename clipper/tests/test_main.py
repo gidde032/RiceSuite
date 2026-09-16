@@ -299,6 +299,28 @@ def test_transcribe_builds_crop_plan_for_landscape(monkeypatch, isolated_jobs):
     assert result.crop_plan == plan
 
 
+def test_transcribe_persists_searcher_crop_plan(monkeypatch, isolated_jobs):
+    job = jobs.create_job()
+    job.status = "ready"
+    job.source_path = job.dir / "source.mp4"
+    job.source_path.write_bytes(b"source")
+    job.info = MediaInfo(1920, 1080, 4.0, True)
+    job.searcher_title = "clip"
+    job.searcher_metadata = {"id": "c1"}
+    job.searcher_manifest = {"batch": "b1"}
+    jobs.persist_searcher_job(job)
+    monkeypatch.setattr(main.whisper, "transcribe", lambda path: [])
+    plan = _landscape_plan()
+    monkeypatch.setattr(main.subject, "build_plan", lambda *a, **k: plan)
+
+    main.transcribe_job(job.id)
+    jobs._JOBS.pop(job.id)
+    recovered = jobs.get_job(job.id)
+
+    assert recovered is not None
+    assert recovered.crop_plan == plan
+
+
 def test_transcribe_leaves_crop_plan_none_for_vertical(monkeypatch, isolated_jobs):
     job = jobs.create_job()
     job.status = "ready"
@@ -353,14 +375,23 @@ def test_render_crop_on_vertical_job_returns_400(isolated_jobs):
     assert job.status == "ready"
 
 
-def test_render_crop_on_analysis_failed_plan_returns_400(isolated_jobs):
+def test_render_crop_on_analysis_failed_plan_uses_centered_override(
+    monkeypatch, isolated_jobs
+):
     job = _landscape_ready_job()
     job.crop_plan = framing.failed_plan("analysis_failed", 1920, 1080)
-    with pytest.raises(HTTPException) as exc:
-        main.render_job(job.id, RenderRequest(geometry="crop"))
-    assert exc.value.status_code == 400
-    assert "analysis failed" in exc.value.detail
-    assert job.status == "ready"
+    captured: dict = {}
+
+    def fake_render(*args, **kwargs):
+        captured["plan"] = kwargs.get("plan")
+        return job.dir / "output.mp4"
+
+    monkeypatch.setattr(main, "render", fake_render)
+
+    main.render_job(job.id, RenderRequest(geometry="crop"))
+
+    assert captured["plan"].decision == "crop"
+    assert [(sample.t, sample.x) for sample in captured["plan"].samples] == [(0.0, 656)]
 
 
 def test_render_crop_on_landscape_passes_crop_plan_to_render(

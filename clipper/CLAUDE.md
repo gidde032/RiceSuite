@@ -5,10 +5,11 @@ acting.
 
 ## What this project is
 
-RiceClipper is a standalone tool that turns short vertical videos into post-ready
-clips with word-synced burned-in captions and an on-screen header. The **source
-of truth for the design is [`SPEC.md`](./SPEC.md).** Do not re-derive scope from
-memory or chat — read the spec.
+RiceClipper is a standalone tool that turns short vertical or landscape videos
+into post-ready clips with word-synced burned-in captions and an on-screen
+header. Landscape clips use a local single-subject crop with blur-pad fallback.
+The **source of truth for the design is [`SPEC.md`](./SPEC.md).** Do not
+re-derive scope from memory or chat — read the spec.
 
 ## Current status
 

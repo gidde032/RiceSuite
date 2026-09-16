@@ -2,12 +2,11 @@
 
 detect_track is driven with a fake capture and fake detector, so these tests
 need no cv2 and shell out to nothing. One real-cv2 smoke test loads the vendored
-model and is skipped when OpenCV is not installed.
+model and is required by the installed runtime dependencies.
 """
 
 from __future__ import annotations
 
-import importlib.util
 import time
 
 import pytest
@@ -23,16 +22,29 @@ _LANDSCAPE = MediaInfo(width=640, height=360, duration=4.0, has_audio=True)
 class FakeCapture:
     """Stand-in for cv2.VideoCapture. Each frame is the detection to return."""
 
-    def __init__(self, frames, fps):
+    def __init__(self, frames, fps, *, expected_frames=None, pts_ms=None):
         self._frames = list(frames)
         self._fps = fps
+        self._expected_frames = (
+            expected_frames if expected_frames is not None else len(frames)
+        )
+        self._pts_ms = list(pts_ms or [])
+        self._reads = 0
         self.released = False
 
-    def get(self, _prop):
-        return float(self._fps)
+    def get(self, prop):
+        if prop == subject._CAP_PROP_FPS:
+            return float(self._fps)
+        if prop == subject._CAP_PROP_FRAME_COUNT:
+            return float(self._expected_frames)
+        if prop == subject._CAP_PROP_POS_MSEC and self._reads:
+            if self._reads - 1 < len(self._pts_ms):
+                return float(self._pts_ms[self._reads - 1])
+        return 0.0
 
     def read(self):
         if self._frames:
+            self._reads += 1
             return True, self._frames.pop(0)
         return False, None
 
@@ -54,8 +66,10 @@ class FakeDetector:
         return frame.faces
 
 
-def _track(faces_per_frame, fps, info=_LANDSCAPE, **kwargs):
+def _track(faces_per_frame, fps, info=None, **kwargs):
     frames = [Frame(faces) for faces in faces_per_frame]
+    if info is None:
+        info = MediaInfo(640, 360, len(frames) / fps, True)
     capture = FakeCapture(frames, fps)
     return (
         subject.detect_track(
@@ -118,6 +132,7 @@ def test_detect_track_deadline_raises():
 
 def test_scene_cuts_parses_pts_time(monkeypatch):
     class _Result:
+        returncode = 0
         stderr = (
             "[Parsed_showinfo_1 @ 0x1] n:0 pts:60 pts_time:2.5 duration:1\n"
             "[Parsed_showinfo_1 @ 0x1] n:1 pts:24 pts_time:1.0 duration:1\n"
@@ -127,11 +142,147 @@ def test_scene_cuts_parses_pts_time(monkeypatch):
     assert subject.scene_cuts("source.mp4", timeout=10.0) == [1.0, 2.5]
 
 
+def test_scene_cuts_rejects_nonzero_ffmpeg_exit(monkeypatch):
+    class _Result:
+        returncode = 1
+        stderr = "decoder error after pts_time:1.0"
+
+    monkeypatch.setattr(subject, "run_owned", lambda *a, **k: _Result())
+
+    with pytest.raises(RuntimeError, match="scene detection failed"):
+        subject.scene_cuts("source.mp4", timeout=10.0)
+
+
+def test_detect_track_rejects_premature_decode_eof():
+    face = [[300, 300, 40, 40, 0.9]]
+    capture = FakeCapture([Frame(face)] * 5, fps=5, expected_frames=50)
+
+    with pytest.raises(RuntimeError, match="decode ended early"):
+        subject.detect_track(
+            "source.mp4",
+            MediaInfo(640, 360, 10.0, True),
+            capture_factory=lambda _src: capture,
+            detector_factory=FakeDetector,
+        )
+
+
+@pytest.mark.parametrize("expected_frames", [1, float("nan")])
+def test_detect_track_rejects_short_decode_despite_bad_frame_count(expected_frames):
+    face = [[300, 300, 40, 40, 0.9]]
+    capture = FakeCapture([Frame(face)], fps=5, expected_frames=expected_frames)
+
+    with pytest.raises(RuntimeError, match="decode ended early"):
+        subject.detect_track(
+            "source.mp4",
+            MediaInfo(640, 360, 60.0, True),
+            capture_factory=lambda _src: capture,
+            detector_factory=FakeDetector,
+        )
+
+
+def test_detect_track_records_pts_for_missing_samples():
+    face = [[300, 300, 40, 40, 0.9]]
+    capture = FakeCapture(
+        [Frame(face), Frame(None), Frame(face)],
+        fps=5,
+        pts_ms=[0.0, 150.0, 1000.0],
+    )
+    sample_times = []
+
+    samples = subject.detect_track(
+        "source.mp4",
+        MediaInfo(640, 360, 1.2, True),
+        capture_factory=lambda _src: capture,
+        detector_factory=FakeDetector,
+        sample_times=sample_times,
+    )
+
+    assert samples[1] is None
+    assert sample_times == [0.0, 0.15, 1.0]
+
+
+def test_detect_track_owned_enforces_hard_timeout(monkeypatch):
+    class FakeProcess:
+        def __init__(self):
+            self.alive = False
+            self.terminated = False
+
+        def start(self):
+            self.alive = True
+
+        def terminate(self):
+            self.terminated = True
+            self.alive = False
+
+        def join(self, timeout=None):
+            assert timeout in {0.01, 1.0}
+
+        def is_alive(self):
+            return self.alive
+
+        def kill(self):
+            self.alive = False
+
+    process = FakeProcess()
+
+    class FakeContext:
+        def Process(self, **kwargs):
+            assert kwargs["target"] is subject._detect_worker
+            return process
+
+    monkeypatch.setattr(subject, "_process_context", lambda: FakeContext())
+
+    with pytest.raises(TimeoutError, match="exceeded its deadline"):
+        subject.detect_track_owned("source.mp4", _LANDSCAPE, 0.01)
+
+    assert process.terminated is True
+
+
+def test_detect_track_owned_reads_completed_child_result(monkeypatch):
+    class FakeProcess:
+        exitcode = 0
+
+        def __init__(self, args):
+            self.args = args
+
+        def start(self):
+            result_path = self.args[0]
+            subject.Path(result_path).write_text(
+                subject.json.dumps(
+                    {
+                        "ok": True,
+                        "track": [
+                            {"t": 0.0, "cx": 320.0, "cy": 180.0, "w": 40.0, "h": 40.0}
+                        ],
+                        "sample_times": [0.0],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+        def join(self, timeout=None):
+            pass
+
+        def is_alive(self):
+            return False
+
+    class FakeContext:
+        def Process(self, **kwargs):
+            return FakeProcess(kwargs["args"])
+
+    monkeypatch.setattr(subject, "_process_context", lambda: FakeContext())
+
+    track, times = subject.detect_track_owned("source.mp4", _LANDSCAPE, 1.0)
+
+    assert track[0].cx == 320.0
+    assert times == [0.0]
+
+
 def test_build_plan_analysis_failed_when_detection_raises(monkeypatch):
     def boom(*a, **k):
         raise RuntimeError("detector exploded")
 
-    monkeypatch.setattr(subject, "detect_track", boom)
+    monkeypatch.setattr(subject, "detect_track_owned", boom)
     plan = subject.build_plan("source.mp4", MediaInfo(1920, 1080, 10.0, True))
 
     assert plan.decision == "blur_pad"
@@ -139,7 +290,7 @@ def test_build_plan_analysis_failed_when_detection_raises(monkeypatch):
 
 
 def test_build_plan_analysis_failed_when_scene_cuts_times_out(monkeypatch):
-    monkeypatch.setattr(subject, "detect_track", lambda *a, **k: [])
+    monkeypatch.setattr(subject, "detect_track_owned", lambda *a, **k: ([], []))
 
     def timeout(*a, **k):
         raise ProcessTimeoutError(["ffmpeg"], 1.0)
@@ -151,8 +302,26 @@ def test_build_plan_analysis_failed_when_scene_cuts_times_out(monkeypatch):
     assert plan.reason == "analysis_failed"
 
 
+def test_build_plan_rejects_scene_result_after_shared_deadline(monkeypatch):
+    monkeypatch.setattr(subject, "analysis_timeout", lambda duration: 0.01)
+    monkeypatch.setattr(subject, "detect_track_owned", lambda *a, **k: ([], []))
+
+    def late_scene(*args, **kwargs):
+        time.sleep(0.02)
+        return []
+
+    monkeypatch.setattr(subject, "scene_cuts", late_scene)
+
+    plan = subject.build_plan("source.mp4", MediaInfo(1920, 1080, 10.0, True))
+
+    assert plan.reason == "analysis_failed"
+
+
 def test_build_plan_analysis_failed_when_model_missing(monkeypatch, tmp_path):
-    monkeypatch.setattr(subject, "MODEL_PATH", tmp_path / "missing.onnx")
+    def missing(*args, **kwargs):
+        raise RuntimeError("model missing")
+
+    monkeypatch.setattr(subject, "detect_track_owned", missing)
     plan = subject.build_plan("source.mp4", MediaInfo(1920, 1080, 10.0, True))
 
     assert plan.decision == "blur_pad"
@@ -164,11 +333,9 @@ def test_analysis_timeout_floor_and_scaling():
     assert subject.analysis_timeout(100.0) == 200.0
 
 
-@pytest.mark.skipif(
-    importlib.util.find_spec("cv2") is None, reason="OpenCV not installed"
-)
-def test_yunet_model_loads_with_real_cv2():
+def test_yunet_model_runs_with_real_cv2():
     import cv2
+    import numpy as np
 
     detector = cv2.FaceDetectorYN.create(
         str(subject.MODEL_PATH),
@@ -178,6 +345,9 @@ def test_yunet_model_loads_with_real_cv2():
     )
     assert detector is not None
     assert subject.MODEL_PATH.exists()
+    detector.setInputSize((640, 360))
+    _retval, faces = detector.detect(np.zeros((360, 640, 3), dtype=np.uint8))
+    assert faces is None or faces.shape[1] >= 5
 
 
 def test_crop_sample_is_even_int_contract():

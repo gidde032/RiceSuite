@@ -28,9 +28,9 @@ single-subject, and falls back to blur-pad when detection is weak.
 
 1. **Detection.** OpenCV YuNet face detector, ONNX model vendored in the
    repo. Sample at 5 fps on frames scaled to 640 px wide. No hosted model.
-2. **Framing.** A full-height 9:16 window slides horizontally. Dead zone,
-   exponential smoothing, and a pan speed cap keep it calm. It snaps only
-   at a scene cut or after a track loss.
+2. **Framing.** A full-height 9:16 window slides horizontally. A dead zone and
+   pan speed cap keep it calm (exponential smoothing was removed in tuning
+   round 2). It snaps only at a scene cut or after a track loss.
 3. **Safe zone.** The tracked face center must stay inside the central 70% of
    the window. This replaces "never crop" as the edge-loss safeguard.
 4. **Fallback.** If a face is present in under 80% of samples, or the safe

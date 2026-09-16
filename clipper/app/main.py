@@ -131,6 +131,8 @@ def transcribe_job(job_id: str) -> JobState:
             # never raises; a failure stores an analysis_failed blur-pad plan.
             if job.info and job.info.width > job.info.height:
                 job.crop_plan = subject.build_plan(job.source_path, job.info)
+            if job.searcher_manifest is not None:
+                jobs.persist_searcher_job(job)
             job.status = "ready"
         except Exception:
             logger.exception("transcription failed")
@@ -235,15 +237,11 @@ def render_job(job_id: str, req: RenderRequest) -> JobState:
             raise HTTPException(status_code=409, detail="job not ready to render")
         if job.status not in {"ready", "done", "error"}:
             raise HTTPException(status_code=409, detail="job is not ready to render")
-        if req.geometry == "crop" and (
-            job.crop_plan is None or not job.crop_plan.samples
-        ):
-            detail = (
-                "crop is unavailable: subject analysis failed"
-                if job.crop_plan is not None
-                else "crop requires a landscape job with a crop plan"
+        if req.geometry == "crop" and job.crop_plan is None:
+            raise HTTPException(
+                status_code=400,
+                detail="crop requires a landscape job with a crop plan",
             )
-            raise HTTPException(status_code=400, detail=detail)
 
         # Resolve the per-clip geometry to the plan render() receives (ADR-001).
         # "crop" forces a crop even over a blur_pad decision; everything else

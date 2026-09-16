@@ -64,6 +64,24 @@ def test_geometry_row_is_offered_and_sent_and_toggled_by_orientation():
     assert "geometry: radioValue(clip.geometryEl)" in javascript
     # The row is shown only for landscape jobs (width > height).
     assert "state.width > state.height" in javascript
+    assert "will use subject crop or blur-pad" in javascript
+
+
+def test_render_failure_remains_retryable_after_geometry_change():
+    javascript = _js()
+    render_clip = javascript.split("async function renderClip(clip)", 1)[1].split(
+        "async function showResult", 1
+    )[0]
+
+    assert 'clip.status = "ready"; // keep failed renders retryable' in render_clip
+    assert 'clip.status = "error"' not in render_clip
+
+
+def test_upload_copy_describes_landscape_subject_crop():
+    normalized = " ".join(_html().split())
+
+    assert "Choose clips" in normalized
+    assert "Landscape clips use subject crop or blur-pad." in normalized
 
 
 def test_slate_identity_and_theme_contract_are_present():

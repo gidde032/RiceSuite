@@ -86,6 +86,19 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   per-clip human-in-the-loop gate is unchanged.
 
 ### Changed
+- **Subject-crop reliability hardening.** Probe, OpenCV analysis, and ffmpeg now
+  share display-oriented square-pixel coordinates for rotated and anamorphic
+  sources. Detection records decoded timestamps, rejects partial decode and
+  scene-analysis failures, and runs in a killable subprocess with a hard wall
+  clock bound. Cut/loss returns snap consistently, failed analysis retains a
+  centered explicit-crop fallback, and pulled RiceSearcher jobs persist their
+  transcript and crop plan for restart recovery. The six-clip fixture gate now
+  validates its role inventory, runtime, governed pan cap, failure count, and
+  contact-sheet review. The vendored YuNet model is verified against its MIT
+  license.
+- **Retryable render failures.** A failed batch render returns the affected clip
+  to the ready state, so the user can change geometry or other settings and run
+  **Render all** again without restarting the batch.
 - **Upload-page layout.** Removed the batch-defaults block and its dead space,
   and moved the media-cache controls up into the upload panel — paired with the
   RiceSearcher intake in one tool row — retiring the standalone bottom cache

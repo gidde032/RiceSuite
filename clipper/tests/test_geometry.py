@@ -25,13 +25,17 @@ def _crop_plan(samples: list[tuple[float, int]], window=(608, 1080)) -> CropPlan
 def test_crop_statements_drive_x_via_sendcmd_and_scale_to_target():
     plan = _crop_plan([(0.0, 0), (0.2, 120)])
     stmts = geometry.crop_statements(plan, "[0:v]", "[base]")
-    assert stmts == ["[0:v]sendcmd=f=crop.cmd,crop=608:1080:0:0,scale=1080:1920[base]"]
+    assert stmts == [
+        "[0:v]sendcmd=f=crop.cmd,crop=608:1080:0:0,scale=1080:1920,setsar=1[base]"
+    ]
 
 
 def test_crop_statements_keep_window_dims_literal_and_labels():
     plan = _crop_plan([(0.0, 10)], window=(720, 1280))
     (stmt,) = geometry.crop_statements(plan, "[v0]", "[out]")
-    assert stmt == "[v0]sendcmd=f=crop.cmd,crop=720:1280:0:0,scale=1080:1920[out]"
+    assert stmt == (
+        "[v0]sendcmd=f=crop.cmd,crop=720:1280:0:0,scale=1080:1920,setsar=1[out]"
+    )
 
 
 def test_crop_command_file_is_one_semicolon_line_per_sample():
@@ -80,7 +84,10 @@ def test_render_crop_plan_writes_cmd_and_uses_sendcmd_path(monkeypatch, tmp_path
     )
 
     fc = _filter_complex(captured["cmd"])
-    assert "sendcmd=f=crop.cmd,crop=608:1080:0:0,scale=1080:1920[base]" in fc
+    assert fc.startswith("[0:v]scale=1920:1080,setsar=1[src]")
+    assert (
+        "[src]sendcmd=f=crop.cmd,crop=608:1080:0:0,scale=1080:1920,setsar=1[base]"
+    ) in fc
     assert "[base]subtitles=captions.ass[vout]" in fc
     assert "boxblur" not in fc
     cmd_text = (tmp_path / "crop.cmd").read_text()
@@ -111,6 +118,7 @@ def test_render_blur_pad_plan_keeps_blur_path_and_writes_no_cmd(monkeypatch, tmp
 
     fc = _filter_complex(captured["cmd"])
     assert "boxblur" in fc
+    assert "overlay=(W-w)/2:(H-h)/2,setsar=1[base]" in fc
     assert "sendcmd" not in fc
     assert not (tmp_path / "crop.cmd").exists()
 
@@ -181,7 +189,9 @@ def test_render_vertical_with_crop_plan_uses_passthrough(monkeypatch, tmp_path):
     )
 
     fc = _filter_complex(captured["cmd"])
-    assert fc.startswith("[0:v]subtitles=captions.ass")
+    assert fc.startswith(
+        "[0:v]scale=1080:1920,setsar=1[src];[src]subtitles=captions.ass"
+    )
     assert "sendcmd" not in fc
     assert "boxblur" not in fc
     assert not (tmp_path / "crop.cmd").exists()

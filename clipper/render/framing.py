@@ -66,10 +66,13 @@ def _croppable(source_w: int, source_h: int, window_w: int) -> bool:
 def failed_plan(reason: CropReason, source_w: int = 0, source_h: int = 0) -> CropPlan:
     """Build a blur-pad plan carrying a failure ``reason`` and zero rates."""
     window_w = window_h = 0
+    samples: list[CropSample] = []
     if source_w > 0 and source_h > 0:
         ww, wh = window_size(source_w, source_h)
         if _croppable(source_w, source_h, ww):
             window_w, window_h = ww, wh
+            centered = _even_down((source_w - window_w) // 2)
+            samples = [CropSample(t=0.0, x=centered)]
     return CropPlan(
         decision="blur_pad",
         reason=reason,
@@ -77,6 +80,7 @@ def failed_plan(reason: CropReason, source_w: int = 0, source_h: int = 0) -> Cro
         safe_rate=0.0,
         window_w=window_w,
         window_h=window_h,
+        samples=samples,
     )
 
 
@@ -85,6 +89,8 @@ def plan_crop(
     cuts: list[float],
     source_w: int,
     source_h: int,
+    *,
+    sample_times: list[float] | None = None,
 ) -> CropPlan:
     """Resolve a track into a :class:`CropPlan`.
 
@@ -103,7 +109,12 @@ def plan_crop(
     max_x = source_w - window_w
     center_x = float((source_w - window_w) // 2)
 
+    if sample_times is not None and len(sample_times) != len(track):
+        raise ValueError("sample_times must align one-for-one with track")
+
     def sample_time(i: int, sample: TrackSample | None) -> float:
+        if sample_times is not None:
+            return sample_times[i]
         return sample.t if sample is not None else i * step
 
     def target_for(sample: TrackSample) -> int:
@@ -116,17 +127,23 @@ def plan_crop(
     last_face_t: float | None = None
     prev_face_cx: float | None = None
     lost = False
+    pending_cut = False
 
     for i, sample in enumerate(track):
         t_i = sample_time(i, sample)
         has_face = sample is not None
         scene_cut = prev_t is not None and any(prev_t < c <= t_i for c in cuts)
+        pending_cut = pending_cut or scene_cut
         face_jump = (
             has_face
             and prev_face_cx is not None
             and abs(sample.cx - prev_face_cx) > JUMP_CUT * source_w
         )
-        after_cut = scene_cut or face_jump
+        after_cut = pending_cut or face_jump
+        return_after_loss = has_face and (
+            (last_face_t is None and t_i > LOSS_S)
+            or (last_face_t is not None and (t_i - last_face_t) > LOSS_S)
+        )
 
         if x is None:
             x = float(target_for(sample)) if has_face else center_x
@@ -135,7 +152,8 @@ def plan_crop(
             if after_cut:
                 x = float(target)
                 lost = False
-            elif lost:
+                pending_cut = False
+            elif lost or return_after_loss:
                 x = float(target)
                 lost = False
             elif abs(target - x) <= DEAD_ZONE * window_w:

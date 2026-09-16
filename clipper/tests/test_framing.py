@@ -156,6 +156,49 @@ def test_face_returns_after_loss_snaps():
     assert plan.samples[ret].x == _expected_x(track[ret].cx, window_w, max_x)
 
 
+def test_face_return_after_threshold_snaps_without_late_missing_sample():
+    sw, sh = 1920, 1080
+    track = [
+        TrackSample(t=0.0, cx=500, cy=540, w=140, h=180),
+        None,
+        None,
+        None,
+        None,
+        None,
+        TrackSample(t=1.2, cx=780, cy=540, w=140, h=180),
+    ]
+
+    plan = plan_crop(track, [], sw, sh)
+    window_w, _ = window_size(sw, sh)
+    assert plan.samples[-1].x == _expected_x(780, window_w, sw - window_w)
+
+
+def test_scene_cut_during_missing_sample_snaps_next_visible_face():
+    sw, sh = 1920, 1080
+    face_a = TrackSample(t=0.0, cx=500, cy=540, w=140, h=180)
+    face_b = TrackSample(t=0.4, cx=780, cy=540, w=140, h=180)
+    track = [face_a, None, face_b] + [
+        face_b.model_copy(update={"t": i * 0.2}) for i in range(3, 11)
+    ]
+
+    plan = plan_crop(track, [0.1], sw, sh)
+    window_w, _ = window_size(sw, sh)
+    assert plan.samples[2].x == _expected_x(780, window_w, sw - window_w)
+
+
+def test_explicit_sample_times_keep_missing_samples_on_capture_timeline():
+    fps = 23.976
+    sample_times = [i * 5 / fps for i in range(27)]
+    track = [TrackSample(t=t, cx=960, cy=540, w=140, h=180) for t in sample_times]
+    track[25] = None
+
+    plan = plan_crop(track, [], 1920, 1080, sample_times=sample_times)
+
+    times = [sample.t for sample in plan.samples]
+    assert times == sorted(times)
+    assert times[25] == pytest.approx(sample_times[25])
+
+
 def test_cut_snap_clears_lost(self=None):
     """A-1: after a cut snap, the next sample must smooth, not snap again."""
     sw, sh = 1920, 1080
@@ -209,6 +252,13 @@ def test_non_landscape_source_yields_no_samples():
     plan = plan_crop(track, [], 1000, 1080)
     assert plan.decision == "blur_pad"
     assert plan.reason == "no_samples"
+
+
+def test_failed_landscape_plan_keeps_center_sample_for_explicit_crop():
+    plan = plan_crop([None] * 10, [], 1920, 1080)
+
+    assert plan.decision == "blur_pad"
+    assert [(sample.t, sample.x) for sample in plan.samples] == [(0.0, 656)]
 
 
 # --- face-jump and center-safe (tuning round 2) --------------------------------

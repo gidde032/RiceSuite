@@ -273,7 +273,7 @@ function setGeoNote(clip, info) {
   if (info.width === 1080 && info.height === 1920) {
     clip.geoEl.textContent = `${info.width}×${info.height} — perfect 9:16, passthrough.`;
   } else if (info.width && info.height) {
-    clip.geoEl.textContent = `${info.width}×${info.height} — will be blur-padded to 1080×1920.`;
+    clip.geoEl.textContent = `${info.width}×${info.height} — will use subject crop or blur-pad to 1080×1920.`;
   } else {
     clip.geoEl.textContent = "";
   }
@@ -642,7 +642,7 @@ async function renderClip(clip) {
     await showResult(clip);
     return true;
   } catch (err) {
-    clip.status = "error";
+    clip.status = "ready"; // keep failed renders retryable
     clip.error = err.message;
     setClipStatus(clip, err.message, true);
     return false;

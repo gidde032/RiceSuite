@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 
 import pytest
@@ -13,7 +14,17 @@ def _searcher_job_with_plan(root, crop_plan):
     job = jobs.create_job()
     job.source_path = job.dir / "source.mp4"
     job.source_path.write_bytes(b"video")
-    job.info = MediaInfo(1920, 1080, 5.0, True)
+    job.info = MediaInfo(
+        1024,
+        576,
+        5.0,
+        True,
+        coded_width=720,
+        coded_height=576,
+        rotation=0,
+        sample_aspect_ratio=64 / 45,
+        field_order="progressive",
+    )
     job.searcher_title = "clip"
     job.searcher_metadata = {"id": "c1"}
     job.searcher_manifest = {"batch": "b1"}
@@ -124,19 +135,28 @@ def test_persist_recover_round_trips_crop_plan(isolated_cache):
         warning="header_zone",
     )
     job = _searcher_job_with_plan(isolated_cache, plan)
+    job.words = [jobs.Word(text="hello", start=0.1, end=0.4)]
 
     jobs.persist_searcher_job(job)
     recovered = jobs._recover_searcher_job(job.dir)
 
     assert recovered is not None
     assert recovered.crop_plan == plan
+    assert recovered.info == job.info
+    assert recovered.words == job.words
 
 
-def test_recover_without_crop_plan_key_yields_none(isolated_cache):
+def test_recover_old_sidecar_without_plan_or_words_yields_defaults(isolated_cache):
     job = _searcher_job_with_plan(isolated_cache, None)
 
     jobs.persist_searcher_job(job)
+    metadata = job.dir / jobs.JOB_METADATA_FILENAME
+    payload = json.loads(metadata.read_text(encoding="utf-8"))
+    payload.pop("crop_plan")
+    payload.pop("words")
+    metadata.write_text(json.dumps(payload), encoding="utf-8")
     recovered = jobs._recover_searcher_job(job.dir)
 
     assert recovered is not None
     assert recovered.crop_plan is None
+    assert recovered.words == []
