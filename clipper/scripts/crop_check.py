@@ -241,10 +241,14 @@ def _max_pan_px_per_s(plan: framing.CropPlan) -> float:
 def _max_governed_pan_px_per_s(
     plan: framing.CropPlan,
     track: list[subject.TrackSample | None],
-    cuts: list[float],
+    cuts: list[tuple[float, float]],
     source_w: int,
 ) -> float:
     """Return worst non-snap pan speed; cuts and returns may snap by contract."""
+    threshold = (
+        framing.SCENE_MIN_MUSIC if plan.profile == "music" else framing.SCENE_MIN_SPEECH
+    )
+    cut_times = [t for t, sc in cuts if sc > threshold]
     if len(plan.samples) != len(track):
         return float("inf")
     worst = 0.0
@@ -255,7 +259,7 @@ def _max_governed_pan_px_per_s(
         if i:
             prev = plan.samples[i - 1]
             dt = crop.t - prev.t
-            scene_cut = any(prev.t < cut <= crop.t for cut in cuts)
+            scene_cut = any(prev.t < cut <= crop.t for cut in cut_times)
             pending_cut = pending_cut or scene_cut
             face_jump = (
                 face is not None

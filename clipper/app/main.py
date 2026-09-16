@@ -127,10 +127,10 @@ def transcribe_job(job_id: str) -> JobState:
         job.error = None
         try:
             job.words = whisper.transcribe(str(job.source_path))
-            # Landscape input gets a subject-crop plan at ingest. build_plan
-            # never raises; a failure stores an analysis_failed blur-pad plan.
             if job.info and job.info.width > job.info.height:
-                job.crop_plan = subject.build_plan(job.source_path, job.info)
+                job.crop_plan, job.music_plan = subject.build_plan(
+                    job.source_path, job.info
+                )
             if job.searcher_manifest is not None:
                 jobs.persist_searcher_job(job)
             job.status = "ready"

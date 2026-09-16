@@ -113,6 +113,7 @@ class JobState(BaseModel):
     has_output: bool = False
     # Subject-crop framing decision (ADR-001). Only set for landscape input.
     crop_plan: CropPlan | None = None
+    music_plan: CropPlan | None = None
 
 
 # --- Subject crop (ADR-001) ---------------------------------------------------

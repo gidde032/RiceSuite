@@ -22,6 +22,7 @@ PAN_CAP = 0.50
 JUMP_CUT = 0.15
 LOSS_S = 1.0
 SAFE_FRACTION = 0.70
+SCENE_MIN_SPEECH = 0.3
 SCENE_MIN_MUSIC = 0.2
 FACE_RATE_MIN = 0.80
 SAFE_RATE_MIN = 0.95
@@ -93,7 +94,7 @@ def failed_plan(
 
 def plan_crop(
     track: list[TrackSample | None],
-    cuts: list[float],
+    cuts: list[float] | list[tuple[float, float]],
     source_w: int,
     source_h: int,
     *,
@@ -103,15 +104,24 @@ def plan_crop(
     """Resolve a track into a :class:`CropPlan`.
 
     ``track`` is one entry per sample (a face box or ``None``) at ``SAMPLE_FPS``.
-    ``cuts`` are scene-cut times in seconds. Returns a crop plan when the face
-    rate and safe rate clear their thresholds, else a blur-pad plan naming the
-    first failed threshold.
+    ``cuts`` are scene-cut times or ``(t, score)`` pairs. When scores are present
+    the profile threshold filters which cuts snap.
     """
     window_w, window_h = window_size(source_w, source_h)
     if not _croppable(source_w, source_h, window_w):
         return failed_plan("no_samples", source_w, source_h, profile)
     if not track:
         return failed_plan("no_samples", source_w, source_h, profile)
+
+    threshold = SCENE_MIN_MUSIC if profile == "music" else SCENE_MIN_SPEECH
+    cut_times: list[float] = []
+    for entry in cuts:
+        if isinstance(entry, (list, tuple)):
+            t_val, score = float(entry[0]), float(entry[1])
+            if score > threshold:
+                cut_times.append(t_val)
+        else:
+            cut_times.append(float(entry))
 
     step = 1.0 / SAMPLE_FPS
     max_x = source_w - window_w
@@ -140,7 +150,7 @@ def plan_crop(
     for i, sample in enumerate(track):
         t_i = sample_time(i, sample)
         has_face = sample is not None
-        scene_cut = prev_t is not None and any(prev_t < c <= t_i for c in cuts)
+        scene_cut = prev_t is not None and any(prev_t < c <= t_i for c in cut_times)
         pending_cut = pending_cut or scene_cut
         face_jump = (
             has_face

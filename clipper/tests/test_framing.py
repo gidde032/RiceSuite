@@ -390,6 +390,28 @@ def test_music_loss_return_snaps():
     assert plan.reason == "ok"
 
 
+def test_music_cut_at_025_snaps_speech_ignores():
+    """A 0.25 cut snaps under music but not speech."""
+    sw, sh = 1920, 1080
+    ww, _ = window_size(sw, sh)
+    max_x = sw - ww
+    cx_a, cx_b = 500.0, 750.0
+    track = [
+        TrackSample(t=0.0, cx=cx_a, cy=540, w=140, h=180),
+        TrackSample(t=0.2, cx=cx_b, cy=540, w=140, h=180),
+    ] + [
+        TrackSample(t=0.2 + (i + 1) * 0.2, cx=cx_b, cy=540, w=140, h=180)
+        for i in range(8)
+    ]
+    cuts = [(0.1, 0.25)]
+
+    music = plan_crop(track, cuts, sw, sh, profile="music")
+    assert music.samples[1].x == _expected_x(cx_b, ww, max_x)
+
+    speech = plan_crop(track, cuts, sw, sh, profile="speech")
+    assert speech.samples[1].x != _expected_x(cx_b, ww, max_x)
+
+
 def test_profile_round_trips():
     """profile field round-trips through CropPlan.model_validate."""
     for prof in ("speech", "music"):

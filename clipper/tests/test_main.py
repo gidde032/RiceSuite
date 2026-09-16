@@ -280,26 +280,42 @@ def _landscape_plan() -> CropPlan:
         window_w=608,
         window_h=1080,
         samples=[CropSample(t=0.0, x=0)],
+        profile="speech",
     )
 
 
-def test_transcribe_builds_crop_plan_for_landscape(monkeypatch, isolated_jobs):
+def _music_plan() -> CropPlan:
+    return CropPlan(
+        decision="crop",
+        reason="ok",
+        face_rate=0.96,
+        safe_rate=0.99,
+        window_w=608,
+        window_h=1080,
+        samples=[CropSample(t=0.0, x=0)],
+        profile="music",
+    )
+
+
+def test_transcribe_builds_both_plans_for_landscape(monkeypatch, isolated_jobs):
     job = jobs.create_job()
     job.status = "ready"
     job.source_path = job.dir / "source.mp4"
     job.source_path.write_bytes(b"source")
     job.info = MediaInfo(1920, 1080, 4.0, True)
     monkeypatch.setattr(main.whisper, "transcribe", lambda path: [])
-    plan = _landscape_plan()
-    monkeypatch.setattr(main.subject, "build_plan", lambda *a, **k: plan)
+    speech = _landscape_plan()
+    music = _music_plan()
+    monkeypatch.setattr(main.subject, "build_plan", lambda *a, **k: (speech, music))
 
     result = main.transcribe_job(job.id)
 
     assert result.status == "ready"
-    assert result.crop_plan == plan
+    assert result.crop_plan == speech
+    assert result.music_plan == music
 
 
-def test_transcribe_persists_searcher_crop_plan(monkeypatch, isolated_jobs):
+def test_transcribe_persists_searcher_both_plans(monkeypatch, isolated_jobs):
     job = jobs.create_job()
     job.status = "ready"
     job.source_path = job.dir / "source.mp4"
@@ -310,15 +326,17 @@ def test_transcribe_persists_searcher_crop_plan(monkeypatch, isolated_jobs):
     job.searcher_manifest = {"batch": "b1"}
     jobs.persist_searcher_job(job)
     monkeypatch.setattr(main.whisper, "transcribe", lambda path: [])
-    plan = _landscape_plan()
-    monkeypatch.setattr(main.subject, "build_plan", lambda *a, **k: plan)
+    speech = _landscape_plan()
+    music = _music_plan()
+    monkeypatch.setattr(main.subject, "build_plan", lambda *a, **k: (speech, music))
 
     main.transcribe_job(job.id)
     jobs._JOBS.pop(job.id)
     recovered = jobs.get_job(job.id)
 
     assert recovered is not None
-    assert recovered.crop_plan == plan
+    assert recovered.crop_plan == speech
+    assert recovered.music_plan == music
 
 
 def test_transcribe_leaves_crop_plan_none_for_vertical(monkeypatch, isolated_jobs):
@@ -338,6 +356,7 @@ def test_transcribe_leaves_crop_plan_none_for_vertical(monkeypatch, isolated_job
 
     assert result.status == "ready"
     assert result.crop_plan is None
+    assert result.music_plan is None
 
 
 def test_transcribe_ready_even_when_analysis_failed(monkeypatch, isolated_jobs):
@@ -347,8 +366,11 @@ def test_transcribe_ready_even_when_analysis_failed(monkeypatch, isolated_jobs):
     job.source_path.write_bytes(b"source")
     job.info = MediaInfo(1920, 1080, 4.0, True)
     monkeypatch.setattr(main.whisper, "transcribe", lambda path: [])
-    failed = framing.failed_plan("analysis_failed", 1920, 1080)
-    monkeypatch.setattr(main.subject, "build_plan", lambda *a, **k: failed)
+    failed_speech = framing.failed_plan("analysis_failed", 1920, 1080, profile="speech")
+    failed_music = framing.failed_plan("analysis_failed", 1920, 1080, profile="music")
+    monkeypatch.setattr(
+        main.subject, "build_plan", lambda *a, **k: (failed_speech, failed_music)
+    )
 
     result = main.transcribe_job(job.id)
 
@@ -356,6 +378,9 @@ def test_transcribe_ready_even_when_analysis_failed(monkeypatch, isolated_jobs):
     assert result.crop_plan is not None
     assert result.crop_plan.reason == "analysis_failed"
     assert result.crop_plan.decision == "blur_pad"
+    assert result.music_plan is not None
+    assert result.music_plan.reason == "analysis_failed"
+    assert result.music_plan.profile == "music"
 
 
 def _landscape_ready_job():

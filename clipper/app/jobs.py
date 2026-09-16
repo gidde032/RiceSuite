@@ -38,6 +38,7 @@ class Job:
     output_path: Path | None = None
     # Subject-crop framing decision (ADR-001), set at ingest for landscape input.
     crop_plan: CropPlan | None = None
+    music_plan: CropPlan | None = None
     # Searcher imports retain the source manifest on the job so review remains
     # independent of the inbox after the source batch is removed.
     searcher_title: str = ""
@@ -56,6 +57,7 @@ class Job:
             error=self.error,
             has_output=bool(self.output_path and self.output_path.exists()),
             crop_plan=self.crop_plan,
+            music_plan=self.music_plan,
         )
 
 
@@ -131,6 +133,7 @@ def persist_searcher_job(job: Job) -> None:
         "manifest": job.searcher_manifest,
         "words": [word.model_dump() for word in job.words],
         "crop_plan": job.crop_plan.model_dump() if job.crop_plan else None,
+        "music_plan": job.music_plan.model_dump() if job.music_plan else None,
     }
     metadata = job.dir / JOB_METADATA_FILENAME
     temporary = metadata.with_suffix(".json.tmp")
@@ -156,6 +159,10 @@ def _recover_searcher_job(job_dir: Path) -> Job | None:
         words = [Word.model_validate(word) for word in raw_words]
         raw_plan = payload.get("crop_plan")
         crop_plan = CropPlan.model_validate(raw_plan) if raw_plan is not None else None
+        raw_music = payload.get("music_plan")
+        music_plan = (
+            CropPlan.model_validate(raw_music) if raw_music is not None else None
+        )
         if (
             payload["schema_version"] != _JOB_METADATA_SCHEMA
             or not isinstance(job_id, str)
@@ -192,6 +199,7 @@ def _recover_searcher_job(job_dir: Path) -> Job | None:
         searcher_metadata=clip,
         searcher_manifest=manifest,
         crop_plan=crop_plan,
+        music_plan=music_plan,
     )
 
 

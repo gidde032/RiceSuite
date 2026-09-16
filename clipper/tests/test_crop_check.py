@@ -44,7 +44,9 @@ def test_governed_pan_ignores_contractual_scene_cut_snap():
         TrackSample(t=0.2, cx=1304, cy=540, w=80, h=80),
     ]
 
-    governed = crop_check._max_governed_pan_px_per_s(plan, track, [0.1], source_w=1920)
+    governed = crop_check._max_governed_pan_px_per_s(
+        plan, track, [(0.1, 0.5)], source_w=1920
+    )
 
     assert governed == 0.0
 
@@ -69,7 +71,7 @@ def test_governed_pan_carries_cut_across_missing_sample():
         TrackSample(t=0.4, cx=800, cy=540, w=80, h=80),
     ]
 
-    governed = crop_check._max_governed_pan_px_per_s(plan, track, [0.1], 1920)
+    governed = crop_check._max_governed_pan_px_per_s(plan, track, [(0.1, 0.5)], 1920)
 
     assert governed == 0.0
 
