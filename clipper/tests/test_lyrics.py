@@ -79,11 +79,25 @@ def test_partial_match():
     result = align(lyrics_text, ref, 4.0)
     assert result.method == "anchors"
     assert result.anchor_rate == 6 / 10
-    for w in result.words:
-        assert w.end > w.start
     _assert_invariants(result.words, 4.0)
     starts = [w.start for w in result.words]
     assert starts == sorted(starts)
+    w = result.words
+    assert w[3].start >= w[2].end - 1e-9, "very starts before is ends"
+    assert w[3].end <= w[4].start + 1e-9, "very ends after bright starts"
+    for idx in (6, 7, 8):
+        assert w[idx].start >= w[5].end - 1e-9, f"word {idx} before today end"
+        assert w[idx].end <= w[9].start + 1e-9, f"word {idx} after now start"
+    gap_words = [w[6], w[7], w[8]]
+    chars = [max(len(gw.text), 1) for gw in gap_words]
+    total_chars = sum(chars)
+    gap_span = w[9].start - w[5].end
+    for i, gw in enumerate(gap_words):
+        expected_frac = chars[i] / total_chars
+        actual_frac = (gw.end - gw.start) / gap_span
+        assert abs(actual_frac - expected_frac) < 0.05, (
+            f"word {gw.text!r} fraction {actual_frac:.3f} != {expected_frac:.3f}"
+        )
 
 
 # --- below threshold ----------------------------------------------------------
