@@ -275,6 +275,30 @@ def _max_governed_pan_px_per_s(
     return round(worst, 1)
 
 
+def _hold_spans(
+    track: list[subject.TrackSample | None],
+    sample_times: list[float],
+) -> int:
+    """Count runs of consecutive faceless samples longer than LOSS_S."""
+    count = 0
+    run_start: int | None = None
+    for i, sample in enumerate(track):
+        if sample is None:
+            if run_start is None:
+                run_start = i
+        else:
+            if run_start is not None:
+                duration = sample_times[i - 1] - sample_times[run_start]
+                if duration > framing.LOSS_S:
+                    count += 1
+                run_start = None
+    if run_start is not None:
+        duration = sample_times[len(track) - 1] - sample_times[run_start]
+        if duration > framing.LOSS_S:
+            count += 1
+    return count
+
+
 def _process_one(source: Path, info: MediaInfo, out_dir: Path) -> dict:
     """Run detection, framing, and sheet for one clip. Return the report row."""
     t0 = time.monotonic()
@@ -319,6 +343,7 @@ def _process_one(source: Path, info: MediaInfo, out_dir: Path) -> dict:
         "max_governed_pan_px_per_s": governed_pan,
         "pan_cap_ok": governed_pan <= framing.PAN_CAP * info.width + 2.0,
         "cuts": len(cuts),
+        "hold_spans": _hold_spans(track, sample_times),
         "analysis_s": elapsed,
     }
 
@@ -359,6 +384,18 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Output directory (default: <directory>/out).",
     )
+    parser.add_argument(
+        "--profile",
+        choices=["speech", "music"],
+        default="speech",
+        help="Content profile label for report rows (default: speech).",
+    )
+    parser.add_argument(
+        "--roles",
+        choices=["check", "none"],
+        default="check",
+        help="Role validation: check (default) or none to skip.",
+    )
     args = parser.parse_args(argv)
 
     clip_dir = Path(args.directory)
@@ -373,11 +410,13 @@ def main(argv: list[str] | None = None) -> int:
     if not clips:
         print(f"No .mp4/.mov files in {clip_dir}.", file=sys.stderr)
         return 1
-    try:
-        roles = _fixture_roles(clips)
-    except ValueError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 1
+    roles: dict[Path, str] = {}
+    if args.roles == "check":
+        try:
+            roles = _fixture_roles(clips)
+        except ValueError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 1
 
     report: list[dict] = []
     passed = 0
@@ -388,7 +427,7 @@ def main(argv: list[str] | None = None) -> int:
     print("-" * len(header))
 
     for clip in clips:
-        role = roles[clip]
+        role = roles.get(clip)
         total += 1
         try:
             info = probe(str(clip))
@@ -412,11 +451,15 @@ def main(argv: list[str] | None = None) -> int:
             continue
 
         row["role"] = role
+        row["profile"] = args.profile
         report.append(row)
-        ok = _passes(role, row)
-        if ok:
-            passed += 1
+        ok = None
+        if role is not None:
+            ok = _passes(role, row)
+            if ok:
+                passed += 1
 
+        gate_col = "-" if ok is None else ("PASS" if ok else "FAIL")
         print(
             f"{row['name']:<30} "
             f"{row['width']}x{row['height']:>4} "
@@ -429,14 +472,20 @@ def main(argv: list[str] | None = None) -> int:
             f"{row['max_pan_px_per_s']:>7.1f} "
             f"{row['cuts']:>5} "
             f"{row['analysis_s']:>5.1f}s "
-            f"{'PASS' if ok else 'FAIL':>5}"
+            f"{gate_col:>5}"
         )
 
     report_path = out_dir / "report.json"
     report_path.write_text(json.dumps(report, indent=2) + "\n")
-    print(f"\npassed {passed} of {total}")
+    print(f"\nprocessed {total} clips")
+    if args.roles == "check":
+        print(f"passed {passed} of {total}")
     print(f"Report: {report_path}")
     print(f"Sheets: {out_dir}/*.png")
+
+    if args.roles == "none":
+        return 0
+
     if not args.contact_sheets_approved:
         print(
             "Contact-sheet approval is required; inspect all six sheets and rerun "
