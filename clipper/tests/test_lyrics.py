@@ -148,18 +148,37 @@ def test_group_words_breaks_on_line_start():
 # --- random invariant ---------------------------------------------------------
 
 
-def test_random_invariants():
+def test_random_invariants_anchors():
     rng = random.Random(42)
+    tokens = [f"w{i}" for i in range(200)]
+    lyrics_text = " ".join(tokens)
+    anchor_count = 60
+    ref_words: list[Word] = []
+    t = 0.5
+    for i in range(anchor_count):
+        dur = rng.uniform(0.1, 0.5)
+        ref_words.append(Word(text=tokens[i], start=t, end=t + dur))
+        t += dur + rng.uniform(0.0, 0.3)
+    duration = t + 2.0
+    result = align(lyrics_text, ref_words, duration)
+    assert result.method == "anchors"
+    _assert_invariants(result.words, duration)
+    assert len(result.words) == 200
+
+
+def test_random_invariants_even_fill():
+    rng = random.Random(99)
     tokens = [f"w{i}" for i in range(200)]
     lyrics_text = " ".join(tokens)
     ref_words: list[Word] = []
     t = 0.5
-    for _i in range(80):
+    for _i in range(5):
         dur = rng.uniform(0.1, 0.5)
         ref_words.append(Word(text=tokens[rng.randint(0, 199)], start=t, end=t + dur))
         t += dur + rng.uniform(0.0, 0.3)
     duration = t + 2.0
     result = align(lyrics_text, ref_words, duration)
+    assert result.method == "even_fill"
     _assert_invariants(result.words, duration)
     assert len(result.words) == 200
 
