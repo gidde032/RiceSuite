@@ -71,6 +71,9 @@ Add a user-selectable **music path** with two parts. Part 1 ships first.
 - Analysis of landscape input now produces two plans. Memory per job grows by
   one sample list.
 - `Word` gains an optional `line_start` flag so phrases follow lyric lines.
+- The job keeps the original whisper words apart from the reviewed words, so
+  a repeated Align aligns against speech, not against earlier lyrics. Align
+  and Restore invalidate a rendered output (added 2026-09-16, PR #27 review).
 
 ## Routed forward
 
