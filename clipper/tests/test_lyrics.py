@@ -276,7 +276,9 @@ def test_lyrics_endpoint_success_replaces_words(monkeypatch, isolated_jobs):
 
     job = job_store.create_job()
     job.status = "ready"
-    job.words = [WordModel(text="hello", start=1.0, end=1.5)]
+    whisper_words = [WordModel(text="hello", start=1.0, end=1.5)]
+    job.words = list(whisper_words)
+    job.reference_words = list(whisper_words)
 
     class FakeInfo:
         duration = 3.0

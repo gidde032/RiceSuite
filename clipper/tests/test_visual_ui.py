@@ -76,6 +76,15 @@ def test_music_content_offers_lyric_alignment_and_preserves_line_breaks():
     assert "line_start: w.line_start" in javascript
 
 
+def test_restore_transcript_button_and_endpoint():
+    html = _html()
+    javascript = _js()
+
+    assert 'class="lyrics-restore"' in html
+    assert "Restore transcript" in html
+    assert "/api/jobs/${clip.jobId}/restore-transcript" in javascript
+
+
 def test_geometry_row_is_offered_and_sent_and_toggled_by_orientation():
     html = _html()
     javascript = _js()

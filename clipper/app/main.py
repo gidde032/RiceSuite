@@ -134,6 +134,7 @@ def transcribe_job(job_id: str) -> JobState:
         job.error = None
         try:
             job.words = whisper.transcribe(str(job.source_path))
+            job.reference_words = list(job.words)
             if job.info and job.info.width > job.info.height:
                 job.crop_plan, job.music_plan = subject.build_plan(
                     job.source_path, job.info
@@ -160,13 +161,37 @@ def lyrics_job(job_id: str, req: LyricsRequest) -> LyricsResult:
         try:
             result = lyrics.align(
                 req.lyrics,
-                job.words,
+                job.reference_words,
                 job.info.duration if job.info else 0.0,
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from None
         job.words = result.words
+        job.status = "ready"
+        if job.output_path and job.output_path.exists():
+            job.output_path.unlink(missing_ok=True)
+        job.output_path = None
         return result
+
+
+@app.post("/api/jobs/{job_id}/restore-transcript", response_model=JobState)
+def restore_transcript(job_id: str) -> JobState:
+    with jobs.job_operation_lock():
+        job = jobs.get_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        if job.status in {"transcribing", "rendering"}:
+            raise HTTPException(status_code=409, detail="job is already active")
+        if not job.reference_words:
+            raise HTTPException(
+                status_code=409, detail="no reference transcript available"
+            )
+        job.words = list(job.reference_words)
+        job.status = "ready"
+        if job.output_path and job.output_path.exists():
+            job.output_path.unlink(missing_ok=True)
+        job.output_path = None
+        return job.state()
 
 
 def _safe_thumbnail(job: jobs.Job) -> str:

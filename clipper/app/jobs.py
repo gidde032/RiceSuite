@@ -33,6 +33,7 @@ class Job:
     source_path: Path | None = None
     info: MediaInfo | None = None
     words: list[Word] = field(default_factory=list)
+    reference_words: list[Word] = field(default_factory=list)
     status: str = "transcribing"
     error: str | None = None
     output_path: Path | None = None
@@ -132,6 +133,7 @@ def persist_searcher_job(job: Job) -> None:
         "clip": job.searcher_metadata,
         "manifest": job.searcher_manifest,
         "words": [word.model_dump() for word in job.words],
+        "reference_words": [word.model_dump() for word in job.reference_words],
         "crop_plan": job.crop_plan.model_dump() if job.crop_plan else None,
         "music_plan": job.music_plan.model_dump() if job.music_plan else None,
     }
@@ -157,6 +159,8 @@ def _recover_searcher_job(job_dir: Path) -> Job | None:
         title = payload.get("title", "")
         raw_words = payload.get("words", [])
         words = [Word.model_validate(word) for word in raw_words]
+        raw_ref = payload.get("reference_words", raw_words)
+        reference_words = [Word.model_validate(w) for w in raw_ref]
         raw_plan = payload.get("crop_plan")
         crop_plan = CropPlan.model_validate(raw_plan) if raw_plan is not None else None
         raw_music = payload.get("music_plan")
@@ -194,6 +198,7 @@ def _recover_searcher_job(job_dir: Path) -> Job | None:
         source_path=source_path,
         info=info,
         words=words,
+        reference_words=reference_words,
         status="ready",
         searcher_title=title,
         searcher_metadata=clip,

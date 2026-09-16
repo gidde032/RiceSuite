@@ -189,6 +189,7 @@ function buildCard(clip) {
   clip.lyricsEl = node.querySelector(".lyrics");
   clip.lyricsInputEl = node.querySelector(".lyrics-input");
   clip.lyricsAlignEl = node.querySelector(".lyrics-align");
+  clip.lyricsRestoreEl = node.querySelector(".lyrics-restore");
   clip.lyricsBadgeEl = node.querySelector(".lyrics-badge");
   clip.musicInputEl = node.querySelector(".music-input");
   clip.musicModeEl = node.querySelector(".music-mode");
@@ -256,6 +257,7 @@ function buildCard(clip) {
   });
   clip.headerGenerateEl.addEventListener("click", () => regenerateHeader(clip));
   clip.lyricsAlignEl.addEventListener("click", () => alignLyrics(clip));
+  clip.lyricsRestoreEl.addEventListener("click", () => restoreTranscript(clip));
   node.querySelector(".clip-remove").addEventListener("click", () => removeClip(clip));
 
   // Preview from the File (blob), muted — some re-encoded sources throw
@@ -383,11 +385,34 @@ async function alignLyrics(clip) {
       data.method === "anchors"
         ? `aligned · ${Math.round(data.anchor_rate * 100)}% anchors`
         : "even fill";
+    clip.resultEl.classList.add("hidden");
     setClipStatus(clip, "Ready — review & render");
   } catch (err) {
     setClipStatus(clip, err.message, true);
   } finally {
     clip.lyricsAlignEl.disabled = false;
+  }
+}
+
+async function restoreTranscript(clip) {
+  if (!clip.jobId) return;
+  clip.lyricsRestoreEl.disabled = true;
+  setClipStatus(clip, "Restoring transcript…");
+  try {
+    const res = await fetch(`/api/jobs/${clip.jobId}/restore-transcript`, {
+      method: "POST",
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "restore failed");
+    clip.words = data.words || [];
+    renderTranscript(clip);
+    clip.lyricsBadgeEl.textContent = "";
+    clip.resultEl.classList.add("hidden");
+    setClipStatus(clip, "Ready — review & render");
+  } catch (err) {
+    setClipStatus(clip, err.message, true);
+  } finally {
+    clip.lyricsRestoreEl.disabled = false;
   }
 }
 
