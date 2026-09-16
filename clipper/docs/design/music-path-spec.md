@@ -53,7 +53,7 @@ differs only in these rules:
 1. Split lyrics into lines, then tokens. Normalize: lowercase, strip punctuation. Keep the original token text for output.
 2. Match lyric tokens to reference tokens with `difflib.SequenceMatcher` on the normalized lists. Matched tokens are anchors. An anchor takes the reference word's `start` and `end`.
 3. Vocal span: first reference start to last reference end. No reference words: `0` to `duration`.
-4. `anchor_rate` = anchors / lyric tokens. If `anchor_rate < 0.25`, method is `even_fill`: spread lines evenly across the vocal span, then words evenly inside each line.
+4. `anchor_rate` = anchors / lyric tokens. If `anchor_rate < 0.25`, method is `even_fill`: spread lines across the vocal span weighted by character count, then words inside each line the same way (amended 2026-09-16, review 2A-1; was "evenly").
 5. Else method is `anchors`. Words between two anchors spread evenly across the gap, weighted by character count. Words before the first anchor spread from the vocal span start; words after the last spread to the vocal span end.
 6. Every word gets `end > start`. Words never overlap. Order is lyric order.
 7. The first token of each line sets `line_start = True`.
