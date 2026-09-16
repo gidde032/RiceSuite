@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -283,6 +284,20 @@ def test_auto_header_control_is_wired_to_the_generation_endpoint():
     assert "/header" in javascript
     assert "await autoGenerateHeader(clip)" in javascript
     assert "function regenerateHeader" in javascript
+
+
+def test_clip_status_ready_after_align_and_restore():
+    javascript = _js()
+    align_match = re.search(
+        r"async function alignLyrics\b.*?\n\}", javascript, re.DOTALL
+    )
+    restore_match = re.search(
+        r"async function restoreTranscript\b.*?\n\}", javascript, re.DOTALL
+    )
+    assert align_match, "alignLyrics function not found"
+    assert restore_match, "restoreTranscript function not found"
+    assert 'clip.status = "ready"' in align_match.group()
+    assert 'clip.status = "ready"' in restore_match.group()
 
 
 def test_render_runs_one_clip_at_a_time():

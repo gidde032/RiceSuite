@@ -381,6 +381,7 @@ async function alignLyrics(clip) {
     if (!res.ok) throw new Error(data.detail || "lyric alignment failed");
     clip.words = data.words || [];
     renderTranscript(clip);
+    clip.status = "ready";
     clip.lyricsBadgeEl.textContent =
       data.method === "anchors"
         ? `aligned · ${Math.round(data.anchor_rate * 100)}% anchors`
@@ -406,6 +407,7 @@ async function restoreTranscript(clip) {
     if (!res.ok) throw new Error(data.detail || "restore failed");
     clip.words = data.words || [];
     renderTranscript(clip);
+    clip.status = "ready";
     clip.lyricsBadgeEl.textContent = "";
     clip.resultEl.classList.add("hidden");
     setClipStatus(clip, "Ready — review & render");
