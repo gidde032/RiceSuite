@@ -159,6 +159,17 @@ def test_random_invariants():
     assert len(result.words) == 200
 
 
+# --- 2A-2 shortfall cascade past duration ------------------------------------
+
+
+def test_shortfall_cascade_clamped_to_duration():
+    ref = _words(("a", 0.90, 0.95), ("b", 0.96, 0.97))
+    result = align("a x b", ref, 1.0)
+    for w in result.words:
+        assert w.end <= 1.0 + 1e-9, f"word {w.text!r} end {w.end} > duration"
+    _assert_invariants(result.words, 1.0)
+
+
 # --- empty raises -------------------------------------------------------------
 
 

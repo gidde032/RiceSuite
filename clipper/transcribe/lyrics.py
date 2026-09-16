@@ -99,7 +99,8 @@ def align(lyrics: str, reference: list[WordModel], duration: float) -> LyricsRes
 
     _interpolate_gaps(starts_ends, anchored, tokens, span_start, span_end)
 
-    timings_final = [(s, e) for s, e in starts_ends]  # type: ignore[misc]
+    timings_raw = [(s, e) for s, e in starts_ends]  # type: ignore[misc]
+    timings_final = _clamp_to_duration(timings_raw, duration)
     words = _build_words(tokens, timings_final, line_starts, duration)
     return LyricsResult(words=words, anchor_rate=anchor_rate, method="anchors")
 
@@ -153,6 +154,19 @@ def _interpolate_gaps(
         spreads = _char_spread(run_tokens, prev_end, next_start)
         for k, (s, e) in enumerate(spreads):
             starts_ends[run_start + k] = (s, e)
+
+
+def _clamp_to_duration(
+    timings: list[tuple[float, float]], duration: float
+) -> list[tuple[float, float]]:
+    clamped = list(timings)
+    for i in range(len(clamped) - 1, -1, -1):
+        s, e = clamped[i]
+        nxt_start = clamped[i + 1][0] if i + 1 < len(clamped) else duration
+        end_i = min(e, nxt_start)
+        start_i = min(s, end_i - MIN_WORD_S)
+        clamped[i] = (max(start_i, 0.0), min(end_i, duration))
+    return clamped
 
 
 def _build_words(
