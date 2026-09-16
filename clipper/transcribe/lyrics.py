@@ -56,11 +56,16 @@ def align(lyrics: str, reference: list[WordModel], duration: float) -> LyricsRes
         raise ValueError("empty lyric block")
 
     norm_lyrics = [normalize(t) for t in tokens]
-    norm_ref = [normalize(w.text) for w in reference]
 
-    if reference and reference[-1].end > reference[0].start:
-        span_start = reference[0].start
-        span_end = reference[-1].end
+    ref_clean = [
+        w for w in reference if w.end > w.start and w.start >= 0 and w.end <= duration
+    ]
+
+    norm_ref = [normalize(w.text) for w in ref_clean]
+
+    if ref_clean and ref_clean[-1].end > ref_clean[0].start:
+        span_start = ref_clean[0].start
+        span_end = ref_clean[-1].end
     else:
         span_start = 0.0
         span_end = duration
@@ -71,7 +76,7 @@ def align(lyrics: str, reference: list[WordModel], duration: float) -> LyricsRes
         for k in range(match.size):
             lyric_idx = match.a + k
             ref_idx = match.b + k
-            anchored[lyric_idx] = (reference[ref_idx].start, reference[ref_idx].end)
+            anchored[lyric_idx] = (ref_clean[ref_idx].start, ref_clean[ref_idx].end)
 
     anchor_rate = len(anchored) / len(tokens)
 

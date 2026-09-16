@@ -159,6 +159,18 @@ def test_random_invariants():
     assert len(result.words) == 200
 
 
+# --- 2A-3 zero-duration reference words ---------------------------------------
+
+
+def test_zero_duration_ref_word_dropped():
+    ref = _words(("hello", 2.0, 2.0))
+    result = align("hello", ref, 2.0)
+    assert result.method == "even_fill"
+    for w in result.words:
+        assert w.end <= 2.0 + 1e-9
+    _assert_invariants(result.words, 2.0)
+
+
 # --- 2A-2 shortfall cascade past duration ------------------------------------
 
 
