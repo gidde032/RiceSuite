@@ -1,6 +1,6 @@
 # Music-content path — design spec
 
-Status: **RATIFIED 2026-09-15 (ADR-002 ACCEPTED, both parts). Implementation authority comes from the owning GitHub Issue.**
+Status: **SHIPPED 2026-09-16 (ADR-002 ACCEPTED; Issue #24; PRs #25, #26, #27). Both gates passed.**
 Date: 2026-09-15. Companion: `../adr/ADR-002-music-path.md`. Builds on `subject-crop-spec.md`.
 
 ## Purpose
