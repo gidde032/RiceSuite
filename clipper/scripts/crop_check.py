@@ -303,6 +303,10 @@ def _hold_spans(
     return count
 
 
+def _pan_cap_ok(governed_pan: float, source_w: int) -> bool:
+    return governed_pan <= framing.PAN_CAP * source_w + 2 * framing.SAMPLE_FPS
+
+
 def _process_one(
     source: Path, info: MediaInfo, out_dir: Path, profile: str = "speech"
 ) -> dict:
@@ -348,8 +352,7 @@ def _process_one(
         "warning": plan.warning,
         "max_pan_px_per_s": _max_pan_px_per_s(plan),
         "max_governed_pan_px_per_s": governed_pan,
-        "pan_cap_ok": governed_pan
-        <= framing.PAN_CAP * info.width + 2 * framing.SAMPLE_FPS,
+        "pan_cap_ok": _pan_cap_ok(governed_pan, info.width),
         "cuts": len(cuts),
         "hold_spans": _hold_spans(track, sample_times),
         "analysis_s": elapsed,

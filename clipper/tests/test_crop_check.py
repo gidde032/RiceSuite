@@ -208,10 +208,9 @@ def test_pan_cap_tolerance_accounts_for_rounding():
 
     source_w = 1920
     cap = framing.PAN_CAP * source_w
-    tolerance = 2 * framing.SAMPLE_FPS
 
-    assert (cap + 9) <= cap + tolerance
-    assert (cap + 11) > cap + tolerance
+    assert crop_check._pan_cap_ok(cap + 9, source_w)
+    assert not crop_check._pan_cap_ok(cap + 11, source_w)
 
 
 def test_hold_spans_counts_long_faceless_runs():
