@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import difflib
 import re
+import unicodedata
 
 from app.models import LyricsResult
 from app.models import Word as WordModel
@@ -20,7 +21,20 @@ _STRIP_RE = re.compile(r"^[^\w']+|[^\w']+$", re.UNICODE)
 
 
 def normalize(token: str) -> str:
-    return _STRIP_RE.sub("", token).lower()
+    stripped = _STRIP_RE.sub("", token).lower()
+    out: list[str] = []
+    for i, c in enumerate(stripped):
+        if unicodedata.category(c).startswith("P"):
+            if (
+                c in ("'", "\u2018", "\u2019")
+                and 0 < i < len(stripped) - 1
+                and stripped[i - 1].isalpha()
+                and stripped[i + 1].isalpha()
+            ):
+                out.append(c)
+        else:
+            out.append(c)
+    return "".join(out)
 
 
 def _char_spread(

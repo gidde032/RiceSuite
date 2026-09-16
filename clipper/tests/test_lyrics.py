@@ -43,6 +43,11 @@ def test_normalize_strips_punctuation_keeps_apostrophe():
     assert normalize("...world!") == "world"
 
 
+def test_normalize_strips_internal_unicode_punctuation():
+    assert normalize("\u2018hello\u2014world\u2019") == "helloworld"
+    assert normalize("don't") == "don't"
+
+
 # --- exact match --------------------------------------------------------------
 
 
