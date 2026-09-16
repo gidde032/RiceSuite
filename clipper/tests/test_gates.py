@@ -30,7 +30,7 @@ PRE_COMMIT_CONFIG = PROJECT_ROOT / ".pre-commit-config.yaml"
 CI_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "ci.yml"
 
 COVERAGE_FLOOR = 85
-SMOKE_TEST_COUNT = 6
+SMOKE_TEST_COUNT = 8
 
 # The smoke tier's execution budget. It runs in ~0.35s today, so this leaves
 # generous headroom for a loaded machine while still catching a tier that has
