@@ -210,7 +210,7 @@ def plan_crop(
                 window_w=window_w,
                 window_h=window_h,
                 samples=[CropSample(t=0.0, x=centered)],
-                profile="music",
+                profile=profile,
             )
         return failed_plan("no_samples", source_w, source_h, profile)
 

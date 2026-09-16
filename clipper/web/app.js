@@ -311,7 +311,6 @@ function _musicSummary(plan) {
 function applyGeometry(clip, state) {
   if (!clip.geometryEl) return;
   const landscape = state.width > state.height;
-  if (clip.contentEl) clip.contentEl.hidden = !landscape;
   clip.geometryEl.hidden = !landscape;
   if (!landscape) return;
 

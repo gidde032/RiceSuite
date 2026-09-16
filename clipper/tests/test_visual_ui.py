@@ -51,12 +51,13 @@ def test_content_row_is_offered_and_sent():
     html = _html()
     javascript = _js()
 
-    assert 'class="field choice-field content" hidden' in html
+    assert 'class="field choice-field content" hidden' not in html
     assert 'name="content" value="speech" checked' in html
     assert 'name="content" value="music"' in html
 
     assert "content: radioValue(clip.contentEl)" in javascript
     assert "clip.contentEl = node.querySelector" in javascript
+    assert "clip.contentEl.hidden" not in javascript
 
 
 def test_geometry_row_is_offered_and_sent_and_toggled_by_orientation():
