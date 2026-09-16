@@ -37,7 +37,7 @@ MODEL_PATH = Path(__file__).parent / "models" / "face_detection_yunet_2023mar.on
 DETECT_WIDTH = 640
 SCORE_MIN = 0.5
 CONTINUITY = 0.15
-SCENE_MIN = 0.3
+SCENE_MIN = 0.2
 
 # Effective sampling rate. Decoded presentation timestamps are retained for
 # every sampled frame, including samples without a face.
@@ -50,7 +50,8 @@ _CAP_PROP_FRAME_COUNT = 7
 _CAP_PROP_POS_MSEC = 0
 _CAP_PROP_ORIENTATION_AUTO = 49
 
-_PTS_TIME = re.compile(r"pts_time:([0-9]+\.?[0-9]*)")
+_PTS_TIME = re.compile(r"Parsed_showinfo.*pts_time:([0-9]+\.?[0-9]*)")
+_SCENE_SCORE = re.compile(r"lavfi\.scene_score=([0-9]+\.?[0-9]*)")
 
 
 def analysis_timeout(duration: float) -> float:
@@ -100,13 +101,17 @@ def _capture_fps(capture, info: MediaInfo) -> float:
 
 
 def _select_box(
-    faces, info: MediaInfo, prev_cx: float | None, scale: float
+    faces,
+    info: MediaInfo,
+    prev_cx: float | None,
+    scale: float,
+    *,
+    after_cut: bool = False,
 ) -> tuple[float, float, float, float] | None:
     """Pick one face box from a detection, in source pixels, or ``None``.
 
-    Rules (subject-crop-spec Detection): drop boxes below ``SCORE_MIN``; keep the
-    largest by area; but if a previous target exists, prefer the largest box
-    whose center is within ``CONTINUITY`` of source width of it.
+    After a scene cut, return the largest box. Between cuts, prefer the box
+    nearest ``prev_cx`` inside ``CONTINUITY``; else the largest.
     """
     if faces is None:
         return None
@@ -127,10 +132,12 @@ def _select_box(
     def area(box: tuple[float, float, float, float]) -> float:
         return box[2] * box[3]
 
+    if after_cut:
+        return max(candidates, key=area)
     if prev_cx is not None:
         near = [c for c in candidates if abs(c[0] - prev_cx) <= CONTINUITY * info.width]
         if near:
-            return max(near, key=area)
+            return min(near, key=lambda c: abs(c[0] - prev_cx))
     return max(candidates, key=area)
 
 
@@ -142,6 +149,7 @@ def detect_track(
     detector_factory=None,
     deadline: float | None = None,
     sample_times: list[float] | None = None,
+    cuts: list[tuple[float, float]] | None = None,
 ) -> list[TrackSample | None]:
     """Sample the source and return one face box (or ``None``) per sample.
 
@@ -163,7 +171,9 @@ def detect_track(
     scale = info.width / DETECT_WIDTH
     samples: list[TrackSample | None] = []
     times = sample_times if sample_times is not None else []
+    cut_times = cuts or []
     prev_cx: float | None = None
+    prev_t: float | None = None
     try:
         if info.rotation:
             set_property = getattr(capture, "set", None)
@@ -204,7 +214,18 @@ def detect_track(
                     import cv2
 
                     frame = cv2.resize(frame, (info.width, info.height))
-                box = _select_box(detector.detect(frame), info, prev_cx, scale)
+                is_after_cut = prev_t is not None and any(
+                    prev_t < ct <= reported_t
+                    for ct, sc in cut_times
+                    if sc > framing.SCENE_MIN_SPEECH
+                )
+                box = _select_box(
+                    detector.detect(frame),
+                    info,
+                    prev_cx,
+                    scale,
+                    after_cut=is_after_cut,
+                )
                 times.append(reported_t)
                 if box is None:
                     samples.append(None)
@@ -212,6 +233,7 @@ def detect_track(
                     cx, cy, w, h = box
                     samples.append(TrackSample(t=reported_t, cx=cx, cy=cy, w=w, h=h))
                     prev_cx = cx
+                prev_t = reported_t
             frame_index += 1
         if frame_index == 0:
             raise RuntimeError("video decode produced no frames")
@@ -229,11 +251,16 @@ def detect_track(
     return samples
 
 
-def _detect_worker(result_path: str, source: str, info: MediaInfo) -> None:
+def _detect_worker(
+    result_path: str,
+    source: str,
+    info: MediaInfo,
+    cuts: list[tuple[float, float]] | None = None,
+) -> None:
     """Run native OpenCV work in a killable child process."""
     try:
         sample_times: list[float] = []
-        track = detect_track(Path(source), info, sample_times=sample_times)
+        track = detect_track(Path(source), info, sample_times=sample_times, cuts=cuts)
         payload = [
             sample.model_dump() if sample is not None else None for sample in track
         ]
@@ -248,7 +275,10 @@ def _process_context():
 
 
 def detect_track_owned(
-    source: Path, info: MediaInfo, timeout: float
+    source: Path,
+    info: MediaInfo,
+    timeout: float,
+    cuts: list[tuple[float, float]] | None = None,
 ) -> tuple[list[TrackSample | None], list[float]]:
     """Run detection in a subprocess that can be terminated at the hard deadline."""
     context = _process_context()
@@ -261,7 +291,7 @@ def detect_track_owned(
     try:
         process = context.Process(
             target=_detect_worker,
-            args=(str(result_path), str(source), info),
+            args=(str(result_path), str(source), info, cuts),
             daemon=True,
         )
         process.start()
@@ -300,8 +330,8 @@ def detect_track_owned(
         result_path.unlink(missing_ok=True)
 
 
-def scene_cuts(source: Path, timeout: float) -> list[float]:
-    """Return sorted scene-cut times (seconds) via one ffmpeg showinfo pass."""
+def scene_cuts(source: Path, timeout: float) -> list[tuple[float, float]]:
+    """Return scene cuts as ``(t, score)`` sorted by time via one ffmpeg pass."""
     result = run_owned(
         [
             "ffmpeg",
@@ -310,7 +340,7 @@ def scene_cuts(source: Path, timeout: float) -> list[float]:
             "-i",
             str(source),
             "-vf",
-            f"select='gt(scene,{SCENE_MIN})',showinfo",
+            f"select='gt(scene,{SCENE_MIN})',metadata=print:key=lavfi.scene_score,showinfo",
             "-an",
             "-f",
             "null",
@@ -323,35 +353,58 @@ def scene_cuts(source: Path, timeout: float) -> list[float]:
     if result.returncode != 0:
         raise RuntimeError("scene detection failed")
     stderr = result.stderr or ""
-    return sorted(float(m) for m in _PTS_TIME.findall(stderr))
+    scores = [float(m) for m in _SCENE_SCORE.findall(stderr)]
+    times = [float(m) for m in _PTS_TIME.findall(stderr)]
+    pairs = list(zip(times, scores, strict=True))
+    pairs.sort(key=lambda pair: pair[0])
+    return pairs
 
 
-def build_plan(source: Path, info: MediaInfo) -> CropPlan:
-    """Analyse ``source`` and return a :class:`~app.models.CropPlan`.
+def build_plan(source: Path, info: MediaInfo) -> tuple[CropPlan, CropPlan]:
+    """Analyse ``source`` and return ``(speech_plan, music_plan)``.
 
-    Rides one deadline over detection and scene cuts. Catches every failure,
-    logs it, and returns a blur-pad plan with reason ``analysis_failed``. It
-    never raises and never fails the owning job.
+    Rides one deadline over scene cuts and detection. Catches every failure,
+    logs it, and returns analysis_failed plans for both profiles.
     """
     timeout = analysis_timeout(info.duration)
     deadline = time.monotonic() + timeout
     try:
         if info.field_order not in {"progressive", "unknown"}:
             raise RuntimeError("interlaced input is not safe for subject detection")
-        track, sample_times = detect_track_owned(source, info, timeout)
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError("analysis deadline passed before scene detection")
         cuts = scene_cuts(source, remaining)
         if time.monotonic() > deadline:
             raise TimeoutError("scene detection exceeded the analysis deadline")
-        return framing.plan_crop(
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("analysis deadline passed before detection")
+        track, sample_times = detect_track_owned(source, info, remaining, cuts=cuts)
+        speech = framing.plan_crop(
             track,
             cuts,
             info.width,
             info.height,
             sample_times=sample_times,
+            profile="speech",
         )
+        music = framing.plan_crop(
+            track,
+            cuts,
+            info.width,
+            info.height,
+            sample_times=sample_times,
+            profile="music",
+        )
+        return speech, music
     except Exception:
         logger.exception("subject-crop analysis failed for %s", source)
-        return framing.failed_plan("analysis_failed", info.width, info.height)
+        return (
+            framing.failed_plan(
+                "analysis_failed", info.width, info.height, profile="speech"
+            ),
+            framing.failed_plan(
+                "analysis_failed", info.width, info.height, profile="music"
+            ),
+        )

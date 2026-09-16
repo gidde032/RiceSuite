@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -43,7 +44,9 @@ def test_governed_pan_ignores_contractual_scene_cut_snap():
         TrackSample(t=0.2, cx=1304, cy=540, w=80, h=80),
     ]
 
-    governed = crop_check._max_governed_pan_px_per_s(plan, track, [0.1], source_w=1920)
+    governed = crop_check._max_governed_pan_px_per_s(
+        plan, track, [(0.1, 0.5)], source_w=1920
+    )
 
     assert governed == 0.0
 
@@ -68,7 +71,7 @@ def test_governed_pan_carries_cut_across_missing_sample():
         TrackSample(t=0.4, cx=800, cy=540, w=80, h=80),
     ]
 
-    governed = crop_check._max_governed_pan_px_per_s(plan, track, [0.1], 1920)
+    governed = crop_check._max_governed_pan_px_per_s(plan, track, [(0.1, 0.5)], 1920)
 
     assert governed == 0.0
 
@@ -108,7 +111,7 @@ def test_gate_requires_manual_contact_sheet_attestation(tmp_path, monkeypatch):
     monkeypatch.setattr(
         crop_check,
         "_process_one",
-        lambda source, info, out: {
+        lambda source, info, out, profile="speech": {
             "name": source.name,
             "width": info.width,
             "height": info.height,
@@ -122,9 +125,135 @@ def test_gate_requires_manual_contact_sheet_attestation(tmp_path, monkeypatch):
             "max_governed_pan_px_per_s": 0.0,
             "pan_cap_ok": True,
             "cuts": 0,
+            "hold_spans": 0,
             "analysis_s": 1.0,
         },
     )
 
     assert crop_check.main([str(tmp_path)]) == 1
     assert crop_check.main([str(tmp_path), "--contact-sheets-approved"]) == 0
+
+
+def _mock_row(source, info, out, profile="speech"):
+    return {
+        "name": source.name,
+        "width": info.width,
+        "height": info.height,
+        "duration": info.duration,
+        "decision": "crop",
+        "reason": "ok",
+        "face_rate": 1.0,
+        "safe_rate": 1.0,
+        "warning": None,
+        "max_pan_px_per_s": 0.0,
+        "max_governed_pan_px_per_s": 0.0,
+        "pan_cap_ok": True,
+        "cuts": 0,
+        "hold_spans": 0,
+        "analysis_s": 1.0,
+    }
+
+
+def test_roles_none_two_clips_writes_two_row_report(tmp_path, monkeypatch):
+    clips = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+    for c in clips:
+        c.touch()
+
+    monkeypatch.setattr(
+        crop_check,
+        "probe",
+        lambda _p: crop_check.MediaInfo(1920, 1080, 2.0, True),
+    )
+    monkeypatch.setattr(crop_check, "_process_one", _mock_row)
+
+    out = tmp_path / "out"
+    rc = crop_check.main([str(tmp_path), "--roles", "none", "--out", str(out)])
+
+    assert rc == 0
+    report = json.loads((out / "report.json").read_text())
+    assert len(report) == 2
+
+
+def test_profile_music_labels_every_row(tmp_path, monkeypatch):
+    clips = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+    for c in clips:
+        c.touch()
+
+    monkeypatch.setattr(
+        crop_check,
+        "probe",
+        lambda _p: crop_check.MediaInfo(1920, 1080, 2.0, True),
+    )
+    monkeypatch.setattr(crop_check, "_process_one", _mock_row)
+
+    out = tmp_path / "out"
+    crop_check.main(
+        [
+            str(tmp_path),
+            "--roles",
+            "none",
+            "--profile",
+            "music",
+            "--out",
+            str(out),
+        ]
+    )
+
+    report = json.loads((out / "report.json").read_text())
+    assert all(row["profile"] == "music" for row in report)
+
+
+def test_pan_cap_tolerance_accounts_for_rounding():
+    from render import framing
+
+    source_w = 1920
+    cap = framing.PAN_CAP * source_w
+
+    assert crop_check._pan_cap_ok(cap + 9, source_w)
+    assert not crop_check._pan_cap_ok(cap + 11, source_w)
+
+
+def test_hold_spans_counts_long_faceless_runs():
+    face = TrackSample(t=0.0, cx=100, cy=100, w=50, h=50)
+    track = [
+        face,
+        None,
+        None,
+        None,
+        None,
+        None,
+        face,
+        None,
+        None,
+        face,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        face,
+    ]
+    sample_times = [
+        0.0,
+        0.2,
+        0.4,
+        0.6,
+        0.8,
+        1.5,
+        1.7,
+        1.9,
+        2.1,
+        2.3,
+        2.5,
+        2.7,
+        2.9,
+        3.1,
+        3.3,
+        3.8,
+        4.0,
+    ]
+
+    result = crop_check._hold_spans(track, sample_times)
+
+    assert result == 2

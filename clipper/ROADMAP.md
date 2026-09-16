@@ -78,6 +78,9 @@ and three header treatments.
   a deliberate engine decision, not a style toggle.
 - **Auto-ducking + vocal isolation** — music automatically dips under speech;
   isolate vocals from a music-laden source. Beyond v1's fixed-level mix.
+- **Forced lyric alignment** (wav2vec2) — only if the ADR-002 anchor method
+  is killed. **Histogram cut detector** — only if scene 0.2 still misses cuts
+  on filtered footage.
 - **Path 2** — 5–10 min input → LLM clip extraction (single-context) on this
   render chassis.
 - **Path 1** — 30+ min input → chunked extraction with global re-ranking. The

@@ -181,6 +181,7 @@ function buildCard(clip) {
   clip.headerFeedbackEl = node.querySelector(".header-feedback");
   clip.headerGenStatusEl = node.querySelector(".header-gen-status");
   clip.headerStyleEl = node.querySelector(".header-style");
+  clip.contentEl = node.querySelector(".content");
   clip.geometryEl = node.querySelector(".geometry");
   clip.captionsToggleEl = node.querySelector(".captions-toggle");
   clip.captionStyleEl = node.querySelector(".caption-style");
@@ -198,6 +199,9 @@ function buildCard(clip) {
   });
   node.querySelectorAll('.caption-style input[type="radio"]').forEach((option) => {
     option.name = `caption-style-${clip.localId}`;
+  });
+  node.querySelectorAll('.content input[type="radio"]').forEach((option) => {
+    option.name = `content-${clip.localId}`;
   });
   node.querySelectorAll('.geometry input[type="radio"]').forEach((option) => {
     option.name = `geometry-${clip.localId}`;
@@ -226,6 +230,9 @@ function buildCard(clip) {
   });
   clip.headerStyleEl.addEventListener("change", () => {
     rememberSlotStyle(clip.ord, "header", radioValue(clip.headerStyleEl));
+  });
+  clip.contentEl.addEventListener("change", () => {
+    if (clip.geoState) applyGeometry(clip, clip.geoState);
   });
 
   clip.musicVolumeEl.addEventListener("input", (e) => {
@@ -279,28 +286,42 @@ function setGeoNote(clip, info) {
   }
 }
 
-// Show the Geometry row only for landscape jobs and fill the Auto card from the
-// crop plan (ADR-001). Vertical jobs keep the row hidden.
+function _reasonLabel(reason) {
+  if (reason === "low_safe_rate") return "low safe rate";
+  if (reason === "low_face_rate") return "low face rate";
+  if (reason === "no_samples") return "no face";
+  return reason;
+}
+
+function _speechSummary(plan, pct) {
+  if (!plan) return "";
+  if (plan.reason === "analysis_failed") return "blur-pad · analysis failed";
+  if (plan.decision === "crop")
+    return `crop · face ${pct(plan.face_rate)}% · safe ${pct(plan.safe_rate)}%`;
+  return `blur-pad · face ${pct(plan.face_rate)}% · ${_reasonLabel(plan.reason)}`;
+}
+
+function _musicSummary(plan) {
+  if (!plan) return "";
+  if (plan.reason === "analysis_failed") return "blur-pad · analysis failed";
+  if (plan.reason === "hold_static") return "crop · static centered";
+  return `crop · face ${Math.round(plan.face_rate * 100)}% · holds`;
+}
+
 function applyGeometry(clip, state) {
   if (!clip.geometryEl) return;
   const landscape = state.width > state.height;
   clip.geometryEl.hidden = !landscape;
   if (!landscape) return;
 
-  const plan = state.crop_plan;
+  const content = clip.contentEl ? radioValue(clip.contentEl) : "speech";
+  const plan = content === "music" ? state.music_plan : state.crop_plan;
   const summaryEl = clip.geometryEl.querySelector(".geometry-summary");
   const warnEl = clip.geometryEl.querySelector(".geometry-warning");
   const pct = (rate) => Math.round(rate * 100);
 
-  if (!plan) {
-    summaryEl.textContent = "";
-  } else if (plan.reason === "analysis_failed") {
-    summaryEl.textContent = "blur-pad · analysis failed";
-  } else if (plan.decision === "crop") {
-    summaryEl.textContent = `crop · face ${pct(plan.face_rate)}% · safe ${pct(plan.safe_rate)}%`;
-  } else {
-    summaryEl.textContent = `blur-pad · face ${pct(plan.face_rate)}%`;
-  }
+  summaryEl.textContent =
+    content === "music" ? _musicSummary(plan) : _speechSummary(plan, pct);
 
   const warning = plan ? plan.warning : null;
   if (warning === "header_zone") {
@@ -549,6 +570,7 @@ async function ingestClip(clip) {
       throw new Error(trdata.error || trdata.detail || "transcription failed");
     }
     clip.words = trdata.words || [];
+    clip.geoState = trdata;
     renderTranscript(clip);
     applyGeometry(clip, trdata);
     clip.status = "ready";
@@ -627,6 +649,7 @@ async function renderClip(clip) {
       caption_style: radioValue(clip.captionStyleEl),
       header_style: radioValue(clip.headerStyleEl),
       geometry: radioValue(clip.geometryEl),
+      content: radioValue(clip.contentEl),
       music: { mode: musicFile ? mode : "none", volume: Number(clip.musicVolumeEl.value), filename },
     };
     const res = await fetch(`/api/jobs/${clip.jobId}/render`, {

@@ -47,6 +47,19 @@ def test_review_ui_exposes_all_visual_choices_and_sends_them():
     assert "setRadioValue(clip.headerStyleEl" in javascript
 
 
+def test_content_row_is_offered_and_sent():
+    html = _html()
+    javascript = _js()
+
+    assert 'class="field choice-field content" hidden' not in html
+    assert 'name="content" value="speech" checked' in html
+    assert 'name="content" value="music"' in html
+
+    assert "content: radioValue(clip.contentEl)" in javascript
+    assert "clip.contentEl = node.querySelector" in javascript
+    assert "clip.contentEl.hidden" not in javascript
+
+
 def test_geometry_row_is_offered_and_sent_and_toggled_by_orientation():
     html = _html()
     javascript = _js()
@@ -65,6 +78,17 @@ def test_geometry_row_is_offered_and_sent_and_toggled_by_orientation():
     # The row is shown only for landscape jobs (width > height).
     assert "state.width > state.height" in javascript
     assert "will use subject crop or blur-pad" in javascript
+
+
+def test_geometry_summary_strings_for_speech_and_music():
+    javascript = _js()
+
+    assert "blur-pad · analysis failed" in javascript
+    assert "low safe rate" in javascript
+    assert "low face rate" in javascript
+    assert "no face" in javascript
+    assert "crop · static centered" in javascript
+    assert "holds" in javascript
 
 
 def test_render_failure_remains_retryable_after_geometry_change():

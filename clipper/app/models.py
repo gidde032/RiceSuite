@@ -58,6 +58,7 @@ class RenderRequest(BaseModel):
     caption_style: CaptionStyle = "classic"
     header_style: HeaderStyle = "plain"
     geometry: Geometry = "auto"
+    content: Content = "speech"
     music: MusicSettings = Field(default_factory=MusicSettings)
 
 
@@ -113,6 +114,7 @@ class JobState(BaseModel):
     has_output: bool = False
     # Subject-crop framing decision (ADR-001). Only set for landscape input.
     crop_plan: CropPlan | None = None
+    music_plan: CropPlan | None = None
 
 
 # --- Subject crop (ADR-001) ---------------------------------------------------
@@ -137,12 +139,15 @@ class CropSample(BaseModel):
     x: int
 
 
+Content = Literal["speech", "music"]
+
 CropReason = Literal[
     "ok",
     "low_face_rate",
     "low_safe_rate",
     "no_samples",
     "analysis_failed",
+    "hold_static",
 ]
 
 
@@ -157,6 +162,7 @@ class CropPlan(BaseModel):
     window_h: int
     samples: list[CropSample] = Field(default_factory=list)
     warning: Literal["header_zone", "caption_zone"] | None = None
+    profile: Content = "speech"
 
 
 # JobState references CropPlan by forward reference; resolve it now that CropPlan

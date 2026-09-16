@@ -70,6 +70,8 @@ input[type="file"]::file-selector-button { margin-right: 10px; border: 1px solid
 
 .choice-grid { display: grid; gap: 10px; }
 .header-choice-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.content-choice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.content-choice-grid .choice-card { min-height: 64px; }
 .geometry-choice-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .geometry-choice-grid .choice-card { min-height: 84px; }
 .geometry-summary { color: var(--muted); font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; font-size: 11px; line-height: 1.3; }

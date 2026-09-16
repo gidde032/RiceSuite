@@ -18,7 +18,9 @@ end** — upload → RiceClipper batch review/render → filesystem handoff →
 RicePoster "Pull from Clipper" → post. Merged to `main`: the v1 vertical slice,
 the hardening pass, the bounded visual presets, the bounded batch review/render,
 the producer-side handoff writer, the Slate browser-interface redesign, and the
-four fixed lyric caption presets. The RicePoster-side pickup + auto-caption is
+four fixed lyric caption presets, and the ADR-001 subject crop. The music path
+(ADR-002, `docs/design/music-path-spec.md`) is ratified and in build. The
+RicePoster-side pickup + auto-caption is
 tracked separately (RicePoster #77). Further changes still require explicit
 approval and must remain within the active phase.
 
@@ -57,7 +59,7 @@ but is no longer blocked by that spike.
 
 ## Source-of-truth map
 
-- **`SPEC.md`** — v1 design, decision log (D1–D15), boundary/safety, tech stack.
+- **`SPEC.md`** — v1 design, decision log (D1–D16), boundary/safety, tech stack.
 - **`ROADMAP.md`** — post-v1 sequencing (Wave 1 / Wave 2 / deferred).
 - **`CHANGELOG.md`** — what actually shipped.
 - **`docs/spikes/`** — de-risking investigations and their pass/fail results.

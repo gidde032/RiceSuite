@@ -30,7 +30,8 @@ from longer video) sit directly on top of it.
 **In scope (v1):**
 decode → transcribe (word-level) → word-highlight captions → manual on-screen
 header → normalize geometry (pass-through 9:16; subject crop or blur-pad for
-landscape, D15) → optional added-music track →
+landscape, D15; music follow profile, D16) → optional pasted-lyric fallback
+(D16) → optional added-music track →
 export 1080×1920 H.264 — all through a local web review UI with a
 human-in-the-loop gate.
 
@@ -62,12 +63,18 @@ agent's API request (§6.2), which generates text and posts nothing.
    window that keeps the speaker inside a central safe zone; otherwise
    **blur-pad** the same-frame fill to 1080×1920 (D12, D15,
    [ADR-001](docs/adr/ADR-001-subject-crop.md),
-   [design spec](docs/design/subject-crop-spec.md)).
+   [design spec](docs/design/subject-crop-spec.md)). A per-clip
+   `content: speech | music` setting selects the **music follow profile**:
+   no face-rate gate, hold through faceless spans, static centered window
+   when no face is ever found (D16, [ADR-002](docs/adr/ADR-002-music-path.md)).
 3. **Transcribe** — faster-whisper produces caption text with **word-level
    timestamps**, pinned to the clip timeline in seconds.
 4. **Review gate (human-in-the-loop)** — user edits transcript text (timing
    stays locked to detected boundaries), toggles captions off if desired, and
-   types the header. Preview available.
+   types the header. Preview available. Under `content: music` the user may
+   paste a lyric block and align it: the lyric words replace the transcript,
+   with whisper word timings used as anchors only (D16,
+   [design spec](docs/design/music-path-spec.md)).
 5. **Render captions** — emit an ASS subtitle file; burn with ffmpeg/libass:
    phrase groups with per-word highlight synced to the timestamps.
 6. **Render header** — burn the user's 1–2 line header at the top using the
@@ -193,6 +200,8 @@ model earns its keep. Revisit at build if desired.
     is ratified (D15); multi-speaker switching stays deferred.
   - Tier-3 animated captions (behind a deliberate render-engine decision).
   - Auto-ducking + source vocal isolation for music.
+  - Forced alignment (wav2vec2) for lyrics, only if the D16 anchor method is
+    killed. Histogram cut detector if scene 0.2 still misses cuts.
   - **Path 2** (5–10 min → clip extraction) and **Path 1** (30+ min → chunked
     extraction) — the clip-selection engine, built on this render chassis.
 
@@ -235,8 +244,8 @@ model earns its keep. Revisit at build if desired.
 |---|----------|-----------|-----|
 | D1 | Fit | Standalone v1; output contract compatible for RicePoster drop-in | Prove the render chassis fast without coupling risk; integration is Wave-1 #1 |
 | D2 | Source geometry | Vertical-first; **landscape accepted via single-subject crop (D15, 2026-09-14)**; active-speaker reframe deferred | Original: keep Path 3 low-difficulty. Revised: interview footage is real supply; the crop is bounded by a kill criterion |
-| D3 | Caption source | Auto-transcribe (word-level) + manual override | Transcription is the backbone; override is cheap insurance |
-| D4 | Manual override | Edit transcript text (timing locked); captions-off → header-only. Hand-timed custom body captions cut from v1 | Header already covers "text on a silent clip", so no hand-timing UI needed |
+| D3 | Caption source | Auto-transcribe (word-level) + manual override; **pasted-lyric fallback under `content: music` (D16)** | Transcription is the backbone; override is cheap insurance; sung vocals defeat whisper text, so lyrics borrow its timings |
+| D4 | Manual override | Edit transcript text (timing locked); captions-off → header-only. Hand-timed custom body captions cut from v1. Lyric alignment (D16) writes ordinary words; text stays editable, timing stays locked | Header already covers "text on a silent clip", so no hand-timing UI needed |
 | D5 | Trimming | None in v1 | The "maybe" and the riskiest component; silence-trim is Wave-1 |
 | D6 | Header (v1) | Manual 1–2 line text box, on every clip | Smallest path to end-to-end; doubles as the silent-clip text layer |
 | D7 | Header (auto) | Deferred (Wave 1): Sonnet vision + transcript + optional desc, manual fallback | Most visible line; strong model earns its keep; local LLM writes weaker hooks |
@@ -247,4 +256,5 @@ model earns its keep. Revisit at build if desired.
 | D12 | Non-9:16 handling | Blur-pad fill as the **fallback and explicit choice**; subject crop when detection passes (D15) | Never loses content. The RicePoster "edge-crop failure" was withdrawn 2026-07-27 (TikTok trims edges itself); the surviving rule is a safe zone for the subject |
 | D13 | Music | Optional added audio; replace **or** mix-under toggle with volume slider; v1. Auto-ducking + vocal isolation deferred | Central to actual usage; cheap since encoding already exists; adding after sync can't affect timing |
 | D14 | Browser theme | Slate: dark carbon/grey chrome, rice-grey state accents, visual per-clip preset cards, symbol-only rice-and-shears mark | Makes the daily-driver review path faster to scan without changing behavior or adding editor features |
-| D15 | Subject crop | Local YuNet face detection at ingest; full-height 9:16 window with dead zone and pan cap (no smoothing after tuning round 2); snap only at cuts or track return; face center inside the central 70% (tuned 2026-09-15); blur-pad when `face_rate < 0.80` or `safe_rate < 0.95`; per-clip `geometry` = `auto`/`blur_pad`/`crop`; kill criterion: fewer than 5 of 6 fixtures pass after two tuning rounds | Ratified 2026-09-14; [ADR-001](docs/adr/ADR-001-subject-crop.md) |
+| D15 | Subject crop | Local YuNet face detection at ingest; full-height 9:16 window with dead zone and pan cap (no smoothing after tuning round 2); snap only at cuts or track return; face center inside the central 70% (tuned 2026-09-15); blur-pad when `face_rate < 0.80` or `safe_rate < 0.95`; per-clip `geometry` = `auto`/`blur_pad`/`crop`; kill criterion: fewer than 5 of 6 fixtures pass after two tuning rounds. The gate applies to the `speech` profile only (D16) | Ratified 2026-09-14; [ADR-001](docs/adr/ADR-001-subject-crop.md) |
+| D16 | Music path | Per-clip `content` = `speech`/`music`, not remembered per slot. Music framing profile: no face-rate gate, hold through faceless spans, snap on cuts (scene 0.2, one shared pass with scores) and face return, static centered when no face; nearest-previous face between cuts, largest after a cut (both profiles). Lyric fallback: pasted block, `difflib` anchors on whisper timings, interpolation between anchors, even fill below 25% anchors; word-level highlight survives; no new model. Kill: framing fewer than 4 of 5 music fixtures after one tuning round; lyrics visibly off on more than 2 of 5 | Ratified 2026-09-15; [ADR-002](docs/adr/ADR-002-music-path.md) |
