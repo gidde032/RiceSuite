@@ -62,7 +62,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 - **CI and quality gates.** GitHub Actions workflow (`Python 3.12 tests and
   coverage`) runs ruff lint + format checks and the full test suite with an
   **85% coverage floor** on every PR and push to `main`. A two-tier
-  `pre-commit` config mirrors it locally (ruff + a 6-test smoke tier on commit;
+  `pre-commit` config mirrors it locally (ruff + an 8-test smoke tier on commit;
   full suite + coverage on push). `tests/test_gates.py` locks the gate numbers
   so they cannot drift. A `main` branch-protection ruleset (block force-push +
   deletion, require the PR check) is prepared in `.github/rulesets/main.json`
