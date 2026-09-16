@@ -13,7 +13,7 @@ See ``docs/design/subject-crop-spec.md`` (Framing policy).
 
 from __future__ import annotations
 
-from app.models import CropPlan, CropReason, CropSample, TrackSample
+from app.models import Content, CropPlan, CropReason, CropSample, TrackSample
 
 # Sampling and motion policy (source_w-relative unless noted).
 SAMPLE_FPS = 5
@@ -22,6 +22,7 @@ PAN_CAP = 0.50
 JUMP_CUT = 0.15
 LOSS_S = 1.0
 SAFE_FRACTION = 0.70
+SCENE_MIN_MUSIC = 0.2
 FACE_RATE_MIN = 0.80
 SAFE_RATE_MIN = 0.95
 HEADER_ZONE_PX = 450
@@ -63,7 +64,12 @@ def _croppable(source_w: int, source_h: int, window_w: int) -> bool:
     return source_w > source_h and 0 < window_w < source_w
 
 
-def failed_plan(reason: CropReason, source_w: int = 0, source_h: int = 0) -> CropPlan:
+def failed_plan(
+    reason: CropReason,
+    source_w: int = 0,
+    source_h: int = 0,
+    profile: Content = "speech",
+) -> CropPlan:
     """Build a blur-pad plan carrying a failure ``reason`` and zero rates."""
     window_w = window_h = 0
     samples: list[CropSample] = []
@@ -81,6 +87,7 @@ def failed_plan(reason: CropReason, source_w: int = 0, source_h: int = 0) -> Cro
         window_w=window_w,
         window_h=window_h,
         samples=samples,
+        profile=profile,
     )
 
 
@@ -91,6 +98,7 @@ def plan_crop(
     source_h: int,
     *,
     sample_times: list[float] | None = None,
+    profile: Content = "speech",
 ) -> CropPlan:
     """Resolve a track into a :class:`CropPlan`.
 
@@ -101,9 +109,9 @@ def plan_crop(
     """
     window_w, window_h = window_size(source_w, source_h)
     if not _croppable(source_w, source_h, window_w):
-        return failed_plan("no_samples", source_w, source_h)
+        return failed_plan("no_samples", source_w, source_h, profile)
     if not track:
-        return failed_plan("no_samples", source_w, source_h)
+        return failed_plan("no_samples", source_w, source_h, profile)
 
     step = 1.0 / SAMPLE_FPS
     max_x = source_w - window_w
@@ -182,7 +190,19 @@ def plan_crop(
     n_all = len(track)
     n_face = len(face_records)
     if n_face == 0:
-        return failed_plan("no_samples", source_w, source_h)
+        if profile == "music":
+            centered = _even_down((source_w - window_w) // 2)
+            return CropPlan(
+                decision="crop",
+                reason="hold_static",
+                face_rate=0.0,
+                safe_rate=0.0,
+                window_w=window_w,
+                window_h=window_h,
+                samples=[CropSample(t=0.0, x=centered)],
+                profile="music",
+            )
+        return failed_plan("no_samples", source_w, source_h, profile)
 
     face_rate = n_face / n_all
     safe = 0
@@ -193,7 +213,9 @@ def plan_crop(
             safe += 1
     safe_rate = safe / n_face
 
-    if face_rate >= FACE_RATE_MIN and safe_rate >= SAFE_RATE_MIN:
+    if profile == "music":
+        decision, reason = "crop", "ok"
+    elif face_rate >= FACE_RATE_MIN and safe_rate >= SAFE_RATE_MIN:
         decision, reason = "crop", "ok"
     elif face_rate < FACE_RATE_MIN:
         decision, reason = "blur_pad", "low_face_rate"
@@ -211,6 +233,7 @@ def plan_crop(
         window_h=window_h,
         samples=samples_out,
         warning=warning,
+        profile=profile,
     )
 
 

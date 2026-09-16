@@ -299,7 +299,9 @@ def _hold_spans(
     return count
 
 
-def _process_one(source: Path, info: MediaInfo, out_dir: Path) -> dict:
+def _process_one(
+    source: Path, info: MediaInfo, out_dir: Path, profile: str = "speech"
+) -> dict:
     """Run detection, framing, and sheet for one clip. Return the report row."""
     t0 = time.monotonic()
 
@@ -318,6 +320,7 @@ def _process_one(source: Path, info: MediaInfo, out_dir: Path) -> dict:
         info.width,
         info.height,
         sample_times=sample_times,
+        profile=profile,
     )
     elapsed = round(time.monotonic() - t0, 2)
 
@@ -444,7 +447,7 @@ def main(argv: list[str] | None = None) -> int:
             continue
 
         try:
-            row = _process_one(clip, info, out_dir)
+            row = _process_one(clip, info, out_dir, profile=args.profile)
         except Exception as exc:
             print(f"{clip.name:<30} FAILED: {exc}")
             report.append({"name": clip.name, "role": role, "error": str(exc)})

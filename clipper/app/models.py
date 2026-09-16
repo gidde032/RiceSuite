@@ -137,12 +137,15 @@ class CropSample(BaseModel):
     x: int
 
 
+Content = Literal["speech", "music"]
+
 CropReason = Literal[
     "ok",
     "low_face_rate",
     "low_safe_rate",
     "no_samples",
     "analysis_failed",
+    "hold_static",
 ]
 
 
@@ -157,6 +160,7 @@ class CropPlan(BaseModel):
     window_h: int
     samples: list[CropSample] = Field(default_factory=list)
     warning: Literal["header_zone", "caption_zone"] | None = None
+    profile: Content = "speech"
 
 
 # JobState references CropPlan by forward reference; resolve it now that CropPlan

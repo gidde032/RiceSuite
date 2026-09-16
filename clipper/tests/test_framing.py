@@ -10,12 +10,13 @@ from pathlib import Path
 
 import pytest
 
-from app.models import TrackSample
+from app.models import CropPlan, TrackSample
 from render.framing import (
     FACE_RATE_MIN,
     JUMP_CUT,
     PAN_CAP,
     SAFE_RATE_MIN,
+    failed_plan,
     plan_crop,
     window_size,
 )
@@ -307,3 +308,104 @@ def test_wide_face_centered_is_safe():
     track = [TrackSample(t=i * 0.2, cx=cx, cy=540, w=400, h=180) for i in range(10)]
     plan = plan_crop(track, [], sw, sh)
     assert plan.safe_rate == 1.0
+
+
+# --- speech backward compatibility -------------------------------------------
+
+_SPEECH_FIXTURES = [
+    f.stem for f in sorted(FIXTURES.glob("*.json")) if not f.stem.startswith("music_")
+]
+
+
+@pytest.mark.parametrize("name", _SPEECH_FIXTURES)
+def test_speech_profile_unchanged(name):
+    """Speech profile output is identical to the pre-change output on every committed track."""
+    track, cuts, sw, sh = _load(name)
+    old = plan_crop(track, cuts, sw, sh)
+    new = plan_crop(track, cuts, sw, sh, profile="speech")
+    old_d = old.model_dump()
+    new_d = new.model_dump()
+    old_d.pop("profile", None)
+    new_d.pop("profile", None)
+    assert old_d == new_d
+    assert new.profile == "speech"
+
+
+# --- music profile ------------------------------------------------------------
+
+
+def test_music_faceless_span_holds():
+    """Music: a 3 s faceless span mid-track holds x, decision crop/ok."""
+    track, cuts, sw, sh = _load("music_faceless_span")
+    plan = plan_crop(track, cuts, sw, sh, profile="music")
+    assert plan.decision == "crop"
+    assert plan.reason == "ok"
+    assert plan.profile == "music"
+    null_xs = {plan.samples[i].x for i, s in enumerate(track) if s is None}
+    assert len(null_xs) == 1
+
+
+def test_music_no_face_hold_static():
+    """Music, no face ever: hold_static, one centered sample, even x."""
+    track, cuts, sw, sh = _load("music_no_face")
+    plan = plan_crop(track, cuts, sw, sh, profile="music")
+    assert plan.decision == "crop"
+    assert plan.reason == "hold_static"
+    assert plan.face_rate == 0.0
+    assert plan.safe_rate == 0.0
+    assert plan.profile == "music"
+    assert len(plan.samples) == 1
+    ww, _ = window_size(sw, sh)
+    expected_x = _even_down((sw - ww) // 2)
+    assert plan.samples[0].x == expected_x
+    assert plan.samples[0].t == 0.0
+
+
+def test_music_low_face_crops_speech_blurs():
+    """Music with face_rate 0.3 and safe_rate 1.0: crop/ok. Speech: blur_pad/low_face_rate."""
+    track, cuts, sw, sh = _load("music_low_face")
+    music = plan_crop(track, cuts, sw, sh, profile="music")
+    assert music.decision == "crop"
+    assert music.reason == "ok"
+    assert music.profile == "music"
+
+    speech = plan_crop(track, cuts, sw, sh, profile="speech")
+    assert speech.decision == "blur_pad"
+    assert speech.reason == "low_face_rate"
+    assert speech.profile == "speech"
+
+
+def test_music_loss_return_snaps():
+    """Music: face returns after loss and snaps to the target on the first face sample."""
+    track, cuts, sw, sh = _load("music_loss_return")
+    plan = plan_crop(track, cuts, sw, sh, profile="music")
+    ww, _ = window_size(sw, sh)
+    max_x = sw - ww
+    ret_idx = next(
+        i for i in range(1, len(track)) if track[i] is not None and track[i - 1] is None
+    )
+    expected = _expected_x(track[ret_idx].cx, ww, max_x)
+    assert plan.samples[ret_idx].x == expected
+    assert plan.decision == "crop"
+    assert plan.reason == "ok"
+
+
+def test_profile_round_trips():
+    """profile field round-trips through CropPlan.model_validate."""
+    for prof in ("speech", "music"):
+        plan = plan_crop(
+            [TrackSample(t=0.0, cx=960, cy=540, w=140, h=180)] * 10,
+            [],
+            1920,
+            1080,
+            profile=prof,
+        )
+        restored = CropPlan.model_validate(plan.model_dump())
+        assert restored.profile == prof
+
+
+def test_failed_plan_carries_profile():
+    """failed_plan sets profile on the returned plan."""
+    for prof in ("speech", "music"):
+        plan = failed_plan("analysis_failed", 1920, 1080, profile=prof)
+        assert plan.profile == prof

@@ -109,7 +109,7 @@ def test_gate_requires_manual_contact_sheet_attestation(tmp_path, monkeypatch):
     monkeypatch.setattr(
         crop_check,
         "_process_one",
-        lambda source, info, out: {
+        lambda source, info, out, profile="speech": {
             "name": source.name,
             "width": info.width,
             "height": info.height,
@@ -132,7 +132,7 @@ def test_gate_requires_manual_contact_sheet_attestation(tmp_path, monkeypatch):
     assert crop_check.main([str(tmp_path), "--contact-sheets-approved"]) == 0
 
 
-def _mock_row(source, info, out):
+def _mock_row(source, info, out, profile="speech"):
     return {
         "name": source.name,
         "width": info.width,
