@@ -440,3 +440,70 @@ def test_render_crop_on_landscape_passes_crop_plan_to_render(
 
 def test_render_default_payload_geometry_is_auto():
     assert RenderRequest().geometry == "auto"
+
+
+def test_render_request_default_content_is_speech():
+    assert RenderRequest().content == "speech"
+
+
+def test_render_request_accepts_music_content():
+    req = RenderRequest(content="music")
+    assert req.content == "music"
+
+
+def test_render_content_music_uses_music_plan(monkeypatch, isolated_jobs):
+    job = _landscape_ready_job()
+    speech = _landscape_plan()
+    music = _music_plan()
+    job.crop_plan = speech
+    job.music_plan = music
+    captured: dict = {}
+
+    def fake_render(*args, **kwargs):
+        captured["plan"] = kwargs.get("plan")
+        return job.dir / "output.mp4"
+
+    monkeypatch.setattr(main, "render", fake_render)
+
+    main.render_job(job.id, RenderRequest(content="music", geometry="auto"))
+
+    assert captured["plan"] is not None
+    assert captured["plan"].profile == "music"
+
+
+def test_render_content_speech_uses_speech_plan(monkeypatch, isolated_jobs):
+    job = _landscape_ready_job()
+    speech = CropPlan(
+        decision="blur_pad",
+        reason="low_face_rate",
+        face_rate=0.30,
+        safe_rate=0.50,
+        window_w=608,
+        window_h=1080,
+        samples=[CropSample(t=0.0, x=0)],
+        profile="speech",
+    )
+    music = _music_plan()
+    job.crop_plan = speech
+    job.music_plan = music
+    captured: dict = {}
+
+    def fake_render(*args, **kwargs):
+        captured["plan"] = kwargs.get("plan")
+        return job.dir / "output.mp4"
+
+    monkeypatch.setattr(main, "render", fake_render)
+
+    main.render_job(job.id, RenderRequest(content="speech", geometry="auto"))
+
+    assert captured["plan"] is None
+
+
+def test_render_content_music_no_music_plan_returns_400(isolated_jobs):
+    job = _landscape_ready_job()
+    job.crop_plan = _landscape_plan()
+    job.music_plan = None
+
+    with pytest.raises(HTTPException) as exc:
+        main.render_job(job.id, RenderRequest(content="music", geometry="crop"))
+    assert exc.value.status_code == 400

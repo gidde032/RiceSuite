@@ -237,20 +237,18 @@ def render_job(job_id: str, req: RenderRequest) -> JobState:
             raise HTTPException(status_code=409, detail="job not ready to render")
         if job.status not in {"ready", "done", "error"}:
             raise HTTPException(status_code=409, detail="job is not ready to render")
-        if req.geometry == "crop" and job.crop_plan is None:
+        plan_source = job.music_plan if req.content == "music" else job.crop_plan
+        if req.geometry == "crop" and plan_source is None:
             raise HTTPException(
                 status_code=400,
                 detail="crop requires a landscape job with a crop plan",
             )
 
-        # Resolve the per-clip geometry to the plan render() receives (ADR-001).
-        # "crop" forces a crop even over a blur_pad decision; everything else
-        # (pass-through / blur_pad) passes no plan.
         mode = geometry.resolve_geometry(
-            req.geometry, job.crop_plan, job.info.width, job.info.height
+            req.geometry, plan_source, job.info.width, job.info.height
         )
         if mode == "crop":
-            plan = job.crop_plan.model_copy(update={"decision": "crop"})
+            plan = plan_source.model_copy(update={"decision": "crop"})
         else:
             plan = None
 

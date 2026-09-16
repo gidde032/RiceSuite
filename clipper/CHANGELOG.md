@@ -85,6 +85,14 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   SPEC §9 updated: the prior "single-clip, no batch" default is superseded; the
   per-clip human-in-the-loop gate is unchanged.
 
+- **Music-path framing (ADR-002 part 1).** A `Content` control (Speech / Music)
+  on each landscape clip card selects the framing profile. The music profile holds
+  through faceless spans, uses a lower scene-cut threshold (0.2), and always
+  decides `crop` (or `hold_static` when no face appears). The review card shows
+  the active plan summary. The render resolves geometry from the music plan when
+  `content=music`. Speech profile output is unchanged. See
+  [`docs/adr/ADR-002-music-path.md`](./docs/adr/ADR-002-music-path.md).
+
 ### Changed
 - **Subject-crop reliability hardening.** Probe, OpenCV analysis, and ffmpeg now
   share display-oriented square-pixel coordinates for rotated and anamorphic

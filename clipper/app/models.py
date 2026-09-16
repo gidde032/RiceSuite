@@ -58,6 +58,7 @@ class RenderRequest(BaseModel):
     caption_style: CaptionStyle = "classic"
     header_style: HeaderStyle = "plain"
     geometry: Geometry = "auto"
+    content: Content = "speech"
     music: MusicSettings = Field(default_factory=MusicSettings)
 
 

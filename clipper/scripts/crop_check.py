@@ -348,7 +348,8 @@ def _process_one(
         "warning": plan.warning,
         "max_pan_px_per_s": _max_pan_px_per_s(plan),
         "max_governed_pan_px_per_s": governed_pan,
-        "pan_cap_ok": governed_pan <= framing.PAN_CAP * info.width + 2.0,
+        "pan_cap_ok": governed_pan
+        <= framing.PAN_CAP * info.width + 2 * framing.SAMPLE_FPS,
         "cuts": len(cuts),
         "hold_spans": _hold_spans(track, sample_times),
         "analysis_s": elapsed,

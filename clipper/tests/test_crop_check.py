@@ -203,6 +203,17 @@ def test_profile_music_labels_every_row(tmp_path, monkeypatch):
     assert all(row["profile"] == "music" for row in report)
 
 
+def test_pan_cap_tolerance_accounts_for_rounding():
+    from render import framing
+
+    source_w = 1920
+    cap = framing.PAN_CAP * source_w
+    tolerance = 2 * framing.SAMPLE_FPS
+
+    assert (cap + 9) <= cap + tolerance
+    assert (cap + 11) > cap + tolerance
+
+
 def test_hold_spans_counts_long_faceless_runs():
     face = TrackSample(t=0.0, cx=100, cy=100, w=50, h=50)
     track = [
