@@ -88,6 +88,23 @@ def test_clear_cache_removes_children_preserves_root_and_forgets_jobs(
     assert jobs.get_job(job.id) is None
 
 
+def test_clear_cache_refuses_while_render_lock_held(isolated_cache):
+    # A render runs outside the global lock (Issue #30). Holding the per-job
+    # render lock alone — with a non-active status — must still refuse the clear,
+    # proving the guard does not rely on status timing.
+    job = jobs.create_job()
+    job.status = "done"
+    (job.dir / "source.mp4").write_bytes(b"123")
+
+    with job.render_lock:
+        with pytest.raises(jobs.ActiveJobsError):
+            jobs.clear_cache()
+
+    # Once the render lock is free, the clear proceeds.
+    result = jobs.clear_cache()
+    assert result["job_dirs_removed"] == 1
+
+
 def test_clear_cache_unlinks_symlinks_without_following_targets(
     isolated_cache, tmp_path
 ):

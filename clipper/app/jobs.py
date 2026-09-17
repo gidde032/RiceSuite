@@ -37,6 +37,10 @@ class Job:
     status: str = "transcribing"
     error: str | None = None
     output_path: Path | None = None
+    # Per-job render lock (Issue #30). Held only while ``render()`` runs, so two
+    # renders of the same job cannot overlap while the global lock stays free for
+    # other jobs and for request-serving state reads.
+    render_lock: threading.Lock = field(default_factory=threading.Lock)
     # Subject-crop framing decision (ADR-001), set at ingest for landscape input.
     crop_plan: CropPlan | None = None
     music_plan: CropPlan | None = None
@@ -313,7 +317,24 @@ def active_jobs() -> tuple[Job, ...]:
 def has_active_jobs() -> bool:
     """Return whether cache deletion must currently be refused."""
 
-    return bool(active_jobs())
+    return bool(active_jobs()) or _any_render_in_progress()
+
+
+def _any_render_in_progress() -> bool:
+    """Return whether any job currently holds its per-job render lock.
+
+    ``render()`` runs outside the global lock (Issue #30), so a render can be in
+    flight even between the state mutations that set ``status``. Probing the
+    render lock non-blocking detects that window directly, so cache deletion
+    refuses to remove a job dir mid-render regardless of status timing.
+    """
+    with _JOBS_LOCK:
+        for job in _JOBS.values():
+            if job.render_lock.acquire(blocking=False):
+                job.render_lock.release()
+            else:
+                return True
+    return False
 
 
 def cache_info() -> dict[str, int]:

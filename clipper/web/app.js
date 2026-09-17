@@ -681,6 +681,29 @@ async function handleRenderAll() {
   );
 }
 
+// Poll GET /api/jobs/{id} after a dropped render fetch (Issue #30). Return true
+// once the job reaches done with output, throw on error, return false on
+// timeout so the caller can report the original drop.
+async function pollRenderCompletion(clip) {
+  const duration = Number(clip.geoState && clip.geoState.duration) || 0;
+  const timeoutMs = Math.max(120, duration * 10) * 1000;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    let state;
+    try {
+      const resp = await fetch(`/api/jobs/${clip.jobId}`);
+      if (!resp.ok) continue;
+      state = await resp.json();
+    } catch {
+      continue; // transient error while polling — keep trying until the deadline
+    }
+    if (state.status === "done" && state.has_output) return true;
+    if (state.status === "error") throw new Error(state.error || "render failed");
+  }
+  return false;
+}
+
 async function renderClip(clip) {
   clip.status = "rendering";
   clip.resultEl.classList.add("hidden");
@@ -712,11 +735,25 @@ async function renderClip(clip) {
       content: radioValue(clip.contentEl),
       music: { mode: musicFile ? mode : "none", volume: Number(clip.musicVolumeEl.value), filename },
     };
-    const res = await fetch(`/api/jobs/${clip.jobId}/render`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    let res;
+    try {
+      res = await fetch(`/api/jobs/${clip.jobId}/render`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch (netErr) {
+      // The render fetch dropped before a response. A long batch can outlast the
+      // browser's patience while the server still finishes (Issue #30). Poll job
+      // state; treat done+output as success, error as failure, timeout as drop.
+      if (await pollRenderCompletion(clip)) {
+        clip.status = "done";
+        setClipStatus(clip, "Rendered ✓");
+        await showResult(clip);
+        return true;
+      }
+      throw netErr;
+    }
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "render failed");
 
