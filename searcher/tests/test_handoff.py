@@ -392,3 +392,39 @@ def test_h2_concurrent_handoff_delivers_once(tmp_path: Path, monkeypatch) -> Non
     counts = sorted(r["clip_count"] for r in results)
     assert counts == [0, 1]  # delivered exactly once, not twice
     assert len(list(cfg.handoff_dir.iterdir())) == 1  # a single batch on disk
+
+
+def test_concurrent_direct_handoff_delivers_once(tmp_path: Path) -> None:
+    import threading
+    import time
+
+    class SlowExtractor(FakeExtractor):
+        def extract(self, source, start, end, dest):
+            time.sleep(0.15)
+            super().extract(source, start, end, dest)
+
+    cfg, lib = _lib_with_selected(tmp_path)
+    lib.close()
+    barrier = threading.Barrier(2)
+    results: list[dict] = []
+
+    def fire() -> None:
+        with Library(cfg.db_path) as thread_lib:
+            barrier.wait()
+            results.append(
+                hand_off_selected(
+                    thread_lib,
+                    extractor=SlowExtractor(),
+                    config=cfg,
+                    profile_id=LEGACY_PROFILE_ID,
+                )
+            )
+
+    threads = [threading.Thread(target=fire) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert sorted(result["clip_count"] for result in results) == [0, 1]
+    assert len(list(cfg.handoff_dir.iterdir())) == 1

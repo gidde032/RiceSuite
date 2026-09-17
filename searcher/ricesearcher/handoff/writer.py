@@ -202,29 +202,31 @@ def hand_off_selected(
     (``clip_count`` 0 and ``batch_id`` None if nothing is selected).
     """
     cfg = config or load_config()
-    selected = library.list_slices(profile_id=profile_id, status=SliceStatus.SELECTED)
-    if not selected:
-        return {"batch_id": None, "clip_count": 0}
+    # The database write lock spans selection, manifestation, and terminal marking.
+    # A second CLI/process handoff therefore re-reads after this one commits instead
+    # of producing a duplicate batch from the same selected snapshot.
+    with library.immediate_transaction():
+        selected = library.list_slices(
+            profile_id=profile_id, status=SliceStatus.SELECTED
+        )
+        if not selected:
+            return {"batch_id": None, "clip_count": 0}
 
-    sources = {s.id: s for s in library.list_sources()}
-    # Position by score (best first); stable tie-break for determinism.
-    ordered = sorted(selected, key=lambda s: (-s.score, s.created_at, s.id))
-    entries = []
-    for i, sl in enumerate(ordered, start=1):
-        source = sources.get(sl.source_id)
-        if source is None:
-            raise HandoffError(f"slice {sl.id}: source {sl.source_id} not found")
-        entries.append(_entry_for(sl, source, i))
+        sources = {s.id: s for s in library.list_sources()}
+        # Position by score (best first); stable tie-break for determinism.
+        ordered = sorted(selected, key=lambda s: (-s.score, s.created_at, s.id))
+        entries = []
+        for i, sl in enumerate(ordered, start=1):
+            source = sources.get(sl.source_id)
+            if source is None:
+                raise HandoffError(f"slice {sl.id}: source {sl.source_id} not found")
+            entries.append(_entry_for(sl, source, i))
 
-    result = write_batch(
-        entries, extractor=extractor or FfmpegClipExtractor(), root=cfg.handoff_dir
-    )
-    # Custody handed off only after the manifest is durably written, and in ONE
-    # transaction so a crash can't leave a partial mark (finding H1). NOTE: the
-    # file write and this DB mark are two phases with no shared transaction, so a
-    # crash strictly between them leaves a complete batch on disk with the slices
-    # still selected — a retry would re-deliver them as a new batch. The window is
-    # tiny (a human-driven action) and the RiceClipper consumer should be robust
-    # to the same content arriving twice (see the pickup plan / SPEC §7).
-    library.bulk_update_status([sl.id for sl in ordered], SliceStatus.HANDED_OFF)
-    return result
+        result = write_batch(
+            entries, extractor=extractor or FfmpegClipExtractor(), root=cfg.handoff_dir
+        )
+        # SQLite cannot make the filesystem publish part of its transaction. A
+        # process crash in this narrow interval can still require manual recovery;
+        # the write lock prevents live callers from duplicating the same snapshot.
+        library.bulk_update_status([sl.id for sl in ordered], SliceStatus.HANDED_OFF)
+        return result

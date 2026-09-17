@@ -3,7 +3,7 @@
 Content-sourcing pillar of the Rice harness. On-demand pull discovery +
 transcript-driven extraction into a scored, moment-deduplicated candidate-slice
 library, handed off to RiceClipper for rendering. **Never posts, publishes, or
-uploads content; local-first.** See [SPEC.md](SPEC.md) (decisions D1–D8) and
+uploads content; local-first.** See [SPEC.md](SPEC.md) (decisions D1–D9) and
 [ADR-001.md](ADR-001.md) (the three-pillar boundary).
 
 > Status: **Phases 1–5 merged.** The complete RiceSearcher-side v1 flow is

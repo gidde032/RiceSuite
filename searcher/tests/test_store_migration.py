@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import shutil
 import sqlite3
+import threading
 from pathlib import Path
 
-from ricesearcher.library.store import LEGACY_PROFILE_ID, Library
+import pytest
+
+from ricesearcher.library.store import LEGACY_PROFILE_ID, MIGRATIONS, Library
 from tests.fixtures.make_v2_fixture import FIXTURE_PATH, FIXTURE_SLICES
 
 
@@ -76,3 +79,53 @@ def test_migration_scopes_counts_to_legacy_profile(tmp_path: Path) -> None:
         assert c["handed_off"] == 1
         assert len(lib.list_slices(profile_id=LEGACY_PROFILE_ID)) == len(FIXTURE_SLICES)
         assert lib.list_slices(profile_id="other") == []
+
+
+def test_failed_migration_rolls_back_and_can_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db = _open_fixture(tmp_path)
+    original = MIGRATIONS[3]
+    monkeypatch.setitem(MIGRATIONS, 3, original + "\nSELECT * FROM missing_table;")
+
+    with pytest.raises(sqlite3.OperationalError):
+        Library(db)
+
+    with sqlite3.connect(db) as conn:
+        columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(candidate_slices)")
+        }
+        version = conn.execute(
+            "SELECT value FROM meta WHERE key = 'schema_version'"
+        ).fetchone()[0]
+    assert "profile_id" not in columns
+    assert version == "2"
+
+    monkeypatch.setitem(MIGRATIONS, 3, original)
+    with Library(db) as lib:
+        assert lib._stored_version() == 3
+
+
+def test_concurrent_openers_serialize_migration(tmp_path: Path) -> None:
+    db = _open_fixture(tmp_path)
+    barrier = threading.Barrier(3)
+    errors: list[BaseException] = []
+
+    def open_library() -> None:
+        barrier.wait()
+        try:
+            with Library(db):
+                pass
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=open_library) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    barrier.wait()
+    for thread in threads:
+        thread.join()
+
+    assert errors == []
+    with Library(db) as lib:
+        assert lib._stored_version() == 3

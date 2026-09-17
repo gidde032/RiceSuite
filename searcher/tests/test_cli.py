@@ -63,3 +63,19 @@ def test_list_empty(data_env: Path, capsys) -> None:
 def test_build_parser_requires_command() -> None:
     with pytest.raises(SystemExit):
         cli.main([])
+
+
+@pytest.mark.parametrize("command", ["score", "slices", "dedup", "handoff"])
+def test_profile_commands_reject_invalid_ids(
+    command: str, data_env: Path, capsys
+) -> None:
+    argv = [command]
+    if command == "score":
+        argv.append("missing-source")
+    argv += ["--profile", "bad_id"]
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main(argv)
+
+    assert exc.value.code == 2
+    assert "invalid profile id" in capsys.readouterr().err

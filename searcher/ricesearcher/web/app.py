@@ -113,7 +113,7 @@ def _require_profile(profile: str | None) -> str:
     """
     if not profile:
         raise HTTPException(400, "profile is required")
-    if not PROFILE_ID_PATTERN.match(profile):
+    if not PROFILE_ID_PATTERN.fullmatch(profile):
         raise HTTPException(400, f"invalid profile id {profile!r}")
     return profile
 
@@ -239,7 +239,12 @@ def create_app(config: Config | None = None) -> FastAPI:
                     409, "handed_off slices are terminal and cannot be changed"
                 )
             if not lib.update_slice_status(slice_id, new):
-                raise HTTPException(404, "no such slice")
+                latest = lib.get_slice(slice_id)
+                if latest is None:
+                    raise HTTPException(404, "no such slice")
+                raise HTTPException(
+                    409, "handed_off slices are terminal and cannot be changed"
+                )
         return {"id": slice_id, "status": new.value}
 
     @app.patch("/api/slices/{slice_id}/window")
@@ -271,7 +276,13 @@ def create_app(config: Config | None = None) -> FastAPI:
             to = min(s.pad_out, body.target_out)
             if to <= ti:
                 raise HTTPException(422, "window is empty after clamping to the pad")
-            lib.update_slice_window(slice_id, ti, to)
+            if not lib.update_slice_window(slice_id, ti, to):
+                latest = lib.get_slice(slice_id)
+                if latest is None:
+                    raise HTTPException(404, "no such slice")
+                raise HTTPException(
+                    409, "handed_off slices are terminal and cannot be changed"
+                )
         return {"id": slice_id, "target_in": ti, "target_out": to}
 
     @app.post("/api/handoff")

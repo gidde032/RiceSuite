@@ -12,7 +12,12 @@ from collections.abc import Sequence
 
 from ricesearcher.acquire.watchfolder import WatchFolderAcquirer
 from ricesearcher.acquire.ytdlp import YtDlpAcquirer
-from ricesearcher.beat.profile import ensure_seed, list_profiles, load_profile
+from ricesearcher.beat.profile import (
+    ensure_seed,
+    list_profiles,
+    load_profile,
+    validate_profile_id,
+)
 from ricesearcher.config import load_config, load_env_files
 from ricesearcher.dedup.annotate import SIM_THRESHOLD
 from ricesearcher.dedup.embed import SentenceTransformerEmbedder
@@ -255,6 +260,13 @@ def _cmd_review(args: argparse.Namespace) -> int:  # pragma: no cover - live ser
     return 0
 
 
+def _profile_id_arg(value: str) -> str:
+    try:
+        return validate_profile_id(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ricesearcher")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -275,14 +287,21 @@ def build_parser() -> argparse.ArgumentParser:
         "score", help="extract + score candidate slices for a source"
     )
     p_score.add_argument("source_id", help="a source id (or prefix) to score")
-    p_score.add_argument("--profile", required=True, help="profile id to score under")
+    p_score.add_argument(
+        "--profile",
+        required=True,
+        type=_profile_id_arg,
+        help="profile id to score under",
+    )
     p_score.add_argument(
         "--model", default=None, help="Anthropic scorer model (else env/default)"
     )
     p_score.set_defaults(func=_cmd_score)
 
     p_slices = sub.add_parser("slices", help="list scored candidate slices")
-    p_slices.add_argument("--profile", required=True, help="profile id to list")
+    p_slices.add_argument(
+        "--profile", required=True, type=_profile_id_arg, help="profile id to list"
+    )
     p_slices.add_argument(
         "--source", default=None, help="filter to one source id (or prefix)"
     )
@@ -291,7 +310,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_dedup = sub.add_parser(
         "dedup", help="recompute advisory possible-duplicate annotations"
     )
-    p_dedup.add_argument("--profile", required=True, help="profile id to dedup within")
+    p_dedup.add_argument(
+        "--profile",
+        required=True,
+        type=_profile_id_arg,
+        help="profile id to dedup within",
+    )
     p_dedup.add_argument(
         "--threshold",
         type=float,
@@ -313,7 +337,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_handoff = sub.add_parser(
         "handoff", help="write selected slices as a handoff batch for RiceClipper"
     )
-    p_handoff.add_argument("--profile", required=True, help="profile id to hand off")
+    p_handoff.add_argument(
+        "--profile", required=True, type=_profile_id_arg, help="profile id to hand off"
+    )
     p_handoff.set_defaults(func=_cmd_handoff)
 
     return parser

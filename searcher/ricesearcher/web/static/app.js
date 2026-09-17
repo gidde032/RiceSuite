@@ -9,10 +9,15 @@ const countEl = document.getElementById("count");
 const statusEl = document.getElementById("status");
 const filterEl = document.getElementById("statusFilter");
 const profileEl = document.getElementById("profileSelect");
+const handoffBtn = document.getElementById("handoffBtn");
 
 // Which profile the review UI is scoped to. Persisted so a reload keeps it.
 const PROFILE_KEY = "ricesearcher.profile";
 let profiles = [];  // last /api/profiles payload, for the handoff-button count
+let profileRequest = 0;
+let sliceRequest = 0;
+let pendingMutations = 0;
+let handoffPending = false;
 
 profileEl.addEventListener("change", () => {
   localStorage.setItem(PROFILE_KEY, profileEl.value);
@@ -24,14 +29,21 @@ document.getElementById("handoffBtn").addEventListener("click", handoff);
 
 // Fill the profile select from /api/profiles and restore the saved choice.
 async function loadProfiles() {
+  const request = ++profileRequest;
+  const previousProfile = profileEl.value;
+  let nextProfiles;
   try {
     const res = await fetch("/api/profiles");
     if (!res.ok) throw new Error("HTTP " + res.status);
-    profiles = await res.json();
+    nextProfiles = await res.json();
   } catch (err) {
+    if (request !== profileRequest) return false;
     setStatusMsg("Failed to load profiles: " + err.message, true);
-    profiles = [];
+    updateHandoffLabel();
+    return false;
   }
+  if (request !== profileRequest) return false;
+  profiles = nextProfiles;
   const saved = localStorage.getItem(PROFILE_KEY);
   const ids = profiles.map((p) => p.id);
   const active = ids.includes(saved) ? saved : ids[0] || "";
@@ -41,6 +53,7 @@ async function loadProfiles() {
   profileEl.value = active;
   if (active) localStorage.setItem(PROFILE_KEY, active);
   updateHandoffLabel();
+  return active !== previousProfile;
 }
 
 function updateHandoffLabel() {
@@ -49,13 +62,34 @@ function updateHandoffLabel() {
   const n = p ? p.selected : 0;
   const id = profileEl.value || "—";
   btn.textContent = "Send " + n + " selected (" + id + ") → RiceClipper";
+  refreshInteractionState();
+}
+
+function refreshInteractionState() {
+  handoffBtn.disabled = handoffPending || pendingMutations > 0 || !profileEl.value;
+  listEl.inert = handoffPending;
+  listEl.setAttribute("aria-busy", handoffPending ? "true" : "false");
+}
+
+function beginMutation() {
+  pendingMutations += 1;
+  refreshInteractionState();
+}
+
+function endMutation() {
+  pendingMutations = Math.max(0, pendingMutations - 1);
+  refreshInteractionState();
 }
 
 async function handoff() {
-  const btn = document.getElementById("handoffBtn");
   const profile = profileEl.value;
   if (!profile) { setStatusMsg("choose a profile first", true); return; }
-  btn.disabled = true;  // guard against a double-click double-delivering (H2)
+  if (pendingMutations > 0 || handoffPending) {
+    setStatusMsg("wait for pending review changes before handoff", true);
+    return;
+  }
+  handoffPending = true;
+  refreshInteractionState();
   setStatusMsg("writing handoff batch…");
   try {
     const res = await fetch("/api/handoff", {
@@ -71,7 +105,8 @@ async function handoff() {
   } catch (err) {
     setStatusMsg("handoff failed: " + err.message, true);
   } finally {
-    btn.disabled = false;
+    handoffPending = false;
+    refreshInteractionState();
   }
 }
 
@@ -81,6 +116,7 @@ function setStatusMsg(text, isError) {
 }
 
 async function load(preserveStatus = false) {
+  const request = ++sliceRequest;
   const profile = profileEl.value;
   if (!profile) {
     listEl.replaceChildren(el("div", { class: "empty" }, "No profiles found."));
@@ -88,6 +124,8 @@ async function load(preserveStatus = false) {
     return;
   }
   const status = filterEl.value;
+  listEl.replaceChildren(el("div", { class: "empty" }, "Loading slices…"));
+  countEl.textContent = "";
   let url = "/api/slices?profile=" + encodeURIComponent(profile);
   if (status) url += "&status=" + encodeURIComponent(status);
   let slices;
@@ -96,10 +134,12 @@ async function load(preserveStatus = false) {
     if (!res.ok) throw new Error("HTTP " + res.status);
     slices = await res.json();
   } catch (err) {
+    if (!isCurrentLoad(request, profile, status)) return;
     listEl.replaceChildren(el("div", { class: "empty" }, "Failed to load slices: " + err.message));
     countEl.textContent = "";
     return;
   }
+  if (!isCurrentLoad(request, profile, status)) return;
   slices.sort((a, b) => b.score - a.score);
   countEl.textContent = slices.length + (slices.length === 1 ? " slice" : " slices");
   if (!preserveStatus) setStatusMsg("");
@@ -113,6 +153,10 @@ async function load(preserveStatus = false) {
     return;
   }
   listEl.replaceChildren(...slices.map(card));
+}
+
+function isCurrentLoad(request, profile, status) {
+  return request === sliceRequest && profile === profileEl.value && status === filterEl.value;
 }
 
 function card(s) {
@@ -171,13 +215,31 @@ function card(s) {
     el("label", {}, [document.createTextNode("in"), inIn]),
     el("label", {}, [document.createTextNode("out"), outIn]),
   ]);
+  let windowPending = false;
+  let statusPending = false;
+  let terminal = s.status === "handed_off";
+  let selectBtn;
+  let rejectBtn;
+  let resetBtn;
+  const refreshCardControls = () => {
+    const disabled = terminal || windowPending || statusPending;
+    inIn.disabled = disabled;
+    outIn.disabled = disabled;
+    if (selectBtn) selectBtn.disabled = disabled;
+    if (rejectBtn) rejectBtn.disabled = disabled;
+    if (resetBtn) resetBtn.disabled = disabled;
+  };
   const applyWin = async () => {
+    if (windowPending || statusPending || terminal || handoffPending) return;
     const ti = parseFloat(inIn.value), to = parseFloat(outIn.value);
     if (!Number.isFinite(ti) || !Number.isFinite(to)) {
       inIn.value = fmt(s.target_in); outIn.value = fmt(s.target_out);  // restore
       cardMsg(msg, "in/out must be numbers", true);
       return;
     }
+    windowPending = true;
+    beginMutation();
+    refreshCardControls();
     try {
       const res = await fetch("/api/slices/" + encodeURIComponent(s.id) + "/window", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -195,6 +257,10 @@ function card(s) {
     } catch (err) {
       inIn.value = fmt(s.target_in); outIn.value = fmt(s.target_out);
       cardMsg(msg, "couldn't save window: " + err.message, true);
+    } finally {
+      windowPending = false;
+      endMutation();
+      refreshCardControls();
     }
   };
   inIn.addEventListener("change", applyWin);
@@ -205,6 +271,10 @@ function card(s) {
   // keyboard focus stays on the control the reviewer just used.
   const actions = el("div", { class: "actions" });
   const setStatus = async (status) => {
+    if (statusPending || windowPending || terminal || handoffPending) return;
+    statusPending = true;
+    beginMutation();
+    refreshCardControls();
     try {
       const res = await fetch("/api/slices/" + encodeURIComponent(s.id) + "/status", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -212,23 +282,25 @@ function card(s) {
       });
       if (!res.ok) { cardMsg(msg, "couldn't set status (" + res.status + ")", true); return; }
       s.status = status;
+      terminal = status === "handed_off";
       c.setAttribute("data-status", status);
       renderBadges();
       cardMsg(msg, "marked " + status, false);
-      await loadProfiles();  // the button count comes from /api/profiles
+      const profileChanged = await loadProfiles();
+      if (profileChanged) await load();
     } catch (err) {
       cardMsg(msg, "couldn't set status: " + err.message, true);
+    } finally {
+      statusPending = false;
+      endMutation();
+      refreshCardControls();
     }
   };
-  const selectBtn = el("button", { class: "primary" }, "Select");
-  const rejectBtn = el("button", { class: "danger" }, "Reject");
-  const resetBtn = el("button", {}, "Reset");
-  if (s.status === "handed_off") {
-    inIn.disabled = true;
-    outIn.disabled = true;
-    selectBtn.disabled = true;
-    rejectBtn.disabled = true;
-    resetBtn.disabled = true;
+  selectBtn = el("button", { class: "primary" }, "Select");
+  rejectBtn = el("button", { class: "danger" }, "Reject");
+  resetBtn = el("button", {}, "Reset");
+  refreshCardControls();
+  if (terminal) {
     cardMsg(msg, "handed off — this slice is terminal", false);
   }
   selectBtn.addEventListener("click", () => setStatus("selected"));
