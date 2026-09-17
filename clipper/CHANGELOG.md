@@ -7,6 +7,15 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **Batch render no longer drops browser requests.** `render()` now runs
+  outside the global job lock under a per-job render lock, so renders of
+  different jobs run concurrently instead of one behind another. A second
+  render of the same job still returns 409, and cache clear refuses (409)
+  while any render lock is held. The review UI polls job state after a
+  dropped render fetch and reports success once the job finishes (Issue #30,
+  PR #31).
+
 ### Added
 - **Pasted-lyric alignment for music clips.** Music review cards now reveal a
   session-only lyric textarea and Align action that replaces the editable
@@ -139,13 +148,6 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   disposal, and stricter job/API error handling.
 - Updated project documentation to reflect the implemented v1 slice and the
   resolved color-emoji PNG-overlay path.
-
-### Fixed
-- **Batch render no longer drops browser requests.** `render()` now runs outside
-  the global job lock under a per-job render lock, so batch renders run
-  concurrently instead of serializing behind one another; the review UI polls
-  job state after a dropped render fetch and reports success once the job
-  finishes (Issue #30).
 
 ### Added
 - **v1 vertical slice — initial implementation.** End-to-end pipeline from the

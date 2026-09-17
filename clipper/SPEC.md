@@ -219,10 +219,12 @@ model earns its keep. Revisit at build if desired.
   no auto-added music in v1).
 - **Bounded batch (queue N, review each).** The review UI accepts several clips
   in one session and shows a review card per clip; the human still edits and
-  approves every clip. Transcription and render run **sequentially, one clip at
-  a time** (single Whisper model, CPU-bound ffmpeg), so this is a review/UX
-  affordance, not concurrent processing. The prior "single-clip, no batch"
-  default is superseded; the per-clip human-in-the-loop gate is unchanged.
+  approves every clip. Transcription runs **one clip at a time** (single
+  Whisper model). Renders of different jobs may run concurrently: the global
+  job lock covers state changes only, and each job holds its own render lock
+  while ffmpeg runs (Issue #30). This is still a review/UX affordance, not a
+  throughput feature. The prior "single-clip, no batch" default is superseded;
+  the per-clip human-in-the-loop gate is unchanged.
 - Future-header snapshot taken from an early frame (~1s in, or first non-black
   frame).
 - Tuned for sub-minute clips; no hard length cap enforced in v1.

@@ -69,7 +69,8 @@ and three header treatments.
   a per-clip `content` control, a follow framing profile for music footage, and
   a pasted-lyric fallback aligned on whisper timings. Deferred from its review:
   detector robustness on heavily filtered frames (Issue #24), a chronological
-  matcher for repeated hooks (Issue #29), and the batch-render lock (Issue #30).
+  matcher for repeated hooks (Issue #29). The batch-render lock (Issue #30)
+  was fixed in PR #31.
 - **Filler-word trimming** ("um"/"uh") — transcript-driven cuts on word
   boundaries. Harder than silence-only.
 - **Active-speaker reframe + zoom** — active-speaker switching between faces and
