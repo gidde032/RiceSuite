@@ -9,6 +9,7 @@ __pycache__/
 
 # Local session scratch (never a second backlog)
 TASKS.md
+docs/ricesearcher-cleanup.md
 
 # Secrets / config
 credentials.env
