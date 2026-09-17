@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import threading
 
 import pytest
 from fastapi import HTTPException, UploadFile
@@ -122,6 +123,113 @@ def test_duplicate_active_work_is_rejected(isolated_jobs):
         main.render_job(job.id, RenderRequest())
 
     assert exc_info.value.status_code == 409
+
+
+def _ready_render_job() -> jobs.Job:
+    job = jobs.create_job()
+    job.status = "ready"
+    job.source_path = job.dir / "source.mp4"
+    job.source_path.write_bytes(b"source")
+    job.info = MediaInfo(1080, 1920, 1.0, False)
+    return job
+
+
+def test_render_does_not_hold_global_lock(monkeypatch, isolated_jobs):
+    # Issue #30: render() must run with the global lock free so batch renders do
+    # not serialize behind one another. Probe the lock from a separate thread —
+    # the request thread holds an RLock reentrantly, so a same-thread probe would
+    # falsely pass.
+    job = _ready_render_job()
+    observed = {}
+
+    def probing_render(work_dir, *args, **kwargs):
+        holder = {}
+
+        def probe():
+            got = jobs._JOBS_LOCK.acquire(blocking=False)
+            holder["free"] = got
+            if got:
+                jobs._JOBS_LOCK.release()
+
+        thread = threading.Thread(target=probe)
+        thread.start()
+        thread.join()
+        observed["free"] = holder["free"]
+        out = work_dir / "output.mp4"
+        out.write_bytes(b"out")
+        return out
+
+    monkeypatch.setattr(main, "render", probing_render)
+
+    result = main.render_job(job.id, RenderRequest())
+
+    assert result.status == "done"
+    assert observed["free"] is True
+
+
+def test_two_jobs_render_concurrently(monkeypatch, isolated_jobs):
+    # Two different jobs must render at the same time. A barrier forces both
+    # mocks to be inside render() together; if the global lock still serialized
+    # them, the second never arrives and the barrier times out.
+    job_a = _ready_render_job()
+    job_b = _ready_render_job()
+    both_inside = threading.Barrier(2, timeout=5)
+
+    def concurrent_render(work_dir, *args, **kwargs):
+        both_inside.wait()
+        out = work_dir / "output.mp4"
+        out.write_bytes(b"out")
+        return out
+
+    monkeypatch.setattr(main, "render", concurrent_render)
+    results: dict[str, object] = {}
+
+    def run(job):
+        results[job.id] = main.render_job(job.id, RenderRequest())
+
+    threads = [
+        threading.Thread(target=run, args=(job_a,)),
+        threading.Thread(target=run, args=(job_b,)),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert results[job_a.id].status == "done"
+    assert results[job_b.id].status == "done"
+
+
+def test_second_render_of_same_job_returns_409(monkeypatch, isolated_jobs):
+    # A render already in flight for a job must reject a second request with 409.
+    job = _ready_render_job()
+    in_render = threading.Event()
+    release = threading.Event()
+
+    def blocking_render(work_dir, *args, **kwargs):
+        in_render.set()
+        release.wait(timeout=5)
+        out = work_dir / "output.mp4"
+        out.write_bytes(b"out")
+        return out
+
+    monkeypatch.setattr(main, "render", blocking_render)
+    holder: dict[str, object] = {}
+
+    def run():
+        holder["result"] = main.render_job(job.id, RenderRequest())
+
+    worker = threading.Thread(target=run)
+    worker.start()
+    assert in_render.wait(timeout=5)
+
+    with pytest.raises(HTTPException) as exc_info:
+        main.render_job(job.id, RenderRequest())
+    assert exc_info.value.status_code == 409
+
+    release.set()
+    worker.join()
+    assert holder["result"].status == "done"
 
 
 def test_upload_probe_failure_returns_client_error_without_local_path(

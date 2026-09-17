@@ -140,6 +140,13 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 - Updated project documentation to reflect the implemented v1 slice and the
   resolved color-emoji PNG-overlay path.
 
+### Fixed
+- **Batch render no longer drops browser requests.** `render()` now runs outside
+  the global job lock under a per-job render lock, so batch renders run
+  concurrently instead of serializing behind one another; the review UI polls
+  job state after a dropped render fetch and reports success once the job
+  finishes (Issue #30).
+
 ### Added
 - **v1 vertical slice — initial implementation.** End-to-end pipeline from the
   ratified design (SPEC.md D1–D13):

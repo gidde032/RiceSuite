@@ -304,21 +304,34 @@ def render_job(job_id: str, req: RenderRequest) -> JobState:
         else:
             plan = None
 
+        # Claim the render under the global lock, then release it so the ffmpeg
+        # run does not pin this request behind other jobs (Issue #30). A second
+        # render of a job already ``rendering`` is rejected by the status check
+        # above with 409.
         job.status = "rendering"
         job.error = None
+        if job.output_path is not None:
+            job.output_path.unlink(missing_ok=True)
+            job.output_path = None
+        render_lock = job.render_lock
+        source_path = job.source_path
+        info = job.info
+        work_dir = job.dir
+
+    with render_lock:
         try:
-            if job.output_path is not None:
-                job.output_path.unlink(missing_ok=True)
-                job.output_path = None
-            out = render(job.dir, job.source_path, job.info, req, plan=plan)
-            job.output_path = out
-            job.status = "done"
+            out = render(work_dir, source_path, info, req, plan=plan)
         except Exception as exc:
             logger.exception("render failed")
-            job.status = "error"
-            job.error = "render failed"
-            raise HTTPException(status_code=500, detail=job.error) from exc
-        return job.state()
+            with jobs.job_operation_lock():
+                job.status = "error"
+                job.error = "render failed"
+            raise HTTPException(status_code=500, detail="render failed") from exc
+
+        with jobs.job_operation_lock():
+            job.output_path = out
+            job.status = "done"
+            return job.state()
 
 
 @app.post("/api/handoff")
