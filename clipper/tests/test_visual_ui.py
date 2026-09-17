@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -58,6 +59,31 @@ def test_content_row_is_offered_and_sent():
     assert "content: radioValue(clip.contentEl)" in javascript
     assert "clip.contentEl = node.querySelector" in javascript
     assert "clip.contentEl.hidden" not in javascript
+
+
+def test_music_content_offers_lyric_alignment_and_preserves_line_breaks():
+    html = _html()
+    javascript = _js()
+
+    assert 'class="lyrics" hidden' in html
+    assert 'class="lyrics-input"' in html
+    assert 'placeholder="Paste lyrics, one line per caption line"' in html
+    assert 'class="lyrics-align"' in html
+    assert 'class="lyrics-badge"' in html
+
+    assert "/api/jobs/${clip.jobId}/lyrics" in javascript
+    assert "aligned · ${Math.round(data.anchor_rate * 100)}% anchors" in javascript
+    assert '"even fill"' in javascript
+    assert "line_start: w.line_start" in javascript
+
+
+def test_restore_transcript_button_and_endpoint():
+    html = _html()
+    javascript = _js()
+
+    assert 'class="lyrics-restore"' in html
+    assert "Restore transcript" in html
+    assert "/api/jobs/${clip.jobId}/restore-transcript" in javascript
 
 
 def test_geometry_row_is_offered_and_sent_and_toggled_by_orientation():
@@ -258,6 +284,20 @@ def test_auto_header_control_is_wired_to_the_generation_endpoint():
     assert "/header" in javascript
     assert "await autoGenerateHeader(clip)" in javascript
     assert "function regenerateHeader" in javascript
+
+
+def test_clip_status_ready_after_align_and_restore():
+    javascript = _js()
+    align_match = re.search(
+        r"async function alignLyrics\b.*?\n\}", javascript, re.DOTALL
+    )
+    restore_match = re.search(
+        r"async function restoreTranscript\b.*?\n\}", javascript, re.DOTALL
+    )
+    assert align_match, "alignLyrics function not found"
+    assert restore_match, "restoreTranscript function not found"
+    assert 'clip.status = "ready"' in align_match.group()
+    assert 'clip.status = "ready"' in restore_match.group()
 
 
 def test_render_runs_one_clip_at_a_time():

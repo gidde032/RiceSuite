@@ -8,7 +8,15 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app import jobs, main
-from app.models import CropPlan, CropSample, HeaderRequest, RenderRequest, Word
+from app.models import (
+    CropPlan,
+    CropSample,
+    HeaderRequest,
+    LyricsRequest,
+    LyricsResult,
+    RenderRequest,
+    Word,
+)
 from app.probe import MediaInfo
 from render import framing
 
@@ -507,3 +515,126 @@ def test_render_content_music_no_music_plan_returns_400(isolated_jobs):
     with pytest.raises(HTTPException) as exc:
         main.render_job(job.id, RenderRequest(content="music", geometry="crop"))
     assert exc.value.status_code == 400
+
+
+# --- lyrics alignment (reference_words) --------------------------------------
+
+
+def _ready_job_with_words(root):
+    job = _ready_job(root)
+    whisper_words = [
+        Word(text="hello", start=0.1, end=0.4),
+        Word(text="world", start=0.5, end=0.9),
+    ]
+    job.words = list(whisper_words)
+    job.reference_words = list(whisper_words)
+    return job
+
+
+def test_repeated_align_uses_reference_words(monkeypatch, isolated_jobs):
+    job = _ready_job_with_words(isolated_jobs)
+    original_ref = list(job.reference_words)
+    lyric_words_1 = [Word(text="hey", start=0.1, end=0.5)]
+    lyric_words_2 = [Word(text="yo", start=0.2, end=0.6)]
+    call_count = [0]
+    captured_refs = []
+
+    def fake_align(text, reference, duration):
+        captured_refs.append(list(reference))
+        result_words = lyric_words_1 if call_count[0] == 0 else lyric_words_2
+        call_count[0] += 1
+        return LyricsResult(words=result_words, anchor_rate=0.5, method="anchors")
+
+    monkeypatch.setattr("app.main.lyrics.align", fake_align)
+
+    main.lyrics_job(job.id, LyricsRequest(lyrics="hey"))
+    main.lyrics_job(job.id, LyricsRequest(lyrics="yo"))
+
+    assert captured_refs[0] == original_ref
+    assert captured_refs[1] == original_ref
+    assert job.words == lyric_words_2
+
+
+def test_align_success_sets_ready_and_invalidates_output(monkeypatch, isolated_jobs):
+    job = _ready_job_with_words(isolated_jobs)
+    job.status = "done"
+    output = job.dir / "output.mp4"
+    output.write_bytes(b"rendered")
+    job.output_path = output
+
+    def fake_align(text, reference, duration):
+        return LyricsResult(
+            words=[Word(text="a", start=0.0, end=0.5)],
+            anchor_rate=1.0,
+            method="anchors",
+        )
+
+    monkeypatch.setattr("app.main.lyrics.align", fake_align)
+
+    result = main.lyrics_job(job.id, LyricsRequest(lyrics="a"))
+
+    assert job.status == "ready"
+    assert not job.state().has_output
+    assert not output.exists()
+    assert result.words == [Word(text="a", start=0.0, end=0.5)]
+
+
+def test_align_failure_leaves_words_and_output_unchanged(monkeypatch, isolated_jobs):
+    job = _ready_job_with_words(isolated_jobs)
+    job.status = "done"
+    output = job.dir / "output.mp4"
+    output.write_bytes(b"rendered")
+    job.output_path = output
+    original_words = list(job.words)
+
+    def bad_align(text, reference, duration):
+        raise ValueError("bad lyrics")
+
+    monkeypatch.setattr("app.main.lyrics.align", bad_align)
+
+    with pytest.raises(HTTPException) as exc:
+        main.lyrics_job(job.id, LyricsRequest(lyrics="bad"))
+    assert exc.value.status_code == 422
+    assert job.words == original_words
+    assert output.exists()
+
+
+# --- restore-transcript -------------------------------------------------------
+
+
+def test_restore_transcript_404_unknown_job(isolated_jobs):
+    with pytest.raises(HTTPException) as exc:
+        main.restore_transcript("no-such-id")
+    assert exc.value.status_code == 404
+
+
+def test_restore_transcript_409_while_active(isolated_jobs):
+    job = _ready_job_with_words(isolated_jobs)
+    job.status = "transcribing"
+    with pytest.raises(HTTPException) as exc:
+        main.restore_transcript(job.id)
+    assert exc.value.status_code == 409
+
+
+def test_restore_transcript_409_empty_reference(isolated_jobs):
+    job = _ready_job(isolated_jobs)
+    job.reference_words = []
+    with pytest.raises(HTTPException) as exc:
+        main.restore_transcript(job.id)
+    assert exc.value.status_code == 409
+
+
+def test_restore_transcript_success(isolated_jobs):
+    job = _ready_job_with_words(isolated_jobs)
+    job.words = [Word(text="lyric", start=0.0, end=1.0)]
+    job.status = "done"
+    output = job.dir / "output.mp4"
+    output.write_bytes(b"rendered")
+    job.output_path = output
+
+    state = main.restore_transcript(job.id)
+
+    assert job.words == job.reference_words
+    assert state.status == "ready"
+    assert not state.has_output
+    assert not output.exists()

@@ -19,7 +19,7 @@ RicePoster "Pull from Clipper" → post. Merged to `main`: the v1 vertical slice
 the hardening pass, the bounded visual presets, the bounded batch review/render,
 the producer-side handoff writer, the Slate browser-interface redesign, and the
 four fixed lyric caption presets, and the ADR-001 subject crop. The music path
-(ADR-002, `docs/design/music-path-spec.md`) is ratified and in build. The
+(ADR-002, `docs/design/music-path-spec.md`) shipped 2026-09-16. The
 RicePoster-side pickup + auto-caption is
 tracked separately (RicePoster #77). Further changes still require explicit
 approval and must remain within the active phase.

@@ -179,6 +179,14 @@
             <div>
               <div class="transcript" contenteditable="false" aria-label="Editable transcript"></div>
               <p class="hint">Edit any misheard word. Timing stays locked.</p>
+              <div class="lyrics" hidden>
+                <textarea class="lyrics-input" rows="4" placeholder="Paste lyrics, one line per caption line"></textarea>
+                <div class="lyrics-actions">
+                  <button class="lyrics-align" type="button">Align</button>
+                  <button class="lyrics-restore" type="button">Restore transcript</button>
+                  <span class="lyrics-badge" aria-live="polite"></span>
+                </div>
+              </div>
             </div>
           </div>
 

@@ -8,6 +8,13 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Pasted-lyric alignment for music clips.** Music review cards now reveal a
+  session-only lyric textarea and Align action that replaces the editable
+  transcript with locally aligned lyric words, reports anchor coverage (or an
+  even-fill fallback), and preserves pasted line breaks through rendering.
+  Repeated Align always re-anchors against the original whisper words. A
+  Restore transcript button resets the editable words to the whisper output.
+  Both Align and Restore invalidate any rendered output so the user re-renders.
 - **Subject-focused 9:16 crop for landscape input.** Landscape sources can now
   be cropped to a moving 9:16 window that keeps one speaker in frame, instead of
   blur-padding. A per-clip `geometry` control (`auto` / `blur_pad` / `crop`)
@@ -58,7 +65,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 - **CI and quality gates.** GitHub Actions workflow (`Python 3.12 tests and
   coverage`) runs ruff lint + format checks and the full test suite with an
   **85% coverage floor** on every PR and push to `main`. A two-tier
-  `pre-commit` config mirrors it locally (ruff + a 6-test smoke tier on commit;
+  `pre-commit` config mirrors it locally (ruff + an 8-test smoke tier on commit;
   full suite + coverage on push). `tests/test_gates.py` locks the gate numbers
   so they cannot drift. A `main` branch-protection ruleset (block force-push +
   deletion, require the PR check) is prepared in `.github/rulesets/main.json`

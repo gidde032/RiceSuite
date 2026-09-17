@@ -65,6 +65,11 @@ and three header treatments.
 
 ## Deferred — longer-term
 
+- **Music path shipped** (ADR-002, `docs/adr/ADR-002-music-path.md`, 2026-09-16):
+  a per-clip `content` control, a follow framing profile for music footage, and
+  a pasted-lyric fallback aligned on whisper timings. Deferred from its review:
+  detector robustness on heavily filtered frames (Issue #24), a chronological
+  matcher for repeated hooks (Issue #29), and the batch-render lock (Issue #30).
 - **Filler-word trimming** ("um"/"uh") — transcript-driven cuts on word
   boundaries. Harder than silence-only.
 - **Active-speaker reframe + zoom** — active-speaker switching between faces and

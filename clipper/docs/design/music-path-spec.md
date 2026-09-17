@@ -1,6 +1,6 @@
 # Music-content path — design spec
 
-Status: **RATIFIED 2026-09-15 (ADR-002 ACCEPTED, both parts). Implementation authority comes from the owning GitHub Issue.**
+Status: **SHIPPED 2026-09-16 (ADR-002 ACCEPTED; Issue #24; PRs #25, #26, #27). Both gates passed.**
 Date: 2026-09-15. Companion: `../adr/ADR-002-music-path.md`. Builds on `subject-crop-spec.md`.
 
 ## Purpose
@@ -26,6 +26,7 @@ Both are local. Part 1 ships first.
 - `JobState.music_plan: CropPlan | None = None`. Set with `crop_plan` for landscape input.
 - `Word.line_start: bool = False`. Set by the aligner on the first word of each lyric line. `HandoffClip` is unchanged.
 - `LyricsRequest = {lyrics: str}`. `LyricsResult = {words: list[Word], anchor_rate: float, method: "anchors" | "even_fill"}`.
+- `Job.reference_words: list[Word]` (server-side, not on `JobState`).
 
 ### Framing profile (`render/framing.py`)
 
@@ -62,8 +63,10 @@ differs only in these rules:
 
 ### Endpoints (`app/main.py`)
 
-- `POST /api/jobs/{id}/lyrics` with `LyricsRequest`. Runs `align` against `job.words` and `job.info.duration`. Stores the result on `job.words` and returns `LyricsResult`. 409 while the job is active. 422 on an empty block.
-- `POST /api/jobs/{id}/transcribe` is unchanged and restores whisper words.
+- Transcription stores the whisper words twice: `job.words` (reviewed, editable) and `job.reference_words` (original, never edited). Searcher-imported job sidecars persist both; an old sidecar uses its stored words as the reference (added 2026-09-16, review finding on PR #27).
+- `POST /api/jobs/{id}/lyrics` with `LyricsRequest`. Runs `align` against `job.reference_words` and `job.info.duration`, so a repeated Align never matches against lyric words. Stores the result on `job.words` and returns `LyricsResult`. 409 while the job is active. 422 on an empty block. On success the job returns to `ready` and any rendered output is invalidated; the user re-renders before handoff. On failure `job.words` and the output are unchanged.
+- `POST /api/jobs/{id}/restore-transcript` copies `job.reference_words` back to `job.words` without re-running whisper or crop analysis. Same status and invalidation rules. 409 with no reference words.
+- `POST /api/jobs/{id}/transcribe` is unchanged; it refreshes both lists.
 - `render_job`: resolve geometry from `music_plan` when `req.content == "music"` and the input is landscape. Overrides `blur_pad` and `crop` behave as today. Vertical input ignores `content` for geometry.
 
 ### Pipeline placement
@@ -76,6 +79,7 @@ differs only in these rules:
 - A `Content` radio row on every job: Speech, Music. Slate radio cards, not remembered per slot. Default Speech.
 - The Geometry Auto card gains the fallback reason: `blur-pad · face 42% · low face rate`. When Content is Music on a landscape job, the Auto card shows the music plan: `crop · face 42% · holds`, or `crop · static centered`.
 - Music selected: a lyric textarea and an `Align` button appear under the transcript. Align posts the block, replaces the editable words, and shows a badge: `aligned · 61% anchors` or `even fill`. Speech selected hides the textarea. Pasted text persists on the card for the session.
+- A `Restore transcript` button beside Align calls the restore endpoint, clears the badge, and keeps the pasted text. After a successful Align or Restore the card hides the old preview and download until the next render. Nothing is stored in `localStorage`.
 - The render payload carries `content`.
 
 ## Boundaries

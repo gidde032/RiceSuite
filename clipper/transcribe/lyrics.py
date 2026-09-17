@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import difflib
 import re
+import unicodedata
 
 from app.models import LyricsResult
 from app.models import Word as WordModel
@@ -20,7 +21,20 @@ _STRIP_RE = re.compile(r"^[^\w']+|[^\w']+$", re.UNICODE)
 
 
 def normalize(token: str) -> str:
-    return _STRIP_RE.sub("", token).lower()
+    stripped = _STRIP_RE.sub("", token).lower()
+    out: list[str] = []
+    for i, c in enumerate(stripped):
+        if unicodedata.category(c).startswith("P"):
+            if (
+                c in ("'", "\u2018", "\u2019")
+                and 0 < i < len(stripped) - 1
+                and stripped[i - 1].isalpha()
+                and stripped[i + 1].isalpha()
+            ):
+                out.append(c)
+        else:
+            out.append(c)
+    return "".join(out)
 
 
 def _char_spread(
@@ -56,24 +70,35 @@ def align(lyrics: str, reference: list[WordModel], duration: float) -> LyricsRes
         raise ValueError("empty lyric block")
 
     norm_lyrics = [normalize(t) for t in tokens]
-    norm_ref = [normalize(w.text) for w in reference]
 
-    if reference and reference[-1].end > reference[0].start:
-        span_start = reference[0].start
-        span_end = reference[-1].end
+    ref_clean = [
+        w for w in reference if w.end > w.start and w.start >= 0 and w.end <= duration
+    ]
+
+    norm_ref = [normalize(w.text) for w in ref_clean]
+
+    matchable_lyric = [(i, n) for i, n in enumerate(norm_lyrics) if n]
+    matchable_ref = [(i, n) for i, n in enumerate(norm_ref) if n]
+
+    if ref_clean and ref_clean[-1].end > ref_clean[0].start:
+        span_start = ref_clean[0].start
+        span_end = ref_clean[-1].end
     else:
         span_start = 0.0
         span_end = duration
 
-    matcher = difflib.SequenceMatcher(None, norm_lyrics, norm_ref, autojunk=False)
+    ml_norms = [n for _, n in matchable_lyric]
+    mr_norms = [n for _, n in matchable_ref]
+    matcher = difflib.SequenceMatcher(None, ml_norms, mr_norms, autojunk=False)
     anchored: dict[int, tuple[float, float]] = {}
     for match in matcher.get_matching_blocks():
         for k in range(match.size):
-            lyric_idx = match.a + k
-            ref_idx = match.b + k
-            anchored[lyric_idx] = (reference[ref_idx].start, reference[ref_idx].end)
+            orig_lyric = matchable_lyric[match.a + k][0]
+            orig_ref = matchable_ref[match.b + k][0]
+            anchored[orig_lyric] = (ref_clean[orig_ref].start, ref_clean[orig_ref].end)
 
-    anchor_rate = len(anchored) / len(tokens)
+    denom = len(matchable_lyric) if matchable_lyric else len(tokens)
+    anchor_rate = len(anchored) / denom
 
     if anchor_rate < ANCHOR_MIN:
         line_tokens: list[list[str]] = []
@@ -99,7 +124,8 @@ def align(lyrics: str, reference: list[WordModel], duration: float) -> LyricsRes
 
     _interpolate_gaps(starts_ends, anchored, tokens, span_start, span_end)
 
-    timings_final = [(s, e) for s, e in starts_ends]  # type: ignore[misc]
+    timings_raw = [(s, e) for s, e in starts_ends]  # type: ignore[misc]
+    timings_final = _clamp_to_duration(timings_raw, duration)
     words = _build_words(tokens, timings_final, line_starts, duration)
     return LyricsResult(words=words, anchor_rate=anchor_rate, method="anchors")
 
@@ -153,6 +179,19 @@ def _interpolate_gaps(
         spreads = _char_spread(run_tokens, prev_end, next_start)
         for k, (s, e) in enumerate(spreads):
             starts_ends[run_start + k] = (s, e)
+
+
+def _clamp_to_duration(
+    timings: list[tuple[float, float]], duration: float
+) -> list[tuple[float, float]]:
+    clamped = list(timings)
+    for i in range(len(clamped) - 1, -1, -1):
+        s, e = clamped[i]
+        nxt_start = clamped[i + 1][0] if i + 1 < len(clamped) else duration
+        end_i = min(e, nxt_start)
+        start_i = min(s, end_i - MIN_WORD_S)
+        clamped[i] = (max(start_i, 0.0), min(end_i, duration))
+    return clamped
 
 
 def _build_words(

@@ -43,6 +43,11 @@ def test_normalize_strips_punctuation_keeps_apostrophe():
     assert normalize("...world!") == "world"
 
 
+def test_normalize_strips_internal_unicode_punctuation():
+    assert normalize("\u2018hello\u2014world\u2019") == "helloworld"
+    assert normalize("don't") == "don't"
+
+
 # --- exact match --------------------------------------------------------------
 
 
@@ -74,11 +79,25 @@ def test_partial_match():
     result = align(lyrics_text, ref, 4.0)
     assert result.method == "anchors"
     assert result.anchor_rate == 6 / 10
-    for w in result.words:
-        assert w.end > w.start
     _assert_invariants(result.words, 4.0)
     starts = [w.start for w in result.words]
     assert starts == sorted(starts)
+    w = result.words
+    assert w[3].start >= w[2].end - 1e-9, "very starts before is ends"
+    assert w[3].end <= w[4].start + 1e-9, "very ends after bright starts"
+    for idx in (6, 7, 8):
+        assert w[idx].start >= w[5].end - 1e-9, f"word {idx} before today end"
+        assert w[idx].end <= w[9].start + 1e-9, f"word {idx} after now start"
+    gap_words = [w[6], w[7], w[8]]
+    chars = [max(len(gw.text), 1) for gw in gap_words]
+    total_chars = sum(chars)
+    gap_span = w[9].start - w[5].end
+    for i, gw in enumerate(gap_words):
+        expected_frac = chars[i] / total_chars
+        actual_frac = (gw.end - gw.start) / gap_span
+        assert abs(actual_frac - expected_frac) < 0.05, (
+            f"word {gw.text!r} fraction {actual_frac:.3f} != {expected_frac:.3f}"
+        )
 
 
 # --- below threshold ----------------------------------------------------------
@@ -143,20 +162,73 @@ def test_group_words_breaks_on_line_start():
 # --- random invariant ---------------------------------------------------------
 
 
-def test_random_invariants():
+def test_random_invariants_anchors():
     rng = random.Random(42)
+    tokens = [f"w{i}" for i in range(200)]
+    lyrics_text = " ".join(tokens)
+    anchor_count = 60
+    ref_words: list[Word] = []
+    t = 0.5
+    for i in range(anchor_count):
+        dur = rng.uniform(0.1, 0.5)
+        ref_words.append(Word(text=tokens[i], start=t, end=t + dur))
+        t += dur + rng.uniform(0.0, 0.3)
+    duration = t + 2.0
+    result = align(lyrics_text, ref_words, duration)
+    assert result.method == "anchors"
+    _assert_invariants(result.words, duration)
+    assert len(result.words) == 200
+
+
+def test_random_invariants_even_fill():
+    rng = random.Random(99)
     tokens = [f"w{i}" for i in range(200)]
     lyrics_text = " ".join(tokens)
     ref_words: list[Word] = []
     t = 0.5
-    for _i in range(80):
+    for _i in range(5):
         dur = rng.uniform(0.1, 0.5)
         ref_words.append(Word(text=tokens[rng.randint(0, 199)], start=t, end=t + dur))
         t += dur + rng.uniform(0.0, 0.3)
     duration = t + 2.0
     result = align(lyrics_text, ref_words, duration)
+    assert result.method == "even_fill"
     _assert_invariants(result.words, duration)
     assert len(result.words) == 200
+
+
+# --- 2A-5 empty normalized tokens as anchors ----------------------------------
+
+
+def test_empty_normalized_token_not_anchor():
+    ref = _words(("...", 0.1, 0.2))
+    result = align("...", ref, 1.0)
+    assert result.anchor_rate == 0.0
+    assert result.method == "even_fill"
+    _assert_invariants(result.words, 1.0)
+
+
+# --- 2A-3 zero-duration reference words ---------------------------------------
+
+
+def test_zero_duration_ref_word_dropped():
+    ref = _words(("hello", 2.0, 2.0))
+    result = align("hello", ref, 2.0)
+    assert result.method == "even_fill"
+    for w in result.words:
+        assert w.end <= 2.0 + 1e-9
+    _assert_invariants(result.words, 2.0)
+
+
+# --- 2A-2 shortfall cascade past duration ------------------------------------
+
+
+def test_shortfall_cascade_clamped_to_duration():
+    ref = _words(("a", 0.90, 0.95), ("b", 0.96, 0.97))
+    result = align("a x b", ref, 1.0)
+    for w in result.words:
+        assert w.end <= 1.0 + 1e-9, f"word {w.text!r} end {w.end} > duration"
+    _assert_invariants(result.words, 1.0)
 
 
 # --- empty raises -------------------------------------------------------------
@@ -204,7 +276,9 @@ def test_lyrics_endpoint_success_replaces_words(monkeypatch, isolated_jobs):
 
     job = job_store.create_job()
     job.status = "ready"
-    job.words = [WordModel(text="hello", start=1.0, end=1.5)]
+    whisper_words = [WordModel(text="hello", start=1.0, end=1.5)]
+    job.words = list(whisper_words)
+    job.reference_words = list(whisper_words)
 
     class FakeInfo:
         duration = 3.0

@@ -71,6 +71,9 @@ Add a user-selectable **music path** with two parts. Part 1 ships first.
 - Analysis of landscape input now produces two plans. Memory per job grows by
   one sample list.
 - `Word` gains an optional `line_start` flag so phrases follow lyric lines.
+- The job keeps the original whisper words apart from the reviewed words, so
+  a repeated Align aligns against speech, not against earlier lyrics. Align
+  and Restore invalidate a rendered output (added 2026-09-16, PR #27 review).
 
 ## Routed forward
 
@@ -82,5 +85,5 @@ Add a user-selectable **music path** with two parts. Part 1 ships first.
 ## Action items
 
 1. [x] Finn ratified 2026-09-15; SPEC.md §2, §4 steps 2 and 4, §7, D3, D4, D15, D16 updated.
-2. [ ] Open one Issue from `docs/design/music-path-spec.md`. Build M0 first.
-3. [ ] Finn supplies lyrics for the five music fixtures (local, gitignored).
+2. [x] Issue #24 opened; built M0–M7 on PRs #25, #26, #27.
+3. [x] Part 1 gate passed 2026-09-15 (six contact sheets). Part 2 gate passed 2026-09-16: five clips anchored at 72–80%, highlight tracks the vocal on 5 of 5.

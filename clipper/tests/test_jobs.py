@@ -146,6 +146,40 @@ def test_persist_recover_round_trips_crop_plan(isolated_cache):
     assert recovered.words == job.words
 
 
+def test_sidecar_round_trips_reference_words(isolated_cache):
+    job = _searcher_job_with_plan(isolated_cache, None)
+    whisper_words = [
+        jobs.Word(text="hello", start=0.1, end=0.4),
+        jobs.Word(text="world", start=0.5, end=0.9),
+    ]
+    job.words = [jobs.Word(text="lyric", start=0.0, end=1.0)]
+    job.reference_words = whisper_words
+
+    jobs.persist_searcher_job(job)
+    recovered = jobs._recover_searcher_job(job.dir)
+
+    assert recovered is not None
+    assert recovered.reference_words == whisper_words
+    assert recovered.words == job.words
+
+
+def test_old_sidecar_without_reference_words_uses_words(isolated_cache):
+    job = _searcher_job_with_plan(isolated_cache, None)
+    job.words = [jobs.Word(text="hello", start=0.1, end=0.4)]
+    job.reference_words = list(job.words)
+
+    jobs.persist_searcher_job(job)
+    metadata = job.dir / jobs.JOB_METADATA_FILENAME
+    payload = json.loads(metadata.read_text(encoding="utf-8"))
+    payload.pop("reference_words")
+    metadata.write_text(json.dumps(payload), encoding="utf-8")
+
+    recovered = jobs._recover_searcher_job(job.dir)
+
+    assert recovered is not None
+    assert recovered.reference_words == recovered.words
+
+
 def test_recover_old_sidecar_without_plan_or_words_yields_defaults(isolated_cache):
     job = _searcher_job_with_plan(isolated_cache, None)
 
@@ -154,9 +188,11 @@ def test_recover_old_sidecar_without_plan_or_words_yields_defaults(isolated_cach
     payload = json.loads(metadata.read_text(encoding="utf-8"))
     payload.pop("crop_plan")
     payload.pop("words")
+    payload.pop("reference_words")
     metadata.write_text(json.dumps(payload), encoding="utf-8")
     recovered = jobs._recover_searcher_job(job.dir)
 
     assert recovered is not None
     assert recovered.crop_plan is None
     assert recovered.words == []
+    assert recovered.reference_words == []
