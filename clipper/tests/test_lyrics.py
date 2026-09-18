@@ -140,6 +140,15 @@ def test_tie_breaks_to_earliest_reference():
     assert result.words[0].start == 1.0
 
 
+def test_tie_prefers_first_lyric_token_when_refs_are_fewer():
+    ref = _words(("you", 1.0, 1.5))
+    result = align("you\nyou", ref, 4.0)
+    assert result.anchor_rate == 1 / 2
+    assert result.words[0].start == 1.0
+    assert result.words[1].start >= 1.5 - 1e-9
+    _assert_invariants(result.words, 4.0)
+
+
 # --- below threshold ----------------------------------------------------------
 
 
