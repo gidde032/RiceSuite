@@ -1,94 +1,54 @@
 # RiceSearcher — Handoff
 
-**Read this before editing.** Current-state continuity only; keep under ~200
-lines. Shipped history → `CHANGELOG.md` (created when versioned); product
-contract → `SPEC.md`/`ADR-001.md`; planned work → GitHub Issues.
+**Read this before editing.** Current-state continuity only; product contract →
+`SPEC.md`/`ADR-001.md`/`ADR-002.md`; planned work → GitHub Issues.
 
-Last updated: 2026-09-15.
+Last updated: 2026-09-18.
 
-## Current state
+## Verified main state
 
-- Bootstrap complete. `ADR-001.md` ACCEPTED; `SPEC.md` RATIFIED (D1–D8). GitHub:
-  private `gidde032/RiceSearcher`; milestone #1; Issues #1–#9; templates; CI.
-- ✅ **Phase 1 MERGED** (PR #10, `52c386c`): acquire (yt-dlp + watch-folder) →
-  content-addressed cache → faster-whisper transcript → SQLite library + CLI.
-- ✅ **Phase 2 MERGED** (PR #11): beat profile, prefilter, LLM scorer (Haiku 4.5
-  default; key via `credentials.env`/export), extract_and_score, `score`/`slices`
-  CLI. Taste-validated live (protocol on #6). Closed deferred D1.
-- ✅ **Phase 3 MERGED** (PR #12, `a85309c`): advisory dedup signal (intra time-overlap
-  + cross-source transcript embedding via lazy/swappable `sentence-transformers`);
-  `dedup` CLI with `--threshold` + human-readable output; default cosine 0.65.
-  Never filters/hides/reorders. 3-reviewer cold review; repairs with regressions.
-- ✅ **Phase 4 MERGED** (PR #13, `eb2f6e7`): Slate review UI + select gate.
-- ✅ **Phase 5 MERGED** (PR #14, `05e2d79`): manifest-last Searcher handoff
-  writer, CLI/UI send path, and own `~/ricesearcher-handoff` root.
-- Maintainer live-verified the full chain through RiceClipper render and RicePoster
-  caption generation.
+- Main was `dceb3e1` at session start, with green GitHub CI and no open PRs.
+- Phases 1–5 are merged. The v1 acquire/transcribe → score/dedup → review/select
+  → handoff flow and practical hardening (PR #16) are delivered.
+- PR #18 delivered media management, the PNG logo, and review-card polish.
+- Saved profiles are delivered: backend PR #24 (#22), UI PR #26 (#23), and
+  hardening PR #27 are merged. Contract: `docs/design/profiles-spec.md`, ADR-002,
+  SPEC D9. The library uses schema v3 and profile-scoped slices and handoffs.
+- Searcher-to-Clipper pickup (#8) and the taste spike (#6) are closed. The
+  maintainer previously live-verified the full chain through Clipper render and
+  Poster caption generation; this session did not repeat that live validation.
+- Existing CI enforces Ruff, syntax checks for all static JS, Node behavior tests,
+  and pytest with a 90% coverage floor. The pinned smoke tier contains five tests.
 
-## Shipped — v1 multi-lens hardening (PR #16)
+## Current maintenance batch
 
-Round 1 reviewed frozen main `05e2d79` with five independent lenses. The approved
-repair batch is integrated locally on `review/v1-round1-repairs` (not pushed or in
-a PR):
+The maintainer authorized #19, #20, and #25 with Luna xhigh implementation and
+parent-side validation, plus this status refresh. Each Issue has a focused branch.
 
-- repeated source pulls update in place and preserve every slice lifecycle state;
-- handed-off slices are terminal in the review API/UI;
-- producer-owned yt-dlp temp directories are cleaned after cache custody and on
-  failures, without deleting caller-owned directories;
-- incomplete/malformed scorer results fail visibly instead of becoming zero scores;
-- ffmpeg/execution failures return structured retryable UI errors and successful
-  handoff confirmation remains visible;
-- FR-7 is reconciled to the maintainer's UI-owned detail/filter workflow;
-- Phase/status/data-root docs are current; the smoke command is documented and green;
-- search-query acquisition is deliberately post-v1 and tracked by Issue #15.
+- #19: make the shared-media reference guard handle equivalent path spellings,
+  including existing non-normalized rows, with disposable-file regressions.
+- #20: extend the existing Node harness to media deletion/clear confirmation,
+  timer, and fetch-error flows; the original Issue's missing-harness description
+  predates the tests added in PR #27.
+- #25: add the mypy gate, scoped optional-import exceptions, and minimal typing
+  repairs. This branch documents the new gate; the Issue stays open until merge.
 
-Local integrated gates: ruff + JS clean; **142 tests, 96.05% coverage** (floor 90%);
-smoke tier **5 passed** with `pytest -m smoke --no-cov`.
+Parent acceptance passed for the combined batch: **215 Python tests, 94.06%
+coverage; 12 Node behavior tests; mypy (35 source files), Ruff, JS syntax, and
+the five-test smoke tier**. The shared-file regression was independently red
+against main and green with the fix. A temporary removed-cancellation probe
+confirmed the clear-all timer regression detects the stale-timer risk.
 
-Round 2's approved practical repair batch is also integrated locally:
+No live library, cache, handoff, acquisition, scoring API, or posting surfaces
+were used for validation. Draft PRs remain subject to maintainer review/merge;
+this batch used parent-side validation rather than the formal phase review.
 
-- correct, duration-matched H.264/AAC handoff clips for offset source streams;
-- merged yt-dlp output selection and normalized publication dates;
-- terminal handed-off windows, strict scorer results, and atomic re-scoring;
-- failed-pull cache cleanup and contextual lazy transcription failures.
+## Deferred
 
-Round 3 caught and repaired merged-output selection, model-load context, and the
-first timing repair's duration/performance regressions. Current gates: ruff + JS
-clean; **155 tests, 95.59% coverage**; smoke tier **5 passed**.
-
-## Shipped since — review-UI polish
-
-PR #18 (Issue #17) **merged** at `f5cdd8a`: media-management page (`/media`,
-full-purge, FR-8a), the PNG logo, review-card alignment. Deferred: #19
-(media_path normalization), #20 (JS test harness). Gates at merge: 168 tests,
-95.74% coverage, smoke tier 5.
-
-## Active work — saved profiles (ADR-002, SPEC D9)
-
-Ratified 2026-09-14. Contract: `docs/design/profiles-spec.md`. Milestone 2.
-
-- Issue **#22** backend P1–P4, branch `feat/profiles-backend`. **PR #24 merged**
-  to `main` at `8719f65`.
-- Issue **#23** UI P5, branch `feat/profiles-ui`. Draft **PR #26** open.
-
-Verified: main gates green at `f5cdd8a` (168 tests, 95.74%, smoke 5).
-Assumed: the maintainer's live library is schema v2 with `selected`/`handed_off`
-rows; the v3 migration must keep them (fixture DB proves it).
-
-Known gaps found at phase start (not blockers):
-- No type-check tool is installed. "type-check" in the spec gate list is not
-  enforced today. Do not add one inside #22.
-- CI runs `node --check` on `app.js` only. #22 or #23 extends it to every
-  `web/static/*.js`.
-
-## Next action
-
-Maintainer: decide on PR #26 (draft, head `8996aab`, CI green, 3-reviewer
-cold review done, 4 LOW findings repaired by the orchestrator with regressions;
-195 tests, 94.50%, smoke 5). Merge closes #23 and milestone 2. Type-check gate
-is #25.
+#9 is a RiceClipper roadmap edit outside this batch. #15 adds explicit search-query
+acquisition and needs a separate feature contract/review. #7 remains the deferred
+scheduled watcher. See `ROADMAP.md` and live GitHub Issues for current status.
 
 ## Reserved from the agent (maintainer-only)
 
-Merge, publish, deploy, repository-visibility change, tag/release. Everything else
-in the ratified setup + Phase 1 is authorized.
+Merge, publish, deploy, repository-visibility change, tag/release.

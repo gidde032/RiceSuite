@@ -15,14 +15,23 @@ The five-phase ladder from `SPEC.md §9`. Each phase ends in a usable increment.
 
 ## Milestone: Saved profiles (ADR-002, SPEC D9)
 
-- **Profiles backend P1–P4** ([#22](https://github.com/gidde032/RiceSearcher/issues/22)) — loader, schema v3 migration, partitioned pipeline/CLI, `profile_id` in the manifest.
-- **Profiles UI P5** ([#23](https://github.com/gidde032/RiceSearcher/issues/23)) — profile select, `/profiles` page, stale badge, scoped handoff. After #22 merges.
+- ✅ **Profiles backend P1–P4** ([#22](https://github.com/gidde032/RiceSearcher/issues/22), merged PR #24) — loader, schema v3 migration, partitioned pipeline/CLI, `profile_id` in the manifest.
+- ✅ **Profiles UI P5** ([#23](https://github.com/gidde032/RiceSearcher/issues/23), merged PR #26; hardening PR #27) — profile select, `/profiles` page, stale badge, scoped handoff.
 - Routed forward inside ADR-002: per-profile prefilter weights, profile edit in the UI, cross-profile advisory dedup. Issues open when the need appears.
+
+## Maintenance backlog
+
+- **Shared-media path matching** ([#19](https://github.com/gidde032/RiceSearcher/issues/19)) — protect shared files when persisted paths use different lexical spellings.
+- **Media UI behavior coverage** ([#20](https://github.com/gidde032/RiceSearcher/issues/20)) — extend the existing Node test harness to destructive confirmation and error flows.
+- **Type-check gate** ([#25](https://github.com/gidde032/RiceSearcher/issues/25)) — enforce mypy locally and in CI.
 
 ## Routed forward (tracked, not in the v1 arc)
 
-- **Taste spike** ([#6](https://github.com/gidde032/RiceSearcher/issues/6)) — LLM segment-scoring prototype on real episodes; gates any move toward auto-select.
 - **Scheduled-monitor watcher** ([#7](https://github.com/gidde032/RiceSearcher/issues/7)) — future enhancement; on-demand pull is the v1 base.
 - **Search-query acquisition** ([#15](https://github.com/gidde032/RiceSearcher/issues/15)) — first post-v1 feature; v1 supports YouTube URLs/channels and local files.
-- **RiceClipper "Pull from Searcher" consumer** ([#8](https://github.com/gidde032/RiceSearcher/issues/8)) — cross-repo work, its own approval.
 - **RiceClipper roadmap edit** ([#9](https://github.com/gidde032/RiceSearcher/issues/9)) — retire Path 1/Path 2 extraction into RiceSearcher.
+
+## Completed follow-up work
+
+- ✅ **Taste spike** ([#6](https://github.com/gidde032/RiceSearcher/issues/6), closed 2026-09-11) — real-content scoring validation; the human select gate remains.
+- ✅ **RiceClipper "Pull from Searcher" consumer** ([#8](https://github.com/gidde032/RiceSearcher/issues/8), closed 2026-09-11) — Searcher-to-Clipper pickup delivered.
