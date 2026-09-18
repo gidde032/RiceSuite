@@ -430,6 +430,42 @@ def test_delete_keeps_media_file_shared_by_another_source(tmp_path: Path) -> Non
     assert not media.exists()
 
 
+def test_delete_keeps_media_file_shared_by_equivalent_paths(tmp_path: Path) -> None:
+    cfg = Config(data_dir=tmp_path / "data", handoff_dir=tmp_path / "handoff")
+    cfg.ensure_dirs()
+    media = cfg.cache_dir / "cd" / "shared.mp4"
+    media.parent.mkdir(parents=True, exist_ok=True)
+    media.write_bytes(b"shared bytes")
+    equivalent = str(cfg.cache_dir) + "/cd//./shared.mp4"
+    with Library(cfg.db_path) as lib:
+        first = Source(
+            id="srcA",
+            kind=SourceKind.YOUTUBE,
+            ref="https://y/srcA",
+            media_path=str(media),
+        )
+        second = Source(
+            id="srcB",
+            kind=SourceKind.YOUTUBE,
+            ref="https://y/srcB",
+            media_path=equivalent,
+        )
+        lib.upsert_source(first)
+        lib.upsert_source(second)
+        lib._conn.execute(
+            "UPDATE sources SET media_path = ? WHERE id = ?",
+            (equivalent, second.id),
+        )
+        lib._conn.commit()
+
+    client = TestClient(create_app(cfg))
+    first_deleted = client.post("/api/sources/srcA/delete").json()
+
+    assert first_deleted["media_removed"] is False
+    assert media.is_file()
+    assert client.get("/api/sources").json()[0]["id"] == "srcB"
+
+
 def test_clear_cache_purges_everything(client: TestClient, tmp_path: Path) -> None:
     cache_dir = tmp_path / "data" / "cache"
     assert any(cache_dir.rglob("*.mp4"))
