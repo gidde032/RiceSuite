@@ -56,7 +56,7 @@ differs only in these rules:
 3. Vocal span: first reference start to last reference end. No reference words: `0` to `duration`.
 4. `anchor_rate` = anchors / lyric tokens. If `anchor_rate < 0.25`, method is `even_fill`: spread lines across the vocal span weighted by character count, then words inside each line the same way (amended 2026-09-16, review 2A-1; was "evenly").
 5. Else method is `anchors`. Words between two anchors spread evenly across the gap, weighted by character count. Words before the first anchor spread from the vocal span start; words after the last spread to the vocal span end.
-6. Every word gets `end > start`. Words never overlap. Order is lyric order.
+6. Every word gets `end > start`. Words never overlap. Order is lyric order. Every word ends inside the clip. If the clip has fewer than one `MIN_WORD_S` slot per word, timings compress uniformly and widths shrink below `MIN_WORD_S` (amended 2026-09-18, #33).
 7. The first token of each line sets `line_start = True`.
 
 `group_words` (`transcribe/phrasing.py`) starts a new phrase when `line_start` is true. Lines longer than `max_words` still split as today.

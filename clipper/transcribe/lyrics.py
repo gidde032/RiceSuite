@@ -147,6 +147,7 @@ def align(lyrics: str, reference: list[WordModel], duration: float) -> LyricsRes
             word_timings = _char_spread(lt, cursor, cursor + line_span)
             timings.extend(word_timings)
             cursor += line_span
+        timings = _clamp_to_duration(timings, duration)
         words = _build_words(tokens, timings, line_starts, duration)
         return LyricsResult(words=words, anchor_rate=anchor_rate, method="even_fill")
 
@@ -247,4 +248,18 @@ def _build_words(
         if e - s < MIN_WORD_S:
             e = s + MIN_WORD_S
         words.append(WordModel(text=tok, start=s, end=e, line_start=(i in ls_set)))
+    if words and words[-1].end > duration > 0:
+        # Infeasible case: more words than MIN_WORD_S slots in the clip.
+        # Compress every timing uniformly so the block stays inside the clip.
+        # Widths shrink below MIN_WORD_S; order and non-overlap survive.
+        factor = duration / words[-1].end
+        words = [
+            WordModel(
+                text=w.text,
+                start=w.start * factor,
+                end=w.end * factor,
+                line_start=w.line_start,
+            )
+            for w in words
+        ]
     return words
