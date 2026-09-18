@@ -8,6 +8,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- Lyric alignment keeps repeated hooks chronological when Whisper mishears or omits a word (#29).
 - **Batch render no longer drops browser requests.** `render()` now runs
   outside the global job lock under a per-job render lock, so renders of
   different jobs run concurrently instead of one behind another. A second
