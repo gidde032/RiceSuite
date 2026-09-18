@@ -70,9 +70,14 @@ the separate `~/ricesearcher-handoff` root by default (override with
 ## Development
 
 ```bash
-ruff format --check . && ruff check . && pytest
+ruff format --check . && ruff check . && mypy && pytest
+for f in ricesearcher/web/static/*.js; do node --check "$f"; done
+node --test tests/js/*.test.js
 pytest -m smoke --no-cov  # fast five-test feedback tier
 ```
 
-Gates: ruff (format + lint), pytest with a 90% coverage floor, and a pinned smoke
-tier. See [CLAUDE.md](CLAUDE.md) for the operating rules and hard safety boundary.
+Gates: Ruff (format + lint), mypy for the production package targeting Python
+3.12, JS syntax and behavior tests, pytest with a 90% coverage floor, and a pinned
+smoke tier. Mypy uses standard checking of annotated functions; missing-import
+exceptions are limited to the three optional heavy adapters. See
+[CLAUDE.md](CLAUDE.md) for the operating rules and hard safety boundary.

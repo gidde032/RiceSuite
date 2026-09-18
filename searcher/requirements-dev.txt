@@ -2,9 +2,13 @@
 ruff==0.16.5
 pytest==9.1.1
 pytest-cov==7.1.0
+mypy==2.3.1
 # Packaging regression tests disable build isolation, so the declared backend
 # must be present in the test environment instead of fetched during pytest.
 setuptools>=68
 # For the FastAPI TestClient (web UI tests) and CI:
 fastapi>=0.115.0
 httpx>=0.27.0
+# Lightweight runtime adapters imported by the production package during type-checking:
+anthropic>=1.3.0
+uvicorn>=0.30.0

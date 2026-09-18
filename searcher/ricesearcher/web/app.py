@@ -75,7 +75,7 @@ class _HandoffIn(BaseModel):
 def _slice_dto(
     s: CandidateSlice,
     titles: dict[str, str],
-    media_urls: dict[str, str],
+    media_urls: dict[str, str | None],
     dup_labels: dict[str, str],
     stale: bool,
 ) -> dict:

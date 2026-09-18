@@ -202,7 +202,8 @@ def _cmd_dedup(args: argparse.Namespace) -> int:
         "slices flagged as possible duplicates (advisory only — nothing removed)"
     )
     for s in flagged:
-        canon = by_id.get(s.dup_of)
+        dup_of = s.dup_of
+        canon = by_id.get(dup_of) if dup_of is not None else None
         print(f"\n  [{s.dup_kind} {s.dup_score:.2f}]")
         print(f"    this:    {_slice_label(s, titles)}")
         canon_label = _slice_label(canon, titles) if canon else f"(missing {s.dup_of})"
