@@ -49,6 +49,51 @@ def test_upsert_and_get_roundtrip(tmp_path: Path) -> None:
     assert got.kind is SourceKind.YOUTUBE
 
 
+def test_media_path_reference_normalizes_new_and_existing_paths(
+    tmp_path: Path,
+) -> None:
+    canonical = tmp_path / "cache" / "aa" / "file.mp4"
+    equivalent = str(tmp_path / "cache") + "/aa//./file.mp4"
+
+    with Library(tmp_path / "lib.sqlite3") as lib:
+        normalized = _source("normalized")
+        normalized.media_path = equivalent
+        lib.upsert_source(normalized)
+
+        stored = lib._conn.execute(
+            "SELECT media_path FROM sources WHERE id = ?", (normalized.id,)
+        ).fetchall()
+        assert [row["media_path"] for row in stored] == [str(canonical)]
+        assert lib.is_media_path_referenced(canonical)
+
+        lib.delete_source(normalized.id)
+
+        source = _source("first")
+        source.media_path = str(canonical)
+        lib.upsert_source(source)
+        legacy = _source("legacy")
+        legacy.media_path = equivalent
+        lib._conn.execute(
+            "INSERT INTO sources "
+            "(id, kind, ref, media_path, title, channel, published_at, "
+            "acquired_at, duration_s) VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                legacy.id,
+                legacy.kind.value,
+                legacy.ref,
+                legacy.media_path,
+                legacy.title,
+                legacy.channel,
+                legacy.published_at,
+                legacy.acquired_at,
+                legacy.duration_s,
+            ),
+        )
+        lib._conn.commit()
+        lib.delete_source(source.id)
+        assert lib.is_media_path_referenced(canonical)
+
+
 def test_upsert_replaces_transcript(tmp_path: Path) -> None:
     with Library(tmp_path / "lib.sqlite3") as lib:
         lib.upsert_source(_source(words=[TranscriptWord("old", 0.0, 0.1)]))

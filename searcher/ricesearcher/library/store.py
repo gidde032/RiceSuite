@@ -29,6 +29,16 @@ SCHEMA_VERSION = 3
 # stamps it on every row and folds it into the slice id.
 LEGACY_PROFILE_ID = "example-beat"
 
+
+def _canonical_media_path(media_path: str | Path) -> str:
+    """Canonicalize a media path's lexical separators and ``.`` segments.
+
+    This deliberately does not resolve symlinks, case, or ``..`` segments:
+    those are filesystem policies outside the shared-reference contract.
+    """
+    return str(Path(media_path))
+
+
 # version -> DDL that migrates the schema UP to that version.
 MIGRATIONS: dict[int, str] = {
     1: """
@@ -195,7 +205,7 @@ class Library:
                     source.id,
                     source.kind.value,
                     source.ref,
-                    source.media_path,
+                    _canonical_media_path(source.media_path),
                     source.title,
                     source.channel,
                     source.published_at,
@@ -236,11 +246,15 @@ class Library:
 
         Reviewer lens: cache custody (HIGH). Failure cleanup must not unlink a
         newly-created path that another source has already adopted.
+
+        Compare canonicalized values in Python so databases created before
+        path canonicalization still protect shared media without a migration.
         """
-        row = self._conn.execute(
-            "SELECT 1 FROM sources WHERE media_path = ? LIMIT 1", (str(media_path),)
-        ).fetchone()
-        return row is not None
+        canonical = _canonical_media_path(media_path)
+        return any(
+            _canonical_media_path(row["media_path"]) == canonical
+            for row in self._conn.execute("SELECT media_path FROM sources")
+        )
 
     def resolve_source_id(self, prefix: str) -> str | None:
         """Resolve a full source id from an id prefix.
