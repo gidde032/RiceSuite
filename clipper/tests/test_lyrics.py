@@ -25,10 +25,13 @@ def _words(*specs: tuple[str, float, float]) -> list[Word]:
 
 
 def _assert_invariants(words: list[Word], duration: float) -> None:
+    feasible = len(words) * MIN_WORD_S <= duration
     for i, w in enumerate(words):
         assert w.end > w.start, f"word {i} end <= start"
-        assert w.end - w.start >= MIN_WORD_S - 1e-9, f"word {i} too short"
+        if feasible:
+            assert w.end - w.start >= MIN_WORD_S - 1e-9, f"word {i} too short"
         assert w.start >= -1e-9, f"word {i} start negative"
+        assert w.end <= duration + 1e-9, f"word {i} end past duration"
         if i > 0:
             assert w.start >= words[i - 1].end - 1e-9, f"word {i} overlaps {i - 1}"
 
@@ -98,6 +101,55 @@ def test_partial_match():
         assert abs(actual_frac - expected_frac) < 0.05, (
             f"word {gw.text!r} fraction {actual_frac:.3f} != {expected_frac:.3f}"
         )
+
+
+# --- repeated hooks stay chronological ----------------------------------------
+
+
+def test_repeated_hook_misheard_word_stays_chronological():
+    ref = _words(
+        ("we", 0.0, 0.8),
+        ("are", 0.8, 1.6),
+        ("gone", 1.6, 2.4),
+        ("we", 3.0, 3.8),
+        ("are", 3.8, 4.6),
+        ("young", 4.6, 5.4),
+    )
+    result = align("we are young\nwe are young", ref, 6.0)
+    assert result.method == "anchors"
+    assert result.anchor_rate == 5 / 6
+    w = result.words
+    assert w[0].start == 0.0 and w[1].end == 1.6
+    assert 1.6 <= w[2].start and w[2].end <= 3.0
+    assert w[3].start == 3.0 and w[5].end == 5.4
+    assert w[3].line_start
+    _assert_invariants(w, 6.0)
+
+
+def test_repeated_hook_omitted_token_stays_chronological():
+    ref = _words(("love", 0.0, 0.5), ("love", 2.0, 2.5), ("me", 2.5, 3.0))
+    result = align("love me\nlove me", ref, 4.0)
+    assert result.anchor_rate == 3 / 4
+    w = result.words
+    assert w[0].start == 0.0
+    assert 0.5 <= w[1].start and w[1].end <= 2.0
+    assert w[2].start == 2.0 and w[3].end == 3.0
+    _assert_invariants(w, 4.0)
+
+
+def test_tie_breaks_to_earliest_reference():
+    ref = _words(("you", 1.0, 1.5), ("you", 3.0, 3.5))
+    result = align("you", ref, 4.0)
+    assert result.words[0].start == 1.0
+
+
+def test_tie_prefers_first_lyric_token_when_refs_are_fewer():
+    ref = _words(("you", 1.0, 1.5))
+    result = align("you\nyou", ref, 4.0)
+    assert result.anchor_rate == 1 / 2
+    assert result.words[0].start == 1.0
+    assert result.words[1].start >= 1.5 - 1e-9
+    _assert_invariants(result.words, 4.0)
 
 
 # --- below threshold ----------------------------------------------------------
@@ -232,6 +284,22 @@ def test_shortfall_cascade_clamped_to_duration():
 
 
 # --- empty raises -------------------------------------------------------------
+
+
+def test_even_fill_stays_inside_clip_when_words_outnumber_slots():
+    lyrics_text = " ".join(["la"] * 30)
+    result = align(lyrics_text, [], 1.0)
+    assert result.method == "even_fill"
+    _assert_invariants(result.words, 1.0)
+    assert result.words[-1].end <= 1.0
+
+
+def test_anchors_stay_inside_clip_when_words_outnumber_slots():
+    ref = _words(*[("la", 0.03 * i, 0.03 * i + 0.02) for i in range(30)])
+    lyrics_text = " ".join(["la"] * 30)
+    result = align(lyrics_text, ref, 1.0)
+    assert result.method == "anchors"
+    _assert_invariants(result.words, 1.0)
 
 
 def test_empty_lyrics_raises():

@@ -7,7 +7,6 @@ or evenly distributed across the vocal span.
 
 from __future__ import annotations
 
-import difflib
 import re
 import unicodedata
 
@@ -52,6 +51,41 @@ def _char_spread(
     return result
 
 
+def _lcs_matches(a: list[str], b: list[str]) -> list[tuple[int, int]]:
+    """Match tokens by longest common subsequence, in chronological order.
+
+    Maximizes the matched count and preserves order. On a tie it prefers the
+    earliest reference occurrence: when the lyric token could match now or
+    later without changing the matched count, it leaves the lyric token
+    unanchored and keeps the reference cursor early. Iterative DP, no recursion.
+    """
+    n, m = len(a), len(b)
+    dp = [[0] * (m + 1) for _ in range(n + 1)]
+    for i in range(n - 1, -1, -1):
+        row = dp[i]
+        next_row = dp[i + 1]
+        for j in range(m - 1, -1, -1):
+            if a[i] == b[j]:
+                row[j] = next_row[j + 1] + 1
+            elif next_row[j] >= row[j + 1]:
+                row[j] = next_row[j]
+            else:
+                row[j] = row[j + 1]
+
+    matches: list[tuple[int, int]] = []
+    i = j = 0
+    while i < n and j < m:
+        if a[i] == b[j] and dp[i][j] == dp[i + 1][j + 1] + 1:
+            matches.append((i, j))
+            i += 1
+            j += 1
+        elif dp[i + 1][j] >= dp[i][j + 1]:
+            i += 1
+        else:
+            j += 1
+    return matches
+
+
 def align(lyrics: str, reference: list[WordModel], duration: float) -> LyricsResult:
     lines = [ln for ln in lyrics.splitlines() if ln.strip()]
     if not lines:
@@ -89,13 +123,11 @@ def align(lyrics: str, reference: list[WordModel], duration: float) -> LyricsRes
 
     ml_norms = [n for _, n in matchable_lyric]
     mr_norms = [n for _, n in matchable_ref]
-    matcher = difflib.SequenceMatcher(None, ml_norms, mr_norms, autojunk=False)
     anchored: dict[int, tuple[float, float]] = {}
-    for match in matcher.get_matching_blocks():
-        for k in range(match.size):
-            orig_lyric = matchable_lyric[match.a + k][0]
-            orig_ref = matchable_ref[match.b + k][0]
-            anchored[orig_lyric] = (ref_clean[orig_ref].start, ref_clean[orig_ref].end)
+    for a_idx, b_idx in _lcs_matches(ml_norms, mr_norms):
+        orig_lyric = matchable_lyric[a_idx][0]
+        orig_ref = matchable_ref[b_idx][0]
+        anchored[orig_lyric] = (ref_clean[orig_ref].start, ref_clean[orig_ref].end)
 
     denom = len(matchable_lyric) if matchable_lyric else len(tokens)
     anchor_rate = len(anchored) / denom
@@ -115,6 +147,7 @@ def align(lyrics: str, reference: list[WordModel], duration: float) -> LyricsRes
             word_timings = _char_spread(lt, cursor, cursor + line_span)
             timings.extend(word_timings)
             cursor += line_span
+        timings = _clamp_to_duration(timings, duration)
         words = _build_words(tokens, timings, line_starts, duration)
         return LyricsResult(words=words, anchor_rate=anchor_rate, method="even_fill")
 
@@ -215,4 +248,18 @@ def _build_words(
         if e - s < MIN_WORD_S:
             e = s + MIN_WORD_S
         words.append(WordModel(text=tok, start=s, end=e, line_start=(i in ls_set)))
+    if words and words[-1].end > duration > 0:
+        # Infeasible case: more words than MIN_WORD_S slots in the clip.
+        # Compress every timing uniformly so the block stays inside the clip.
+        # Widths shrink below MIN_WORD_S; order and non-overlap survive.
+        factor = duration / words[-1].end
+        words = [
+            WordModel(
+                text=w.text,
+                start=w.start * factor,
+                end=w.end * factor,
+                line_start=w.line_start,
+            )
+            for w in words
+        ]
     return words
