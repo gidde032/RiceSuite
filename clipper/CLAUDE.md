@@ -8,6 +8,9 @@ acting.
 RiceClipper is a standalone tool that turns short vertical or landscape videos
 into post-ready clips with word-synced burned-in captions and an on-screen
 header. Landscape clips use a local single-subject crop with blur-pad fallback.
+That crop uses the universal Level-5 strong lock for speech and music: hold
+minor movement, interpolate ordinary correction at 30 Hz, and preserve
+immediate cut/target-reacquisition snaps.
 The **source of truth for the design is [`SPEC.md`](./SPEC.md).** Do not
 re-derive scope from memory or chat — read the spec.
 
@@ -17,9 +20,11 @@ re-derive scope from memory or chat — read the spec.
 end** — upload → RiceClipper batch review/render → filesystem handoff →
 RicePoster "Pull from Clipper" → post. Merged to `main`: the v1 vertical slice,
 the hardening pass, the bounded visual presets, the bounded batch review/render,
-the producer-side handoff writer, the Slate browser-interface redesign, and the
-four fixed lyric caption presets, and the ADR-001 subject crop. The music path
-(ADR-002, `docs/design/music-path-spec.md`) shipped 2026-09-16. The
+the producer-side handoff writer, the Slate browser-interface redesign, the
+eleven fixed caption presets (including four lyric presets), and the ADR-001
+subject crop. The music path (ADR-002, `docs/design/music-path-spec.md`) shipped
+2026-09-16. Level-5 subject-crop motion tuning was ratified for both framing
+profiles on 2026-09-20 and is recorded in ADR-001. The
 RicePoster-side pickup + auto-caption is
 tracked separately (RicePoster #77). Further changes still require explicit
 approval and must remain within the active phase.
@@ -37,14 +42,14 @@ locally. The `main` branch-protection ruleset is prepared in
 GitHub Pro on a private repo.
 
 The **color-emoji burn-in spike** (`docs/spikes/emoji-burn-in.md`) passed via the
-PNG-overlay fallback. The Wave-1 auto-header remains deferred product scope,
-but is no longer blocked by that spike.
+PNG-overlay fallback. The Wave-1 auto-header is implemented with manual
+fallback and remains the only outbound network feature.
 
 ## Hard rules
 
 1. **No posting, publishing, or content upload — ever.** RiceClipper reads local
    files and writes local files. It performs no social posting. The only outbound
-   network call in the whole design is the *deferred* header agent (Wave 1), which
+   network call in the whole design is the header agent (Wave 1), which
    generates text and posts nothing. Posting and its approval gate belong to
    **RicePoster**, a separate repo, after RiceClipper writes the local handoff.
 2. **No implementation code without explicit approval.** When a build task comes
@@ -63,14 +68,13 @@ but is no longer blocked by that spike.
 - **`ROADMAP.md`** — post-v1 sequencing (Wave 1 / Wave 2 / deferred).
 - **`CHANGELOG.md`** — what actually shipped.
 - **`docs/spikes/`** — de-risking investigations and their pass/fail results.
-- **`docs/adr/`** — reserved for future architecture decision records if the
-  design starts evolving through many recorded revisions.
+- **`docs/adr/`** — accepted architecture decisions and their later amendments.
 
 ## Stack (from SPEC.md §10)
 
 Python + FastAPI (local server) · vanilla HTML/JS review UI · faster-whisper
 (word-level transcription) · ffmpeg + libass (ASS subtitle burn-in, blur-pad,
-audio mix) · Anthropic Sonnet for the deferred auto-header · local-first
+audio mix) · Anthropic Sonnet for the implemented auto-header · local-first
 throughout · output 1080×1920 H.264/AAC mp4.
 
 ## Relationship to RicePoster

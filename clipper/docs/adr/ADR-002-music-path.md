@@ -1,7 +1,7 @@
 # ADR-002: Music-content path — follow framing profile and lyric fallback
 
 **Status:** ACCEPTED — ratified by Finn 2026-09-15 (build both parts). Extends ADR-001. Touches SPEC.md D3, D4, D15; adds D16.
-**Date:** 2026-09-15
+**Date:** 2026-09-15; shared motion policy amended 2026-09-20
 **Deciders:** Finn (maintainer)
 
 ## Context
@@ -44,6 +44,12 @@ Add a user-selectable **music path** with two parts. Part 1 ships first.
    tuning round. Lyrics: Finn judges the highlight visibly off on more than 2
    of 5 fixtures. A killed part is dropped; the other part stands.
 
+The framing profiles continue to differ in scene threshold, track-loss policy,
+and crop-decision gates. Their ordinary movement policy is shared and follows
+the current ADR-001 contract. As amended 2026-09-20, that is the universal
+Level-5 strong lock: 20% outer hold zone, 10% inner settle boundary, and 30 Hz
+interpolation, with cut, inferred-jump, and loss-return snaps preserved.
+
 ## Options considered
 
 | Topic | Chosen | Rejected | Why |
@@ -56,7 +62,7 @@ Add a user-selectable **music path** with two parts. Part 1 ships first.
 | Alignment | whisper anchors | even fill only | Even fill is the degrade path, not the design |
 | Lyric input | pasted block | sidecar file | A sidecar touches the RiceSearcher pickup path |
 | Control | one `content` setting | two independent settings | Content type drives both parts; the lyric block is data |
-| ADR shape | ADR-002 | amend ADR-001 | ADR-001 is ratified and unchanged; this adds a caption-source decision it never covered |
+| ADR shape | ADR-002 | amend ADR-001 | This decision adds music framing and a caption-source decision ADR-001 never covered; later shared motion-policy tuning is recorded as an ADR-001 amendment |
 
 ## Consequences
 

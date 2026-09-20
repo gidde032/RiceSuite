@@ -6,8 +6,8 @@ cv2 or ffmpeg. Detection and scene cuts belong to ``render.subject`` (F3); the
 ffmpeg statements belong to ``render.geometry`` (F2).
 
 Policy, per sample, in order: snap after a cut or face jump, snap on a face
-returning after a loss, hold inside the dead zone, else move toward the target
-under a pan cap.
+returning after a loss, hold inside the outer lock zone, else move toward the
+inner settle boundary under a pan cap. Geometry interpolates ordinary moves.
 See ``docs/design/subject-crop-spec.md`` (Framing policy).
 """
 
@@ -17,7 +17,9 @@ from app.models import Content, CropPlan, CropReason, CropSample, TrackSample
 
 # Sampling and motion policy (source_w-relative unless noted).
 SAMPLE_FPS = 5
-DEAD_ZONE = 0.10
+DEAD_ZONE = 0.20
+SETTLE_ZONE = 0.10
+INTERPOLATION_FPS = 30
 PAN_CAP = 0.50
 JUMP_CUT = 0.15
 LOSS_S = 1.0
@@ -89,6 +91,7 @@ def failed_plan(
         window_h=window_h,
         samples=samples,
         profile=profile,
+        interpolation_fps=INTERPOLATION_FPS,
     )
 
 
@@ -100,13 +103,31 @@ def plan_crop(
     *,
     sample_times: list[float] | None = None,
     profile: Content = "speech",
+    motion_response: float = 1.0,
+    dead_zone: float = DEAD_ZONE,
+    settle_zone: float = SETTLE_ZONE,
+    interpolation_fps: int = INTERPOLATION_FPS,
 ) -> CropPlan:
     """Resolve a track into a :class:`CropPlan`.
 
     ``track`` is one entry per sample (a face box or ``None``) at ``SAMPLE_FPS``.
     ``cuts`` are scene-cut times or ``(t, score)`` pairs. When scores are present
-    the profile threshold filters which cuts snap.
+    the profile threshold filters which cuts snap. ``motion_response`` controls
+    how much of an ordinary target delta is applied per sample; cut and
+    loss-return snaps remain immediate. The default of 1.0 preserves the
+    ratified production behavior. ``dead_zone`` is the outer hold boundary;
+    ``settle_zone`` leaves the subject inside an inner boundary after an
+    ordinary correction instead of forcing it back to exact center.
     """
+    if not 0.0 < motion_response <= 1.0:
+        raise ValueError("motion_response must be greater than 0 and at most 1")
+    if not 0.0 <= settle_zone <= dead_zone < 0.5:
+        raise ValueError(
+            "settle_zone and dead_zone must satisfy 0 <= settle_zone <= dead_zone < 0.5"
+        )
+    if not 0 <= interpolation_fps <= 120:
+        raise ValueError("interpolation_fps must be between 0 and 120")
+
     window_w, window_h = window_size(source_w, source_h)
     if not _croppable(source_w, source_h, window_w):
         return failed_plan("no_samples", source_w, source_h, profile)
@@ -162,6 +183,7 @@ def plan_crop(
             (last_face_t is None and t_i > LOSS_S)
             or (last_face_t is not None and (t_i - last_face_t) > LOSS_S)
         )
+        snap = False
 
         if x is None:
             x = float(target_for(sample)) if has_face else center_x
@@ -169,16 +191,23 @@ def plan_crop(
             target = target_for(sample)
             if after_cut:
                 x = float(target)
+                snap = True
                 lost = False
                 pending_cut = False
             elif lost or return_after_loss:
                 x = float(target)
+                snap = True
                 lost = False
-            elif abs(target - x) <= DEAD_ZONE * window_w:
+            elif abs(target - x) <= dead_zone * window_w:
                 pass  # dead zone: hold
             else:
                 dt = t_i - prev_t
-                move = target - x
+                error = target - x
+                settle_offset = settle_zone * window_w
+                settle_target = target - (
+                    settle_offset if error > 0 else -settle_offset
+                )
+                move = motion_response * (settle_target - x)
                 cap = PAN_CAP * source_w * dt
                 if abs(move) > cap:
                     move = cap if move > 0 else -cap
@@ -189,7 +218,7 @@ def plan_crop(
 
         x = _clamp(x, 0.0, float(max_x))
         even_x = _even_down(max(0, min(_even_down(round(x)), max_x)))
-        samples_out.append(CropSample(t=t_i, x=even_x))
+        samples_out.append(CropSample(t=t_i, x=even_x, snap=snap))
 
         if has_face:
             face_records.append((sample, even_x))
@@ -211,6 +240,7 @@ def plan_crop(
                 window_h=window_h,
                 samples=[CropSample(t=0.0, x=centered)],
                 profile=profile,
+                interpolation_fps=interpolation_fps,
             )
         return failed_plan("no_samples", source_w, source_h, profile)
 
@@ -244,6 +274,7 @@ def plan_crop(
         samples=samples_out,
         warning=warning,
         profile=profile,
+        interpolation_fps=interpolation_fps,
     )
 
 

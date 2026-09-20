@@ -8,6 +8,12 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- **Subject-crop idle jitter.** Speech and music framing now use the ratified
+  Level-5 strong lock universally: hold inside an outer 20% window-width zone,
+  settle ordinary corrections at the inner 10% boundary, and interpolate those
+  corrections into 30 Hz crop commands. Scene cuts, inferred face jumps, and
+  loss returns remain immediate. Older persisted plans retain their original
+  non-interpolated behavior.
 - Lyric alignment keeps repeated hooks chronological when Whisper mishears or omits a word (#29).
 - Lyric alignment keeps every word inside the clip when the block has more words than 50 ms slots (#33).
 - **Batch render no longer drops browser requests.** `render()` now runs

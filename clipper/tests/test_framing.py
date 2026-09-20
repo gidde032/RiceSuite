@@ -301,6 +301,112 @@ def test_small_face_move_obeys_cap():
     assert speed <= PAN_CAP * sw + 2.0 / dt
 
 
+def test_motion_response_eases_ordinary_move_only():
+    """The tuning response scales normal motion without weakening cut snaps."""
+    sw, sh = 1920, 1080
+    track = [
+        TrackSample(t=0.0, cx=500, cy=540, w=140, h=180),
+        TrackSample(t=0.2, cx=700, cy=540, w=140, h=180),
+    ]
+
+    current = plan_crop(track, [], sw, sh, dead_zone=0.10, settle_zone=0.0)
+    eased = plan_crop(
+        track,
+        [],
+        sw,
+        sh,
+        motion_response=0.5,
+        dead_zone=0.10,
+        settle_zone=0.0,
+    )
+
+    assert current.samples[1].x == 388
+    assert eased.samples[1].x == 296
+
+    snapped = plan_crop(
+        track,
+        [0.1],
+        sw,
+        sh,
+        motion_response=0.25,
+        dead_zone=0.10,
+        settle_zone=0.0,
+    )
+    assert snapped.samples[1].x == 396
+
+
+def test_production_defaults_use_strong_lock_and_interpolation():
+    """Ratified Level 5 is the universal default for new crop plans."""
+    track = [
+        TrackSample(t=0.0, cx=500, cy=540, w=140, h=180),
+        TrackSample(t=0.2, cx=700, cy=540, w=140, h=180),
+    ]
+
+    plan = plan_crop(track, [], 1920, 1080)
+
+    assert plan.samples[1].x == 334
+    assert plan.samples[1].snap is False
+    assert plan.interpolation_fps == 30
+
+
+def test_cut_sample_is_marked_for_immediate_snap():
+    track = [
+        TrackSample(t=0.0, cx=500, cy=540, w=140, h=180),
+        TrackSample(t=0.2, cx=700, cy=540, w=140, h=180),
+    ]
+
+    plan = plan_crop(track, [0.1], 1920, 1080)
+
+    assert plan.samples[1].snap is True
+
+
+@pytest.mark.parametrize("response", [0.0, -0.1, 1.01])
+def test_motion_response_rejects_out_of_range_values(response):
+    with pytest.raises(ValueError, match="motion_response"):
+        plan_crop([], [], 1920, 1080, motion_response=response)
+
+
+def test_lock_hysteresis_settles_inside_inner_zone():
+    """An ordinary correction reaches the inner band, not exact center."""
+    sw, sh = 1920, 1080
+    track = [
+        TrackSample(t=0.0, cx=500, cy=540, w=140, h=180),
+        TrackSample(t=0.2, cx=700, cy=540, w=140, h=180),
+    ]
+
+    plan = plan_crop(track, [], sw, sh, dead_zone=0.10, settle_zone=0.05)
+
+    assert plan.samples[1].x == 366
+
+
+def test_larger_dead_zone_holds_small_subject_shift():
+    sw, sh = 1920, 1080
+    track = [
+        TrackSample(t=0.0, cx=500, cy=540, w=140, h=180),
+        TrackSample(t=0.2, cx=580, cy=540, w=140, h=180),
+    ]
+
+    plan = plan_crop(track, [], sw, sh, dead_zone=0.15, settle_zone=0.075)
+
+    assert plan.samples[1].x == plan.samples[0].x
+
+
+@pytest.mark.parametrize(
+    ("dead_zone", "settle_zone"),
+    [(-0.1, 0.0), (0.5, 0.0), (0.1, -0.01), (0.1, 0.11)],
+)
+def test_lock_hysteresis_rejects_invalid_zones(dead_zone, settle_zone):
+    with pytest.raises(ValueError, match="settle_zone"):
+        plan_crop(
+            [],
+            [],
+            1920,
+            1080,
+            dead_zone=dead_zone,
+            settle_zone=settle_zone,
+        )
+
+
 def test_wide_face_centered_is_safe():
     """A 400 px face centered in the window is safe under the center rule."""
     sw, sh = 1920, 1080

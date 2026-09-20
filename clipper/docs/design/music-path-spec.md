@@ -1,7 +1,7 @@
 # Music-content path — design spec
 
-Status: **SHIPPED 2026-09-16 (ADR-002 ACCEPTED; Issue #24; PRs #25, #26, #27). Both gates passed.**
-Date: 2026-09-15. Companion: `../adr/ADR-002-music-path.md`. Builds on `subject-crop-spec.md`.
+Status: **SHIPPED 2026-09-16 (ADR-002 ACCEPTED; Issue #24; PRs #25, #26, #27). Both gates passed; shared Level-5 motion policy amended 2026-09-20.**
+Date: 2026-09-15; motion policy amended 2026-09-20. Companion: `../adr/ADR-002-music-path.md`. Builds on `subject-crop-spec.md`.
 
 ## Purpose
 
@@ -31,14 +31,19 @@ Both are local. Part 1 ships first.
 ### Framing profile (`render/framing.py`)
 
 `plan_crop(track, cuts, source_w, source_h, *, sample_times, profile="speech")`.
-The speech profile is byte-for-byte the ratified behavior. The music profile
-differs only in these rules:
+At shipment, the speech profile was byte-for-byte the ADR-001 behavior and the
+music profile differed only in the rules below. The 2026-09-20 ADR-001 amendment
+now gives both profiles the same Level-5 motion policy while preserving these
+music-specific decision, loss, and scene-threshold rules:
 
 - Scene cuts: use cuts with score above `SCENE_MIN_MUSIC = 0.2`. Speech keeps 0.3.
 - Track loss: hold `x` for any length of loss. `LOSS_S` still marks the loss so a returning face snaps.
 - Decision: always `crop`, reason `ok`. No `FACE_RATE_MIN` or `SAFE_RATE_MIN` gate. `face_rate` and `safe_rate` are still computed and reported.
 - No face in any sample: one centered sample, decision `crop`, reason `hold_static`.
-- Dead zone, pan cap, jump cut, and safe-zone measurement stay as ratified.
+- Motion policy comes from current ADR-001: outer hold zone 20% of `window_w`,
+  inner settle boundary 10%, and 30 Hz interpolation for ordinary corrections.
+  Confirmed cuts, inferred face jumps, and loss returns remain immediate. Pan
+  cap and safe-zone measurement remain shared.
 - Group shots belong to `subject.py` (below). Framing sees one box per sample.
 
 ### Detection (`render/subject.py`)
@@ -115,7 +120,8 @@ M1 to M4 are one PR. M5 to M7 are a second PR after the part-1 gate.
 
 - `ruff check .`, `ruff format --check .`, `node --check web/app.js`, `git diff --check`.
 - `pytest tests/ --cov=app --cov=render --cov=transcribe --cov-fail-under=85`. Update `test_gates.py` if the smoke count changes.
-- Framing tests: the speech profile output is identical to the pre-change output on every committed track. The music profile never returns `blur_pad` except `analysis_failed`.
+- Framing tests: both profiles share the current motion policy; the music profile
+  never returns `blur_pad` except `analysis_failed`.
 - Aligner tests: word order is lyric order; `end > start` for every word; no overlap; `anchor_rate` is exact on a hand-built case.
 - Part 1 pass rule (five music clips plus `music-noface.mov`): every clip yields a music plan with decision `crop`. `safe_rate >= 0.85` over face samples on at least 4 of 5. `music-noface.mov` yields `hold_static`. Finn reviews the six contact sheets and attests: the subject sits inside the safe zone where a face is present, cuts snap, no jitter.
 - Part 1 kill criterion: fewer than 4 of 5 pass after one tuning round. Then the music profile is dropped and blur-pad stands for music.

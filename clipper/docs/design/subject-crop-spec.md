@@ -1,7 +1,7 @@
 # Subject-focused 9:16 crop — design spec
 
-Status: **RATIFIED 2026-09-14 (ADR-001 ACCEPTED). Implementation authority comes from the owning GitHub Issue.**
-Date: 2026-09-14. Companion: `../adr/ADR-001-subject-crop.md`.
+Status: **SHIPPED; LEVEL-5 MOTION TUNING RATIFIED AND IMPLEMENTED 2026-09-20 (UNRELEASED).**
+Date: 2026-09-14; motion tuning amended 2026-09-20. Companion: `../adr/ADR-001-subject-crop.md`.
 
 ## Purpose
 
@@ -20,7 +20,9 @@ the fallback and as an explicit per-clip choice.
 ### Modules
 
 - `render/subject.py` — detection and tracking. Input: source path, probe info. Output: a `Track` (list of `{t, cx, cy, w, h}` or `null` per sample) plus scene-cut times.
-- `render/framing.py` — pure. Input: `Track`, cuts, source size. Output: a `CropPlan`: `{decision, reason, face_rate, safe_rate, window_w, window_h, samples: [{t, x}]}`.
+- `render/framing.py` — pure. Input: `Track`, cuts, source size. Output: a
+  `CropPlan`: `{decision, reason, face_rate, safe_rate, window_w, window_h,
+  interpolation_fps, samples: [{t, x, snap}]}`.
 - `render/geometry.py` — gains `crop_statements(plan, input_label, out_label)`.
 - `render/models/face_detection_yunet_2023mar.onnx` — vendored, MIT, about 230 KB.
 
@@ -48,15 +50,21 @@ the fallback and as an explicit per-clip choice.
 
 - Window: `window_h = source_h`, `window_w = round(source_h * 9 / 16)`, even. For 1920x1080 input that is 608x1080.
 - Target x per sample: `cx - window_w / 2`, clamped to `[0, source_w - window_w]`.
-- Dead zone: if the target lies within 10% of `window_w` of the current x, hold.
-- Smoothing: none (tuning round 2; was `0.15`). The pan cap and the dead zone alone limit motion.
+- Strong lock (tuning round 3, 2026-09-20): hold while the target lies within
+  20% of `window_w` of the current x. When ordinary motion crosses that outer
+  boundary, move only far enough to leave the target at the inner 10% boundary,
+  rather than forcing it back to exact center.
+- Ordinary corrections are linearly interpolated into 30 Hz crop commands.
+  This replaces the visibly stepped 5 Hz movement. There is no exponential
+  response smoothing.
 - Pan cap: at most 50% of `source_w` per second (tuning round 2; was 8%).
 - Inferred cut: a face center jump larger than 15% of `source_w` between consecutive face samples counts as a scene cut (tuning round 2).
 - Scene cut: on the first sample after a cut, set `x = target` with no smoothing.
 - Track loss: hold x. When a face returns after a loss, snap to it.
 - Missing samples inside a loss are filled by hold. Scene cuts during a missing
-  interval remain pending until the next visible face. The plan has one `x` and
-  the decoded presentation timestamp per sample.
+  interval remain pending until the next visible face. The plan has one `x`,
+  decoded presentation timestamp, and `snap` marker per detection sample.
+  Scene cuts, inferred face jumps, and loss returns bypass interpolation.
 
 ### Decision (`auto`)
 
@@ -80,7 +88,10 @@ the fallback and as an explicit per-clip choice.
 - Every path first normalizes the autorotated frame to probed display dimensions
   and square pixels: `[0:v]scale=W:H,setsar=1[src]`.
 - Resolved `crop`: write `crop.cmd` to the job dir. Statements: `[src]sendcmd=f=crop.cmd,crop=W:H:0:0,scale=1080:1920,setsar=1[base]`. Blur-pad likewise sets square pixels after its final overlay. Then `[base]subtitles=captions.ass...` as today. Header overlay unchanged.
-- `crop.cmd` lines: `<t> crop x <x>` per sample. Bare filename, cwd is the job dir, same as the ASS.
+- `crop.cmd` lines: `<t> crop x <x>` per render command. Ordinary movement is
+  expanded to 30 Hz; marked snaps remain one immediate command. Bare filename,
+  cwd is the job dir, same as the ASS. Persisted pre-tuning plans carry
+  `interpolation_fps = 0` and retain their original step behavior.
 - **Spike S1, first task:** prove `sendcmd` drives `crop` x on ffmpeg 9.0.1 with a two-line command file. If it fails, build `x='if(lt(t,T1),X1,if(lt(t,T2),X2,...))'` from the plan, subsampled to at most 64 segments. Record the result in `docs/spikes/crop-sendcmd.md`.
 - Caption geometry: no change. `PlayResX/Y` stay 1080x1920. Margins stay.
 
@@ -102,9 +113,10 @@ the fallback and as an explicit per-clip choice.
 ## First reliability risk
 
 The tracker locks onto the wrong face, or the window jitters. Both put the
-speaker at the edge, which TikTok then trims. The dead zone, pan cap,
-largest-face rule, and the safe-zone gate are the mitigations. The fixture
-run proves them.
+speaker at the edge, which TikTok then trims. The strong outer/inner lock,
+30 Hz ordinary-motion interpolation, pan cap, largest-face rule, and safe-zone
+gate are the mitigations. The fixture run and the 2026-09-20 paired music and
+interview comparison prove them.
 
 ## Build order for a cheap model
 
