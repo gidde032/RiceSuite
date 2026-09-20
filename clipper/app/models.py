@@ -152,6 +152,9 @@ class CropSample(BaseModel):
 
     t: float
     x: int
+    # True when this position must be reached immediately (scene/face jump or
+    # return after loss). Ordinary moves may be interpolated at render time.
+    snap: bool = False
 
 
 Content = Literal["speech", "music"]
@@ -178,6 +181,9 @@ class CropPlan(BaseModel):
     samples: list[CropSample] = Field(default_factory=list)
     warning: Literal["header_zone", "caption_zone"] | None = None
     profile: Content = "speech"
+    # Zero preserves pre-tuning persisted plans. New plans use 30 Hz command
+    # interpolation for ordinary movement while ``CropSample.snap`` remains hard.
+    interpolation_fps: int = Field(default=0, ge=0, le=120)
 
 
 # JobState references CropPlan by forward reference; resolve it now that CropPlan

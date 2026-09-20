@@ -35,7 +35,7 @@ landscape, D15; music follow profile, D16) → optional pasted-lyric fallback
 export 1080×1920 H.264 — all through a local web review UI with a
 human-in-the-loop gate.
 
-**Explicitly out of scope for v1 (see §7 roadmap for when):**
+**Explicitly out of scope for the original v1 slice (see §7 for delivery status):**
 clip selection/extraction (Paths 2 & 1), active-speaker switching and zoom,
 dead-space/filler trimming, auto-generated header, RicePoster integration,
 arbitrary caption style/position editing, animated (Tier-3) captions,
@@ -51,7 +51,7 @@ RiceClipper **performs no posting, publishing, or network upload of content**. I
 reads local video files and writes local output files. The "no live post without
 explicit approval" safety rule belongs to RicePoster and remains RicePoster's
 responsibility after it separately pulls from the implemented local handoff
-(§7, Wave 1). RiceClipper's only outbound network call is the deferred header
+(§7, Wave 1). RiceClipper's only outbound network call is the implemented header
 agent's API request (§6.2), which generates text and posts nothing.
 
 ## 4. Pipeline (data flow)
@@ -67,6 +67,9 @@ agent's API request (§6.2), which generates text and posts nothing.
    `content: speech | music` setting selects the **music follow profile**:
    no face-rate gate, hold through faceless spans, static centered window
    when no face is ever found (D16, [ADR-002](docs/adr/ADR-002-music-path.md)).
+   Both profiles share the Level-5 motion policy: hold minor movement,
+   interpolate ordinary corrections at 30 Hz, and snap confirmed cuts, inferred
+   face jumps, and returns after track loss.
 3. **Transcribe** — faster-whisper produces caption text with **word-level
    timestamps**, pinned to the clip timeline in seconds.
 4. **Review gate (human-in-the-loop)** — user edits transcript text (timing
@@ -185,12 +188,11 @@ model earns its keep. Revisit at build if desired.
 ## 7. Deferred roadmap (ordered)
 
 - **Wave 1 — fast-follow (the "first improvements" cluster):**
-  1. **RicePoster integration** — outputs drop into the harness's pickup contract.
+  1. **RicePoster integration — implemented.** Outputs drop into the harness's pickup contract.
   2. **Silence-only trimming** — cut long gaps (silence detection); keep A/V sync,
      smooth jump cuts.
-  3. **Auto-header** — the Sonnet vision agent above, with manual fallback.
-     The emoji spike is resolved via the PNG-overlay path (§8); the feature
-     remains deferred Wave-1 scope.
+  3. **Auto-header — implemented.** The Sonnet vision agent above retains manual
+     fallback; the emoji spike is resolved via the PNG-overlay path (§8).
 - **Wave 2 — early additions:**
   - Caption **style/position configuration** (Tier-1 knobs: font, color, highlight
     color, position) exposed in the UI.
@@ -236,7 +238,7 @@ model earns its keep. Revisit at build if desired.
 - **Transcription:** **faster-whisper** (word-level timestamps; small/medium model,
   seconds on CPU for sub-minute clips). WhisperX only if word sync looks loose.
 - **Rendering:** ffmpeg + libass (ASS subtitles), blur-pad filter, audio mix.
-- **Header agent (deferred):** Anthropic Sonnet (vision), JSON-styled prompt.
+- **Header agent:** Anthropic Sonnet (vision), JSON-styled prompt; implemented in Wave 1.
 - **Output:** 1080×1920, H.264 / AAC, mp4.
 - Local-first throughout.
 
@@ -258,5 +260,5 @@ model earns its keep. Revisit at build if desired.
 | D12 | Non-9:16 handling | Blur-pad fill as the **fallback and explicit choice**; subject crop when detection passes (D15) | Never loses content. The RicePoster "edge-crop failure" was withdrawn 2026-07-27 (TikTok trims edges itself); the surviving rule is a safe zone for the subject |
 | D13 | Music | Optional added audio; replace **or** mix-under toggle with volume slider; v1. Auto-ducking + vocal isolation deferred | Central to actual usage; cheap since encoding already exists; adding after sync can't affect timing |
 | D14 | Browser theme | Slate: dark carbon/grey chrome, rice-grey state accents, visual per-clip preset cards, symbol-only rice-and-shears mark | Makes the daily-driver review path faster to scan without changing behavior or adding editor features |
-| D15 | Subject crop | Local YuNet face detection at ingest; full-height 9:16 window with dead zone and pan cap (no smoothing after tuning round 2); snap only at cuts or track return; face center inside the central 70% (tuned 2026-09-15); blur-pad when `face_rate < 0.80` or `safe_rate < 0.95`; per-clip `geometry` = `auto`/`blur_pad`/`crop`; kill criterion: fewer than 5 of 6 fixtures pass after two tuning rounds. The gate applies to the `speech` profile only (D16) | Ratified 2026-09-14; [ADR-001](docs/adr/ADR-001-subject-crop.md) |
+| D15 | Subject crop | Local YuNet face detection at ingest; full-height 9:16 window with pan cap and universal strong lock: hold inside an outer 20% window-width zone, settle ordinary corrections at the inner 10% boundary, and interpolate them at 30 Hz; confirmed cuts, inferred face jumps, and track returns still snap (Level 5 ratified 2026-09-20). Face center stays inside the central 70% (tuned 2026-09-15); blur-pad when `face_rate < 0.80` or `safe_rate < 0.95`; per-clip `geometry` = `auto`/`blur_pad`/`crop`; kill criterion: fewer than 5 of 6 fixtures pass after two tuning rounds. The gate applies to the `speech` profile only (D16) | Ratified 2026-09-14, motion tuning amended 2026-09-20; [ADR-001](docs/adr/ADR-001-subject-crop.md) |
 | D16 | Music path | Per-clip `content` = `speech`/`music`, not remembered per slot. Music framing profile: no face-rate gate, hold through faceless spans, snap on cuts (scene 0.2, one shared pass with scores) and face return, static centered when no face; nearest-previous face between cuts, largest after a cut (both profiles). Lyric fallback: pasted block, chronological LCS anchors on whisper timings (amended 2026-09-18, #29; was `difflib`), interpolation between anchors, character-weighted fill below 25% anchors; word-level highlight survives; no new model. Kill: framing fewer than 4 of 5 music fixtures after one tuning round; lyrics visibly off on more than 2 of 5 | Ratified 2026-09-15; [ADR-002](docs/adr/ADR-002-music-path.md) |

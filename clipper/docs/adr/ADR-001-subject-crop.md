@@ -1,7 +1,7 @@
 # ADR-001: Subject-focused 9:16 crop for landscape input
 
-**Status:** ACCEPTED — ratified by Finn 2026-09-14. Reverses SPEC.md D2 and D12 for landscape input and adds D15.
-**Date:** 2026-09-14
+**Status:** ACCEPTED — ratified by Finn 2026-09-14; Level-5 motion tuning ratified 2026-09-20. Reverses SPEC.md D2 and D12 for landscape input and adds D15.
+**Date:** 2026-09-14; amended 2026-09-20
 **Deciders:** Finn (maintainer)
 
 ## Context
@@ -28,9 +28,10 @@ single-subject, and falls back to blur-pad when detection is weak.
 
 1. **Detection.** OpenCV YuNet face detector, ONNX model vendored in the
    repo. Sample at 5 fps on frames scaled to 640 px wide. No hosted model.
-2. **Framing.** A full-height 9:16 window slides horizontally. A dead zone and
-   pan speed cap keep it calm (exponential smoothing was removed in tuning
-   round 2). It snaps only at a scene cut or after a track loss.
+2. **Framing.** A full-height 9:16 window slides horizontally. A strong lock
+   holds inside an outer 20% window-width zone and settles ordinary corrections
+   at an inner 10% boundary. Those corrections interpolate at 30 Hz. Scene
+   cuts, inferred face jumps, and returns after track loss remain immediate.
 3. **Safe zone.** The tracked face center must stay inside the central 70% of
    the window. This replaces "never crop" as the edge-loss safeguard.
 4. **Fallback.** If a face is present in under 80% of samples, or the safe
@@ -76,8 +77,11 @@ single-subject, and falls back to blur-pad when detection is weak.
 ## Action items
 
 1. [x] Finn ratified 2026-09-14; SPEC.md §2, §4 step 2, §7, D2, D12, D15 updated.
-2. [ ] Open one Issue. Build from `docs/design/subject-crop-spec.md`.
-3. [ ] Finn supplies six landscape fixture clips to `fixtures/landscape/` (gitignored).
+2. [x] Issue #20 opened and the initial implementation shipped in PR #21 from
+   `docs/design/subject-crop-spec.md`.
+3. [x] The six-role landscape fixture gate was supplied and reviewed for the
+   initial implementation; later music/interview tuning comparisons used
+   maintainer-local sources and remained gitignored.
 
 ## Tuning round 2 (2026-09-15, approved by Finn)
 
@@ -88,3 +92,15 @@ Changes: detector threshold 0.5, scene threshold 0.3, inferred cuts from a
 face jump over 15% of width, no smoothing, pan cap 50% of width per second,
 safe check on the face center. Thresholds 0.80 and 0.95 stand. Music-video
 content stays out of the auto path; see Issue #22.
+
+## Tuning round 3 (2026-09-20, approved by Finn)
+
+Two paired five-level sweeps used the same music and interview sources and
+reused one face track and cut list per source. Scaling the old response factor
+did not materially reduce jitter because ffmpeg still applied discrete 5 Hz
+position changes; slower response could spread one correction across several
+visible steps. The second sweep tested continuous interpolation and progressively
+stronger outer/inner lock zones. Finn selected Level 5 universally: outer zone
+20% of `window_w`, settle zone 10%, and 30 Hz interpolation for ordinary motion.
+Confirmed cuts, inferred face jumps, and loss returns still snap. Face selection,
+scene thresholds, pan cap, and safe-rate rules are unchanged.

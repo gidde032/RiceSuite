@@ -9,7 +9,7 @@ It is a standalone project, distinct from **RicePoster** (the posting harness),
 with an implemented local-filesystem handoff that RicePoster can pull from.
 
 > **Status: v1 slice implemented; hardening, bounded visual presets, Slate UI,
-> and fixed lyric-caption presets complete.** End-to-end rendering and shutdown
+> fixed lyric-caption presets, and Wave-1 auto-header complete.** End-to-end rendering and shutdown
 > cleanup are verified with a libass-enabled ffmpeg. The design is recorded in
 > [`SPEC.md`](./SPEC.md). Burn-in requires an ffmpeg with libass (see setup) —
 > the stock Homebrew formula omits it.
@@ -20,7 +20,10 @@ Upload one or more clips → auto-transcribe with word-level timing → review a
 edit the transcript and header → burn in captions + header → export
 **1080×1920 H.264**. Landscape input uses local face detection to choose a
 moving single-subject crop, with blur-pad as the automatic fallback and an
-explicit per-clip choice. Non-9:16 vertical input is blur-padded. Optional
+explicit per-clip choice. The crop uses a stabilized strong lock: small face
+movements do not move the window, ordinary corrections move smoothly, and
+scene/target reacquisition cuts still snap immediately. Non-9:16 vertical input
+is blur-padded. Optional
 added music can replace or mix under the original audio.
 
 Full scope, deferred roadmap, and the decision log are in [`SPEC.md`](./SPEC.md).
@@ -39,7 +42,7 @@ RicePoster, which separately pulls from RiceClipper's local handoff. See
 - **faster-whisper** for word-level transcription
 - **OpenCV YuNet** for local landscape subject detection
 - **ffmpeg + libass** (ASS subtitles) for caption/header burn-in and audio mix
-- Anthropic Sonnet for the *deferred* auto-header (Wave 1)
+- Anthropic Sonnet for the implemented auto-header (Wave 1)
 
 ## Setup (intended)
 
@@ -103,7 +106,7 @@ pip install -r requirements-dev.txt
 pytest -q                              # pure-Python core; no ffmpeg needed
 
 ruff check . && ruff format --check .  # lint + format (matches CI)
-pytest -m smoke -q                     # the 6-test fast tier
+pytest -m smoke -q                     # the 8-test fast tier
 pytest tests/ --cov=app --cov=render --cov=transcribe --cov-fail-under=85
 
 # Maintainer-only subject-crop fixture gate (six named roles + sheet review)
@@ -137,7 +140,7 @@ tests/            unit tests + test_gates.py (quality-gate meta-tests)
 pyproject.toml    ruff + pytest configuration
 docs/
   spikes/         de-risking investigations (see emoji-burn-in)
-  adr/            architecture decision records (optional, future)
+  adr/            accepted architecture decision records and amendments
 SPEC.md           v1 design — source of truth
 ROADMAP.md        v1 → Wave 1 → Wave 2 → deferred
 CLAUDE.md         operating context for AI agent sessions
@@ -148,8 +151,13 @@ CHANGELOG.md      release history
 
 Color-emoji burn-in is resolved through the PNG-overlay fallback documented in
 [`docs/spikes/emoji-burn-in.md`](./docs/spikes/emoji-burn-in.md). The Wave-1
-auto-header remains deferred roadmap scope, rather than an unresolved v1 block.
-The v1 hardening pass also adds short-music replace-mode duration protection,
+auto-header is implemented with manual fallback. Landscape subject tracking now
+uses the universal Level-5 motion policy for speech and music: a 20% outer hold
+zone, a 10% inner settle boundary, and 30 Hz interpolation for ordinary motion;
+confirmed cuts, inferred face jumps, and returns after track loss remain
+immediate. See the
+[`subject-crop design spec`](./docs/design/subject-crop-spec.md). The v1
+hardening pass also adds short-music replace-mode duration protection,
 bounded Whisper/ffmpeg threading, owned subprocess cleanup, manual media-cache
 clearing, API error-state cleanup, and semaphore-free transcription shutdown.
 

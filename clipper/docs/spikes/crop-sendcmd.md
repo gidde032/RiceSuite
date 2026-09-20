@@ -30,6 +30,16 @@ times read from a command file, with no re-encode step in between?
 The switch is frame-exact. Output size is 1080x1920. The command file uses a
 bare filename with cwd set to the job directory, the same as the ASS file.
 
+## Production note (2026-09-20)
+
+The spike result still governs the render path, but production plans no longer
+emit only the detector's 5 Hz samples for ordinary movement. The command writer
+expands those corrections to 30 Hz linear interpolation so the crop moves
+continuously; samples marked as cuts, inferred face jumps, or loss returns stay
+single immediate commands. Persisted pre-amendment plans carry
+`interpolation_fps = 0` and retain the original stepwise behavior. See ADR-001
+and `docs/design/subject-crop-spec.md` for the current contract.
+
 ## Notes for F2
 
 - `ffmpeg -filters` lists `crop` without a `C` flag on this build. The filter

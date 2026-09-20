@@ -7,9 +7,10 @@ subject-crop plan or **blur-pad** to 1080x1920; other input blur-pads.
 
 from __future__ import annotations
 
+from itertools import pairwise
 from typing import Literal
 
-from app.models import CropPlan, Geometry
+from app.models import CropPlan, CropSample, Geometry
 
 TARGET_W = 1080
 TARGET_H = 1920
@@ -92,8 +93,37 @@ def crop_statements(
 def crop_command_file(plan: CropPlan) -> str:
     """Return the ``sendcmd`` command file text for a crop plan.
 
-    One line per plan sample: ``<t> crop x <x>;``. Times are seconds with a
-    decimal point; x is the even source-pixel window left edge.
+    Ordinary movement is interpolated at ``plan.interpolation_fps`` while
+    samples marked ``snap`` remain immediate. A zero interpolation rate keeps
+    persisted pre-tuning plans byte-compatible. Times are seconds; x is the
+    even source-pixel window left edge.
     """
-    lines = [f"{sample.t:.3f} crop x {sample.x};" for sample in plan.samples]
+    samples = _command_samples(plan)
+    lines = [f"{sample.t:.3f} crop x {sample.x};" for sample in samples]
     return "\n".join(lines) + "\n"
+
+
+def _command_samples(plan: CropPlan) -> list[CropSample]:
+    """Expand ordinary plan segments into frame-rate crop commands."""
+    if plan.interpolation_fps <= 0 or len(plan.samples) < 2:
+        return list(plan.samples)
+
+    dense = [plan.samples[0]]
+    for previous, current in pairwise(plan.samples):
+        dt = current.t - previous.t
+        if current.snap or current.x == previous.x or dt <= 0:
+            dense.append(current)
+            continue
+
+        steps = max(1, round(dt * plan.interpolation_fps))
+        for step in range(1, steps + 1):
+            if step == steps:
+                dense.append(current)
+                continue
+            fraction = step / steps
+            t_i = previous.t + dt * fraction
+            raw_x = round(previous.x + (current.x - previous.x) * fraction)
+            even_x = raw_x if raw_x % 2 == 0 else raw_x - 1
+            dense.append(CropSample(t=t_i, x=even_x))
+
+    return dense

@@ -31,7 +31,9 @@ header → subject crop or blur-pad landscape input and blur-pad non-9:16 vertic
 input → optional added-music (replace / mix with volume) → export 1080×1920
 H.264, through a local FastAPI review UI with a human-in-the-loop gate. Bounded
 batches are reviewed and processed sequentially, with eleven caption presets
-and three header treatments.
+and three header treatments. Subject crop uses the universal Level-5 strong
+lock for speech and music: minor motion holds, ordinary correction interpolates
+at 30 Hz, and confirmed cuts or target reacquisition remain immediate.
 
 ## Wave 1 — fast-follow (the "first improvements" cluster)
 
@@ -79,6 +81,8 @@ and three header treatments.
   moving 9:16 window around one speaker, with a per-clip `geometry` control and a
   blur-pad fallback. Active-speaker switching (choosing which face to follow in a
   two-shot) and zoom stay deferred; a two-shot still frames the larger face.
+  The 2026-09-20 motion-tuning amendment applies the Level-5 strong lock to both
+  speech and music profiles without changing target selection.
 - **Tier-3 animated captions** — spring/bounce motion, animated resizing boxes.
   Requires adopting a second render engine (compositing / HTML-to-video). This is
   a deliberate engine decision, not a style toggle.

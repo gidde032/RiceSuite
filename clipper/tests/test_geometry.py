@@ -49,6 +49,45 @@ def test_crop_command_file_ends_with_newline_even_for_one_sample():
     assert text == "2.000 crop x 1200;\n"
 
 
+def test_crop_command_file_interpolates_motion_but_preserves_snap():
+    plan = CropPlan(
+        decision="crop",
+        reason="ok",
+        face_rate=1.0,
+        safe_rate=1.0,
+        window_w=608,
+        window_h=1080,
+        interpolation_fps=10,
+        samples=[
+            CropSample(t=0.0, x=0),
+            CropSample(t=0.2, x=100),
+            CropSample(t=0.4, x=400, snap=True),
+        ],
+    )
+
+    assert geometry.crop_command_file(plan) == (
+        "0.000 crop x 0;\n0.100 crop x 50;\n0.200 crop x 100;\n0.400 crop x 400;\n"
+    )
+
+
+def test_persisted_legacy_plan_without_motion_fields_remains_stepwise():
+    plan = CropPlan.model_validate(
+        {
+            "decision": "crop",
+            "reason": "ok",
+            "face_rate": 1.0,
+            "safe_rate": 1.0,
+            "window_w": 608,
+            "window_h": 1080,
+            "samples": [{"t": 0.0, "x": 0}, {"t": 0.2, "x": 100}],
+        }
+    )
+
+    assert plan.interpolation_fps == 0
+    assert all(sample.snap is False for sample in plan.samples)
+    assert geometry.crop_command_file(plan) == ("0.000 crop x 0;\n0.200 crop x 100;\n")
+
+
 def _capture_render(monkeypatch):
     """Run render() with run_owned stubbed; return the filter_complex string."""
     captured: dict[str, list[str]] = {}
