@@ -2,7 +2,7 @@
 
 Content-sourcing pillar of the Rice harness. Discovery (on-demand pull) +
 extraction (transcript-driven *time*/trim) → scored candidate slices in a
-moment-deduplicated local library → padded-window handoff to RiceClipper.
+moment-deduplicated local library → exact reviewed-window handoff to RiceClipper.
 Siblings: `../RiceClipper` (render), `../RicePoster` (posting).
 
 ## Hard rules (non-negotiable)

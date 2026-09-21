@@ -17,7 +17,7 @@ SLICES = f"/api/slices?profile={LEGACY_PROFILE_ID}"
 
 
 @pytest.fixture
-def client(tmp_path: Path) -> TestClient:
+def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     data = tmp_path / "data"
     cfg = Config(data_dir=data, handoff_dir=tmp_path / "handoff")
     cfg.ensure_dirs()
@@ -33,6 +33,7 @@ def client(tmp_path: Path) -> TestClient:
                 ref="https://y/x",
                 media_path=str(media),
                 title="Person A interview",
+                duration_s=100.0,
             )
         )
         lib.upsert_slices(
@@ -66,6 +67,11 @@ def client(tmp_path: Path) -> TestClient:
                 ),
             ]
         )
+    import ricesearcher.web.app as web_app
+
+    # The fixture uses fake media bytes, so supply the source duration that a
+    # real ffprobe would return for the window-validation tests.
+    monkeypatch.setattr(web_app, "ffprobe_duration", lambda _path: 100.0)
     return TestClient(create_app(cfg))
 
 
@@ -285,19 +291,31 @@ def test_static_handoff_refresh_preserves_success_message(client: TestClient) ->
     assert "if (!preserveStatus)" in script.text
 
 
-def test_window_tighten_clamps_to_pad(client: TestClient) -> None:
-    # Ask for an out beyond the pad and an in below it → clamped to [pad_in, pad_out].
-    r = client.patch("/api/slices/sl1/window", json={"target_in": 0, "target_out": 999})
+def test_window_accepts_any_interval_within_source(client: TestClient) -> None:
+    # The source is 100s; the requested interval expands beyond the candidate pad.
+    r = client.patch("/api/slices/sl1/window", json={"target_in": 0, "target_out": 100})
     assert r.status_code == 200
     body = r.json()
-    assert body["target_in"] == 8 and body["target_out"] == 42
-    # inverted / empty window rejected
-    assert (
-        client.patch(
-            "/api/slices/sl1/window", json={"target_in": 20, "target_out": 20}
-        ).status_code
-        == 422
+    assert body["target_in"] == 0 and body["target_out"] == 100
+    stored = {s["id"]: s for s in client.get(SLICES).json()}["sl1"]
+    assert stored["target_in"] == 0 and stored["target_out"] == 100
+
+    # Equal bounds are rejected without changing the successful interval.
+    invalid = client.patch(
+        "/api/slices/sl1/window", json={"target_in": 20, "target_out": 20}
     )
+    assert invalid.status_code == 422
+    stored = {s["id"]: s for s in client.get(SLICES).json()}["sl1"]
+    assert stored["target_in"] == 0 and stored["target_out"] == 100
+
+    # The actual source boundary, rather than the candidate pad, is enforced.
+    beyond = client.patch(
+        "/api/slices/sl1/window", json={"target_in": 0, "target_out": 100.001}
+    )
+    assert beyond.status_code == 422
+    stored = {s["id"]: s for s in client.get(SLICES).json()}["sl1"]
+    assert stored["target_in"] == 0 and stored["target_out"] == 100
+
     assert (
         client.patch(
             "/api/slices/ghost/window", json={"target_in": 1, "target_out": 2}

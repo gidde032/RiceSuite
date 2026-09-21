@@ -3,11 +3,11 @@
 **Read this before editing.** Current-state continuity only; product contract →
 `SPEC.md`/`ADR-001.md`/`ADR-002.md`; planned work → GitHub Issues.
 
-Last updated: 2026-09-18.
+Last updated: 2026-09-20.
 
 ## Verified main state
 
-- Main was `dceb3e1` at session start, with green GitHub CI and no open PRs.
+- Main is `ca72396`; the focused branch below was created from that commit.
 - Phases 1–5 are merged. The v1 acquire/transcribe → score/dedup → review/select
   → handoff flow and practical hardening (PR #16) are delivered.
 - PR #18 delivered media management, the PNG logo, and review-card polish.
@@ -20,28 +20,31 @@ Last updated: 2026-09-18.
 - Existing CI enforces Ruff, syntax checks for all static JS, Node behavior tests,
   and pytest with a 90% coverage floor. The pinned smoke tier contains five tests.
 
-## Current maintenance batch
+## Active delivery — exact reviewed clip window
 
-The maintainer authorized #19, #20, and #25 with Luna xhigh implementation and
-parent-side validation, plus this status refresh. Each Issue has a focused branch.
+- Owning Issue: [#32](https://github.com/gidde032/RiceSearcher/issues/32).
+- Milestone: v1 — content-sourcing prototype.
+- Branch: `fix/exact-review-window` from `ca72396`.
+- PR: [#33](https://github.com/gidde032/RiceSearcher/pull/33), review-converged
+  and ready for maintainer review.
+- Contract: ADR-001 Q4 amendment (2026-09-20), SPEC FR-8/FR-9 and §§6–7.
+- Authorized: scoped implementation, tests, documentation, branch/commits/push,
+  draft PR, independent review, in-contract repairs, and CI monitoring.
+- Withheld: merge, publish, deploy, visibility changes, tag, and release.
+- Current state: implementation and accepted review repairs are integrated. The
+  saved source-bounded interval now controls preview, extraction, schema-1 manifest
+  bounds, and transcript-text intersection. Source and produced-clip durations fail
+  closed when they cannot be verified; UI/media-fragment and ffmpeg timestamps
+  preserve arbitrary decimal precision. Three cold reviewers and focused repair
+  reviews converged with no open findings. Green evidence: Ruff format/lint; mypy
+  on 35 source files; JS syntax; 17 Node behavior tests; 240 Python tests at 94.27%
+  coverage; pinned smoke tier 5; repository-owned `gates` passed on `247153f`. The
+  two untracked local profile JSON files are unrelated user work and remain
+  untouched and unpublished.
 
-- #19: make the shared-media reference guard handle equivalent path spellings,
-  including existing non-normalized rows, with disposable-file regressions.
-- #20: extend the existing Node harness to media deletion/clear confirmation,
-  timer, and fetch-error flows; the original Issue's missing-harness description
-  predates the tests added in PR #27.
-- #25: add the mypy gate, scoped optional-import exceptions, and minimal typing
-  repairs. This branch documents the new gate; the Issue stays open until merge.
+## Next action
 
-Parent acceptance passed for the combined batch: **215 Python tests, 94.06%
-coverage; 12 Node behavior tests; mypy (35 source files), Ruff, JS syntax, and
-the five-test smoke tier**. The shared-file regression was independently red
-against main and green with the fix. A temporary removed-cancellation probe
-confirmed the clear-all timer regression detects the stale-timer risk.
-
-No live library, cache, handoff, acquisition, scoring API, or posting surfaces
-were used for validation. Draft PRs remain subject to maintainer review/merge;
-this batch used parent-side validation rather than the formal phase review.
+Maintainer review of PR #33. Merge remains explicitly withheld from the agent.
 
 ## Deferred
 

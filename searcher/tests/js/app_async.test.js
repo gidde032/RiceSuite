@@ -53,8 +53,8 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-function response(payload, ok = true) {
-  return { ok, status: ok ? 200 : 500, json: async () => payload };
+function response(payload, ok = true, status = ok ? 200 : 500) {
+  return { ok, status, json: async () => payload };
 }
 
 function textOf(node) {
@@ -68,6 +68,17 @@ function findNode(node, predicate) {
     if (found) return found;
   }
   return null;
+}
+
+function cardInput(harness, label) {
+  return findNode(
+    harness.nodes.list,
+    (node) => node.tag === "input" && node.attributes["aria-label"] === "intended " + label + " (seconds)",
+  );
+}
+
+function cardMessage(harness) {
+  return findNode(harness.nodes.list, (node) => node.attributes.class === "card-msg");
 }
 
 async function nextRequest(harness) {
@@ -128,7 +139,7 @@ async function boot(initialSlices = []) {
   return harness;
 }
 
-function slice(id, profile) {
+function slice(id, profile, overrides = {}) {
   return {
     id,
     profile_id: profile,
@@ -146,6 +157,7 @@ function slice(id, profile) {
     dup_of: null,
     rationale: "",
     transcript_span: "moment",
+    ...overrides,
   };
 }
 
@@ -203,4 +215,111 @@ test("pending card mutation blocks handoff and repeated status writes", async ()
   await mutation;
   assert.equal(harness.nodes.handoffBtn.disabled, false);
   assert.match(harness.nodes.handoffBtn.textContent, /Send 1 selected/);
+});
+
+test("review preview starts at the saved target interval and follows a successful save", async () => {
+  const harness = await boot([
+    slice("a", "alpha", {
+      media_url: "/media/a.mp4",
+      pad_in: 1.5,
+      pad_out: 9.5,
+      target_in: 1e-7,
+      target_out: 2e-7,
+    }),
+  ]);
+  const video = findNode(harness.nodes.list, (node) => node.tag === "video");
+  const windowLabel = findNode(
+    harness.nodes.list,
+    (node) => node.attributes.class === "win",
+  );
+  assert.equal(video.src, "/media/a.mp4#t=0.0000001,0.0000002");
+  assert.equal(textOf(windowLabel), "selected 0.0000001–0.0000002s");
+
+  const inInput = cardInput(harness, "in");
+  const outInput = cardInput(harness, "out");
+  assert.equal(inInput.value, "0.0000001");
+  assert.equal(outInput.value, "0.0000002");
+  assert.equal(inInput.attributes.step, "any");
+  assert.equal(outInput.attributes.step, "any");
+  inInput.value = "3";
+  outInput.value = "6";
+  const saving = inInput.listeners.change({ type: "change", target: inInput });
+  const request = await nextRequest(harness);
+  assert.equal(request.options.method, "PATCH");
+  assert.deepEqual(JSON.parse(request.options.body), { target_in: 3, target_out: 6 });
+
+  request.resolve(response({ target_in: 3.14, target_out: 5.96 }));
+  await saving;
+  assert.equal(inInput.value, "3.14");
+  assert.equal(outInput.value, "5.96");
+  assert.equal(video.src, "/media/a.mp4#t=3.14,5.96");
+  assert.equal(textOf(windowLabel), "selected 3.14–5.96s");
+});
+
+test("invalid window input stays typed so the reviewer can correct it", async () => {
+  const harness = await boot([slice("a", "alpha")]);
+  const inInput = cardInput(harness, "in");
+  const outInput = cardInput(harness, "out");
+  inInput.value = "not-a-number";
+  outInput.value = "6";
+
+  await inInput.listeners.change({ type: "change", target: inInput });
+
+  assert.equal(inInput.value, "not-a-number");
+  assert.equal(outInput.value, "6");
+  assert.equal(cardMessage(harness).textContent, "in/out must be numbers");
+  assert.equal(harness.requests.length, 0);
+});
+
+test("window validation detail is shown verbatim without resetting typed values", async () => {
+  const harness = await boot([slice("a", "alpha")]);
+  const inInput = cardInput(harness, "in");
+  const outInput = cardInput(harness, "out");
+  assert.equal(inInput.attributes.step, "any");
+  assert.equal(outInput.attributes.step, "any");
+  inInput.value = "3";
+  outInput.value = "6";
+  const saving = inInput.listeners.change({ type: "change", target: inInput });
+  const request = await nextRequest(harness);
+
+  request.resolve(response({ detail: "target interval must be inside source" }, false, 422));
+  await saving;
+
+  assert.equal(inInput.value, "3");
+  assert.equal(outInput.value, "6");
+  assert.equal(cardMessage(harness).textContent, "target interval must be inside source");
+});
+
+test("window failures use a status fallback for non-string detail and preserve typed values", async () => {
+  const harness = await boot([slice("a", "alpha")]);
+  const inInput = cardInput(harness, "in");
+  const outInput = cardInput(harness, "out");
+  inInput.value = "3";
+  outInput.value = "6";
+  const saving = inInput.listeners.change({ type: "change", target: inInput });
+  const request = await nextRequest(harness);
+
+  request.resolve(response({ detail: { reason: "bad interval" } }, false, 400));
+  await saving;
+
+  assert.equal(inInput.value, "3");
+  assert.equal(outInput.value, "6");
+  assert.equal(cardMessage(harness).textContent, "couldn't save window (400)");
+});
+
+test("network window failures preserve typed values and explain the failure", async () => {
+  const harness = await boot([slice("a", "alpha")]);
+  const inInput = cardInput(harness, "in");
+  const outInput = cardInput(harness, "out");
+  inInput.value = "3";
+  outInput.value = "6";
+  const saving = inInput.listeners.change({ type: "change", target: inInput });
+  const request = await nextRequest(harness);
+
+  request.reject(new Error("offline"));
+  await saving;
+
+  assert.equal(inInput.value, "3");
+  assert.equal(outInput.value, "6");
+  assert.equal(cardMessage(harness).textContent, "couldn't save window: offline");
 });

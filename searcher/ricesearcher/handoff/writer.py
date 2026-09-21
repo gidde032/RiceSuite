@@ -10,14 +10,17 @@ format + resolved path containment, and no orphan artifact on failure.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import shutil
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from ricesearcher.acquire.watchfolder import ffprobe_duration
 from ricesearcher.config import Config, load_config
 from ricesearcher.handoff.extract import ClipExtractor, FfmpegClipExtractor
 from ricesearcher.library.store import Library
@@ -89,20 +92,22 @@ def write_batch(
             source = Path(entry.source_media)
             if not source.is_file():
                 raise HandoffError(f"clip {entry.position}: source media missing")
-            # Refuse a degenerate/inverted window rather than emit a reversed
-            # clip range downstream (finding L1).
+            # Refuse a negative, degenerate, or inverted export interval rather
+            # than emit an invalid range downstream (finding L1).
             if not (
-                entry.pad_in <= entry.target_in < entry.target_out <= entry.pad_out
+                math.isfinite(entry.target_in)
+                and math.isfinite(entry.target_out)
+                and 0 <= entry.target_in < entry.target_out
             ):
                 raise HandoffError(
                     f"clip {entry.position}: invalid window "
-                    f"(need pad_in<=target_in<target_out<=pad_out)"
+                    f"(need 0<=target_in<target_out)"
                 )
             filename = f"clip_{entry.position}.mp4"
             dest = (batch_dir / filename).resolve()
             if dest.parent != batch_dir:
                 raise HandoffError("resolved clip path escapes the batch directory")
-            extractor.extract(source, entry.pad_in, entry.pad_out, dest)
+            extractor.extract(source, entry.target_in, entry.target_out, dest)
             manifest_clips.append(_manifest_clip(entry, filename))
 
         manifest = {
@@ -135,26 +140,27 @@ def write_batch(
 
 
 def _manifest_clip(entry: HandoffEntry, filename: str) -> dict:
-    duration = entry.pad_out - entry.pad_in
+    duration = entry.target_out - entry.target_in
     return {
         "file": filename,
         "position": entry.position,
         "source_ref": entry.source_ref,
         "source_title": entry.source_title,
         "published_at": entry.published_at,
-        # Provenance on the SOURCE timeline …
+        # Schema 1 keeps both names, but every source bound describes the exact
+        # reviewed interval whose bytes are in the exported file.
         "source_window": {
-            "pad_in": entry.pad_in,
-            "pad_out": entry.pad_out,
+            "pad_in": entry.target_in,
+            "pad_out": entry.target_out,
             "target_in": entry.target_in,
             "target_out": entry.target_out,
         },
-        # … and the intended cut on the CLIP timeline (the clip IS the padded
-        # window, so times are relative to its start). Clipper tightens within this.
+        # The reviewed cut is already applied, so the clip-relative target spans
+        # the complete exported file that Clipper transcribes and renders.
         "clip": {
             "duration": duration,
-            "target_in": max(0.0, entry.target_in - entry.pad_in),
-            "target_out": min(duration, entry.target_out - entry.pad_in),
+            "target_in": 0.0,
+            "target_out": duration,
         },
         "transcript": entry.transcript,
         "score": entry.score,
@@ -166,6 +172,11 @@ def _manifest_clip(entry: HandoffEntry, filename: str) -> dict:
 
 
 def _entry_for(slice_: CandidateSlice, source: Source, position: int) -> HandoffEntry:
+    transcript = " ".join(
+        word.text
+        for word in source.words
+        if word.start < slice_.target_out and word.end > slice_.target_in
+    )
     return HandoffEntry(
         position=position,
         source_media=Path(source.media_path),
@@ -176,7 +187,7 @@ def _entry_for(slice_: CandidateSlice, source: Source, position: int) -> Handoff
         pad_out=slice_.pad_out,
         target_in=slice_.target_in,
         target_out=slice_.target_out,
-        transcript=slice_.transcript_span,
+        transcript=transcript,
         score=slice_.score,
         rationale=slice_.rationale,
         rights_risk=slice_.rights_risk,
@@ -191,6 +202,7 @@ def hand_off_selected(
     profile_id: str,
     extractor: ClipExtractor | None = None,
     config: Config | None = None,
+    duration_prober: Callable[[Path], float] | None = None,
 ) -> dict:
     """Write ``selected`` slices as one handoff batch, then mark them handed_off.
 
@@ -212,14 +224,34 @@ def hand_off_selected(
         if not selected:
             return {"batch_id": None, "clip_count": 0}
 
-        sources = {s.id: s for s in library.list_sources()}
         # Position by score (best first); stable tie-break for determinism.
         ordered = sorted(selected, key=lambda s: (-s.score, s.created_at, s.id))
         entries = []
+        sources: dict[str, Source] = {}
+        durations: dict[str, float] = {}
+        probe = duration_prober or ffprobe_duration
         for i, sl in enumerate(ordered, start=1):
-            source = sources.get(sl.source_id)
+            source = sources.get(sl.source_id) or library.get_source(sl.source_id)
             if source is None:
                 raise HandoffError(f"slice {sl.id}: source {sl.source_id} not found")
+            sources[sl.source_id] = source
+            if sl.source_id not in durations:
+                try:
+                    duration = float(probe(Path(source.media_path)))
+                except Exception as exc:
+                    raise HandoffError(
+                        f"clip {i}: source duration could not be verified"
+                    ) from exc
+                if not math.isfinite(duration) or duration <= 0:
+                    raise HandoffError(
+                        f"clip {i}: source duration could not be verified"
+                    )
+                durations[sl.source_id] = duration
+            if sl.target_out > durations[sl.source_id]:
+                raise HandoffError(
+                    f"clip {i}: target_out {sl.target_out} exceeds source duration "
+                    f"{durations[sl.source_id]}"
+                )
             entries.append(_entry_for(sl, source, i))
 
         result = write_batch(

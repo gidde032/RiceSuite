@@ -1,11 +1,9 @@
-# RiceClipper "Pull from Searcher" consumer — plan (Issue #8)
+# RiceClipper "Pull from Searcher" consumer (Issue #8)
 
-**Status: PLAN ONLY. Not implemented.** This documents the *RiceClipper-repo*
-change to make **after** the RiceSearcher-side handoff writer (Phase 5) merges,
-as the targeted edit that wraps v1. It is written against RiceClipper's real
-structure (studied in the Phase-1 reconciliation) and RicePoster's existing
-"Pull from Clipper" consumer, which it mirrors. Any RiceClipper code change is
-made in that repo, with maintainer approval — not from RiceSearcher.
+**Status: IMPLEMENTED in RiceClipper; handoff timing amended 2026-09-20.** This
+documents the cross-repository contract. RiceClipper imports each handed-off file
+unchanged, then independently transcribes it for authoritative caption and lyric
+timing.
 
 ## What RiceSearcher now produces (the contract to consume)
 
@@ -29,7 +27,7 @@ RiceClipper→RicePoster *mechanism* (not its directory):
 ```
 <ricesearcher-handoff>/
   batch_<ts>_<rand>/
-    clip_1.mp4          # the padded window [pad_in, pad_out] of the source
+    clip_1.mp4          # the exact reviewed [target_in, target_out] interval
     clip_2.mp4
     manifest.json       # written LAST via atomic rename = "batch complete"
 ```
@@ -47,29 +45,31 @@ RiceClipper→RicePoster *mechanism* (not its directory):
       "file": "clip_1.mp4",
       "position": 1,
       "source_ref": "<url|path>", "source_title": "...", "published_at": "...",
-      "source_window": { "pad_in": 8, "pad_out": 42, "target_in": 10, "target_out": 40 },
-      "clip":         { "duration": 34, "target_in": 2, "target_out": 32 },
+      "source_window": { "pad_in": 10, "pad_out": 40, "target_in": 10, "target_out": 40 },
+      "clip":         { "duration": 30, "target_in": 0, "target_out": 30 },
       "transcript": "...", "score": 0.8, "rationale": "...",
-      "rights_risk": "low|med|high", "beat_profile_version": "..."
+      "rights_risk": "low|med|high", "beat_profile_version": "...",
+      "profile_id": "..."
     }
   ]
 }
 ```
 
-- The **clip file IS the padded window**; `clip.target_in`/`target_out` are the
-  intended cut **relative to the clip's start** — the boundary Clipper should
-  tighten/crop around. `source_window` is provenance on the source timeline.
-- `transcript` grounds RiceClipper's captions with zero typing (it already
-  transcribes, but the span is a useful hint / avoids a re-transcribe of the pad).
+- The clip file is exactly the reviewed interval. Schema 1 retains the historical
+  `pad_*` keys, but all four `source_window` values describe the selected source
+  bounds; clip-relative target is `0..duration`.
+- `transcript` is rebuilt from Searcher's source words intersecting the reviewed
+  interval. It is metadata, not caption timing: RiceClipper transcribes the exact
+  imported file afresh and uses those clip-relative Whisper words for captions and
+  pasted-lyric alignment.
 - `position` (1-based) is the only routing/order signal. No account/slot/style —
   those are downstream posting-side policy, unchanged.
 
-## The RiceClipper change (mirror RicePoster's consumer)
+## RiceClipper behavior (mirrors RicePoster's consumer)
 
-RiceClipper today ingests only via its web-UI upload and has **no pickup side**
-(confirmed Phase 1). Add a "Pull from Searcher" consumer that mirrors
-RicePoster's `backend/handoff_pickup.py` pattern. Its **input** dir is a new
-config (e.g. `RICECLIPPER_SEARCHER_INBOX`, default `~/ricesearcher-handoff`) that
+RiceClipper's delivered "Pull from Searcher" consumer mirrors RicePoster's pickup
+discipline. Its input directory is `RICECLIPPER_SEARCHER_INBOX` (default
+`~/ricesearcher-handoff`), which
 must equal RiceSearcher's `RICESEARCHER_HANDOFF_DIR`. RiceClipper's **existing**
 writer to `RICECLIPPER_HANDOFF_DIR` (`~/riceclipper-handoff`, for RicePoster) is
 **unchanged** — this only adds a read side, making RiceClipper the intermediary.
@@ -94,10 +94,9 @@ writer to `RICECLIPPER_HANDOFF_DIR` (`~/riceclipper-handoff`, for RicePoster) is
    RiceClipper's own working dir and persist a recoverable pending record
    (clip files + `clip.target_in/out` + transcript + provenance) **before**
    deleting the handoff batch. A response loss / reload must not orphan media.
-5. **Ingest into RiceClipper's pipeline** as pre-cut clips: seed each as a review
-   card whose in/out defaults to `clip.target_in/target_out` (Clipper's
-   trim/crop/caption workflow tightens from there). The transcript pre-fills the
-   caption grounding.
+5. **Ingest into RiceClipper's pipeline** as pre-cut clips and run its ordinary
+   transcription/review/render flow. The complete Searcher metadata is retained,
+   but RiceClipper does not import Searcher's transcript timings or trim the file.
 6. **Path containment / safety** (RicePoster M-08): restrict `batch_id` and
    filenames to a strict safe format; resolve and verify every source/destination
    path stays within the intended roots; symlinks unsupported.
@@ -105,7 +104,7 @@ writer to `RICECLIPPER_HANDOFF_DIR` (`~/riceclipper-handoff`, for RicePoster) is
    custody; on any failure retain the whole batch for re-pull; partial deletion
    never happens (RicePoster purge policy).
 
-## Verification (when built, in RiceClipper)
+## Verification
 
 - A **paired-ref compatibility gate**: run RiceSearcher's real writer into
   RiceClipper's real consumer in disposable dirs; assert schema, positions,

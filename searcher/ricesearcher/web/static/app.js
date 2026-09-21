@@ -162,17 +162,19 @@ function isCurrentLoad(request, profile, status) {
 function card(s) {
   const c = el("article", { class: "card", "data-status": s.status });
 
-  // Left: video preview of the padded window.
+  // Left: video preview of the exact saved export window.
   const preview = el("div", { class: "preview" });
+  let video;
   if (s.media_url) {
-    const v = el("video", { controls: "", preload: "metadata" });
-    v.src = s.media_url + "#t=" + fmt(s.pad_in) + "," + fmt(s.pad_out);
-    preview.append(v);
+    video = el("video", { controls: "", preload: "metadata" });
+    video.src = s.media_url + "#t=" + fmt(s.target_in) + "," + fmt(s.target_out);
+    preview.append(video);
   } else {
     preview.append(el("div", { class: "empty" }, "media unavailable"));
   }
-  preview.append(el("div", { class: "win" },
-    "padded " + fmt(s.pad_in) + "–" + fmt(s.pad_out) + "s"));
+  const windowLabel = el("div", { class: "win" },
+    "selected " + fmt(s.target_in) + "–" + fmt(s.target_out) + "s");
+  preview.append(windowLabel);
   c.append(preview);
 
   // Right: metadata + gate controls.
@@ -208,7 +210,7 @@ function card(s) {
 
   const msg = el("div", { class: "card-msg", role: "status", "aria-live": "polite" });
 
-  // Tighten the intended in/out (clamped server-side to the padded window).
+  // Set the exact export interval; the server validates it against the source.
   const inIn = numInput("in", s.target_in);
   const outIn = numInput("out", s.target_out);
   const winEdit = el("div", { class: "window-edit" }, [
@@ -233,7 +235,6 @@ function card(s) {
     if (windowPending || statusPending || terminal || handoffPending) return;
     const ti = parseFloat(inIn.value), to = parseFloat(outIn.value);
     if (!Number.isFinite(ti) || !Number.isFinite(to)) {
-      inIn.value = fmt(s.target_in); outIn.value = fmt(s.target_out);  // restore
       cardMsg(msg, "in/out must be numbers", true);
       return;
     }
@@ -246,16 +247,24 @@ function card(s) {
         body: JSON.stringify({ target_in: ti, target_out: to }),
       });
       if (!res.ok) {
-        inIn.value = fmt(s.target_in); outIn.value = fmt(s.target_out);
-        cardMsg(msg, "couldn't save window (" + res.status + ")", true);
+        let detail;
+        try {
+          const body = await res.json();
+          if (typeof body.detail === "string") detail = body.detail;
+        } catch (_err) {
+          // A non-JSON error still gets the status fallback below.
+        }
+        cardMsg(msg, detail || "couldn't save window (" + res.status + ")", true);
         return;
       }
       const d = await res.json();
       s.target_in = d.target_in; s.target_out = d.target_out;
       inIn.value = fmt(d.target_in); outIn.value = fmt(d.target_out);
+      if (video) video.src = s.media_url + "#t=" + fmt(d.target_in) + "," + fmt(d.target_out);
+      windowLabel.replaceChildren(document.createTextNode(
+        "selected " + fmt(d.target_in) + "–" + fmt(d.target_out) + "s"));
       cardMsg(msg, "window saved", false);
     } catch (err) {
-      inIn.value = fmt(s.target_in); outIn.value = fmt(s.target_out);
       cardMsg(msg, "couldn't save window: " + err.message, true);
     } finally {
       windowPending = false;
@@ -321,12 +330,27 @@ function cardMsg(node, text, isError) {
 }
 
 function numInput(label, value) {
-  const i = el("input", { type: "number", step: "0.1", min: "0", "aria-label": "intended " + label + " (seconds)" });
+  const i = el("input", { type: "number", step: "any", min: "0", "aria-label": "intended " + label + " (seconds)" });
   i.value = fmt(value);
   return i;
 }
 
-function fmt(n) { return (Math.round(n * 10) / 10).toString(); }
+// Preserve the server's finite numeric value without quantising it or emitting
+// exponent notation, which is not valid media-fragment timestamp syntax.
+function fmt(n) {
+  const raw = String(n);
+  if (!/[eE]/.test(raw)) return raw;
+  const negative = raw.startsWith("-");
+  const [coefficient, exponentText] = raw.replace(/^-/, "").toLowerCase().split("e");
+  const [whole, fraction = ""] = coefficient.split(".");
+  const digits = whole + fraction;
+  const decimalAt = whole.length + Number(exponentText);
+  let expanded;
+  if (decimalAt <= 0) expanded = "0." + "0".repeat(-decimalAt) + digits;
+  else if (decimalAt >= digits.length) expanded = digits + "0".repeat(decimalAt - digits.length);
+  else expanded = digits.slice(0, decimalAt) + "." + digits.slice(decimalAt);
+  return (negative ? "-" : "") + expanded;
+}
 
 // Tiny DOM helper. children may be a string, node, or array of them. Attribute
 // names starting with "on" are refused so a stray attr value can never become an

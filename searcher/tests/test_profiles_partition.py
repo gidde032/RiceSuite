@@ -137,7 +137,11 @@ def test_handoff_one_profile_leaves_other_selected(tmp_path, fake_scorer) -> Non
         lib.update_slice_status(b_slice.id, SliceStatus.SELECTED)
 
         result = hand_off_selected(
-            lib, extractor=_FakeExtractor(), config=cfg, profile_id="alpha"
+            lib,
+            extractor=_FakeExtractor(),
+            duration_prober=lambda _path: 20.0,
+            config=cfg,
+            profile_id="alpha",
         )
         assert result["clip_count"] == 1  # only alpha's selected slice
         assert lib.get_slice(a_slice.id).status is SliceStatus.HANDED_OFF

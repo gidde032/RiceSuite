@@ -5,7 +5,7 @@ Endpoints:
 - ``GET /media``                  the media-management page.
 - ``GET /api/slices``             scored candidate slices (JSON), newest-scored first.
 - ``POST /api/slices/{id}/status`` set status (the select/reject gate).
-- ``PATCH /api/slices/{id}/window`` tighten the intended in/out (within the pad).
+- ``PATCH /api/slices/{id}/window`` set the exact source-bounded in/out.
 - ``GET /api/sources``            stored sources (url, media file, slice count).
 - ``POST /api/sources/{id}/delete`` full-purge one source + its media file.
 - ``POST /api/cache/clear``       full-purge every source + wipe the media cache.
@@ -29,6 +29,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from ricesearcher.acquire.watchfolder import ffprobe_duration
 from ricesearcher.beat.profile import (
     PROFILE_ID_PATTERN,
     ensure_seed,
@@ -249,7 +250,7 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     @app.patch("/api/slices/{slice_id}/window")
     def set_window(slice_id: str, body: _WindowIn) -> dict:
-        """Tighten a slice's target window while it is still reviewable.
+        """Set a slice's exact export window while it is still reviewable.
 
         Reviewer lens: HIGH — ``handed_off`` is terminal, so a stale review
         client must not mutate the target interval after it is manifested.
@@ -259,6 +260,8 @@ def create_app(config: Config | None = None) -> FastAPI:
         # try — and fail — to serialize the NaN input.
         if not (math.isfinite(body.target_in) and math.isfinite(body.target_out)):
             raise HTTPException(422, "target_in/target_out must be finite numbers")
+        if body.target_in < 0:
+            raise HTTPException(422, "target_in must be at least 0")
         if body.target_in >= body.target_out:
             raise HTTPException(422, "target_out must exceed target_in")
         with Library(cfg.db_path) as lib:
@@ -269,21 +272,39 @@ def create_app(config: Config | None = None) -> FastAPI:
                 raise HTTPException(
                     409, "handed_off slices are terminal and cannot be changed"
                 )
-            # The intended cut is tightenable but stays inside the padded window
-            # (ADR Q4b). pad_in/pad_out are immutable, so reading them here can't
-            # be clobbered; the write itself is a targeted UPDATE (finding W1).
-            ti = max(s.pad_in, body.target_in)
-            to = min(s.pad_out, body.target_out)
-            if to <= ti:
-                raise HTTPException(422, "window is empty after clamping to the pad")
-            if not lib.update_slice_window(slice_id, ti, to):
+            source = lib.get_source(s.source_id)
+            if source is None:
+                raise HTTPException(409, "slice source is unavailable")
+
+            # The review window must be bounded by the bytes that handoff will
+            # receive. A stored acquisition duration can be stale, so a probe
+            # failure is a hard error rather than a reason to trust that value.
+            try:
+                duration = float(ffprobe_duration(Path(source.media_path)))
+            except Exception as exc:
+                raise HTTPException(
+                    422, "source duration could not be verified"
+                ) from exc
+            if not math.isfinite(duration) or duration <= 0:
+                raise HTTPException(422, "source duration could not be verified")
+            if body.target_out > duration:
+                raise HTTPException(
+                    422,
+                    f"target_out must not exceed source duration ({duration:g}s)",
+                )
+
+            if not lib.update_slice_window(slice_id, body.target_in, body.target_out):
                 latest = lib.get_slice(slice_id)
                 if latest is None:
                     raise HTTPException(404, "no such slice")
                 raise HTTPException(
                     409, "handed_off slices are terminal and cannot be changed"
                 )
-        return {"id": slice_id, "target_in": ti, "target_out": to}
+        return {
+            "id": slice_id,
+            "target_in": body.target_in,
+            "target_out": body.target_out,
+        }
 
     @app.post("/api/handoff")
     def do_handoff(body: _HandoffIn | None = None) -> dict:

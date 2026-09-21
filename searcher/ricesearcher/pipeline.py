@@ -176,9 +176,10 @@ def extract_and_score(
 ) -> list[CandidateSlice]:
     """Prefilter → score → persist candidate slices for one source (FR-3/4/5).
 
-    Each slice carries a padded window around the intended in/out (ADR Q4b); the
-    intended cut is metadata, tightened at review. Slice ids are deterministic, so
-    re-scoring a source updates its slices in place rather than duplicating them.
+    Each slice carries scorer padding around its initial in/out for review context.
+    The editable target becomes the exact export interval (ADR Q4 amendment).
+    Slice ids are deterministic, so re-scoring a source updates its slices in place
+    rather than duplicating them.
     """
     windows = prefilter(source.words, profile, source_id=source.id, top_k=top_k)
     results = scorer.score(windows, profile)
@@ -186,7 +187,7 @@ def extract_and_score(
     rights = _RIGHTS_BY_KIND.get(source.kind, "med")
     # Bound padding by the later of the reported duration and the last word's
     # timestamp: a container/ASR mismatch must never clamp pad_out below the
-    # intended out (ADR Q4b: the padded window brackets the intended cut).
+    # initial target out; padding remains review context after the Q4 amendment.
     last_word_end = source.words[-1].end if source.words else 0.0
     duration = max(source.duration_s, last_word_end)
 
