@@ -276,24 +276,17 @@ def create_app(config: Config | None = None) -> FastAPI:
             if source is None:
                 raise HTTPException(409, "slice source is unavailable")
 
-            # Prefer the actual cached media duration. Acquisition's stored value
-            # remains a fallback for environments where ffprobe is unavailable;
-            # neither path silently clamps the reviewer's requested interval.
-            duration = source.duration_s
+            # The review window must be bounded by the bytes that handoff will
+            # receive. A stored acquisition duration can be stale, so a probe
+            # failure is a hard error rather than a reason to trust that value.
             try:
-                probed_duration = ffprobe_duration(Path(source.media_path))
-            except (
-                OSError,
-                subprocess.SubprocessError,
-                KeyError,
-                TypeError,
-                ValueError,
-            ):
-                probed_duration = 0.0
-            if math.isfinite(probed_duration) and probed_duration > 0:
-                duration = probed_duration
+                duration = float(ffprobe_duration(Path(source.media_path)))
+            except Exception as exc:
+                raise HTTPException(
+                    422, "source duration could not be verified"
+                ) from exc
             if not math.isfinite(duration) or duration <= 0:
-                raise HTTPException(422, "source duration is unavailable")
+                raise HTTPException(422, "source duration could not be verified")
             if body.target_out > duration:
                 raise HTTPException(
                     422,

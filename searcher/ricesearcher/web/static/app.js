@@ -330,12 +330,15 @@ function cardMsg(node, text, isError) {
 }
 
 function numInput(label, value) {
-  const i = el("input", { type: "number", step: "0.1", min: "0", "aria-label": "intended " + label + " (seconds)" });
+  const i = el("input", { type: "number", step: "any", min: "0", "aria-label": "intended " + label + " (seconds)" });
   i.value = fmt(value);
   return i;
 }
 
-function fmt(n) { return (Math.round(n * 10) / 10).toString(); }
+// Preserve the server's finite numeric value without quantising it to tenths.
+// The browser input accepts arbitrary finite decimals; preview, label, and
+// input all use this same representation so they cannot drift apart.
+function fmt(n) { return String(n); }
 
 // Tiny DOM helper. children may be a string, node, or array of them. Attribute
 // names starting with "on" are refused so a stray attr value can never become an

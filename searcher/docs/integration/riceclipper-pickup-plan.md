@@ -48,7 +48,8 @@ RiceClipper→RicePoster *mechanism* (not its directory):
       "source_window": { "pad_in": 10, "pad_out": 40, "target_in": 10, "target_out": 40 },
       "clip":         { "duration": 30, "target_in": 0, "target_out": 30 },
       "transcript": "...", "score": 0.8, "rationale": "...",
-      "rights_risk": "low|med|high", "beat_profile_version": "..."
+      "rights_risk": "low|med|high", "beat_profile_version": "...",
+      "profile_id": "..."
     }
   ]
 }

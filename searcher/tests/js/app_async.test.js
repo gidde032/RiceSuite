@@ -223,8 +223,8 @@ test("review preview starts at the saved target interval and follows a successfu
       media_url: "/media/a.mp4",
       pad_in: 1.5,
       pad_out: 9.5,
-      target_in: 2.5,
-      target_out: 7.5,
+      target_in: 2.34,
+      target_out: 7.66,
     }),
   ]);
   const video = findNode(harness.nodes.list, (node) => node.tag === "video");
@@ -232,11 +232,15 @@ test("review preview starts at the saved target interval and follows a successfu
     harness.nodes.list,
     (node) => node.attributes.class === "win",
   );
-  assert.equal(video.src, "/media/a.mp4#t=2.5,7.5");
-  assert.equal(textOf(windowLabel), "selected 2.5–7.5s");
+  assert.equal(video.src, "/media/a.mp4#t=2.34,7.66");
+  assert.equal(textOf(windowLabel), "selected 2.34–7.66s");
 
   const inInput = cardInput(harness, "in");
   const outInput = cardInput(harness, "out");
+  assert.equal(inInput.value, "2.34");
+  assert.equal(outInput.value, "7.66");
+  assert.equal(inInput.attributes.step, "any");
+  assert.equal(outInput.attributes.step, "any");
   inInput.value = "3";
   outInput.value = "6";
   const saving = inInput.listeners.change({ type: "change", target: inInput });
@@ -244,12 +248,12 @@ test("review preview starts at the saved target interval and follows a successfu
   assert.equal(request.options.method, "PATCH");
   assert.deepEqual(JSON.parse(request.options.body), { target_in: 3, target_out: 6 });
 
-  request.resolve(response({ target_in: 3.1, target_out: 5.9 }));
+  request.resolve(response({ target_in: 3.14, target_out: 5.96 }));
   await saving;
-  assert.equal(inInput.value, "3.1");
-  assert.equal(outInput.value, "5.9");
-  assert.equal(video.src, "/media/a.mp4#t=3.1,5.9");
-  assert.equal(textOf(windowLabel), "selected 3.1–5.9s");
+  assert.equal(inInput.value, "3.14");
+  assert.equal(outInput.value, "5.96");
+  assert.equal(video.src, "/media/a.mp4#t=3.14,5.96");
+  assert.equal(textOf(windowLabel), "selected 3.14–5.96s");
 });
 
 test("invalid window input stays typed so the reviewer can correct it", async () => {
@@ -271,6 +275,8 @@ test("window validation detail is shown verbatim without resetting typed values"
   const harness = await boot([slice("a", "alpha")]);
   const inInput = cardInput(harness, "in");
   const outInput = cardInput(harness, "out");
+  assert.equal(inInput.attributes.step, "any");
+  assert.equal(outInput.attributes.step, "any");
   inInput.value = "3";
   outInput.value = "6";
   const saving = inInput.listeners.change({ type: "change", target: inInput });

@@ -17,7 +17,7 @@ SLICES = f"/api/slices?profile={LEGACY_PROFILE_ID}"
 
 
 @pytest.fixture
-def client(tmp_path: Path) -> TestClient:
+def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     data = tmp_path / "data"
     cfg = Config(data_dir=data, handoff_dir=tmp_path / "handoff")
     cfg.ensure_dirs()
@@ -67,6 +67,11 @@ def client(tmp_path: Path) -> TestClient:
                 ),
             ]
         )
+    import ricesearcher.web.app as web_app
+
+    # The fixture uses fake media bytes, so supply the source duration that a
+    # real ffprobe would return for the window-validation tests.
+    monkeypatch.setattr(web_app, "ffprobe_duration", lambda _path: 100.0)
     return TestClient(create_app(cfg))
 
 

@@ -276,8 +276,6 @@ gate when the consumer is built.
   content stays off any public surface, repo is private.
 - **Transcription cost/latency.** faster-whisper on CPU for long podcasts;
   measured and budgeted at Phase 1–2.
-- **Consumer gap.** Clipper can't yet ingest the handoff; v1 produces the artifact
-  and the maintainer bridges manually until the routed-forward pickup ships.
 - **yt-dlp fragility.** Source-site changes can break acquisition; the local
   watch-folder is the always-available fallback door.
 
@@ -289,7 +287,6 @@ gate when the consumer is built.
 - **Search-query acquisition** — deferred to
   [Issue #15](https://github.com/gidde032/RiceSearcher/issues/15) as the first
   post-v1 feature; v1 accepts YouTube URLs/channels and local files.
-- **RiceClipper "Pull from Searcher" consumer** — routed-forward cross-repo item.
 - **RiceClipper roadmap edit** — retire Path 1/Path 2 extraction into RiceSearcher
   (ADR Action Item #4), against the real Clipper repo with approval.
 - Final numeric budgets (coverage floor, scoring token cap, pull latency) —

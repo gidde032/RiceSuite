@@ -14,7 +14,7 @@ from ricesearcher.web.app import create_app
 
 
 @pytest.fixture
-def client(tmp_path: Path) -> TestClient:
+def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     cfg = Config(data_dir=tmp_path / "d", handoff_dir=tmp_path / "h")
     cfg.ensure_dirs()
     with Library(cfg.db_path) as lib:
@@ -48,6 +48,11 @@ def client(tmp_path: Path) -> TestClient:
                 ),
             ]
         )
+    import ricesearcher.web.app as web_app
+
+    # The fixture intentionally uses a fake media path; window tests that need
+    # a real duration override this probe below.
+    monkeypatch.setattr(web_app, "ffprobe_duration", lambda _path: 100.0)
     return TestClient(create_app(cfg))
 
 
@@ -154,7 +159,7 @@ def test_w3_prefers_actual_probe_to_stored_duration(
     assert _get(client, "sl1")["target_in"] == 10
 
 
-def test_w3_probe_failure_falls_back_to_stored_duration(
+def test_w3_probe_failure_rejects_without_trusting_stored_duration(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import ricesearcher.web.app as web_app
@@ -164,8 +169,26 @@ def test_w3_probe_failure_falls_back_to_stored_duration(
 
     monkeypatch.setattr(web_app, "ffprobe_duration", unavailable)
     r = client.patch("/api/slices/sl1/window", json={"target_in": 0, "target_out": 100})
-    assert r.status_code == 200
-    assert (r.json()["target_in"], r.json()["target_out"]) == (0, 100)
+    assert r.status_code == 422
+    assert r.json()["detail"] == "source duration could not be verified"
+    assert _get(client, "sl1")["target_in"] == 10
+    assert _get(client, "sl1")["target_out"] == 40
+
+
+@pytest.mark.parametrize("invalid_duration", [0.0, -1.0, float("nan"), float("inf")])
+def test_w3_invalid_probe_result_rejects_without_trusting_stored_duration(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    invalid_duration: float,
+) -> None:
+    import ricesearcher.web.app as web_app
+
+    monkeypatch.setattr(web_app, "ffprobe_duration", lambda _path: invalid_duration)
+    r = client.patch("/api/slices/sl1/window", json={"target_in": 0, "target_out": 100})
+    assert r.status_code == 422
+    assert r.json()["detail"] == "source duration could not be verified"
+    assert _get(client, "sl1")["target_in"] == 10
+    assert _get(client, "sl1")["target_out"] == 40
 
 
 def test_w3_valid_tighten_still_works(client: TestClient) -> None:

@@ -269,7 +269,13 @@ def _lib_with_selected(tmp_path: Path) -> tuple[Config, Library]:
 def test_hand_off_selected_writes_and_marks(tmp_path: Path) -> None:
     cfg, lib = _lib_with_selected(tmp_path)
     ex = FakeExtractor()
-    res = hand_off_selected(lib, extractor=ex, config=cfg, profile_id=LEGACY_PROFILE_ID)
+    res = hand_off_selected(
+        lib,
+        extractor=ex,
+        duration_prober=lambda _path: 30.0,
+        config=cfg,
+        profile_id=LEGACY_PROFILE_ID,
+    )
     assert res["clip_count"] == 1  # only the selected slice
     batch_dir = next(p for p in cfg.handoff_dir.iterdir() if p.is_dir())
     manifest = json.loads((batch_dir / "manifest.json").read_text())
@@ -305,12 +311,105 @@ def test_hand_off_failure_does_not_mark(tmp_path: Path) -> None:
         hand_off_selected(
             lib,
             extractor=FakeExtractor(fail=True),
+            duration_prober=lambda _path: 30.0,
             config=cfg,
             profile_id=LEGACY_PROFILE_ID,
         )
     # Nothing marked handed_off — the batch is retryable.
     assert lib.get_slice("a").status is SliceStatus.SELECTED
     assert list((cfg.handoff_dir).iterdir()) == []  # no orphan
+    lib.close()
+
+
+def test_hand_off_rejects_target_beyond_actual_source_before_terminal_mark(
+    tmp_path: Path,
+) -> None:
+    cfg, lib = _lib_with_selected(tmp_path)
+    with pytest.raises(HandoffError, match="exceeds source duration"):
+        hand_off_selected(
+            lib,
+            extractor=FakeExtractor(),
+            duration_prober=lambda _path: 3.0,
+            config=cfg,
+            profile_id=LEGACY_PROFILE_ID,
+        )
+    assert lib.get_slice("a").status is SliceStatus.SELECTED
+    assert not cfg.handoff_dir.exists() or not any(cfg.handoff_dir.iterdir())
+    lib.close()
+
+
+def test_hand_off_rejects_unverifiable_source_before_terminal_mark(
+    tmp_path: Path,
+) -> None:
+    cfg, lib = _lib_with_selected(tmp_path)
+
+    def unavailable(_path: Path) -> float:
+        raise OSError("ffprobe unavailable")
+
+    with pytest.raises(HandoffError, match="source duration could not be verified"):
+        hand_off_selected(
+            lib,
+            extractor=FakeExtractor(),
+            duration_prober=unavailable,
+            config=cfg,
+            profile_id=LEGACY_PROFILE_ID,
+        )
+    assert lib.get_slice("a").status is SliceStatus.SELECTED
+    assert not cfg.handoff_dir.exists() or not any(cfg.handoff_dir.iterdir())
+    lib.close()
+
+
+@pytest.mark.parametrize("duration", [0.0, -1.0, float("nan"), float("inf")])
+def test_hand_off_rejects_invalid_source_duration(
+    tmp_path: Path, duration: float
+) -> None:
+    cfg, lib = _lib_with_selected(tmp_path)
+    with pytest.raises(HandoffError, match="source duration could not be verified"):
+        hand_off_selected(
+            lib,
+            extractor=FakeExtractor(),
+            duration_prober=lambda _path: duration,
+            config=cfg,
+            profile_id=LEGACY_PROFILE_ID,
+        )
+    assert lib.get_slice("a").status is SliceStatus.SELECTED
+    assert not cfg.handoff_dir.exists() or not any(cfg.handoff_dir.iterdir())
+    lib.close()
+
+
+def test_hand_off_probes_each_source_once(tmp_path: Path) -> None:
+    cfg, lib = _lib_with_selected(tmp_path)
+    lib.upsert_slices(
+        [
+            CandidateSlice(
+                id="c",
+                source_id="s1",
+                pad_in=0,
+                pad_out=20,
+                target_in=2,
+                target_out=18,
+                transcript_span="c",
+                score=0.7,
+                status=SliceStatus.SELECTED,
+                profile_id=LEGACY_PROFILE_ID,
+            ),
+        ]
+    )
+    probed: list[Path] = []
+
+    def probe(path: Path) -> float:
+        probed.append(path)
+        return 30.0
+
+    result = hand_off_selected(
+        lib,
+        extractor=FakeExtractor(),
+        duration_prober=probe,
+        config=cfg,
+        profile_id=LEGACY_PROFILE_ID,
+    )
+    assert result["clip_count"] == 2
+    assert probed == [Path(lib.get_source("s1").media_path)]
     lib.close()
 
 
@@ -321,6 +420,7 @@ def test_cli_handoff(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.setenv("RICESEARCHER_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("RICESEARCHER_HANDOFF_DIR", str(tmp_path / "handoff"))
     monkeypatch.setattr(writer_mod, "FfmpegClipExtractor", FakeExtractor)
+    monkeypatch.setattr(writer_mod, "ffprobe_duration", lambda _path: 30.0)
     from ricesearcher.config import load_config
 
     cfg = load_config()
@@ -369,6 +469,7 @@ def test_ui_handoff_endpoint(tmp_path: Path, monkeypatch) -> None:
     from ricesearcher.web.app import create_app
 
     monkeypatch.setattr(writer_mod, "FfmpegClipExtractor", FakeExtractor)
+    monkeypatch.setattr(writer_mod, "ffprobe_duration", lambda _path: 30.0)
     cfg, lib = _lib_with_selected(tmp_path)
     lib.close()
     client = TestClient(create_app(cfg))
@@ -405,7 +506,11 @@ def test_h1_all_selected_marked_atomically(tmp_path: Path) -> None:
         ]
     )
     hand_off_selected(
-        lib, extractor=FakeExtractor(), config=cfg, profile_id=LEGACY_PROFILE_ID
+        lib,
+        extractor=FakeExtractor(),
+        duration_prober=lambda _path: 30.0,
+        config=cfg,
+        profile_id=LEGACY_PROFILE_ID,
     )
     assert lib.get_slice("a").status is SliceStatus.HANDED_OFF
     assert lib.get_slice("c").status is SliceStatus.HANDED_OFF
@@ -459,6 +564,7 @@ def test_h2_concurrent_handoff_delivers_once(tmp_path: Path, monkeypatch) -> Non
             super().extract(source, start, end, dest)
 
     monkeypatch.setattr(writer_mod, "FfmpegClipExtractor", SlowExtractor)
+    monkeypatch.setattr(writer_mod, "ffprobe_duration", lambda _path: 30.0)
     cfg, lib = _lib_with_selected(tmp_path)
     lib.close()
     client = TestClient(create_app(cfg))
@@ -503,6 +609,7 @@ def test_concurrent_direct_handoff_delivers_once(tmp_path: Path) -> None:
                 hand_off_selected(
                     thread_lib,
                     extractor=SlowExtractor(),
+                    duration_prober=lambda _path: 30.0,
                     config=cfg,
                     profile_id=LEGACY_PROFILE_ID,
                 )

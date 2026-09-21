@@ -15,10 +15,12 @@ import os
 import re
 import shutil
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from ricesearcher.acquire.watchfolder import ffprobe_duration
 from ricesearcher.config import Config, load_config
 from ricesearcher.handoff.extract import ClipExtractor, FfmpegClipExtractor
 from ricesearcher.library.store import Library
@@ -200,6 +202,7 @@ def hand_off_selected(
     profile_id: str,
     extractor: ClipExtractor | None = None,
     config: Config | None = None,
+    duration_prober: Callable[[Path], float] | None = None,
 ) -> dict:
     """Write ``selected`` slices as one handoff batch, then mark them handed_off.
 
@@ -225,11 +228,30 @@ def hand_off_selected(
         ordered = sorted(selected, key=lambda s: (-s.score, s.created_at, s.id))
         entries = []
         sources: dict[str, Source] = {}
+        durations: dict[str, float] = {}
+        probe = duration_prober or ffprobe_duration
         for i, sl in enumerate(ordered, start=1):
             source = sources.get(sl.source_id) or library.get_source(sl.source_id)
             if source is None:
                 raise HandoffError(f"slice {sl.id}: source {sl.source_id} not found")
             sources[sl.source_id] = source
+            if sl.source_id not in durations:
+                try:
+                    duration = float(probe(Path(source.media_path)))
+                except Exception as exc:
+                    raise HandoffError(
+                        f"clip {i}: source duration could not be verified"
+                    ) from exc
+                if not math.isfinite(duration) or duration <= 0:
+                    raise HandoffError(
+                        f"clip {i}: source duration could not be verified"
+                    )
+                durations[sl.source_id] = duration
+            if sl.target_out > durations[sl.source_id]:
+                raise HandoffError(
+                    f"clip {i}: target_out {sl.target_out} exceeds source duration "
+                    f"{durations[sl.source_id]}"
+                )
             entries.append(_entry_for(sl, source, i))
 
         result = write_batch(
