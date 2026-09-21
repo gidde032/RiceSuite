@@ -49,8 +49,9 @@ B1 and B2 are two symptoms of **one root cause** and are cheapest to fix togethe
 
 ## Resolution (applied 2026-09-21)
 
-All six items are repaired in the working branch `fix/review-27-29-33-repairs`
-with fail-before-fix regression evidence. Full gates green: `ruff format --check`,
+All six items are repaired in branch `fix/review-27-29-33-repairs`
+([PR #34](https://github.com/gidde032/RiceSearcher/pull/34)) with fail-before-fix
+regression evidence. Full gates green: `ruff format --check`,
 `ruff check`, `mypy` (33 files), `pytest` 244 passed at 93.90% coverage (floor 90),
 `node --check`, 17 Node tests, 5 smoke tests.
 

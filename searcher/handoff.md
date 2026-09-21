@@ -29,6 +29,7 @@ Last updated: 2026-09-21.
   reviewers + OCR pre-gate) triaged six findings; the report is
   `internal/review-pr27-29-33-triage.md`.
 - Branch: `fix/review-27-29-33-repairs` from `576c73c`.
+- PR: [#34](https://github.com/gidde032/RiceSearcher/pull/34), open for maintainer review.
 - Repairs applied (all with fail-before-fix regressions):
   - **A** — handoff no longer holds the SQLite write lock across the ffmpeg
     encode; a short critical section re-reads and marks handed_off only if the
