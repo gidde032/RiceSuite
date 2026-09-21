@@ -223,8 +223,8 @@ test("review preview starts at the saved target interval and follows a successfu
       media_url: "/media/a.mp4",
       pad_in: 1.5,
       pad_out: 9.5,
-      target_in: 2.34,
-      target_out: 7.66,
+      target_in: 1e-7,
+      target_out: 2e-7,
     }),
   ]);
   const video = findNode(harness.nodes.list, (node) => node.tag === "video");
@@ -232,13 +232,13 @@ test("review preview starts at the saved target interval and follows a successfu
     harness.nodes.list,
     (node) => node.attributes.class === "win",
   );
-  assert.equal(video.src, "/media/a.mp4#t=2.34,7.66");
-  assert.equal(textOf(windowLabel), "selected 2.34–7.66s");
+  assert.equal(video.src, "/media/a.mp4#t=0.0000001,0.0000002");
+  assert.equal(textOf(windowLabel), "selected 0.0000001–0.0000002s");
 
   const inInput = cardInput(harness, "in");
   const outInput = cardInput(harness, "out");
-  assert.equal(inInput.value, "2.34");
-  assert.equal(outInput.value, "7.66");
+  assert.equal(inInput.value, "0.0000001");
+  assert.equal(outInput.value, "0.0000002");
   assert.equal(inInput.attributes.step, "any");
   assert.equal(outInput.attributes.step, "any");
   inInput.value = "3";

@@ -335,10 +335,22 @@ function numInput(label, value) {
   return i;
 }
 
-// Preserve the server's finite numeric value without quantising it to tenths.
-// The browser input accepts arbitrary finite decimals; preview, label, and
-// input all use this same representation so they cannot drift apart.
-function fmt(n) { return String(n); }
+// Preserve the server's finite numeric value without quantising it or emitting
+// exponent notation, which is not valid media-fragment timestamp syntax.
+function fmt(n) {
+  const raw = String(n);
+  if (!/[eE]/.test(raw)) return raw;
+  const negative = raw.startsWith("-");
+  const [coefficient, exponentText] = raw.replace(/^-/, "").toLowerCase().split("e");
+  const [whole, fraction = ""] = coefficient.split(".");
+  const digits = whole + fraction;
+  const decimalAt = whole.length + Number(exponentText);
+  let expanded;
+  if (decimalAt <= 0) expanded = "0." + "0".repeat(-decimalAt) + digits;
+  else if (decimalAt >= digits.length) expanded = digits + "0".repeat(decimalAt - digits.length);
+  else expanded = digits.slice(0, decimalAt) + "." + digits.slice(decimalAt);
+  return (negative ? "-" : "") + expanded;
+}
 
 // Tiny DOM helper. children may be a string, node, or array of them. Attribute
 // names starting with "on" are refused so a stray attr value can never become an
