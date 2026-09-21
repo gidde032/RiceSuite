@@ -52,7 +52,8 @@ reads local video files and writes local output files. The "no live post without
 explicit approval" safety rule belongs to RicePoster and remains RicePoster's
 responsibility after it separately pulls from the implemented local handoff
 (§7, Wave 1). RiceClipper's only outbound network call is the implemented header
-agent's API request (§6.2), which generates text and posts nothing.
+agent's API request (§6.2), which is **opt-in** (never automatic; requires an
+API key and an explicit UI action) and which generates text and posts nothing.
 
 ## 4. Pipeline (data flow)
 
@@ -176,11 +177,17 @@ optional user description line → an Anthropic **Sonnet** vision agent with a
 JSON-styled prompt tuned for a punchy ≤2-line hook. Manual fallback works exactly
 like the caption override — type the header, skip the agent.
 
+**Opt-in only.** The agent is never invoked automatically. Nothing (frame or
+transcript) leaves the machine after transcription on its own — the user
+triggers generation explicitly with the header **✨ Generate** button, and the
+call is skipped entirely when no `ANTHROPIC_API_KEY` is set. What is sent on an
+explicit trigger is documented in `SECURITY.md`.
+
 **Engine lean (recorded; finalized at build):** Sonnet, keeping the vision frame.
 A local/free model was considered to match the local transcription stack and
 **rejected** for v1's header: header text is language *generation* (not
 transcription), so "local" means a heavy multi-GB local LLM that writes
-noticeably weaker social hooks; the frame snapshot is also the only automatic
+noticeably weaker social hooks; the frame snapshot is also the only available
 signal on a music-only clip with no transcript. The header is the single most
 visible line on the clip and the API cost is cents — the spot where a strong
 model earns its keep. Revisit at build if desired.
@@ -191,7 +198,8 @@ model earns its keep. Revisit at build if desired.
   1. **RicePoster integration — implemented.** Outputs drop into the harness's pickup contract.
   2. **Silence-only trimming** — cut long gaps (silence detection); keep A/V sync,
      smooth jump cuts.
-  3. **Auto-header — implemented.** The Sonnet vision agent above retains manual
+  3. **Header generator — implemented (opt-in).** The Sonnet vision agent above
+     runs only on an explicit UI action and retains manual entry as the
      fallback; the emoji spike is resolved via the PNG-overlay path (§8).
 - **Wave 2 — early additions:**
   - Caption **style/position configuration** (Tier-1 knobs: font, color, highlight

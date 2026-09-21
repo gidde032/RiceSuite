@@ -16,6 +16,32 @@ htmlcov/
 # Environment / secrets
 .env
 .env.*
+!.env.example
+
+# Credentials / keys / certificates
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+credentials.json
+credentials*.json
+*.credentials
+secrets.*
+*_secret*
+*.session
+.session
+service-account*.json
+
+# Databases
+*.sqlite
+*.sqlite3
+*.db
+
+# Logs
+*.log
+logs/
 
 # Model caches (faster-whisper downloads)
 models/

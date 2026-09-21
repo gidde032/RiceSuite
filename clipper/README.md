@@ -35,6 +35,14 @@ local files and writes local files. Posting — and its approval gate — belong
 RicePoster, which separately pulls from RiceClipper's local handoff. See
 `SPEC.md` §3.
 
+The **only** outbound network feature is the optional on-screen header
+generator, and it is **opt-in**: nothing is sent after transcription
+automatically. It requires an `ANTHROPIC_API_KEY` and runs only when you click
+**✨ Generate** in the review UI. Everything else — transcription, subject
+detection, rendering — runs fully offline. See [`SECURITY.md`](./SECURITY.md)
+for exactly what is transmitted, and [`.env.example`](./.env.example) for
+configuration.
+
 ## Stack
 
 - Python + FastAPI, served locally
@@ -42,7 +50,8 @@ RicePoster, which separately pulls from RiceClipper's local handoff. See
 - **faster-whisper** for word-level transcription
 - **OpenCV YuNet** for local landscape subject detection
 - **ffmpeg + libass** (ASS subtitles) for caption/header burn-in and audio mix
-- Anthropic Sonnet for the implemented auto-header (Wave 1)
+- Anthropic Sonnet for the **opt-in** on-screen header generator (Wave 1) —
+  the only outbound network feature; off unless you set a key and click Generate
 
 ## Setup (intended)
 
@@ -151,7 +160,8 @@ CHANGELOG.md      release history
 
 Color-emoji burn-in is resolved through the PNG-overlay fallback documented in
 [`docs/spikes/emoji-burn-in.md`](./docs/spikes/emoji-burn-in.md). The Wave-1
-auto-header is implemented with manual fallback. Landscape subject tracking now
+header generator is implemented as an opt-in action (explicit button, key-gated)
+with manual entry as the always-available fallback. Landscape subject tracking now
 uses the universal Level-5 motion policy for speech and music: a 20% outer hold
 zone, a 10% inner settle boundary, and 30 Hz interpolation for ordinary motion;
 confirmed cuts, inferred face jumps, and returns after track loss remain
@@ -165,4 +175,9 @@ clearing, API error-state cleanup, and semaphore-free transcription shutdown.
 
 - [`SPEC.md`](./SPEC.md) — the ratified v1 design and decision log
 - [`ROADMAP.md`](./ROADMAP.md) — what's after v1 and in what order
+- [`SECURITY.md`](./SECURITY.md) — privacy, secrets, and what leaves your machine
 - [`CLAUDE.md`](./CLAUDE.md) — rules and context for agent sessions
+
+## License
+
+Released under the [MIT License](./LICENSE).

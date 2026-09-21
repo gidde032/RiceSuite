@@ -7,6 +7,27 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-20
+
+First public release. RiceClipper is published under the MIT License as a
+sanitized public repository: private identifiers were removed while the detailed
+engineering, testing, review, and CI history was preserved.
+
+### Changed
+- **Header generation is now opt-in.** The on-screen header generator is no
+  longer invoked automatically after transcription. Nothing — neither the clip
+  frame nor the transcript — is sent to Anthropic unless the user explicitly
+  clicks **✨ Generate** and an `ANTHROPIC_API_KEY` is configured. Manual header
+  entry remains the always-available fallback. `SECURITY.md` documents exactly
+  what a triggered request transmits.
+
+### Added
+- **Public-repository hygiene.** Root MIT `LICENSE`; `SECURITY.md` covering
+  privacy, secret handling, localhost-only operation, and what leaves the
+  machine; a tracked `.env.example` documenting every supported environment
+  variable; and hardened `.gitignore` coverage for credentials, keys,
+  certificates, sessions, databases, and logs.
+
 ### Fixed
 - **Subject-crop idle jitter.** Speech and music framing now use the ratified
   Level-5 strong lock universally: hold inside an outer 20% window-width zone,

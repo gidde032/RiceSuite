@@ -285,7 +285,7 @@ def test_handoff_send_button_posts_the_batch():
     assert "header_style: radioValue(c.headerStyleEl)" in javascript
 
 
-def test_auto_header_control_is_wired_to_the_generation_endpoint():
+def test_header_control_is_wired_to_the_generation_endpoint_opt_in():
     html = _html()
     javascript = _js()
 
@@ -293,11 +293,12 @@ def test_auto_header_control_is_wired_to_the_generation_endpoint():
     assert 'class="header-generate"' in html
     assert 'class="header-feedback"' in html
 
-    # It posts to the header endpoint, auto-fills after transcription, and
-    # regenerates a different header on demand (avoid + feedback).
+    # It posts to the header endpoint and regenerates a different header on
+    # demand (avoid + feedback). Generation is OPT-IN: it must NOT be fired
+    # automatically after transcription (SPEC §3/§6.2). See test_header_optin.py.
     assert "/header" in javascript
-    assert "await autoGenerateHeader(clip)" in javascript
     assert "function regenerateHeader" in javascript
+    assert "autoGenerateHeader" not in javascript
 
 
 def test_clip_status_ready_after_align_and_restore():

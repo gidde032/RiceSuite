@@ -472,13 +472,6 @@ async function requestHeader(clip, { feedback = "", avoid = "" } = {}) {
   }
 }
 
-// Fired once per clip after transcription; never clobbers a header the user
-// already typed.
-function autoGenerateHeader(clip) {
-  if (clip.headerEl.value.trim()) return Promise.resolve();
-  return requestHeader(clip);
-}
-
 // Manual button: regenerate a meaningfully different header, honoring the
 // optional guidance field (mirrors RicePoster's caption regenerate-with-feedback).
 function regenerateHeader(clip) {
@@ -635,9 +628,9 @@ async function ingestClip(clip) {
     applyGeometry(clip, trdata);
     clip.status = "ready";
     setClipStatus(clip, "Ready — review & render");
-    // Auto-fill the header from the frame + transcript. Soft-fails on its own
-    // status line, so a header hiccup never fails the clip.
-    await autoGenerateHeader(clip);
+    // Header generation is opt-in: nothing is sent to Anthropic automatically
+    // after transcription. The user triggers it explicitly with the header
+    // "✨ Generate" button (SPEC §6.2). See requestHeader / regenerateHeader.
   } catch (err) {
     clip.status = "error";
     clip.error = err.message;
