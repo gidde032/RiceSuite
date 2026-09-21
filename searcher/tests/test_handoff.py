@@ -10,6 +10,7 @@ import pytest
 from ricesearcher import cli
 from ricesearcher.config import Config
 from ricesearcher.handoff import writer as writer_mod
+from ricesearcher.handoff.extract import ClipExtractError
 from ricesearcher.handoff.writer import (
     HandoffEntry,
     HandoffError,
@@ -33,11 +34,12 @@ class FakeExtractor:
         self.fail = fail
         self.calls: list[tuple] = []
 
-    def extract(self, source: Path, start: float, end: float, dest: Path) -> None:
+    def extract(self, source: Path, start: float, end: float, dest: Path) -> float:
         self.calls.append((Path(source), start, end, Path(dest)))
         if self.fail:
             raise RuntimeError("ffmpeg boom")
         dest.write_bytes(f"clip {start}-{end}".encode())
+        return end - start
 
 
 def _entry(tmp: Path, position: int = 1) -> HandoffEntry:
@@ -49,8 +51,6 @@ def _entry(tmp: Path, position: int = 1) -> HandoffEntry:
         source_ref="https://y/x",
         source_title="Interview",
         published_at="20260101",
-        pad_in=8.0,
-        pad_out=42.0,
         target_in=10.0,
         target_out=40.0,
         transcript="a moment",
@@ -198,11 +198,11 @@ def test_write_batch_cleans_up_on_keyboard_interrupt(tmp_path: Path) -> None:
     root = tmp_path / "handoff"
 
     class InterruptOnSecond(FakeExtractor):
-        def extract(self, source: Path, start: float, end: float, dest: Path) -> None:
+        def extract(self, source: Path, start: float, end: float, dest: Path) -> float:
             if self.calls:  # first clip already written; interrupt the second
                 self.calls.append((Path(source), start, end, Path(dest)))
                 raise KeyboardInterrupt
-            super().extract(source, start, end, dest)
+            return super().extract(source, start, end, dest)
 
     entries = [_entry(tmp_path, 1), _entry(tmp_path, 2)]
     with pytest.raises(KeyboardInterrupt):
@@ -321,11 +321,13 @@ def test_hand_off_failure_does_not_mark(tmp_path: Path) -> None:
     lib.close()
 
 
-def test_hand_off_rejects_target_beyond_actual_source_before_terminal_mark(
+def test_hand_off_rejects_window_entirely_beyond_source_before_terminal_mark(
     tmp_path: Path,
 ) -> None:
+    # Slice "a" spans [5, 25]; a 3s source starts before target_in, so the window
+    # is entirely unexportable and must fail closed (not silently clamp to empty).
     cfg, lib = _lib_with_selected(tmp_path)
-    with pytest.raises(HandoffError, match="exceeds source duration"):
+    with pytest.raises(HandoffError, match="is at or before target_in"):
         hand_off_selected(
             lib,
             extractor=FakeExtractor(),
@@ -561,7 +563,7 @@ def test_h2_concurrent_handoff_delivers_once(tmp_path: Path, monkeypatch) -> Non
     class SlowExtractor(FakeExtractor):
         def extract(self, source, start, end, dest):
             time.sleep(0.15)  # widen the overlap window
-            super().extract(source, start, end, dest)
+            return super().extract(source, start, end, dest)
 
     monkeypatch.setattr(writer_mod, "FfmpegClipExtractor", SlowExtractor)
     monkeypatch.setattr(writer_mod, "ffprobe_duration", lambda _path: 30.0)
@@ -595,7 +597,7 @@ def test_concurrent_direct_handoff_delivers_once(tmp_path: Path) -> None:
     class SlowExtractor(FakeExtractor):
         def extract(self, source, start, end, dest):
             time.sleep(0.15)
-            super().extract(source, start, end, dest)
+            return super().extract(source, start, end, dest)
 
     cfg, lib = _lib_with_selected(tmp_path)
     lib.close()
@@ -623,3 +625,129 @@ def test_concurrent_direct_handoff_delivers_once(tmp_path: Path) -> None:
 
     assert sorted(result["clip_count"] for result in results) == [0, 1]
     assert len(list(cfg.handoff_dir.iterdir())) == 1
+
+
+# -- Review-repair regressions (findings A, B1, B2, C) ------------------------
+
+
+def test_b2_target_out_past_source_is_clamped_not_batch_rejected(
+    tmp_path: Path,
+) -> None:
+    # Finding B2: slice "a" spans [5, 25]; the true source is 20s. target_out
+    # runs 5s past the media end (e.g. an ASR word end beyond the container
+    # duration). The batch must still deliver, clamped to the source end, rather
+    # than 409-ing every selected clip. (Before the fix this raised
+    # "exceeds source duration".)
+    cfg, lib = _lib_with_selected(tmp_path)
+    res = hand_off_selected(
+        lib,
+        extractor=FakeExtractor(),
+        duration_prober=lambda _path: 20.0,
+        config=cfg,
+        profile_id=LEGACY_PROFILE_ID,
+    )
+    assert res["clip_count"] == 1
+    batch_dir = next(p for p in cfg.handoff_dir.iterdir() if p.is_dir())
+    clip = json.loads((batch_dir / "manifest.json").read_text())["clips"][0]
+    # Export end clamped to the verified source duration (20), not the review 25.
+    assert clip["source_window"]["target_out"] == 20.0
+    assert clip["clip"]["duration"] == 15.0
+    assert lib.get_slice("a").status is SliceStatus.HANDED_OFF
+    lib.close()
+
+
+def test_b1_manifest_records_measured_not_requested_duration(tmp_path: Path) -> None:
+    # Finding B1: if ffmpeg produces a shorter file than requested, the manifest
+    # must report the MEASURED clip length, never the requested one. (Before the
+    # fix the manifest always echoed target_out - target_in.)
+    class ShortExtractor(FakeExtractor):
+        def extract(self, source, start, end, dest):
+            super().extract(source, start, end, dest)
+            return (end - start) - 4.0  # source ended early: 4s short
+
+    cfg, lib = _lib_with_selected(tmp_path)
+    hand_off_selected(
+        lib,
+        extractor=ShortExtractor(),
+        duration_prober=lambda _path: 100.0,
+        config=cfg,
+        profile_id=LEGACY_PROFILE_ID,
+    )
+    batch_dir = next(p for p in cfg.handoff_dir.iterdir() if p.is_dir())
+    clip = json.loads((batch_dir / "manifest.json").read_text())["clips"][0]
+    # Slice "a" is [5, 25] → requested 20s, measured 16s.
+    assert clip["clip"]["duration"] == 16.0
+    assert clip["source_window"]["target_out"] == 21.0  # target_in 5 + measured 16
+    lib.close()
+
+
+def test_a_concurrent_review_write_not_blocked_during_handoff(tmp_path: Path) -> None:
+    # Finding A: the ffmpeg encode must run OUTSIDE the write lock, so a
+    # concurrent review write on another connection is not blocked into a
+    # `database is locked` error. (Before the fix this raised OperationalError.)
+    import threading
+
+    cfg, lib = _lib_with_selected(tmp_path)
+    lib.close()  # each connection is single-thread (sqlite check_same_thread)
+    reviewer = Library(cfg.db_path)  # the concurrent reviewer's connection
+    started = threading.Event()
+    release = threading.Event()
+
+    class GatedExtractor(FakeExtractor):
+        def extract(self, source, start, end, dest):
+            started.set()
+            # Hold the "encode" open longer than SQLite's 5s default busy
+            # timeout, so pre-fix (lock held across the encode) a concurrent
+            # write reliably times out rather than racing the lock release.
+            release.wait(30)
+            return super().extract(source, start, end, dest)
+
+    out: dict = {}
+
+    def run_handoff() -> None:
+        with Library(cfg.db_path) as worker_lib:
+            out["res"] = hand_off_selected(
+                worker_lib,
+                extractor=GatedExtractor(),
+                duration_prober=lambda _path: 100.0,
+                config=cfg,
+                profile_id=LEGACY_PROFILE_ID,
+            )
+
+    worker = threading.Thread(target=run_handoff)
+    worker.start()
+    assert started.wait(5)
+    # This write must succeed immediately — no lock is held during the encode.
+    assert reviewer.update_slice_status("b", SliceStatus.REVIEWED) is True
+    release.set()
+    worker.join(10)
+    assert out["res"]["clip_count"] == 1
+    assert reviewer.get_slice("a").status is SliceStatus.HANDED_OFF
+    reviewer.close()
+
+
+def test_c_unusable_clip_returns_503_not_500(tmp_path: Path, monkeypatch) -> None:
+    # Finding C: a ClipExtractError (ffmpeg ran but produced an unusable clip)
+    # must surface as a graceful 503 with the slices left selected for retry,
+    # not an uncaught 500. (Before the fix do_handoff did not catch it.)
+    from fastapi.testclient import TestClient
+
+    from ricesearcher.web.app import create_app
+
+    class BrokenExtractor(FakeExtractor):
+        def extract(self, source, start, end, dest):
+            raise ClipExtractError("ffmpeg output has no usable duration")
+
+    monkeypatch.setattr(writer_mod, "FfmpegClipExtractor", BrokenExtractor)
+    monkeypatch.setattr(writer_mod, "ffprobe_duration", lambda _path: 100.0)
+    cfg, lib = _lib_with_selected(tmp_path)
+    lib.close()
+    client = TestClient(create_app(cfg))
+    r = client.post("/api/handoff", json={"profile": LEGACY_PROFILE_ID})
+    assert r.status_code == 503
+    assert "remain selected" in r.json()["detail"]
+    # The slice is still selectable for a retry.
+    assert (
+        client.get(f"/api/slices?profile={LEGACY_PROFILE_ID}&status=selected").json()
+        != []
+    )

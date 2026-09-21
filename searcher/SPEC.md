@@ -47,7 +47,7 @@ files only.
 | D5 | Library store | **SQLite** slice index + **content-addressed disk cache** for source/clips |
 | D6 | Moment dedup | Hybrid (intra-source time-overlap + cross-source transcript embedding), **advisory-only — never filters, discards, or blocks** |
 | D7 | Interface | **CLI pipeline first**, then a minimal **Slate-styled** local review UI for the select gate |
-| D8 | Handoff | RiceSearcher **writes** the exact reviewed interval through a mirrored filesystem handoff (manifest-last) with a **schema-1 superset manifest** |
+| D8 | Handoff | RiceSearcher **writes** the reviewed interval (clamped to the source extent) through a mirrored filesystem handoff (manifest-last) with a **schema-1 superset manifest** |
 | D9 | Saved profiles | Profiles are JSON files in `<data_dir>/profiles/`; id = file stem; library, dedup, review, and handoff **partition by `profile_id`**; sources shared; every scoring run names its profile; legacy rows adopt `example-beat` (ratified 2026-09-14, [ADR-002](ADR-002.md), [design spec](docs/design/profiles-spec.md)) |
 
 ## 4. Functional requirements
@@ -205,13 +205,19 @@ dedupe by stable `batch_id`; **producer only writes** and never manages lifecycl
 }
 ```
 
-The clip file **is exactly the reviewed target interval**. In the handoff manifest,
-`source_window.pad_in == source_window.target_in == saved target_in` and
-`source_window.pad_out == source_window.target_out == saved target_out`; these
-fields therefore describe the bytes actually exported, not the original candidate
-padding retained in SQLite. `clip.duration = target_out - target_in`, with
-clip-relative `target_in = 0` and `target_out = duration`. `transcript` is rebuilt
-from source transcript words intersecting the selected interval. RiceClipper does
+The clip file is the reviewed target interval — exported exactly when it lies
+within the source, and **clamped to the true source extent** when the reviewed
+`target_out` runs past the media's end (e.g. an ASR word end beyond the container
+duration). The manifest describes the interval **actually exported**:
+`source_window.pad_in == source_window.target_in == saved target_in`, and
+`source_window.pad_out == source_window.target_out ==` the exported end — equal to
+the saved `target_out` for an interval fully within the source, otherwise the
+clamped source end. These fields therefore describe the bytes actually exported,
+not the original candidate padding retained in SQLite. `clip.duration` is the
+**measured** duration of the written file (equal to `target_out - target_in` for
+the common in-bounds case), with clip-relative `target_in = 0` and
+`target_out = duration`. `transcript` is rebuilt from source transcript words
+intersecting the exported interval. RiceClipper does
 not import those word timings: it transcribes the received file afresh, so captions
 and lyric anchors use the exact clip borders and a clip-relative timeline.
 

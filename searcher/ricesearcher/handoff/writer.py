@@ -41,8 +41,6 @@ class HandoffEntry:
     source_ref: str
     source_title: str
     published_at: str
-    pad_in: float
-    pad_out: float
     target_in: float
     target_out: float
     transcript: str
@@ -107,8 +105,10 @@ def write_batch(
             dest = (batch_dir / filename).resolve()
             if dest.parent != batch_dir:
                 raise HandoffError("resolved clip path escapes the batch directory")
-            extractor.extract(source, entry.target_in, entry.target_out, dest)
-            manifest_clips.append(_manifest_clip(entry, filename))
+            measured = extractor.extract(
+                source, entry.target_in, entry.target_out, dest
+            )
+            manifest_clips.append(_manifest_clip(entry, filename, measured))
 
         manifest = {
             "schema_version": SCHEMA_VERSION,
@@ -139,8 +139,15 @@ def write_batch(
     return {"batch_id": batch_id, "clip_count": len(manifest_clips)}
 
 
-def _manifest_clip(entry: HandoffEntry, filename: str) -> dict:
-    duration = entry.target_out - entry.target_in
+def _manifest_clip(
+    entry: HandoffEntry, filename: str, measured_duration: float
+) -> dict:
+    # Report the MEASURED clip length, not the requested one: if ffmpeg produced
+    # a shorter file than requested (e.g. the source ends before its reported
+    # container duration), the manifest must describe the bytes actually
+    # exported rather than silently overstating the window (review finding B1).
+    duration = measured_duration
+    delivered_out = entry.target_in + duration
     return {
         "file": filename,
         "position": entry.position,
@@ -148,12 +155,12 @@ def _manifest_clip(entry: HandoffEntry, filename: str) -> dict:
         "source_title": entry.source_title,
         "published_at": entry.published_at,
         # Schema 1 keeps both names, but every source bound describes the exact
-        # reviewed interval whose bytes are in the exported file.
+        # interval whose bytes are in the exported file.
         "source_window": {
             "pad_in": entry.target_in,
-            "pad_out": entry.target_out,
+            "pad_out": delivered_out,
             "target_in": entry.target_in,
-            "target_out": entry.target_out,
+            "target_out": delivered_out,
         },
         # The reviewed cut is already applied, so the clip-relative target spans
         # the complete exported file that Clipper transcribes and renders.
@@ -171,11 +178,21 @@ def _manifest_clip(entry: HandoffEntry, filename: str) -> dict:
     }
 
 
-def _entry_for(slice_: CandidateSlice, source: Source, position: int) -> HandoffEntry:
+def _entry_for(
+    slice_: CandidateSlice,
+    source: Source,
+    position: int,
+    *,
+    target_out: float | None = None,
+) -> HandoffEntry:
+    # ``target_out`` may be clamped to the verified source duration by the caller
+    # (finding B2); the transcript is rebuilt against the interval actually
+    # exported, not the unclamped review value.
+    effective_out = slice_.target_out if target_out is None else target_out
     transcript = " ".join(
         word.text
         for word in source.words
-        if word.start < slice_.target_out and word.end > slice_.target_in
+        if word.start < effective_out and word.end > slice_.target_in
     )
     return HandoffEntry(
         position=position,
@@ -183,10 +200,8 @@ def _entry_for(slice_: CandidateSlice, source: Source, position: int) -> Handoff
         source_ref=source.ref,
         source_title=source.title,
         published_at=source.published_at,
-        pad_in=slice_.pad_in,
-        pad_out=slice_.pad_out,
         target_in=slice_.target_in,
-        target_out=slice_.target_out,
+        target_out=effective_out,
         transcript=transcript,
         score=slice_.score,
         rationale=slice_.rationale,
@@ -214,51 +229,80 @@ def hand_off_selected(
     (``clip_count`` 0 and ``batch_id`` None if nothing is selected).
     """
     cfg = config or load_config()
-    # The database write lock spans selection, manifestation, and terminal marking.
-    # A second CLI/process handoff therefore re-reads after this one commits instead
-    # of producing a duplicate batch from the same selected snapshot.
-    with library.immediate_transaction():
-        selected = library.list_slices(
-            profile_id=profile_id, status=SliceStatus.SELECTED
-        )
-        if not selected:
-            return {"batch_id": None, "clip_count": 0}
+    # Phase 1 — snapshot the selected set and build entries WITHOUT holding the
+    # write lock. The old design held ``immediate_transaction`` across the whole
+    # ffmpeg encode below, so any concurrent review write (select/reject/window)
+    # blocked on the lock, timed out, and 500'd (review finding A). Reads do not
+    # need the write lock; the short critical section in phase 3 still delivers a
+    # batch exactly once.
+    selected = library.list_slices(profile_id=profile_id, status=SliceStatus.SELECTED)
+    if not selected:
+        return {"batch_id": None, "clip_count": 0}
 
-        # Position by score (best first); stable tie-break for determinism.
-        ordered = sorted(selected, key=lambda s: (-s.score, s.created_at, s.id))
-        entries = []
-        sources: dict[str, Source] = {}
-        durations: dict[str, float] = {}
-        probe = duration_prober or ffprobe_duration
-        for i, sl in enumerate(ordered, start=1):
-            source = sources.get(sl.source_id) or library.get_source(sl.source_id)
-            if source is None:
-                raise HandoffError(f"slice {sl.id}: source {sl.source_id} not found")
-            sources[sl.source_id] = source
-            if sl.source_id not in durations:
-                try:
-                    duration = float(probe(Path(source.media_path)))
-                except Exception as exc:
-                    raise HandoffError(
-                        f"clip {i}: source duration could not be verified"
-                    ) from exc
-                if not math.isfinite(duration) or duration <= 0:
-                    raise HandoffError(
-                        f"clip {i}: source duration could not be verified"
-                    )
-                durations[sl.source_id] = duration
-            if sl.target_out > durations[sl.source_id]:
+    # Position by score (best first); stable tie-break for determinism.
+    ordered = sorted(selected, key=lambda s: (-s.score, s.created_at, s.id))
+    entries = []
+    sources: dict[str, Source] = {}
+    durations: dict[str, float] = {}
+    probe = duration_prober or ffprobe_duration
+    for i, sl in enumerate(ordered, start=1):
+        source = sources.get(sl.source_id) or library.get_source(sl.source_id)
+        if source is None:
+            raise HandoffError(f"slice {sl.id}: source {sl.source_id} not found")
+        sources[sl.source_id] = source
+        if sl.source_id not in durations:
+            try:
+                duration = float(probe(Path(source.media_path)))
+            except Exception as exc:
                 raise HandoffError(
-                    f"clip {i}: target_out {sl.target_out} exceeds source duration "
-                    f"{durations[sl.source_id]}"
-                )
-            entries.append(_entry_for(sl, source, i))
+                    f"clip {i}: source duration could not be verified"
+                ) from exc
+            if not math.isfinite(duration) or duration <= 0:
+                raise HandoffError(f"clip {i}: source duration could not be verified")
+            durations[sl.source_id] = duration
+        source_duration = durations[sl.source_id]
+        # Clamp the export end to the verified source duration instead of failing
+        # the entire batch when a single ``target_out`` runs a hair past the media
+        # end — e.g. an ASR word end beyond the container duration (finding B2).
+        # ffmpeg's ``-t`` already stops at EOF, so a clamp exports the same bytes
+        # without poisoning the other selected clips. Only a window that starts at
+        # or after the source end is genuinely unexportable.
+        target_out = min(sl.target_out, source_duration)
+        if not sl.target_in < target_out:
+            raise HandoffError(
+                f"clip {i}: source duration {source_duration} is at or before "
+                f"target_in {sl.target_in}"
+            )
+        entries.append(_entry_for(sl, source, i, target_out=target_out))
+    snapshot_ids = [sl.id for sl in ordered]
 
-        result = write_batch(
-            entries, extractor=extractor or FfmpegClipExtractor(), root=cfg.handoff_dir
-        )
-        # SQLite cannot make the filesystem publish part of its transaction. A
-        # process crash in this narrow interval can still require manual recovery;
-        # the write lock prevents live callers from duplicating the same snapshot.
-        library.bulk_update_status([sl.id for sl in ordered], SliceStatus.HANDED_OFF)
-        return result
+    # Phase 2 — encode and write the batch with NO database lock held.
+    result = write_batch(
+        entries, extractor=extractor or FfmpegClipExtractor(), root=cfg.handoff_dir
+    )
+
+    # Phase 3 — short critical section. Under the write lock, re-read and mark the
+    # snapshot handed_off ONLY if it is still exactly the selected set. A second
+    # concurrent handoff (or an intervening reject) that changed the set makes
+    # this call a no-op whose already-written batch is discarded, so a batch is
+    # delivered exactly once. SQLite still cannot enlist the filesystem in its
+    # transaction, so a crash in this narrow window can require manual recovery.
+    batch_dir = Path(cfg.handoff_dir) / str(result["batch_id"])
+    try:
+        with library.immediate_transaction():
+            still_selected = {
+                s.id
+                for s in library.list_slices(
+                    profile_id=profile_id, status=SliceStatus.SELECTED
+                )
+            }
+            if not all(sid in still_selected for sid in snapshot_ids):
+                shutil.rmtree(batch_dir, ignore_errors=True)
+                return {"batch_id": None, "clip_count": 0}
+            library.bulk_update_status(snapshot_ids, SliceStatus.HANDED_OFF)
+    except BaseException:
+        # A failure marking the snapshot must not leave an unmarked batch on disk
+        # that a reader would pick up while the slices are still ``selected``.
+        shutil.rmtree(batch_dir, ignore_errors=True)
+        raise
+    return result

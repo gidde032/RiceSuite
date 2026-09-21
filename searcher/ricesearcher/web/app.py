@@ -37,6 +37,7 @@ from ricesearcher.beat.profile import (
     load_profile,
 )
 from ricesearcher.config import Config, load_config
+from ricesearcher.handoff.extract import ClipExtractError
 from ricesearcher.handoff.writer import HandoffError, hand_off_selected
 from ricesearcher.library.cache import MediaCache
 from ricesearcher.library.store import Library
@@ -319,7 +320,10 @@ def create_app(config: Config | None = None) -> FastAPI:
                 return hand_off_selected(lib, config=cfg, profile_id=profile_id)
             except HandoffError as exc:
                 raise HTTPException(409, str(exc)) from exc
-            except (OSError, subprocess.SubprocessError) as exc:
+            except (OSError, subprocess.SubprocessError, ClipExtractError) as exc:
+                # ClipExtractError: ffmpeg ran but produced an unusable clip, so
+                # nothing was marked and the batch is retryable — a graceful 503,
+                # not a raw 500 (review finding C).
                 raise HTTPException(
                     503,
                     "handoff execution failed; selected slices remain selected "
