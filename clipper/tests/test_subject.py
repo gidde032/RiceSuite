@@ -406,3 +406,60 @@ def test_crop_sample_is_even_int_contract():
     # Guards the CropSample x type the plan writes into crop.cmd (geometry F2).
     sample = CropSample(t=0.2, x=100)
     assert sample.x == 100
+
+
+# --- PR-21 triage repairs -----------------------------------------------------
+
+
+def test_detect_track_ignores_spurious_first_frame_pts():
+    # B1: a spurious first-frame POS_MSEC must not poison the whole timeline.
+    face = [[300, 300, 40, 40, 0.9]]
+    capture = FakeCapture(
+        [Frame(face)] * 6,
+        fps=5,
+        pts_ms=[50000.0, 200.0, 400.0, 600.0, 800.0, 1000.0],
+    )
+    sample_times: list[float] = []
+    subject.detect_track(
+        "source.mp4",
+        MediaInfo(640, 360, 2.0, True),
+        capture_factory=lambda _src: capture,
+        detector_factory=FakeDetector,
+        sample_times=sample_times,
+    )
+    assert sample_times, "expected sampled frames"
+    assert all(0.0 <= t <= 2.0 + 1e-9 for t in sample_times), sample_times
+
+
+def test_detect_track_reacquires_largest_box_at_music_soft_cut():
+    # B2: box selection at a cut must use the (lower) music threshold so a
+    # music soft-cut (0.2-0.3) reacquires the largest box, not continuity-near.
+    frame0 = [[480, 100, 40, 40, 0.9]]  # cx = 500, establishes target
+    near_small = [520, 100, 20, 20, 0.9]  # cx = 530, near prev, small
+    far_large = [80, 100, 100, 100, 0.9]  # cx = 130, far, large
+    capture = FakeCapture(
+        [Frame(frame0), Frame([near_small, far_large])],
+        fps=5,
+        pts_ms=[0.0, 200.0],
+    )
+    samples = subject.detect_track(
+        "source.mp4",
+        MediaInfo(640, 360, 1.0, True),
+        capture_factory=lambda _src: capture,
+        detector_factory=FakeDetector,
+        cuts=[(0.1, 0.25)],
+    )
+    assert samples[1] is not None
+    assert samples[1].cx == pytest.approx(130.0)
+
+
+def test_detect_track_owned_surfaces_process_construction_error(monkeypatch):
+    # B4: if Process construction raises, the real error must surface rather
+    # than being masked by an AttributeError in the finally block.
+    class FakeContext:
+        def Process(self, **kwargs):
+            raise RuntimeError("cannot spawn worker")
+
+    monkeypatch.setattr(subject, "_process_context", lambda: FakeContext())
+    with pytest.raises(RuntimeError, match="cannot spawn worker"):
+        subject.detect_track_owned("source.mp4", _LANDSCAPE, 1.0)

@@ -537,3 +537,21 @@ def test_failed_plan_carries_profile():
     for prof in ("speech", "music"):
         plan = failed_plan("analysis_failed", 1920, 1080, profile=prof)
         assert plan.profile == prof
+
+
+# --- PR-21 triage repairs -----------------------------------------------------
+
+
+def test_first_face_after_missing_first_sample_snaps():
+    # B3: when the first sample misses a face and the subject is off-center, the
+    # first acquisition should snap immediately rather than slow-pan from center.
+    src_w, src_h = 640, 360
+    window_w, _ = window_size(src_w, src_h)
+    max_x = src_w - window_w
+    track = [None] + [
+        TrackSample(t=i * 0.2, cx=600.0, cy=180.0, w=40.0, h=60.0) for i in range(1, 4)
+    ]
+    plan = plan_crop(track, [], src_w, src_h, profile="speech")
+    assert plan.samples[0].snap is False  # no face yet: hold at center
+    assert plan.samples[1].snap is True  # first face: snap
+    assert plan.samples[1].x == _expected_x(600.0, window_w, max_x)

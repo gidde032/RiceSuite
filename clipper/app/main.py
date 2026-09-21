@@ -135,6 +135,13 @@ def transcribe_job(job_id: str) -> JobState:
         try:
             job.words = whisper.transcribe(str(job.source_path))
             job.reference_words = list(job.words)
+            # The transcript changed, so any prior render has stale burned-in
+            # captions; invalidate it so it can't reach the handoff (A4, mirrors
+            # lyrics_job / restore_transcript).
+            if job.output_path is not None:
+                if job.output_path.exists():
+                    job.output_path.unlink(missing_ok=True)
+                job.output_path = None
             if job.info and job.info.width > job.info.height:
                 job.crop_plan, job.music_plan = subject.build_plan(
                     job.source_path, job.info
@@ -158,11 +165,19 @@ def lyrics_job(job_id: str, req: LyricsRequest) -> LyricsResult:
             raise HTTPException(status_code=404, detail="job not found")
         if job.status in {"transcribing", "rendering"}:
             raise HTTPException(status_code=409, detail="job is already active")
+        if job.info is None:
+            # No probe info (errored/never-probed job): there is no real clip
+            # duration to align against, so refuse rather than emit words past a
+            # zero-length clip (A5). Blank input still reports 422 for a
+            # consistent contract.
+            if not req.lyrics.strip():
+                raise HTTPException(status_code=422, detail="empty lyric block")
+            raise HTTPException(status_code=409, detail="job is not ready")
         try:
             result = lyrics.align(
                 req.lyrics,
                 job.reference_words,
-                job.info.duration if job.info else 0.0,
+                job.info.duration,
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from None

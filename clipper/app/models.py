@@ -52,6 +52,13 @@ class LyricsResult(BaseModel):
     words: list[Word]
     anchor_rate: float
     method: Literal["anchors", "even_fill"]
+    # Largest distance (seconds) any matched anchor's delivered start had to move
+    # from its reference timing to satisfy the MIN_WORD_S / in-clip invariant.
+    # Diagnostic only — timing behavior is unchanged (A1 option 1).
+    anchor_drift: float = 0.0
+    # True when anchor_drift exceeds the tolerance bar: the UI surfaces a
+    # "timing approximate" signal so a large, rare shift is visible.
+    anchor_drift_warning: bool = False
 
 
 class MusicSettings(BaseModel):

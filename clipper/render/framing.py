@@ -180,8 +180,10 @@ def plan_crop(
         )
         after_cut = pending_cut or face_jump
         return_after_loss = has_face and (
-            (last_face_t is None and t_i > LOSS_S)
-            or (last_face_t is not None and (t_i - last_face_t) > LOSS_S)
+            # First face ever acquired: snap straight to it — the window was only
+            # holding at center because no subject had been seen yet, so there is
+            # no real resting position to pan smoothly away from (B3).
+            last_face_t is None or (t_i - last_face_t) > LOSS_S
         )
         snap = False
 
