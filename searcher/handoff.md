@@ -25,7 +25,8 @@ Last updated: 2026-09-20.
 - Owning Issue: [#32](https://github.com/gidde032/RiceSearcher/issues/32).
 - Milestone: v1 — content-sourcing prototype.
 - Branch: `fix/exact-review-window` from `ca72396`.
-- Draft PR: not opened yet; first coherent commit is locally green.
+- Draft PR: [#33](https://github.com/gidde032/RiceSearcher/pull/33), open at
+  `573222a`; first coherent commit is locally green.
 - Contract: ADR-001 Q4 amendment (2026-09-20), SPEC FR-8/FR-9 and §§6–7.
 - Authorized: scoped implementation, tests, documentation, branch/commits/push,
   draft PR, independent review, in-contract repairs, and CI monitoring.
@@ -40,8 +41,8 @@ Last updated: 2026-09-20.
 
 ## Next action
 
-Create the first coherent commit and draft PR, then freeze the exact base/head
-target for three-reviewer cold review.
+Freeze the exact `origin/main...fix/exact-review-window` target for three-reviewer
+cold review, validate findings, and apply only in-contract repairs.
 
 ## Deferred
 
