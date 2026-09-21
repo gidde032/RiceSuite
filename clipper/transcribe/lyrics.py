@@ -15,25 +15,56 @@ from app.models import Word as WordModel
 
 ANCHOR_MIN = 0.25
 MIN_WORD_S = 0.05
+# When a matched anchor's delivered start moves further than this from its
+# reference timing (to keep every word >= MIN_WORD_S and inside the clip), the
+# result flags a "timing approximate" signal for the UI. Set to ADR-002's
+# highlight-tracking tolerance. Diagnostic only; timing is unchanged (A1).
+ANCHOR_DRIFT_WARN_S = 0.5
 
 _STRIP_RE = re.compile(r"^[^\w']+|[^\w']+$", re.UNICODE)
+
+# Apostrophe variants that must collapse to a single code point. Lyrics pasted
+# from the web or typed with smart quotes use U+2019 etc.; whisper emits ASCII
+# U+0027 for the same contractions. Canonicalizing lets them match (A2).
+_APOSTROPHES = frozenset("'\u2018\u2019\u201b\u02bc\u2032")
+
+# Hyphens / dashes to split compound tokens on for matching (A3).
+_HYPHEN_SPLIT_RE = re.compile(r"[-\u2010-\u2015]")
 
 
 def normalize(token: str) -> str:
     stripped = _STRIP_RE.sub("", token).lower()
     out: list[str] = []
     for i, c in enumerate(stripped):
+        canonical = "'" if c in _APOSTROPHES else c
         if unicodedata.category(c).startswith("P"):
             if (
-                c in ("'", "\u2018", "\u2019")
+                canonical == "'"
                 and 0 < i < len(stripped) - 1
                 and stripped[i - 1].isalpha()
                 and stripped[i + 1].isalpha()
             ):
-                out.append(c)
+                out.append("'")
         else:
             out.append(c)
     return "".join(out)
+
+
+def _match_units(tokens: list[str]) -> list[tuple[int, str]]:
+    """Normalized match units, each mapped to its display-token index.
+
+    Hyphenated tokens split into sub-units so they can anchor against whisper's
+    word-split transcription (e.g. "mother-in-law" -> "mother", "in", "law");
+    the original token text is preserved for display (A3). Tokens without a
+    hyphen yield a single unit, so non-hyphenated inputs are unchanged.
+    """
+    units: list[tuple[int, str]] = []
+    for i, tok in enumerate(tokens):
+        for part in _HYPHEN_SPLIT_RE.split(tok):
+            n = normalize(part)
+            if n:
+                units.append((i, n))
+    return units
 
 
 def _char_spread(
@@ -103,15 +134,13 @@ def align(lyrics: str, reference: list[WordModel], duration: float) -> LyricsRes
     if not tokens:
         raise ValueError("empty lyric block")
 
-    norm_lyrics = [normalize(t) for t in tokens]
-
     ref_clean = [
         w for w in reference if w.end > w.start and w.start >= 0 and w.end <= duration
     ]
 
     norm_ref = [normalize(w.text) for w in ref_clean]
 
-    matchable_lyric = [(i, n) for i, n in enumerate(norm_lyrics) if n]
+    matchable_lyric = _match_units(tokens)
     matchable_ref = [(i, n) for i, n in enumerate(norm_ref) if n]
 
     if ref_clean and ref_clean[-1].end > ref_clean[0].start:
@@ -127,9 +156,16 @@ def align(lyrics: str, reference: list[WordModel], duration: float) -> LyricsRes
     for a_idx, b_idx in _lcs_matches(ml_norms, mr_norms):
         orig_lyric = matchable_lyric[a_idx][0]
         orig_ref = matchable_ref[b_idx][0]
-        anchored[orig_lyric] = (ref_clean[orig_ref].start, ref_clean[orig_ref].end)
+        ref_s, ref_e = ref_clean[orig_ref].start, ref_clean[orig_ref].end
+        if orig_lyric in anchored:
+            # A hyphenated token matched multiple ref words: span them all.
+            prev_s, prev_e = anchored[orig_lyric]
+            anchored[orig_lyric] = (min(prev_s, ref_s), max(prev_e, ref_e))
+        else:
+            anchored[orig_lyric] = (ref_s, ref_e)
 
-    denom = len(matchable_lyric) if matchable_lyric else len(tokens)
+    matchable_tokens = {i for i, _ in matchable_lyric}
+    denom = len(matchable_tokens) if matchable_tokens else len(tokens)
     anchor_rate = len(anchored) / denom
 
     if anchor_rate < ANCHOR_MIN:
@@ -160,7 +196,14 @@ def align(lyrics: str, reference: list[WordModel], duration: float) -> LyricsRes
     timings_raw = [(s, e) for s, e in starts_ends]  # type: ignore[misc]
     timings_final = _clamp_to_duration(timings_raw, duration)
     words = _build_words(tokens, timings_final, line_starts, duration)
-    return LyricsResult(words=words, anchor_rate=anchor_rate, method="anchors")
+    drift = _max_anchor_drift(words, anchored)
+    return LyricsResult(
+        words=words,
+        anchor_rate=anchor_rate,
+        method="anchors",
+        anchor_drift=drift,
+        anchor_drift_warning=drift > ANCHOR_DRIFT_WARN_S,
+    )
 
 
 def _interpolate_gaps(
@@ -225,6 +268,21 @@ def _clamp_to_duration(
         start_i = min(s, end_i - MIN_WORD_S)
         clamped[i] = (max(start_i, 0.0), min(end_i, duration))
     return clamped
+
+
+def _max_anchor_drift(
+    words: list[WordModel], anchored: dict[int, tuple[float, float]]
+) -> float:
+    """Largest gap (seconds) between a matched anchor's delivered and reference start.
+
+    Anchors can be shifted to keep every word >= MIN_WORD_S and inside the clip
+    (see A1). This measures how far the worst one moved so the UI can flag a
+    rare, large shift; it does not change any timing.
+    """
+    drift = 0.0
+    for idx, (ref_start, _ref_end) in anchored.items():
+        drift = max(drift, abs(words[idx].start - ref_start))
+    return drift
 
 
 def _build_words(

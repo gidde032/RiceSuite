@@ -202,6 +202,12 @@ def detect_track(
             fallback_t = frame_index / fps
             if not math.isfinite(reported_t) or reported_t < 0:
                 reported_t = fallback_t
+            elif info.duration > 0 and reported_t > info.duration + 1.0:
+                # A spurious presentation timestamp — e.g. a non-zero container
+                # start_time or edit list reported on the first decoded frame —
+                # would otherwise poison every later sample's timeline and
+                # desync the crop schedule. Trust the decoded frame index (B1).
+                reported_t = fallback_t
             if frame_index and reported_t <= last_decoded_t:
                 reported_t = max(fallback_t, last_decoded_t + 1.0 / fps)
             last_decoded_t = reported_t
@@ -214,10 +220,16 @@ def detect_track(
                     import cv2
 
                     frame = cv2.resize(frame, (info.width, info.height))
+                # One detection pass feeds both the speech and music plans, so
+                # reacquire the largest box at any cut *either* profile treats as
+                # real (music's threshold is the lower of the two). Framing then
+                # decides per-profile whether to snap; box selection must not use
+                # the stricter speech threshold or a music soft-cut (0.2-0.3)
+                # would keep the continuity-nearest — often wrong — box (B2).
                 is_after_cut = prev_t is not None and any(
                     prev_t < ct <= reported_t
                     for ct, sc in cut_times
-                    if sc > framing.SCENE_MIN_SPEECH
+                    if sc > framing.SCENE_MIN_MUSIC
                 )
                 box = _select_box(
                     detector.detect(frame),
@@ -321,7 +333,10 @@ def detect_track_owned(
         ]
         return track, sample_times
     finally:
-        if process.is_alive():
+        # ``process`` stays None if context.Process(...) itself raised; guard it
+        # the same way the body does so the real error isn't masked by an
+        # AttributeError (B4).
+        if process is not None and process.is_alive():
             process.terminate()
             process.join(1.0)
             if process.is_alive():

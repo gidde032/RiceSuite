@@ -4,7 +4,7 @@ import pytest
 
 from app import jobs
 from app.models import Word
-from transcribe.lyrics import MIN_WORD_S, align, normalize
+from transcribe.lyrics import ANCHOR_DRIFT_WARN_S, MIN_WORD_S, align, normalize
 from transcribe.phrasing import group_words
 
 
@@ -373,3 +373,125 @@ def test_retranscribe_restores_whisper_words(monkeypatch, isolated_jobs):
     result = main.transcribe_job(job.id)
     assert result.words[0].text == "original"
     assert result.words[0].line_start is False
+
+
+# --- PR-21 triage repairs -----------------------------------------------------
+
+
+def test_curly_apostrophe_matches_straight_quote():
+    # A2: smart quotes from pasted lyrics must anchor against whisper's ASCII.
+    rsquo = chr(0x2019)  # right single quotation mark (smart apostrophe)
+    assert normalize(f"don{rsquo}t") == normalize("don't") == "don't"
+    ref = _words(("i", 0.0, 0.3), ("don't", 0.3, 0.7), ("go", 0.7, 1.0))
+    result = align(f"I don{rsquo}t go", ref, 1.5)
+    assert result.method == "anchors"
+    assert result.anchor_rate == 1.0
+    assert result.words[1].start == pytest.approx(0.3)
+    assert result.words[1].end == pytest.approx(0.7)
+    _assert_invariants(result.words, 1.5)
+
+
+def test_hyphenated_token_anchors_against_word_split_reference():
+    # A3: a fused compound must anchor against whisper's separate words.
+    ref = _words(("mother", 0.0, 0.4), ("in", 0.4, 0.6), ("law", 0.6, 1.0))
+    result = align("mother-in-law", ref, 1.5)
+    assert result.method == "anchors"
+    assert result.anchor_rate == 1.0
+    assert len(result.words) == 1
+    assert result.words[0].text == "mother-in-law"
+    assert result.words[0].start == pytest.approx(0.0)
+    assert result.words[0].end == pytest.approx(1.0)
+    _assert_invariants(result.words, 1.5)
+
+
+def test_transcribe_invalidates_prior_render(monkeypatch, isolated_jobs):
+    # A4: re-transcribing must drop a stale render so it can't reach the handoff.
+    from app import jobs as job_store
+    from app import main
+    from app.models import Word as WordModel
+
+    job = job_store.create_job()
+    job.status = "done"
+    job.source_path = job.dir / "source.mp4"
+    job.source_path.write_bytes(b"src")
+    out = job.dir / "out.mp4"
+    out.write_bytes(b"rendered")
+    job.output_path = out
+    monkeypatch.setattr(
+        main.whisper,
+        "transcribe",
+        lambda path: [WordModel(text="new", start=0.0, end=0.5)],
+    )
+    main.transcribe_job(job.id)
+    assert job.output_path is None
+    assert not out.exists()
+
+
+def test_lyrics_endpoint_409_when_no_probe_info(isolated_jobs):
+    # A5: a non-blank align against a job with no probe info is refused, not
+    # aligned to a zero-length clip.
+    from app import jobs as job_store
+    from app import main
+
+    job = job_store.create_job()
+    job.status = "ready"
+    job.info = None
+    with pytest.raises(Exception) as exc_info:
+        main.lyrics_job(job.id, main.LyricsRequest(lyrics="hello world"))
+    assert exc_info.value.status_code == 409
+
+
+def test_lyrics_endpoint_422_on_blank_without_info(isolated_jobs):
+    # A5: blank input still reports 422 even when there is no probe info.
+    from app import jobs as job_store
+    from app import main
+
+    job = job_store.create_job()
+    job.status = "ready"
+    job.info = None
+    with pytest.raises(Exception) as exc_info:
+        main.lyrics_job(job.id, main.LyricsRequest(lyrics="   "))
+    assert exc_info.value.status_code == 422
+
+
+# --- A1 anchor-drift signal (no behavior change) ------------------------------
+
+
+def test_anchor_drift_warning_flags_large_shift():
+    # 20 real anchors + 20 trailing untranscribed filler force the last anchors
+    # to shift well past the tolerance bar; the result must raise the signal.
+    ref = _words(*[(f"w{i}", 0.1 + i * 0.5, 0.1 + i * 0.5 + 0.1) for i in range(20)])
+    duration = ref[-1].end + 0.05
+    lyrics_text = (
+        " ".join(f"w{i}" for i in range(20))
+        + " "
+        + " ".join(f"x{i}" for i in range(20))
+    )
+    result = align(lyrics_text, ref, duration)
+    assert result.method == "anchors"
+    assert result.anchor_drift > ANCHOR_DRIFT_WARN_S
+    assert result.anchor_drift_warning is True
+
+
+def test_no_anchor_drift_warning_on_clean_alignment():
+    ref = _words(("hello", 1.0, 1.5), ("world", 1.5, 2.0))
+    result = align("hello world", ref, 3.0)
+    assert result.method == "anchors"
+    assert result.anchor_drift == pytest.approx(0.0)
+    assert result.anchor_drift_warning is False
+
+
+def test_small_anchor_shift_stays_below_warning_threshold():
+    # Two filler words drop into a roomy gap: anchors don't move, so no warning.
+    ref = _words(("a", 0.0, 0.2), ("b", 1.0, 1.2))
+    result = align("a x y b", ref, 2.0)
+    assert result.method == "anchors"
+    assert result.anchor_drift <= ANCHOR_DRIFT_WARN_S
+    assert result.anchor_drift_warning is False
+
+
+def test_even_fill_has_no_anchor_drift_warning():
+    result = align("one two three four five", [], 3.0)
+    assert result.method == "even_fill"
+    assert result.anchor_drift == pytest.approx(0.0)
+    assert result.anchor_drift_warning is False

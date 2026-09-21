@@ -386,6 +386,20 @@ async function alignLyrics(clip) {
       data.method === "anchors"
         ? `aligned · ${Math.round(data.anchor_rate * 100)}% anchors`
         : "even fill";
+    // Rare, large anchor shift (A1): timing is unchanged, but surface a signal
+    // so the operator knows some lines had to move to fit the clip.
+    clip.lyricsBadgeEl.classList.toggle(
+      "lyrics-badge-warn",
+      Boolean(data.anchor_drift_warning),
+    );
+    if (data.anchor_drift_warning) {
+      const drift = Math.round((data.anchor_drift || 0) * 10) / 10;
+      clip.lyricsBadgeEl.textContent += ` · ⚠ timing approx (±${drift}s)`;
+      clip.lyricsBadgeEl.title =
+        "Some lines shifted to fit the clip; highlight timing may be off by up to this much.";
+    } else {
+      clip.lyricsBadgeEl.removeAttribute("title");
+    }
     clip.resultEl.classList.add("hidden");
     setClipStatus(clip, "Ready — review & render");
   } catch (err) {
@@ -409,6 +423,8 @@ async function restoreTranscript(clip) {
     renderTranscript(clip);
     clip.status = "ready";
     clip.lyricsBadgeEl.textContent = "";
+    clip.lyricsBadgeEl.classList.remove("lyrics-badge-warn");
+    clip.lyricsBadgeEl.removeAttribute("title");
     clip.resultEl.classList.add("hidden");
     setClipStatus(clip, "Ready — review & render");
   } catch (err) {
@@ -616,6 +632,8 @@ async function ingestClip(clip) {
     clip.status = "transcribing";
     setClipStatus(clip, "Transcribing… (first run downloads the model)");
     clip.lyricsBadgeEl.textContent = "";
+    clip.lyricsBadgeEl.classList.remove("lyrics-badge-warn");
+    clip.lyricsBadgeEl.removeAttribute("title");
     clip.transcriptEl.innerHTML = '<span class="hint">Transcribing…</span>';
     const tr = await fetch(`/api/jobs/${clip.jobId}/transcribe`, { method: "POST" });
     const trdata = await tr.json();

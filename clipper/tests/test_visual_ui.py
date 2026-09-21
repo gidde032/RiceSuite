@@ -321,3 +321,20 @@ def test_render_runs_one_clip_at_a_time():
     javascript = _js()
     assert "handleRenderAll" in javascript
     assert "await renderClip(targets[i])" in javascript
+
+
+def test_lyric_timing_warning_indicator_is_wired():
+    javascript = _js()
+    stylesheet = (ROOT / "web/style.css").read_text(encoding="utf-8")
+
+    # The align handler reads the backend signal and, only when it is set,
+    # surfaces a "timing approximate" badge with the drift magnitude (A1). The
+    # timing itself is unchanged; this is a diagnostic indicator.
+    assert "data.anchor_drift_warning" in javascript
+    assert '"lyrics-badge-warn"' in javascript
+    assert "timing approx" in javascript
+    assert "data.anchor_drift" in javascript
+
+    # The indicator has its own style and is cleared on restore / re-transcribe.
+    assert ".lyrics-badge-warn" in stylesheet
+    assert 'classList.remove("lyrics-badge-warn")' in javascript
