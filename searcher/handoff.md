@@ -25,24 +25,26 @@ Last updated: 2026-09-20.
 - Owning Issue: [#32](https://github.com/gidde032/RiceSearcher/issues/32).
 - Milestone: v1 — content-sourcing prototype.
 - Branch: `fix/exact-review-window` from `ca72396`.
-- Draft PR: [#33](https://github.com/gidde032/RiceSearcher/pull/33), open at
-  `573222a`; first coherent commit is locally green.
+- PR: [#33](https://github.com/gidde032/RiceSearcher/pull/33), review-converged
+  and ready for maintainer review.
 - Contract: ADR-001 Q4 amendment (2026-09-20), SPEC FR-8/FR-9 and §§6–7.
 - Authorized: scoped implementation, tests, documentation, branch/commits/push,
   draft PR, independent review, in-contract repairs, and CI monitoring.
 - Withheld: merge, publish, deploy, visibility changes, tag, and release.
-- Current state: implementation is integrated. All three Luna-max packets hit their
-  usage limit after adding partial regression work, so the parent audited every
-  hunk, completed the implementation, and added the missing persisted-transcript
-  integration regression. Green evidence: Ruff format/lint; mypy on 35 source
-  files; JS syntax; 17 Node behavior tests; 224 Python tests at 94.06% coverage;
-  pinned smoke tier 5. The two untracked local profile JSON files are unrelated
-  user work and remain untouched and unpublished.
+- Current state: implementation and accepted review repairs are integrated. The
+  saved source-bounded interval now controls preview, extraction, schema-1 manifest
+  bounds, and transcript-text intersection. Source and produced-clip durations fail
+  closed when they cannot be verified; UI/media-fragment and ffmpeg timestamps
+  preserve arbitrary decimal precision. Three cold reviewers and focused repair
+  reviews converged with no open findings. Green evidence: Ruff format/lint; mypy
+  on 35 source files; JS syntax; 17 Node behavior tests; 240 Python tests at 94.27%
+  coverage; pinned smoke tier 5; repository-owned `gates` passed on `247153f`. The
+  two untracked local profile JSON files are unrelated user work and remain
+  untouched and unpublished.
 
 ## Next action
 
-Freeze the exact `origin/main...fix/exact-review-window` target for three-reviewer
-cold review, validate findings, and apply only in-contract repairs.
+Maintainer review of PR #33. Merge remains explicitly withheld from the agent.
 
 ## Deferred
 
