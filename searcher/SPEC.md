@@ -1,7 +1,8 @@
 # RiceSearcher — v1 Specification
 
-> **Status: RATIFIED 2026-09-02.** Boundary contract is `ADR-001.md` (ratified,
-> reconciled against live sibling code 2026-09-02). This document is the
+> **Status: RATIFIED 2026-09-02; Q4 handoff contract amended 2026-09-20.** Boundary
+> contract is `ADR-001.md` (ratified and reconciled against live sibling code).
+> This document is the
 > implementation contract for the downstream decisions (D1–D9) the ADRs routed
 > forward. Implementation is authorized and proceeds by the phase ladder in §9,
 > one owning GitHub Issue per phase.
@@ -18,8 +19,8 @@ bottleneck for a two-celebrity beat. On demand, it pulls source material,
 transcribes it, scores which moments are clippable for the beat, and files them
 as **scored candidate slices** in a local, moment-deduplicated **library**. A
 human reviews and selects from that library (the ratified select-and-approve
-gate), and selected slices are handed to RiceClipper as time-bounded,
-padded-window clips. Success = a daily on-demand pull reliably surfaces a
+gate), and selected slices are handed to RiceClipper as exact, time-bounded
+reviewed clips. Success = a daily on-demand pull reliably surfaces a
 reviewable queue of good moments, and selected moments flow to RiceClipper with
 their transcript and provenance intact. Target supply: **3 unique pieces/day
 (~90/month)**. Road goal: **L4** — automate up to the select gate; **never
@@ -46,7 +47,7 @@ files only.
 | D5 | Library store | **SQLite** slice index + **content-addressed disk cache** for source/clips |
 | D6 | Moment dedup | Hybrid (intra-source time-overlap + cross-source transcript embedding), **advisory-only — never filters, discards, or blocks** |
 | D7 | Interface | **CLI pipeline first**, then a minimal **Slate-styled** local review UI for the select gate |
-| D8 | Handoff | RiceSearcher **writes** a mirrored filesystem handoff (manifest-last) with a **superset schema**; Clipper pickup is routed-forward |
+| D8 | Handoff | RiceSearcher **writes** the exact reviewed interval through a mirrored filesystem handoff (manifest-last) with a **schema-1 superset manifest** |
 | D9 | Saved profiles | Profiles are JSON files in `<data_dir>/profiles/`; id = file stem; library, dedup, review, and handoff **partition by `profile_id`**; sources shared; every scoring run names its profile; legacy rows adopt `example-beat` (ratified 2026-09-14, [ADR-002](ADR-002.md), [design spec](docs/design/profiles-spec.md)) |
 
 ## 4. Functional requirements
@@ -66,9 +67,10 @@ files only.
   short rationale. The `profile_id`, beat-profile version, and model id are
   recorded on the slice. A scoring run names one profile (D9); a re-score
   replaces candidate rows of that profile only.
-- **FR-5 — Store scored slices (D5, ADR Q3/Q4b).** Each scored candidate slice is
-  written to the SQLite library with the schema in §6, including a **padded
-  window** and the **intended in/out** as metadata (not a final cut). Rows are
+- **FR-5 — Store scored slices (D5, ADR Q3/Q4).** Each scored candidate slice is
+  written to the SQLite library with the schema in §6, including an original
+  **padded context window** and editable **target in/out**. Once reviewed, target
+  in/out are the authoritative export bounds. Rows are
   partitioned by `profile_id`; one source may hold slices under several profiles.
 - **FR-6 — Dedup signal (D6).** For each new slice, compute an intra-source
   overlap check and a cross-source transcript-embedding similarity; attach a
@@ -84,8 +86,12 @@ files only.
   review UI (FR-8), not a parallel CLI surface.
 - **FR-8 — Review & select (D7, ADR Q5).** A local web review UI (Slate design
   system) shows candidate moments (thumbnail + transcript span + score +
-  rationale + duplicate annotation), lets the human tighten the intended in/out
-  by eye, and **select** slices for handoff. This is the human gate. The UI
+  rationale + duplicate annotation), lets the human edit in/out anywhere within
+  the source, and **select** slices for handoff. There is no artificial maximum
+  duration. A non-finite, negative, out-of-source, empty, or inverted interval is
+  rejected with a precise error and is never silently clamped. After a successful
+  save, the player reloads the selected interval so preview and export agree. This
+  is the human gate. The UI
   shows one profile at a time: a profile select in the topbar and a Profiles
   page listing name, version, sources, candidates, and selected per profile
   (D9). A slice whose version differs from its profile file is marked stale.
@@ -102,9 +108,12 @@ files only.
     destructive controls are gated by a two-step confirm in the UI; because the
     API endpoints themselves are unguarded, the review server must stay bound to
     `127.0.0.1` (its default) — do not expose it on a shared interface.
-- **FR-9 — Write handoff (D8, ADR Q4b).** On select, write a filesystem handoff
-  batch to the shared root: `clip`/source media + `manifest.json` written **last**
-  as the atomicity signal, with the superset schema in §7. A batch holds the
+- **FR-9 — Write handoff (D8, ADR Q4 amended).** On select, extract exactly the
+  saved target interval and write a filesystem handoff batch to the shared root:
+  clip media + `manifest.json` written **last** as the atomicity signal, with the
+  schema-1 superset contract in §7. The handoff transcript is rebuilt from source
+  words intersecting the selected interval; RiceClipper independently transcribes
+  the exported bytes and remains authoritative for caption and lyric timing. A batch holds the
   selected slices of one profile and carries `profile_id` per clip. Producer only ever
   writes; it never deletes or ingests. Batch identity is stable and idempotent.
 - **FR-10 — Safety.** No network call posts, publishes, or uploads content. The
@@ -143,9 +152,10 @@ at write time.
 - **Provenance:** `source_id` (FK → `sources`).
 - **Profile (D9):** `profile_id` (file stem of the profile; legacy rows carry
   `example-beat` after the schema v3 migration).
-- **Window (ADR Q4b):** `pad_in`, `pad_out` (padded window, seconds on source
-  timeline) and `target_in`, `target_out` (intended in/out — metadata, tightenable
-  at review, *not* a final cut).
+- **Window (ADR Q4 amended):** `pad_in`, `pad_out` retain the scorer's original
+  context window on the source timeline. `target_in`, `target_out` are editable at
+  review and become the authoritative final export interval. They may span any
+  non-empty interval within the source.
 - **Content:** `transcript_span` (text), `transcript_words` (word timings ref).
 - **Score (D4):** `score` (0–1), `rationale`, `heuristic_features`,
   `beat_profile_version`, `scorer_model`.
@@ -195,16 +205,21 @@ dedupe by stable `batch_id`; **producer only writes** and never manages lifecycl
 }
 ```
 
-The clip file **is** the padded window, so `source_window` is provenance on the
-source timeline and `clip.target_in`/`target_out` are the intended cut **relative
-to the clip's start** (`duration = pad_out − pad_in`) — the boundary Clipper
-tightens around.
+The clip file **is exactly the reviewed target interval**. In the handoff manifest,
+`source_window.pad_in == source_window.target_in == saved target_in` and
+`source_window.pad_out == source_window.target_out == saved target_out`; these
+fields therefore describe the bytes actually exported, not the original candidate
+padding retained in SQLite. `clip.duration = target_out - target_in`, with
+clip-relative `target_in = 0` and `target_out = duration`. `transcript` is rebuilt
+from source transcript words intersecting the selected interval. RiceClipper does
+not import those word timings: it transcribes the received file afresh, so captions
+and lyric anchors use the exact clip borders and a clip-relative timeline.
 
-**Consumer:** RiceClipper has **no pickup side** today (it ingests via its upload
-UI). A "Pull from Searcher" consumer is a **routed-forward cross-repo item**
-(Issue #8), planned in
+**Consumer:** RiceClipper's "Pull from Searcher" consumer is implemented (Issue
+#8). It copies each clip into durable job custody, retains the complete manifest
+metadata, and runs its normal transcription/review/render flow without trimming
+the imported bytes or importing Searcher's transcript timings. See
 [`docs/integration/riceclipper-pickup-plan.md`](docs/integration/riceclipper-pickup-plan.md).
-Until it ships, the maintainer bridges selected clips into Clipper manually.
 
 > **Residual two-phase gap (accepted).** The handoff writes the batch to disk,
 > then marks the slices `handed_off` in one DB transaction — but there is no
@@ -247,7 +262,7 @@ gate when the consumer is built.
 - **Phase 3 — Dedup signal.** Advisory possible-duplicate annotation (intra-source
   + cross-source embedding). *Usable:* the library flags near-dupes without ever
   filtering them.
-- **Phase 4 — Slate review UI + select gate.** Local web UI to browse, tighten
+- **Phase 4 — Slate review UI + select gate.** Local web UI to browse, edit
   in/out, and select. *Usable:* visually review and select moments.
 - **Phase 5 — Handoff writer.** On select, write the mirrored superset handoff
   batch to the shared root. *Usable:* selected slices land as a handoff batch.
@@ -284,7 +299,7 @@ gate when the consumer is built.
 
 A working prototype for the maintainer's own daily use: `pull` (URL or local
 file) reliably produces scored, moment-annotated candidate slices in the library;
-the Slate review UI surfaces them for select-and-approve with tightenable in/out;
+the Slate review UI surfaces them for select-and-approve with source-bounded in/out;
 selected slices are written as a valid, atomic handoff batch with transcript +
 provenance; format/lint/type/tests-with-coverage-floor gates are green; and no
 code path can post, publish, or upload content. Not hardened for external users.

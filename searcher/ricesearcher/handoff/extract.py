@@ -1,6 +1,6 @@
 """Clip extraction for the handoff (FR-9).
 
-Trims a source's padded window [pad_in, pad_out] into a standalone clip file that
+Trims a source's reviewed target window into a standalone clip file that
 travels in the handoff batch. The ffmpeg call is behind a protocol so the writer
 is testable with a fake extractor; the real one is lazy/subprocess and untested
 (``# pragma: no cover``). No network, no posting — just a local ffmpeg trim.
@@ -22,7 +22,7 @@ class ClipExtractor(Protocol):
 
 
 class FfmpegClipExtractor:
-    """Precisely trim a short padded clip for Clipper.
+    """Precisely trim a reviewed clip interval for Clipper.
 
     A coarse input seek followed by accurate output seeking and re-encoding
     avoids stream-offset drift without decoding a long source from the start.

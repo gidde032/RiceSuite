@@ -17,7 +17,13 @@ from ricesearcher.handoff.writer import (
     write_batch,
 )
 from ricesearcher.library.store import LEGACY_PROFILE_ID, Library
-from ricesearcher.models import CandidateSlice, SliceStatus, Source, SourceKind
+from ricesearcher.models import (
+    CandidateSlice,
+    SliceStatus,
+    Source,
+    SourceKind,
+    TranscriptWord,
+)
 
 
 class FakeExtractor:
@@ -72,18 +78,91 @@ def test_write_batch_layout_and_manifest_last(tmp_path: Path) -> None:
     clip = manifest["clips"][0]
     assert clip["file"] == "clip_1.mp4"
     assert clip["source_window"] == {
-        "pad_in": 8.0,
-        "pad_out": 42.0,
+        "pad_in": 10.0,
+        "pad_out": 40.0,
         "target_in": 10.0,
         "target_out": 40.0,
     }
-    # Clip-relative intended cut: target minus pad_in, within [0, duration].
-    assert clip["clip"]["duration"] == 34.0
-    assert clip["clip"]["target_in"] == 2.0
-    assert clip["clip"]["target_out"] == 32.0
+    assert clip["clip"] == {"duration": 30.0, "target_in": 0.0, "target_out": 30.0}
+    assert ex.calls == [
+        (tmp_path / "source.mp4", 10.0, 40.0, root / res["batch_id"] / "clip_1.mp4")
+    ]
     assert clip["rights_risk"] == "med"
     # No leftover temp manifest.
     assert not (batch_dir / "manifest.json.tmp").exists()
+
+
+def test_write_batch_accepts_target_outside_original_candidate_pad(
+    tmp_path: Path,
+) -> None:
+    entry = _entry(tmp_path)
+    entry.target_in = 5.0
+    entry.target_out = 45.0
+
+    root = tmp_path / "handoff"
+    ex = FakeExtractor()
+    res = write_batch([entry], extractor=ex, root=root)
+    manifest = json.loads((root / res["batch_id"] / "manifest.json").read_text())
+
+    assert ex.calls[0][1:3] == (5.0, 45.0)
+    assert manifest["clips"][0]["source_window"] == {
+        "pad_in": 5.0,
+        "pad_out": 45.0,
+        "target_in": 5.0,
+        "target_out": 45.0,
+    }
+    assert manifest["clips"][0]["clip"] == {
+        "duration": 40.0,
+        "target_in": 0.0,
+        "target_out": 40.0,
+    }
+
+
+def test_entry_for_rebuilds_transcript_from_selected_interval(tmp_path: Path) -> None:
+    source = Source(
+        id="s1",
+        kind=SourceKind.LOCAL,
+        ref="/source.mp4",
+        media_path=str(tmp_path / "source.mp4"),
+        words=[
+            TranscriptWord("ends-at-in", 1.0, 2.0),
+            TranscriptWord("starts-at-in", 2.0, 3.0),
+            TranscriptWord("middle", 3.0, 5.0),
+            TranscriptWord("ends-at-out", 5.0, 6.0),
+            TranscriptWord("starts-at-out", 6.0, 7.0),
+        ],
+    )
+    slice_ = CandidateSlice(
+        id="s1:example-beat:2000-6000",
+        source_id="s1",
+        pad_in=0.0,
+        pad_out=10.0,
+        target_in=2.0,
+        target_out=6.0,
+        transcript_span="stale scoring context",
+    )
+
+    entry = writer_mod._entry_for(slice_, source, 1)
+    assert entry.transcript == "starts-at-in middle ends-at-out"
+
+    slice_.target_in = 3.0
+    slice_.target_out = 5.0
+    narrowed = writer_mod._entry_for(slice_, source, 1)
+    assert narrowed.transcript == "middle"
+
+
+@pytest.mark.parametrize(
+    ("target_in", "target_out"),
+    [(-0.1, 1.0), (1.0, 1.0), (2.0, 1.0), (0.0, float("inf"))],
+)
+def test_write_batch_rejects_invalid_target_window(
+    tmp_path: Path, target_in: float, target_out: float
+) -> None:
+    entry = _entry(tmp_path)
+    entry.target_in = target_in
+    entry.target_out = target_out
+    with pytest.raises(HandoffError):
+        write_batch([entry], extractor=FakeExtractor(), root=tmp_path / "h")
 
 
 def test_manifest_clip_carries_profile_id(tmp_path: Path) -> None:
@@ -148,6 +227,12 @@ def _lib_with_selected(tmp_path: Path) -> tuple[Config, Library]:
             ref="https://y/x",
             media_path=str(media),
             title="Ep",
+            words=[
+                TranscriptWord("before", 1, 5),
+                TranscriptWord("selected", 5, 10),
+                TranscriptWord("words", 10, 25),
+                TranscriptWord("after", 25, 30),
+            ],
         )
     )
     lib.upsert_slices(
@@ -186,6 +271,9 @@ def test_hand_off_selected_writes_and_marks(tmp_path: Path) -> None:
     ex = FakeExtractor()
     res = hand_off_selected(lib, extractor=ex, config=cfg, profile_id=LEGACY_PROFILE_ID)
     assert res["clip_count"] == 1  # only the selected slice
+    batch_dir = next(p for p in cfg.handoff_dir.iterdir() if p.is_dir())
+    manifest = json.loads((batch_dir / "manifest.json").read_text())
+    assert manifest["clips"][0]["transcript"] == "selected words"
     # The selected slice is now handed_off; the candidate is untouched.
     assert lib.get_slice("a").status is SliceStatus.HANDED_OFF
     assert lib.get_slice("b").status is SliceStatus.CANDIDATE

@@ -76,10 +76,10 @@ class CandidateWindow:
 class CandidateSlice:
     """A scored candidate slice in the library (SPEC §6, FR-4/FR-5).
 
-    The window is a **padded** span (``pad_in``/``pad_out``) around the intended
-    in/out (``target_in``/``target_out``); the intended cut is metadata to be
-    tightened at review, not a final cut (ADR Q4b). Dedup fields stay null until
-    Phase 3; ``rights_risk`` defaults from the source kind.
+    ``pad_in``/``pad_out`` retain the scorer's original context. The reviewable
+    ``target_in``/``target_out`` become the exact export interval (ADR Q4
+    amendment). Dedup fields stay null until Phase 3; ``rights_risk`` defaults
+    from the source kind.
     """
 
     id: str

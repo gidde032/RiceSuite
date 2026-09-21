@@ -20,7 +20,12 @@ def client(tmp_path: Path) -> TestClient:
     with Library(cfg.db_path) as lib:
         lib.upsert_source(
             Source(
-                id="src", kind=SourceKind.YOUTUBE, ref="r", media_path="/m", title="T"
+                id="src",
+                kind=SourceKind.YOUTUBE,
+                ref="r",
+                media_path="/m",
+                title="T",
+                duration_s=100.0,
             )
         )
         lib.upsert_slices(
@@ -112,6 +117,7 @@ def test_w3_nan_and_inf_rejected(client: TestClient) -> None:
         headers=hdr,
     )
     assert r.status_code == 422
+    assert _get(client, "sl1")["target_in"] == 10
 
 
 def test_w3_reversed_input_rejected(client: TestClient) -> None:
@@ -120,6 +126,46 @@ def test_w3_reversed_input_rejected(client: TestClient) -> None:
     assert r.status_code == 422
     # unchanged
     assert _get(client, "sl1")["target_in"] == 10
+
+
+def test_w3_negative_and_beyond_source_rejected_without_mutation(
+    client: TestClient,
+) -> None:
+    for payload in (
+        {"target_in": -1, "target_out": 20},
+        {"target_in": 20, "target_out": 101},
+    ):
+        r = client.patch("/api/slices/sl1/window", json=payload)
+        assert r.status_code == 422
+        assert _get(client, "sl1")["target_in"] == 10
+        assert _get(client, "sl1")["target_out"] == 40
+
+
+def test_w3_prefers_actual_probe_to_stored_duration(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ricesearcher.web.app as web_app
+
+    monkeypatch.setattr(web_app, "ffprobe_duration", lambda _path: 55.0)
+    r = client.patch(
+        "/api/slices/sl1/window", json={"target_in": 0, "target_out": 55.001}
+    )
+    assert r.status_code == 422
+    assert _get(client, "sl1")["target_in"] == 10
+
+
+def test_w3_probe_failure_falls_back_to_stored_duration(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ricesearcher.web.app as web_app
+
+    def unavailable(_path: Path) -> float:
+        raise OSError("ffprobe unavailable")
+
+    monkeypatch.setattr(web_app, "ffprobe_duration", unavailable)
+    r = client.patch("/api/slices/sl1/window", json={"target_in": 0, "target_out": 100})
+    assert r.status_code == 200
+    assert (r.json()["target_in"], r.json()["target_out"]) == (0, 100)
 
 
 def test_w3_valid_tighten_still_works(client: TestClient) -> None:
