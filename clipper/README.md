@@ -59,7 +59,7 @@ configuration.
 
 | Requirement | Notes |
 | --- | --- |
-| **Python 3.11 – 3.14** | CI tests **3.12** only. The maintainer runs 3.14 locally, and the full suite passes there. The pinned dependencies install from wheels on 3.11–3.14. **3.10 and older will not work:** the code imports `datetime.UTC`, which is new in 3.11. macOS ships `/usr/bin/python3` as 3.9, so use a python.org, Homebrew, or pyenv interpreter. |
+| **Python 3.11 – 3.14** | CI tests **3.12** (required check) and **3.14** (non-required job). The pinned dependencies install from wheels on 3.11–3.14. **3.10 and older will not work:** the code imports `datetime.UTC`, which is new in 3.11. macOS ships `/usr/bin/python3` as 3.9, so use a python.org, Homebrew, or pyenv interpreter. |
 | **ffmpeg with libass** on `PATH` | Required only to render. Transcription, the UI, and the test suite run without it. See below. |
 | **macOS** (recommended) | This is the only platform verified end to end. Headers that contain **emoji** use Apple Color Emoji, and header text uses macOS system fonts. Elsewhere, text-only headers still work through libass, but an emoji header fails to render (see [Troubleshooting](#troubleshooting)). |
 | Disk / network for the first transcription | faster-whisper downloads the Whisper model (`small` by default, roughly 0.5 GB) from Hugging Face the first time you transcribe. |
@@ -91,18 +91,21 @@ libass directly. See `docs/spikes/emoji-burn-in.md`.
 
 ## Install
 
-From the repo root. RiceClipper runs in place and is not installed as a package:
+Run these from the repo root. RiceClipper runs in place and is not installed as
+a package. Use any Python 3.11–3.14. Check what you have with `python3 --version`. If that
+prints 3.9 or 3.10, call a newer binary explicitly, for example `python3.14`
+(see `ls /opt/homebrew/bin/python3.* /usr/local/bin/python3.*`):
 
 ```bash
-python3.12 -m venv .venv              # any 3.11–3.14 interpreter
+python3 -m venv .venv                 # or: python3.14 -m venv .venv
 source .venv/bin/activate             # Windows: .venv\Scripts\activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt        # to run the app
-python -m pip install -r requirements-dev.txt    # adds pytest + ruff (includes requirements.txt)
+python -m pip install -r requirements-dev.txt    # adds dev tools (includes requirements.txt)
 ```
 
-`requirements-dev.txt` already includes `requirements.txt`, so contributors only
-need the second install.
+`requirements-dev.txt` already includes `requirements.txt` and adds pytest, ruff,
+and pre-commit, so contributors only need the second install.
 
 ## Configure
 
@@ -219,7 +222,8 @@ original files or the Whisper model cache.
 | Upload rejected: *"could not read video"* | ffprobe couldn't parse the file. Check it with `ffprobe <file>`. |
 | First transcription hangs or fails offline | The Whisper model is still downloading or can't be reached. Wait, or run once with network access. A smaller `RICECLIPPER_WHISPER_MODEL` downloads faster. |
 | `Address already in use` | Something else is on port 8000. Pass `--port <other>`. |
-| `pytest` / `ruff`: command not found | Install `requirements-dev.txt` into the active venv. |
+| Calling the API directly: render returns `422` with `"loc":["body"],"msg":"Field required"` | `POST /api/jobs/{id}/render` needs a JSON body even though every field has a default. Send at least `-H 'Content-Type: application/json' -d '{}'`. The UI always sends one. |
+| `pytest` / `ruff` / `pre-commit`: command not found | Install `requirements-dev.txt` into the active venv. |
 
 ## Test and quality gates
 
@@ -241,12 +245,12 @@ python scripts/crop_check.py fixtures/landscape --contact-sheets-approved
 
 CI (`.github/workflows/ci.yml`) runs the same ruff checks and the full suite
 with an **85% coverage floor** on Python 3.12, on every PR and on every push to
-`main`. `tests/test_gates.py` locks those numbers so they can't silently drift.
-Optional local hooks mirror CI. `pre-commit` itself is not in the requirements
-files, so install it first:
+`main`. That job is the required check. A second, non-required job runs the
+suite on Python 3.14. `tests/test_gates.py` locks those numbers so they can't silently drift.
+Optional local hooks mirror CI. `pre-commit` is pinned in
+`requirements-dev.txt`:
 
 ```bash
-python -m pip install pre-commit
 pre-commit install --hook-type pre-commit --hook-type pre-push
 ```
 

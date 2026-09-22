@@ -7,6 +7,21 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **First-time-user README.** Requirements table (Python 3.11–3.14, ffmpeg with
+  libass, macOS emoji fonts, the Whisper model download), venv install steps, a
+  configuration table verified against the code, a first run with a generated
+  sample clip, a feature walkthrough, and troubleshooting. `.env.example` now
+  states that `.env` must be loaded with `uvicorn --env-file .env`.
+- **Non-required Python 3.14 CI job** (`Python 3.14 tests (non-required)`). The
+  required check `Python 3.12 tests and coverage` is unchanged. `test_gates.py`
+  now locks the required check's name against the ruleset and asserts that the
+  3.14 job exists and stays non-required.
+
+### Fixed
+- `pre-commit` is now pinned in `requirements-dev.txt` (4.6.2), so the
+  documented `pre-commit install` works in a fresh dev venv.
+
 ## [1.0.0] - 2026-09-20
 
 First public release. RiceClipper is published under the MIT License as a
