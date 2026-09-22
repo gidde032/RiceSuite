@@ -3,6 +3,29 @@
 All notable changes to RiceSearcher are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- First-time-user README: requirements (Python versions, ffmpeg, disk and model
+  downloads), venv install, configuration table, an offline-first first run, how
+  each stage works, beat profiles, the RiceClipper handoff layout, and
+  troubleshooting.
+- CI job `tests (Python 3.14)` (not required): runs the test suite on 3.14 and
+  checks that the runtime pins resolve there.
+
+### Fixed
+
+- `score` with no Anthropic credential now fails before any request with
+  `ANTHROPIC_API_KEY is not set; …` instead of the SDK's generic
+  "Could not resolve authentication method".
+- The test suite ignores `RICESEARCHER_*` variables exported in the developer's
+  shell. With `RICESEARCHER_PROFILES_DIR` exported, the packaging test failed and
+  six test files seeded `example-beat.json` into that directory.
+- `credentials.env.example` no longer lists the retired
+  `RICESEARCHER_BEAT_PROFILE`, documents `RICESEARCHER_EMBED_MODEL`, and ships
+  the API key commented out, so an unedited copy doesn't send the placeholder.
+
 ## [1.0.0] — 2026-09-21
 
 First public release: the complete RiceSearcher-side v1 flow — acquire/transcribe
