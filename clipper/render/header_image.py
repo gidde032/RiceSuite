@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
+import subprocess
 from functools import lru_cache
 from pathlib import Path
 
@@ -31,21 +33,37 @@ _EMOJI_RE = re.compile(
     "\U00002300-\U000023ff\U00002b00-\U00002bff\U0000fe00-\U0000fe0f\U0000200d]"
 )
 
+# Checked in order; the first existing file wins. macOS system fonts come first,
+# then the common Linux package locations (Debian/Ubuntu, Fedora, Arch).
 _TEXT_FONT_CANDIDATES = [
     "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
     "/System/Library/Fonts/Supplemental/Arial.ttf",
     "/Library/Fonts/Arial Bold.ttf",
     "/System/Library/Fonts/HelveticaNeue.ttc",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/usr/share/fonts/liberation-sans/LiberationSans-Bold.ttf",
+    "/usr/share/fonts/liberation/LiberationSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
 ]
 # Color-emoji fonts are bitmap (sbix/CBDT) with fixed strikes — Pillow can only
 # load them at a valid strike size, and only some render non-empty glyphs.
 # Apple Color Emoji (sbix) renders reliably in Pillow; the Homebrew Noto build is
-# COLRv1/vector and rasterizes blank here, so Apple is tried first on macOS.
+# COLRv1/vector and rasterizes blank here, so Apple is tried first on macOS. The
+# Linux distro packages of Noto Color Emoji ship the CBDT bitmap build. Every
+# candidate is still probed by ``_resolve_emoji_font`` before it is used.
 _EMOJI_FONT_CANDIDATES = [
     "/System/Library/Fonts/Apple Color Emoji.ttc",
     os.path.expanduser("~/Library/Fonts/NotoColorEmoji-Regular.ttf"),
     "/Library/Fonts/NotoColorEmoji-Regular.ttf",
+    "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
+    "/usr/share/fonts/google-noto-color-emoji-fonts/NotoColorEmoji.ttf",
+    "/usr/share/fonts/google-noto-emoji/NotoColorEmoji.ttf",
+    "/usr/share/fonts/noto/NotoColorEmoji.ttf",
 ]
+_LOADABLE_FONT_SUFFIXES = (".ttf", ".ttc", ".otf")
+_FONTCONFIG_TIMEOUT_S = 5
 # Candidate strike sizes, largest first (rendered high-res then scaled down).
 _EMOJI_STRIKES = [160, 137, 136, 128, 96, 109, 64]
 
@@ -62,20 +80,64 @@ def _first_existing(paths: list[str]) -> str | None:
     return next((p for p in paths if os.path.exists(p)), None)
 
 
+def _fontconfig_files(*args: str) -> list[str]:
+    """Font file paths printed by a fontconfig tool, or [] if it is unavailable.
+
+    Fallback for hosts whose fonts live outside the fixed candidate paths.
+    ``args`` is the tool name plus its pattern; output is one path per line.
+    """
+    exe = shutil.which(args[0])
+    if exe is None:
+        return []
+    try:
+        out = subprocess.run(
+            [exe, "-f", "%{file}\\n", *args[1:]],
+            capture_output=True,
+            text=True,
+            timeout=_FONTCONFIG_TIMEOUT_S,
+            check=False,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return [
+        line.strip()
+        for line in out.splitlines()
+        if line.strip().lower().endswith(_LOADABLE_FONT_SUFFIXES)
+    ]
+
+
+@lru_cache(maxsize=1)
+def _resolve_text_font() -> str | None:
+    """Path of the header text font: a known candidate, else fontconfig's pick."""
+    found = _first_existing(_TEXT_FONT_CANDIDATES)
+    if found:
+        return found
+    matches = _fontconfig_files("fc-match", "sans-serif:bold")
+    return next((p for p in matches if os.path.exists(p)), None)
+
+
+def _emoji_font_paths() -> list[str]:
+    """Existing color-emoji font files, known candidates first, then fontconfig."""
+    paths = [p for p in _EMOJI_FONT_CANDIDATES if os.path.exists(p)]
+    for p in sorted(_fontconfig_files("fc-list", ":color=true")):
+        if p not in paths and os.path.exists(p):
+            paths.append(p)
+    return paths
+
+
 @lru_cache(maxsize=1)
 def _resolve_emoji_font() -> tuple[str, int] | None:  # pragma: no cover
     """Find a (font path, strike size) that actually renders a color glyph.
 
     Excluded from coverage: this requires a real Pillow-renderable color-emoji
-    font (Apple Color Emoji on macOS). No Linux color-emoji font renders here
-    (the Homebrew Noto build rasterizes blank — see docs/spikes/emoji-burn-in.md),
-    so the CI runner cannot exercise it. It is integration-tested on macOS via
-    test_header_image.py, which skips when no such font is present.
+    font (Apple Color Emoji on macOS, or the CBDT Noto Color Emoji that Linux
+    distros package). The Homebrew Noto build rasterizes blank (see
+    docs/spikes/emoji-burn-in.md), and the CI runner is not guaranteed to have
+    any such font. It is integration-tested via test_header_image.py, which
+    skips when no such font is present.
     """
     probe = "\U0001f602"
-    for path in _EMOJI_FONT_CANDIDATES:
-        if not os.path.exists(path):
-            continue
+    for path in _emoji_font_paths():
         for size in _EMOJI_STRIKES:
             try:
                 font = ImageFont.truetype(path, size)
@@ -86,6 +148,23 @@ def _resolve_emoji_font() -> tuple[str, int] | None:  # pragma: no cover
             except Exception:
                 continue
     return None
+
+
+def _require_header_fonts() -> tuple[str, tuple[str, int]]:
+    """Resolve both header fonts or raise a ``HeaderFontError`` saying which is missing."""
+    text_font_path = _resolve_text_font()
+    if not text_font_path:
+        raise HeaderFontError(
+            "missing a text font for the emoji header: install Liberation Sans or "
+            "DejaVu Sans (e.g. fonts-liberation), or remove the emoji"
+        )
+    resolved = _resolve_emoji_font()
+    if resolved is None:
+        raise HeaderFontError(
+            "missing a renderable color-emoji font for the emoji header: install "
+            "Noto Color Emoji (e.g. fonts-noto-color-emoji), or remove the emoji"
+        )
+    return text_font_path, resolved
 
 
 def _segment(word: str) -> list[tuple[str, str]]:
@@ -162,10 +241,7 @@ def render_header_png(
     out_path = Path(out_path)
     text = (text or "").strip()
 
-    text_font_path = _first_existing(_TEXT_FONT_CANDIDATES)
-    resolved = _resolve_emoji_font()
-    if not text_font_path or resolved is None:
-        raise HeaderFontError("missing a text or renderable color-emoji font")
+    text_font_path, resolved = _require_header_fonts()
 
     fs = style.header_font_size
     font = ImageFont.truetype(text_font_path, fs)

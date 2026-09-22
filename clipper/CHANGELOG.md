@@ -7,18 +7,32 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **`.env` is loaded automatically** (#2). `app.main` loads the repo-root `.env`
+  at startup, before any settings are read, so a bare `uvicorn app.main:app`
+  picks it up; `--env-file` is no longer needed. Variables already set in the
+  environment take precedence. `python-dotenv` is now pinned directly
+  (1.2.3) instead of arriving through `uvicorn[standard]`. Tests redirect the
+  path so they never read a developer's real `.env`.
+
 ### Added
 - **First-time-user README.** Requirements table (Python 3.11–3.14, ffmpeg with
   libass, macOS emoji fonts, the Whisper model download), venv install steps, a
   configuration table verified against the code, a first run with a generated
-  sample clip, a feature walkthrough, and troubleshooting. `.env.example` now
-  states that `.env` must be loaded with `uvicorn --env-file .env`.
+  sample clip, a feature walkthrough, and troubleshooting.
 - **Non-required Python 3.14 CI job** (`Python 3.14 tests (non-required)`). The
   required check `Python 3.12 tests and coverage` is unchanged. `test_gates.py`
   now locks the required check's name against the ruleset and asserts that the
   3.14 job exists and stays non-required.
 
 ### Fixed
+- **Emoji headers render off macOS** (#3). Header fonts are now also looked up
+  at the Linux package paths (Noto Color Emoji; Liberation Sans / DejaVu Sans)
+  and, failing those, through fontconfig (`fc-match`, `fc-list :color=true`).
+  Every emoji candidate is still probed for a non-blank render. Verified with
+  the Debian `fonts-noto-color-emoji` 2.051 CBDT font. When a font is still
+  missing, the render error now says which one and is shown in the UI rather
+  than a generic "render failed".
 - `pre-commit` is now pinned in `requirements-dev.txt` (4.6.2), so the
   documented `pre-commit install` works in a fresh dev venv.
 
