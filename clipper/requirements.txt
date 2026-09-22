@@ -5,6 +5,7 @@
 
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
+python-dotenv==1.2.3     # loads the repo-root .env at startup
 python-multipart==0.0.20  # file uploads in the review UI
 faster-whisper==1.1.1     # word-level transcription
 requests==2.32.3          # faster-whisper imports requests at runtime

@@ -746,3 +746,27 @@ def test_restore_transcript_success(isolated_jobs):
     assert state.status == "ready"
     assert not state.has_output
     assert not output.exists()
+
+
+def test_render_reports_missing_emoji_header_font(monkeypatch, isolated_jobs):
+    """Issue #3: the missing-font reason reaches the UI, not just the log."""
+    job = jobs.create_job()
+    job.status = "ready"
+    job.source_path = job.dir / "source.mp4"
+    job.source_path.write_bytes(b"source")
+    job.info = MediaInfo(1080, 1920, 1.0, False)
+    reason = "missing a renderable color-emoji font for the emoji header"
+
+    def fail(*_args, **_kwargs):
+        raise main.HeaderFontError(reason)
+
+    monkeypatch.setattr(main, "render", fail)
+
+    with pytest.raises(HTTPException) as exc_info:
+        main.render_job(job.id, RenderRequest(header="hello \U0001f525"))
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.detail == reason
+    assert job.status == "error"
+    assert job.error == reason
+    assert not jobs.has_active_jobs()

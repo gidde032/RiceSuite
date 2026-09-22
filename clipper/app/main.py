@@ -17,8 +17,13 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import handoff, header_gen, jobs, probe, searcher_pickup
-from app.models import (
+from app import env
+
+# Before the imports below: transcribe.whisper reads its settings at import.
+env.load_dotenv_file()
+
+from app import handoff, header_gen, jobs, probe, searcher_pickup  # noqa: E402
+from app.models import (  # noqa: E402
     HandoffRequest,
     HeaderRequest,
     JobState,
@@ -26,10 +31,11 @@ from app.models import (
     LyricsResult,
     RenderRequest,
 )
-from app.process import terminate_all_owned_processes
-from render import frame, geometry, subject
-from render.pipeline import render
-from transcribe import lyrics, whisper
+from app.process import terminate_all_owned_processes  # noqa: E402
+from render import frame, geometry, subject  # noqa: E402
+from render.header_image import HeaderFontError  # noqa: E402
+from render.pipeline import render  # noqa: E402
+from transcribe import lyrics, whisper  # noqa: E402
 
 logger = logging.getLogger("riceclipper")
 
@@ -336,6 +342,14 @@ def render_job(job_id: str, req: RenderRequest) -> JobState:
     with render_lock:
         try:
             out = render(work_dir, source_path, info, req, plan=plan)
+        except HeaderFontError as exc:
+            # An emoji header needs host fonts; say which one is missing so the
+            # user can install it or drop the emoji (Issue #3).
+            logger.warning("emoji header render failed: %s", exc)
+            with jobs.job_operation_lock():
+                job.status = "error"
+                job.error = str(exc)
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
         except Exception as exc:
             logger.exception("render failed")
             with jobs.job_operation_lock():
