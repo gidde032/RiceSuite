@@ -34,3 +34,24 @@ jobs:
         run: node --test tests/js/*.test.js
       - name: Tests + coverage floor
         run: pytest
+
+  # Newest supported Python. Not a required check; `gates` (3.12) stays the
+  # reference job. Runtime pins are resolved with --dry-run so the heavy
+  # adapters' wheels (PyTorch) are checked for 3.14 without being downloaded.
+  tests-py314:
+    name: tests (Python 3.14)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install -e .
+      - name: Runtime pins resolve on 3.14
+        run: pip install --dry-run --quiet -r requirements.txt
+      - name: Tests + coverage floor
+        run: pytest

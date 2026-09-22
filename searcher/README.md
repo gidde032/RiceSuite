@@ -55,10 +55,11 @@ its own scored slices, dedup flags, review state, and handoffs. That is why
 
 ## Requirements
 
-- **Python 3.11 or newer** (`requires-python = ">=3.11"`). CI tests on 3.12, which
-  is the reference version. The full dependency set has also been installed and
-  tested on 3.14. Every native dependency publishes wheels for 3.11 and 3.13, but
-  CI does not test those versions.
+- **Python 3.11 or newer** (`requires-python = ">=3.11"`). CI runs every gate on
+  3.12, the reference version. A second CI job runs the tests on 3.14 and checks
+  that the runtime pins resolve there. The full dependency set has also been
+  installed and tested locally on 3.14. Every native dependency publishes wheels
+  for 3.11 and 3.13, but CI does not test those versions.
 - **`ffmpeg` and `ffprobe`** on your `PATH`. yt-dlp needs ffmpeg to merge
   YouTube's separate video and audio streams, and `handoff` needs both to cut and
   measure clips. `pull` uses `ffprobe` to read a local file's duration.
@@ -70,7 +71,8 @@ its own scored slices, dedup flags, review state, and handoffs. That is why
   sentence-transformers pulls in PyTorch. On first use, models download to the
   Hugging Face cache (`~/.cache/huggingface`, or set `HF_HOME` to move it): the
   Whisper model on the first `pull` (the default `small` is about 480 MB, `tiny`
-  about 75 MB), and the ~90 MB embedding model on the first `dedup`.
+  about 75 MB), and the ~90 MB embedding model on the first `dedup` run that has
+  scored slices to compare.
 - **An Anthropic API key**, needed only for `score`.
 
 ## Install
@@ -139,7 +141,7 @@ With `ANTHROPIC_API_KEY` set, score the source, then review and hand off:
 ```bash
 ricesearcher score <id-or-prefix> --profile example-beat
 ricesearcher slices --profile example-beat   # score, dup flag, rights_risk, window, text
-ricesearcher dedup --profile example-beat    # optional; downloads the embedding model once
+ricesearcher dedup --profile example-beat    # optional; first run with slices downloads the embedding model
 ricesearcher review                          # open http://127.0.0.1:8765, Select some slices
 ricesearcher handoff --profile example-beat  # or use the UI's "Send selected → RiceClipper"
 ```
@@ -147,6 +149,12 @@ ricesearcher handoff --profile example-beat  # or use the UI's "Send selected �
 A source shorter than 12 s is still scored, but its window ranks lower in the
 prefilter. A source with no transcribed words (silence, music only) scores 0
 slices.
+
+> **No offline scoring mode yet.** `score` always calls the Anthropic API, and
+> `slices`, `dedup`, `review`, and `handoff` all need scored slices. Without a key
+> you can try `profiles`, `pull` (local files), `list`, and `show`, and run the
+> test suite, which uses fakes. An offline heuristic-only scorer is tracked in
+> [#2](https://github.com/gidde032/RiceSearcher/issues/2).
 
 ## Usage
 
@@ -247,7 +255,8 @@ batch, and the slices stay selected so you can retry.
 | `error: pull failed: no decodable audio stream in …` | The file has no audio track. Transcription needs audio. |
 | `ModuleNotFoundError: No module named 'faster_whisper'` / `'yt_dlp'` / `'sentence_transformers'` | Run `pip install -r requirements.txt` in the active venv. |
 | `Warning: You are sending unauthenticated requests to the HF Hub` | Harmless. It appears during the one-time model download. |
-| `error: scoring failed: "Could not resolve authentication method…"` | `ANTHROPIC_API_KEY` isn't set. Export it, or run from the directory that holds `credentials.env`. |
+| `error: scoring failed: ANTHROPIC_API_KEY is not set; …` | Export the key, or add it to `credentials.env` and run from the directory that holds that file. |
+| `error: scoring failed: Error code: 401 … authentication_error …` | The key was sent but rejected. Check for a typo, a revoked key, or the template's `sk-ant-...` placeholder left in `credentials.env`. |
 | `score` reports `scored 0 slices` | The transcript is empty. Check it with `show`: `(no transcript)` means Whisper heard no speech. |
 | `error: profile 'x': … No such file or directory` | There is no `x.json` in the profiles directory. Run `ricesearcher profiles` to see what exists. |
 | `review` fails with `address already in use` | Another process has port 8765. Use `ricesearcher review --port 8766`. |
