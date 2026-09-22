@@ -31,6 +31,8 @@ from ricesearcher.pipeline import (
     pull,
 )
 from ricesearcher.score.anthropic_scorer import AnthropicScorer
+from ricesearcher.score.base import Scorer
+from ricesearcher.score.heuristic_scorer import OFFLINE_MODEL_NAME, HeuristicScorer
 from ricesearcher.transcribe.whisper import WhisperTranscriber
 
 
@@ -130,7 +132,9 @@ def _cmd_score(args: argparse.Namespace) -> int:
         if source is None:  # defensive: a resolved id should always exist
             print(f"error: no source {args.source_id!r}", file=sys.stderr)
             return 2
-        scorer = AnthropicScorer(model=args.model)
+        scorer: Scorer = (
+            HeuristicScorer() if args.offline else AnthropicScorer(model=args.model)
+        )
         try:
             slices = extract_and_score(
                 source, profile=profile, scorer=scorer, library=lib
@@ -166,8 +170,9 @@ def _cmd_slices(args: argparse.Namespace) -> int:
         span = s.transcript_span[:44].replace("\n", " ")
         title = (titles.get(s.source_id, "") or s.source_id[:8])[:22]
         dup = f"~{s.dup_kind}" if s.dup_of else ""  # advisory duplicate flag
+        offl = "offl" if s.scorer_model == OFFLINE_MODEL_NAME else ""
         print(
-            f"{s.score:.2f}  {dup:6}  {s.rights_risk:4}  {title:22}  "
+            f"{s.score:.2f}  {offl:4}  {dup:6}  {s.rights_risk:4}  {title:22}  "
             f"{s.target_in:6.0f}-{s.target_out:<6.0f}s  {span!r}"
         )
     return 0
@@ -294,8 +299,14 @@ def build_parser() -> argparse.ArgumentParser:
         type=_profile_id_arg,
         help="profile id to score under",
     )
-    p_score.add_argument(
+    scorer_choice = p_score.add_mutually_exclusive_group()
+    scorer_choice.add_argument(
         "--model", default=None, help="Anthropic scorer model (else env/default)"
+    )
+    scorer_choice.add_argument(
+        "--offline",
+        action="store_true",
+        help="rank by the heuristic prefilter only; no API key, no network call",
     )
     p_score.set_defaults(func=_cmd_score)
 

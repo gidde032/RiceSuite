@@ -30,8 +30,10 @@ pull ──► score ──► dedup ──► review ──► handoff ──�
    windows of 12–45 s (a leftover shorter window is kept). Each window is ranked by the profile's keywords, questions,
    laughter, exclamations, and length fit, and only the top 12 go to the LLM. The
    Anthropic API scores each one from 0 to 1 against the chosen **beat profile**
-   and gives a one-sentence rationale. Each result is stored as a *candidate
-   slice* with 2 s of padding for review context. Re-scoring replaces a source's
+   and gives a one-sentence rationale. With `--offline`, the LLM step is skipped:
+   the heuristic score becomes the slice score, no network call is made, and the
+   slice is recorded as scored by `heuristic-offline`. Each result is stored as a
+   *candidate slice* with 2 s of padding for review context. Re-scoring replaces a source's
    untouched candidates and never overwrites a slice you have already reviewed.
 3. **Advisory dedup (`dedup`).** Flags slices that overlap by at least half in the
    same source, or whose transcripts embed similarly across sources (cosine
@@ -73,7 +75,8 @@ its own scored slices, dedup flags, review state, and handoffs. That is why
   Whisper model on the first `pull` (the default `small` is about 480 MB, `tiny`
   about 75 MB), and the ~90 MB embedding model on the first `dedup` run that has
   scored slices to compare.
-- **An Anthropic API key**, needed only for `score`.
+- **An Anthropic API key**, needed only for LLM scoring. `score --offline` runs
+  without one.
 
 ## Install
 
@@ -109,7 +112,7 @@ the file. A variable already exported in your shell always wins over the file.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | *(none)* | Required by `score`. Nothing else calls a paid API. |
+| `ANTHROPIC_API_KEY` | *(none)* | Required by `score` (not `score --offline`). Nothing else calls a paid API. |
 | `RICESEARCHER_SCORER_MODEL` | `claude-haiku-4-5` | Scorer model (lowest cost). `score --model` overrides it. |
 | `RICESEARCHER_DATA_DIR` | `~/.ricesearcher` | Library (`library.sqlite3`), media cache (`cache/`), and profiles. |
 | `RICESEARCHER_PROFILES_DIR` | `<data_dir>/profiles` | Where profile JSON files live. |
@@ -126,35 +129,36 @@ export RICESEARCHER_HANDOFF_DIR=/tmp/rs-trial/handoff
 
 ## First run
 
-Start with a local file. The pull step needs no API key, and apart from the
-one-time Whisper model download it makes no network calls:
+Start with a local file. The whole flow below runs without an API key. Apart
+from one-time model downloads (Whisper on the first `pull`, the embedding model
+on the first `dedup`), it makes no network calls:
 
 ```bash
 ricesearcher profiles                        # seeds and lists the bundled `example-beat` profile
 ricesearcher pull ./interview.mp4 --model tiny   # small, fast model for a first try
 ricesearcher list                            # note the 12-character source id
 ricesearcher show <id-or-prefix>             # print the transcript
-```
-
-With `ANTHROPIC_API_KEY` set, score the source, then review and hand off:
-
-```bash
-ricesearcher score <id-or-prefix> --profile example-beat
-ricesearcher slices --profile example-beat   # score, dup flag, rights_risk, window, text
+ricesearcher score <id-or-prefix> --profile example-beat --offline   # heuristic-only, no API key
+ricesearcher slices --profile example-beat   # score, offl marker, dup flag, rights_risk, window, text
 ricesearcher dedup --profile example-beat    # optional; first run with slices downloads the embedding model
 ricesearcher review                          # open http://127.0.0.1:8765, Select some slices
 ricesearcher handoff --profile example-beat  # or use the UI's "Send selected → RiceClipper"
 ```
 
+Offline slices are ranked by the heuristic prefilter only: keyword hits, length
+fit, questions, laughter, and exclamations. The ranking is coarse. Their rationale
+says "not LLM-scored", `slices` marks them `offl`, the review UI shows an
+*offline score* badge, and the handoff manifest records
+`"scorer_model": "heuristic-offline"`. They go through the same select gate and
+handoff as LLM-scored slices.
+
+For real scoring, set `ANTHROPIC_API_KEY` and run `score` without `--offline`.
+Re-scoring replaces the source's untouched offline candidates with LLM-scored
+ones. Slices you have already reviewed, selected, or rejected are kept.
+
 A source shorter than 12 s is still scored, but its window ranks lower in the
 prefilter. A source with no transcribed words (silence, music only) scores 0
 slices.
-
-> **No offline scoring mode yet.** `score` always calls the Anthropic API, and
-> `slices`, `dedup`, `review`, and `handoff` all need scored slices. Without a key
-> you can try `profiles`, `pull` (local files), `list`, and `show`, and run the
-> test suite, which uses fakes. An offline heuristic-only scorer is tracked in
-> [#2](https://github.com/gidde032/RiceSearcher/issues/2).
 
 ## Usage
 
@@ -170,6 +174,7 @@ ricesearcher show <id-or-prefix>                  # print a source's transcript
 ricesearcher profiles                             # list saved profiles and their counts
 ricesearcher score <id-or-prefix> --profile ID    # extract + LLM-score under one profile
 ricesearcher score <id-or-prefix> --profile ID --model claude-sonnet-4-6  # pricier scorer
+ricesearcher score <id-or-prefix> --profile ID --offline  # heuristic-only; no API key or network
 ricesearcher slices --profile ID [--source ID]    # list scored candidate slices in a profile
 ricesearcher dedup --profile ID [--threshold 0.65]  # advisory possible-duplicate flags
 ricesearcher review [--host 127.0.0.1] [--port 8765]  # Slate web UI: the select-and-approve gate
@@ -231,7 +236,8 @@ Each handoff writes one batch under `RICESEARCHER_HANDOFF_DIR`:
 `manifest.json` (schema version 1, `"producer": "ricesearcher"`) lists each clip
 with its source reference and title, the source window it was cut from, its
 duration, the transcript text inside the window, and the score, rationale,
-`rights_risk`, and profile id and version. RiceSearcher only ever writes new
+scorer model (`heuristic-offline` for offline slices), `rights_risk`, and
+profile id and version. RiceSearcher only ever writes new
 batch directories. A batch is complete only once `manifest.json` exists, so a
 reader never sees a half-written batch.
 
@@ -255,7 +261,8 @@ batch, and the slices stay selected so you can retry.
 | `error: pull failed: no decodable audio stream in …` | The file has no audio track. Transcription needs audio. |
 | `ModuleNotFoundError: No module named 'faster_whisper'` / `'yt_dlp'` / `'sentence_transformers'` | Run `pip install -r requirements.txt` in the active venv. |
 | `Warning: You are sending unauthenticated requests to the HF Hub` | Harmless. It appears during the one-time model download. |
-| `error: scoring failed: ANTHROPIC_API_KEY is not set; …` | Export the key, or add it to `credentials.env` and run from the directory that holds that file. |
+| `error: scoring failed: ANTHROPIC_API_KEY is not set; …` | Export the key, or add it to `credentials.env` and run from the directory that holds that file. To try the flow without a key, use `score --offline`. |
+| `error: argument --offline: not allowed with argument --model` | `--offline` doesn't use a model. Drop one of the two flags. |
 | `error: scoring failed: Error code: 401 … authentication_error …` | The key was sent but rejected. Check for a typo, a revoked key, or the template's `sk-ant-...` placeholder left in `credentials.env`. |
 | `score` reports `scored 0 slices` | The transcript is empty. Check it with `show`: `(no transcript)` means Whisper heard no speech. |
 | `error: profile 'x': … No such file or directory` | There is no `x.json` in the profiles directory. Run `ricesearcher profiles` to see what exists. |
@@ -284,7 +291,7 @@ hard safety boundary.
 
 RiceSearcher is local-first and **never posts, publishes, or uploads content**.
 The only outbound calls are user-invoked `yt-dlp` acquisition, the Anthropic
-scoring API, and one-time model downloads from the Hugging Face Hub. Keep the
+scoring API (never with `score --offline`), and one-time model downloads from the Hugging Face Hub. Keep the
 review server on `127.0.0.1`, never commit API keys, and mind the rights of
 copyrighted source material. See [SECURITY.md](SECURITY.md).
 
