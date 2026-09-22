@@ -21,7 +21,11 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 # A profile id is the file stem. Lowercase, digits, and hyphens; 1-40 chars.
-PROFILE_ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
+# Anchored so the pattern is safe-by-default: an unanchored id would let a future
+# ``.match()`` caller accept a trailing invalid suffix that then flows into a
+# filesystem path join and a SQL parameter (review finding E). Every call site
+# uses ``.fullmatch()`` today; the anchors make ``.match()``/``.search()`` safe too.
+PROFILE_ID_PATTERN = re.compile(r"\A[a-z0-9][a-z0-9-]{0,39}\Z")
 
 # Seed target. Kept in sync with ``store.LEGACY_PROFILE_ID`` (the migration uses
 # the same id). Named here so the loader does not import the library layer.

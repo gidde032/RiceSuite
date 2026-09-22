@@ -26,8 +26,9 @@ from ricesearcher.pipeline import extract_and_score
 class _FakeExtractor:
     """Write a placeholder clip file; no ffmpeg needed."""
 
-    def extract(self, source, start, end, dest) -> None:
+    def extract(self, source, start, end, dest) -> float:
         dest.write_bytes(b"clip")
+        return end - start
 
 
 def _write_profile(profiles_dir: Path, profile_id: str) -> None:

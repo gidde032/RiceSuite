@@ -47,7 +47,7 @@ files only.
 | D5 | Library store | **SQLite** slice index + **content-addressed disk cache** for source/clips |
 | D6 | Moment dedup | Hybrid (intra-source time-overlap + cross-source transcript embedding), **advisory-only — never filters, discards, or blocks** |
 | D7 | Interface | **CLI pipeline first**, then a minimal **Slate-styled** local review UI for the select gate |
-| D8 | Handoff | RiceSearcher **writes** the exact reviewed interval through a mirrored filesystem handoff (manifest-last) with a **schema-1 superset manifest** |
+| D8 | Handoff | RiceSearcher **writes** the reviewed interval (clamped to the source extent) through a mirrored filesystem handoff (manifest-last) with a **schema-1 superset manifest** |
 | D9 | Saved profiles | Profiles are JSON files in `<data_dir>/profiles/`; id = file stem; library, dedup, review, and handoff **partition by `profile_id`**; sources shared; every scoring run names its profile; legacy rows adopt `example-beat` (ratified 2026-09-14, [ADR-002](ADR-002.md), [design spec](docs/design/profiles-spec.md)) |
 
 ## 4. Functional requirements
@@ -112,10 +112,11 @@ files only.
   saved target interval and write a filesystem handoff batch to the shared root:
   clip media + `manifest.json` written **last** as the atomicity signal, with the
   schema-1 superset contract in §7. The handoff transcript is rebuilt from source
-  words intersecting the selected interval; RiceClipper independently transcribes
-  the exported bytes and remains authoritative for caption and lyric timing. A batch holds the
-  selected slices of one profile and carries `profile_id` per clip. Producer only ever
-  writes; it never deletes or ingests. Batch identity is stable and idempotent.
+  words intersecting the measured exported interval; RiceClipper independently
+  transcribes the exported bytes and remains authoritative for caption and lyric
+  timing. A batch holds the selected slices of one profile and carries `profile_id`
+  per clip. Producer only ever writes; it never deletes or ingests. Batch identity
+  is stable and idempotent.
 - **FR-10 — Safety.** No network call posts, publishes, or uploads content. The
   only outbound calls are source acquisition (yt-dlp fetch) and the scoring LLM
   API; neither touches any account, platform, or posting surface.
@@ -135,8 +136,10 @@ files only.
   scoring within a target measured at Phase 2 (dominated by faster-whisper on CPU).
 - **Local-first:** no cloud storage; SQLite + local disk only. Media cache is
   content-addressed and de-duplicated on disk.
-- **Handoff atomicity:** a reader never sees a partial batch (manifest-last
-  guarantee); a failed write leaves no pickup-visible artifact.
+- **Handoff atomicity:** clips and a temporary manifest are prepared without a
+  database write lock; the final manifest becomes visible only after the selected
+  snapshot is revalidated under a short transaction. A reader never sees a partial
+  or losing concurrent batch, and a failed write leaves no pickup-visible artifact.
 
 ## 6. Library — candidate-slice schema (D5, SQLite)
 
@@ -205,13 +208,19 @@ dedupe by stable `batch_id`; **producer only writes** and never manages lifecycl
 }
 ```
 
-The clip file **is exactly the reviewed target interval**. In the handoff manifest,
-`source_window.pad_in == source_window.target_in == saved target_in` and
-`source_window.pad_out == source_window.target_out == saved target_out`; these
-fields therefore describe the bytes actually exported, not the original candidate
-padding retained in SQLite. `clip.duration = target_out - target_in`, with
-clip-relative `target_in = 0` and `target_out = duration`. `transcript` is rebuilt
-from source transcript words intersecting the selected interval. RiceClipper does
+The clip file is the reviewed target interval — exported exactly when it lies
+within the source, and **clamped to the true source extent** when the reviewed
+`target_out` runs past the media's end (e.g. an ASR word end beyond the container
+duration). The manifest describes the interval **actually exported**:
+`source_window.pad_in == source_window.target_in == saved target_in`, and
+`source_window.pad_out == source_window.target_out ==` the exported end — equal to
+the saved `target_out` for an interval fully within the source, otherwise the
+clamped source end. These fields therefore describe the bytes actually exported,
+not the original candidate padding retained in SQLite. `clip.duration` is the
+**measured** duration of the written file (equal to `target_out - target_in` for
+the common in-bounds case), with clip-relative `target_in = 0` and
+`target_out = duration`. `transcript` is rebuilt from source transcript words
+intersecting the exported interval. RiceClipper does
 not import those word timings: it transcribes the received file afresh, so captions
 and lyric anchors use the exact clip borders and a clip-relative timeline.
 
@@ -229,6 +238,13 @@ the imported bytes or importing Searcher's transcript timings. See
 > tiny (a human-driven action) and both are individually correct; the consumer
 > should therefore be robust to the same source content arriving in two batches
 > (content-level idempotency, not only `batch_id` dedup).
+
+For ordinary concurrency (no process crash), each handoff prepares only a temporary
+manifest. Under a short SQLite write transaction it re-reads every snapshotted row;
+only an unchanged selected snapshot receives the final `manifest.json` and moves to
+`handed_off`. A concurrent edit or losing handoff is discarded while still invisible
+to the consumer, and filesystem cleanup happens after the transaction releases its
+write lock.
 
 **Integration-ledger lessons applied up front** (from
 `RiceClipper/internal/riceposter-integration-review.md`): stable idempotent batch

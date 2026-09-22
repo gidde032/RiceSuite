@@ -58,8 +58,8 @@ Profiles live in `<data_dir>/profiles/<id>.json` (override the directory with
 
 `ricesearcher review` serves the local review UI at http://127.0.0.1:8765 — browse
 scored moments, set any valid in/out interval within the source, preview that exact
-selection, and Select / Reject. Handoff exports exactly the saved interval for
-RiceClipper to transcribe and render. The UI reads and annotates the local library
+selection, and Select / Reject. Handoff exports the saved interval (clamped to the
+source's true extent) for RiceClipper to transcribe and render. The UI reads and annotates the local library
 only; it never posts, publishes, or uploads.
 
 (`python -m ricesearcher <cmd> …` works identically if you prefer.)

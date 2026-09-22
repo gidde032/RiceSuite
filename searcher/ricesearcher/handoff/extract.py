@@ -19,14 +19,28 @@ from ricesearcher.acquire.watchfolder import ffprobe_duration
 _SEEK_PREROLL_S = 10.0
 
 
+class ClipExtractError(RuntimeError):
+    """An ffmpeg trim ran but produced no usable output clip.
+
+    Defined here (not as a ``HandoffError``) to avoid a circular import with the
+    writer; the writer lets it propagate and the web layer maps it to a 503 so a
+    failed extraction is retryable rather than a raw 500 (review finding C).
+    """
+
+
 def _format_seconds(value: float) -> str:
     """Format a timestamp for ffmpeg without scientific notation or rounding."""
     return format(Decimal(str(value)), "f")
 
 
 class ClipExtractor(Protocol):
-    def extract(self, source: Path, start: float, end: float, dest: Path) -> None:
-        """Write the ``[start, end]`` second span of ``source`` to ``dest``."""
+    def extract(self, source: Path, start: float, end: float, dest: Path) -> float:
+        """Write the ``[start, end]`` span of ``source`` to ``dest``.
+
+        Returns the measured duration of the written clip (seconds), so the
+        caller records what was actually produced rather than what was requested
+        (review finding B1).
+        """
         ...
 
 
@@ -39,7 +53,7 @@ class FfmpegClipExtractor:
 
     def extract(
         self, source: Path, start: float, end: float, dest: Path
-    ) -> None:  # pragma: no cover - subprocess/live path
+    ) -> float:  # pragma: no cover - subprocess/live path
         duration = max(0.0, end - start)
         coarse_seek = max(0.0, start - _SEEK_PREROLL_S)
         precise_seek = start - coarse_seek
@@ -76,6 +90,7 @@ class FfmpegClipExtractor:
         try:
             output_duration = float(ffprobe_duration(dest))
         except Exception as exc:
-            raise RuntimeError("ffmpeg output could not be probed") from exc
+            raise ClipExtractError("ffmpeg output could not be probed") from exc
         if not math.isfinite(output_duration) or output_duration <= 0:
-            raise RuntimeError("ffmpeg output has no usable duration")
+            raise ClipExtractError("ffmpeg output has no usable duration")
+        return output_duration

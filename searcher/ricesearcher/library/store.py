@@ -520,11 +520,20 @@ class Library:
         Used by the handoff so a crash can't leave some slices marked and others
         not (which a retry would then re-deliver) — review finding H1.
         """
-        with self._conn:
+
+        def update() -> None:
             self._conn.executemany(
                 "UPDATE candidate_slices SET status = ? WHERE id = ?",
                 [(status.value, sid) for sid in slice_ids],
             )
+
+        # Respect an enclosing explicit transaction (the handoff publishes its
+        # manifest and marks the exact validated snapshot under one short lock).
+        if self._conn.in_transaction:
+            update()
+        else:
+            with self._conn:
+                update()
 
     def update_slice_window(
         self, slice_id: str, target_in: float, target_out: float
