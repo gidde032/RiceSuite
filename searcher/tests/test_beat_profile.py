@@ -76,7 +76,7 @@ def test_load_seeded_profile_sets_id(tmp_path: Path) -> None:
     assert p.id == "example-beat"
     assert p.name == "example-beat"
     assert p.version
-    assert "personb" in p.keywords  # keywords are lowercased
+    assert "married" in p.keywords  # keywords are lowercased
 
 
 def test_load_lowercases_keywords(tmp_path: Path) -> None:

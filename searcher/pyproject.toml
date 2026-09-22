@@ -1,6 +1,6 @@
 [project]
 name = "ricesearcher"
-version = "0.1.0"
+version = "1.0.0"
 description = "Content-sourcing pillar of the Rice harness: discovery + transcript-driven extraction into a scored, deduplicated candidate-slice library."
 requires-python = ">=3.11"
 # Runtime deps are declared in requirements.txt. The heavy adapters

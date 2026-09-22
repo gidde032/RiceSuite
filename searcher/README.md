@@ -6,9 +6,10 @@ library, handed off to RiceClipper for rendering. **Never posts, publishes, or
 uploads content; local-first.** See [SPEC.md](SPEC.md) (decisions D1–D9) and
 [ADR-001.md](ADR-001.md) (the three-pillar boundary).
 
-> Status: **Phases 1–5 merged.** The complete RiceSearcher-side v1 flow is
-> available: acquire/transcribe → score/dedup → review/select → handoff.
-> See [ROADMAP.md](ROADMAP.md) for routed-forward work.
+> Status: **v1.0.0 — phases 1–5 complete.** The complete RiceSearcher-side v1
+> flow is available: acquire/transcribe → score/dedup → review/select → handoff.
+> See [CHANGELOG.md](CHANGELOG.md) for release notes and [ROADMAP.md](ROADMAP.md)
+> for routed-forward work.
 
 ## Install (local, editable)
 
@@ -83,3 +84,14 @@ Gates: Ruff (format + lint), mypy for the production package targeting Python
 smoke tier. Mypy uses standard checking of annotated functions; missing-import
 exceptions are limited to the three optional heavy adapters. See
 [CLAUDE.md](CLAUDE.md) for the operating rules and hard safety boundary.
+
+## Security & responsible use
+
+RiceSearcher is local-first and **never posts, publishes, or uploads content**.
+The only outbound calls are user-invoked `yt-dlp` acquisition and the Anthropic
+scoring API. Keep the review server on `127.0.0.1`, never commit API keys, and
+mind the rights of copyrighted source material. See [SECURITY.md](SECURITY.md).
+
+## License
+
+Released under the [MIT License](LICENSE).
