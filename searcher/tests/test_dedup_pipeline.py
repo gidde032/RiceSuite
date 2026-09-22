@@ -147,7 +147,7 @@ def test_dedup_output_is_human_readable(tmp_path, monkeypatch, capsys) -> None:
                 kind=SourceKind.YOUTUBE,
                 ref="r",
                 media_path="/m",
-                title="Person A on Fallon",
+                title="Talk show interview",
             )
         )
         lib.upsert_source(
@@ -156,7 +156,7 @@ def test_dedup_output_is_human_readable(tmp_path, monkeypatch, capsys) -> None:
                 kind=SourceKind.YOUTUBE,
                 ref="r",
                 media_path="/m",
-                title="Person B interview reupload",
+                title="Interview reupload",
             )
         )
         lib.upsert_slices(
@@ -188,8 +188,8 @@ def test_dedup_output_is_human_readable(tmp_path, monkeypatch, capsys) -> None:
     assert cli.main(["dedup", "--profile", PROFILE]) == 0
     out = capsys.readouterr().out
     # Shows titles, the window, and the transcript snippet — not raw id prefixes.
-    assert "Person A on Fallon" in out
-    assert "Person B interview reupload" in out
+    assert "Talk show interview" in out
+    assert "Interview reupload" in out
     assert "the exact same funny moment" in out
     assert "61-79s" in out  # the duped clip's window
 

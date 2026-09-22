@@ -15,6 +15,21 @@ docs/ricesearcher-cleanup.md
 credentials.env
 *.env
 !*.env.example
+# Keys, certs, sessions, cookies, service accounts — never commit.
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.session
+*.netrc
+.netrc
+cookies.txt
+credentials*.json
+service-account*.json
+# Logs
+*.log
 
 # Local data — never commit source media, the library, or handoff batches.
 # Anchored to the repo root so they don't match source packages of the same name

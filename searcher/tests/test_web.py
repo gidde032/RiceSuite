@@ -32,7 +32,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
                 kind=SourceKind.YOUTUBE,
                 ref="https://y/x",
                 media_path=str(media),
-                title="Person A interview",
+                title="Guest interview",
                 duration_s=100.0,
             )
         )
@@ -100,7 +100,7 @@ def test_list_slices_dto(client: TestClient) -> None:
     assert r.status_code == 200
     data = {s["id"]: s for s in r.json()}
     s = data["sl1"]
-    assert s["source_title"] == "Person A interview"
+    assert s["source_title"] == "Guest interview"
     assert s["media_url"] == "/cache/ab/abc123.mp4"
     assert s["score"] == 0.8 and s["rationale"] == "chemistry + quotable"
     assert s["target_in"] == 10 and s["pad_out"] == 42
@@ -369,7 +369,7 @@ def test_list_sources_dto(client: TestClient) -> None:
     rows = {s["id"]: s for s in r.json()}
     src = rows["src1"]
     assert src["ref"] == "https://y/x"
-    assert src["title"] == "Person A interview"
+    assert src["title"] == "Guest interview"
     assert src["media_url"] == "/cache/ab/abc123.mp4"
     assert src["size_bytes"] == len(b"\x00fake video bytes\x01")
     assert src["slice_count"] == 2  # sl1 + sl2

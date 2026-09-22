@@ -7,7 +7,7 @@ from ricesearcher.extract.prefilter import prefilter
 from ricesearcher.models import TranscriptWord
 
 _PROFILE = BeatProfile(
-    version="t", name="t", brief="t", keywords=["love", "song", "personb"]
+    version="t", name="t", brief="t", keywords=["love", "song", "married"]
 )
 
 
@@ -30,7 +30,7 @@ def test_empty_transcript_yields_no_candidates() -> None:
 
 def test_keyword_rich_window_outranks_filler() -> None:
     # Utterance A (keyword-rich) then a >gap silence then filler utterance B.
-    a = _fill(["I", "love", "this", "song", "personb"] * 4, start=0.0)  # ~8s
+    a = _fill(["I", "love", "this", "song", "married"] * 4, start=0.0)  # ~8s
     b_start = a[-1].end + 5.0  # a silence gap splits utterances
     b = _fill(["um", "so", "anyway", "the", "schedule"] * 4, start=b_start)
     windows = prefilter(a + b, _PROFILE, source_id="s", min_s=3.0)
