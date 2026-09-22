@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import sys
 from pathlib import Path
 
@@ -56,6 +57,14 @@ def offline_env(tmp_path: Path, media_file: Path, monkeypatch) -> str:
         raise AssertionError("offline scoring constructed the Anthropic scorer")
 
     monkeypatch.setattr(cli, "AnthropicScorer", _no_llm)
+
+    def _no_network(*_a, **_k):
+        raise AssertionError("offline flow attempted a network connection")
+
+    # Blocks any socket connect, not only the Anthropic path we know about.
+    monkeypatch.setattr(socket.socket, "connect", _no_network)
+    monkeypatch.setattr(socket.socket, "connect_ex", _no_network)
+    monkeypatch.setattr(socket, "create_connection", _no_network)
     # A None entry makes any `import anthropic` raise ImportError.
     monkeypatch.setitem(sys.modules, "anthropic", None)
     assert cli.main(["pull", str(media_file)]) == 0
@@ -92,6 +101,14 @@ def test_slices_marks_offline_rows_only(offline_env: str, monkeypatch, capsys) -
     capsys.readouterr()
     assert cli.main(["slices", "--profile", "example-beat"]) == 0
     assert "offl" not in capsys.readouterr().out
+
+
+@pytest.mark.usefixtures("offline_env")
+def test_network_guard_blocks_connections() -> None:
+    with pytest.raises(AssertionError, match="network connection"):
+        socket.create_connection(("127.0.0.1", 9))
+    with pytest.raises(AssertionError, match="network connection"):
+        socket.socket().connect(("127.0.0.1", 9))
 
 
 def test_offline_and_model_are_mutually_exclusive(capsys) -> None:

@@ -129,9 +129,12 @@ export RICESEARCHER_HANDOFF_DIR=/tmp/rs-trial/handoff
 
 ## First run
 
-Start with a local file. The whole flow below runs without an API key. Apart
-from one-time model downloads (Whisper on the first `pull`, the embedding model
-on the first `dedup`), it makes no network calls:
+Start with a local file. The whole flow below runs without an API key, and
+`score --offline` makes no network call. `pull` and `dedup` load their models
+from the Hugging Face Hub. The models download on first use (Whisper on the first
+`pull`, the embedding model on the first `dedup` with slices), and later loads
+still check the Hub for updates. Once both are cached, `export HF_HUB_OFFLINE=1`
+keeps the whole flow off the network:
 
 ```bash
 ricesearcher profiles                        # seeds and lists the bundled `example-beat` profile
@@ -139,7 +142,7 @@ ricesearcher pull ./interview.mp4 --model tiny   # small, fast model for a first
 ricesearcher list                            # note the 12-character source id
 ricesearcher show <id-or-prefix>             # print the transcript
 ricesearcher score <id-or-prefix> --profile example-beat --offline   # heuristic-only, no API key
-ricesearcher slices --profile example-beat   # score, offl marker, dup flag, rights_risk, window, text
+ricesearcher slices --profile example-beat   # score, offl marker, dup flag, rights_risk, source title, window, text
 ricesearcher dedup --profile example-beat    # optional; first run with slices downloads the embedding model
 ricesearcher review                          # open http://127.0.0.1:8765, Select some slices
 ricesearcher handoff --profile example-beat  # or use the UI's "Send selected → RiceClipper"
@@ -150,7 +153,9 @@ fit, questions, laughter, and exclamations. The ranking is coarse. Their rationa
 says "not LLM-scored", `slices` marks them `offl`, the review UI shows an
 *offline score* badge, and the handoff manifest records
 `"scorer_model": "heuristic-offline"`. They go through the same select gate and
-handoff as LLM-scored slices.
+handoff as LLM-scored slices. Heuristic and LLM scores are on different scales
+but sort together, so avoid mixing both in one profile. A fix for the ordering
+is tracked in [#5](https://github.com/gidde032/RiceSearcher/issues/5).
 
 For real scoring, set `ANTHROPIC_API_KEY` and run `score` without `--offline`.
 Re-scoring replaces the source's untouched offline candidates with LLM-scored
@@ -262,7 +267,7 @@ batch, and the slices stay selected so you can retry.
 | `ModuleNotFoundError: No module named 'faster_whisper'` / `'yt_dlp'` / `'sentence_transformers'` | Run `pip install -r requirements.txt` in the active venv. |
 | `Warning: You are sending unauthenticated requests to the HF Hub` | Harmless. It appears during the one-time model download. |
 | `error: scoring failed: ANTHROPIC_API_KEY is not set; …` | Export the key, or add it to `credentials.env` and run from the directory that holds that file. To try the flow without a key, use `score --offline`. |
-| `error: argument --offline: not allowed with argument --model` | `--offline` doesn't use a model. Drop one of the two flags. |
+| `score` fails with `… not allowed with argument --model` (or `--offline`) | `--offline` doesn't use a model. Drop one of the two flags. |
 | `error: scoring failed: Error code: 401 … authentication_error …` | The key was sent but rejected. Check for a typo, a revoked key, or the template's `sk-ant-...` placeholder left in `credentials.env`. |
 | `score` reports `scored 0 slices` | The transcript is empty. Check it with `show`: `(no transcript)` means Whisper heard no speech. |
 | `error: profile 'x': … No such file or directory` | There is no `x.json` in the profiles directory. Run `ricesearcher profiles` to see what exists. |

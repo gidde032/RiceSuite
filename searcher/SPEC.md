@@ -68,10 +68,13 @@ files only.
   recorded on the slice. A scoring run names one profile (D9); a re-score
   replaces candidate rows of that profile only. **Offline mode (#2):**
   `score --offline` skips the LLM. Each window's heuristic score becomes its
-  slice score, the rationale states it was not LLM-scored, no credential is read,
-  and no network call is made. The model id recorded is `heuristic-offline`, which
-  `slices`, the review UI, and the handoff manifest surface. Offline slices pass
-  through the same dedup, select gate, and handoff unchanged.
+  slice score, the rationale states it was not LLM-scored, no credential is
+  required or used, and scoring makes no network call. The model id recorded is
+  `heuristic-offline`, which `slices`, the review UI, and the handoff manifest
+  surface. Offline slices pass
+  through the same dedup, select gate, and handoff unchanged. Heuristic and LLM
+  scores share one `score` sort order within a profile; the ordering policy for
+  mixed profiles is open in [#5](https://github.com/gidde032/RiceSearcher/issues/5).
 - **FR-5 — Store scored slices (D5, ADR Q3/Q4).** Each scored candidate slice is
   written to the SQLite library with the schema in §6, including an original
   **padded context window** and editable **target in/out**. Once reviewed, target
