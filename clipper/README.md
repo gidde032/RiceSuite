@@ -39,7 +39,8 @@ The **only** outbound network feature is the optional on-screen header
 generator, and it is **opt-in**: nothing is sent after transcription
 automatically. It requires an `ANTHROPIC_API_KEY` and runs only when you click
 **✨ Generate** in the review UI. Everything else — transcription, subject
-detection, rendering — runs fully offline. See [`SECURITY.md`](./SECURITY.md)
+detection, rendering — runs fully offline once the Whisper model has been
+downloaded (see [First run](#first-run)). See [`SECURITY.md`](./SECURITY.md)
 for exactly what is transmitted, and [`.env.example`](./.env.example) for
 configuration.
 
@@ -48,90 +49,210 @@ configuration.
 - Python + FastAPI, served locally
 - Vanilla HTML/JS review UI
 - **faster-whisper** for word-level transcription
-- **OpenCV YuNet** for local landscape subject detection
+- **OpenCV YuNet** for local landscape subject detection (model vendored in
+  `render/models/`, no download)
 - **ffmpeg + libass** (ASS subtitles) for caption/header burn-in and audio mix
 - Anthropic Sonnet for the **opt-in** on-screen header generator (Wave 1) —
   the only outbound network feature; off unless you set a key and click Generate
 
-## Setup (intended)
+## Requirements
 
-Prerequisites:
+| Requirement | Notes |
+| --- | --- |
+| **Python 3.11 – 3.14** | CI tests **3.12** only. The maintainer runs 3.14 locally, and the full suite passes there. The pinned dependencies install from wheels on 3.11–3.14. **3.10 and older will not work:** the code imports `datetime.UTC`, which is new in 3.11. macOS ships `/usr/bin/python3` as 3.9, so use a python.org, Homebrew, or pyenv interpreter. |
+| **ffmpeg with libass** on `PATH` | Required only to render. Transcription, the UI, and the test suite run without it. See below. |
+| **macOS** (recommended) | This is the only platform verified end to end. Headers that contain **emoji** use Apple Color Emoji, and header text uses macOS system fonts. Elsewhere, text-only headers still work through libass, but an emoji header fails to render (see [Troubleshooting](#troubleshooting)). |
+| Disk / network for the first transcription | faster-whisper downloads the Whisper model (`small` by default, roughly 0.5 GB) from Hugging Face the first time you transcribe. |
 
-- Python 3.11+
-- **ffmpeg with libass** on `PATH`. The stock Homebrew `ffmpeg` formula does
-  **not** include libass (no `subtitles` filter). Install the libass-enabled tap
-  build (unlink core first so the binary doesn't conflict):
-  ```bash
-  brew unlink ffmpeg
-  brew install homebrew-ffmpeg/ffmpeg/ffmpeg   # builds from source (~10-20 min)
-  ```
-  Verify: `ffmpeg -hide_banner -filters | grep -w subtitles`.
-- **Color emoji in headers** works out of the box on macOS. libass can't burn
-  color emoji, so headers containing emoji are rendered to an image (Pillow +
-  Apple Color Emoji, built into macOS) and composited via ffmpeg `overlay`;
-  text-only headers use libass directly. See `docs/spikes/emoji-burn-in.md`.
+### ffmpeg with libass
+
+The stock Homebrew `ffmpeg` formula does **not** include libass, so it has no
+`subtitles` filter. Install the libass-enabled tap build instead, unlinking
+core first so the two binaries don't conflict:
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt        # add -dev variant for tests
-# faster-whisper downloads its model on first run
+brew unlink ffmpeg
+brew install homebrew-ffmpeg/ffmpeg/ffmpeg   # builds from source (~10-20 min)
 ```
 
-## Run
+On Linux, most distribution `ffmpeg` packages already include libass.
+
+Check that the filter is present. This should print a line containing
+`subtitles`:
 
 ```bash
-uvicorn app.main:app --reload          # serves the review UI at localhost:8000
+ffmpeg -hide_banner -filters | grep -w subtitles
 ```
 
-Open `localhost:8000`, choose one or more clips, edit the transcript / header /
-landscape geometry, optionally add music, then render and download. Failed
-renders remain in the review queue so settings can be changed and **Render all**
-can be tried again. `GET /api/health`
-reports whether ffmpeg + libass are present.
+**Color emoji in headers** works out of the box on macOS. libass can't burn
+color emoji, so a header containing emoji is rendered to an image (Pillow +
+Apple Color Emoji) and composited with ffmpeg `overlay`. Text-only headers use
+libass directly. See `docs/spikes/emoji-burn-in.md`.
 
-Rendered sources and intermediate files remain in the local `.riceclipper_work/`
-cache until you explicitly clear them with the **Clear media cache** button in
-the UI. Clearing is disabled while a transcription or render is active; it
-does not remove the original files selected in your browser or the Whisper
-model cache. For a gentle default on an 8-core machine, transcription and
-encoding use four worker threads. Override them when needed with, for example:
+## Install
+
+From the repo root. RiceClipper runs in place and is not installed as a package:
 
 ```bash
-export RICECLIPPER_WHISPER_CPU_THREADS=4
-export RICECLIPPER_FFMPEG_THREADS=4
+python3.12 -m venv .venv              # any 3.11–3.14 interpreter
+source .venv/bin/activate             # Windows: .venv\Scripts\activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt        # to run the app
+python -m pip install -r requirements-dev.txt    # adds pytest + ruff (includes requirements.txt)
 ```
 
-The Whisper tokenizer safeguard can also be made explicit in the shell before
-launching the server:
+`requirements-dev.txt` already includes `requirements.txt`, so contributors only
+need the second install.
+
+## Configure
+
+Every setting is optional. With nothing configured, RiceClipper runs fully
+locally and the header field is manual-only. The variables are documented in
+[`.env.example`](./.env.example):
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `ANTHROPIC_API_KEY` | *(unset)* | Enables **✨ Generate** for the header. Without it, clicking Generate returns an error and you type the header by hand. |
+| `RICECLIPPER_HEADER_STYLE` | `generic-header` | Header prompt style; must match a file in `prompts/`. |
+| `RICECLIPPER_HEADER_MODEL` | `claude-sonnet-5` | Anthropic model for header generation. |
+| `RICECLIPPER_WHISPER_MODEL` | `small` | `tiny` / `base` / `small` / `medium` / `large-v3`. Smaller is a faster, smaller download. |
+| `RICECLIPPER_WHISPER_DEVICE` | `cpu` | `cpu` or `cuda`. |
+| `RICECLIPPER_WHISPER_COMPUTE` | `int8` | ctranslate2 compute type. |
+| `RICECLIPPER_WHISPER_CPU_THREADS` | half the logical cores | Transcription threads. |
+| `RICECLIPPER_FFMPEG_THREADS` | half the logical cores | ffmpeg encode threads. |
+| `RICECLIPPER_HANDOFF_DIR` | `~/riceclipper-handoff` | Where **Send to RicePoster** writes batches. |
+| `RICECLIPPER_SEARCHER_INBOX` | `~/ricesearcher-handoff` | Where **Pull from RiceSearcher** reads batches. |
+
+**RiceClipper does not read `.env` by itself.** You have two ways to load it.
+Pass the file to uvicorn, which can read it because `uvicorn[standard]` ships
+`python-dotenv`:
 
 ```bash
-export TOKENIZERS_PARALLELISM=false
+cp .env.example .env        # then edit .env; it is gitignored
+uvicorn app.main:app --env-file .env
 ```
+
+Or export the variables in your shell before you start the server:
+
+```bash
+export RICECLIPPER_WHISPER_MODEL=base
+```
+
+The Whisper settings are read once, when the server starts. Restart the server
+after you change them.
+
+> **Handoff directory is shared.** If you also run RicePoster, it pulls from
+> `RICECLIPPER_HANDOFF_DIR` (default `~/riceclipper-handoff`). When you are
+> experimenting, point it somewhere else, for example
+> `RICECLIPPER_HANDOFF_DIR=/tmp/rc-handoff`, so test batches don't reach your
+> live RicePoster queue.
+
+## First run
+
+```bash
+source .venv/bin/activate
+uvicorn app.main:app --reload            # or add --env-file .env
+```
+
+Open <http://localhost:8000>. uvicorn uses port 8000 by default; pass
+`--port 8765` to change it. At startup the server logs a warning if ffmpeg or
+libass is missing. You can also check at any time:
+
+```bash
+curl -s localhost:8000/api/health        # {"ffmpeg":true,"libass":true}
+```
+
+The repo ships no sample media. For a first smoke run, use any short phone clip,
+or generate a 5-second landscape test clip with a tone:
+
+```bash
+ffmpeg -f lavfi -i testsrc2=size=1280x720:rate=30 -f lavfi -i sine=frequency=440 \
+  -t 5 -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest sample.mp4
+```
+
+A synthetic clip has no speech, so the transcript comes back empty or nearly
+empty. That is expected. Type a caption or header by hand to see the burn-in. There is also no
+face in it, so the landscape crop falls back to blur-pad.
+
+**The first transcription is slow.** The first clip triggers the Whisper model
+download, which goes to the Hugging Face cache (`~/.cache/huggingface/hub`, or
+wherever `HF_HOME` points). Later runs reuse the cache and need no network.
+Set `RICECLIPPER_WHISPER_MODEL=tiny` for a quick first try.
+
+## Using it
+
+1. **Add clips.** Choose one or more video files, or click **Pull from
+   RiceSearcher** to ingest the oldest batch waiting in
+   `RICECLIPPER_SEARCHER_INBOX`. If there is nothing there, it adds nothing.
+   Each clip becomes a review card and is transcribed automatically.
+2. **Review.** Edit the transcript and choose a caption style. The eleven fixed
+   presets include four lyric presets: paste lyrics, then click **Align** to
+   time them to the audio, and use **Restore transcript** to go back. Type a
+   header, or click **✨ Generate** if `ANTHROPIC_API_KEY` is set, and choose a
+   header style. For landscape clips, choose **auto**, **crop**, or
+   **blur-pad**.
+3. **Music (optional).** Attach an audio file, then choose to *replace* the
+   original audio or *mix* the music under it.
+4. **Render all.** Each clip is rendered to 1080×1920 H.264/AAC mp4 and can be
+   previewed and downloaded. Failed renders stay in the queue, so you can change
+   their settings and click **Render all** again.
+5. **Send to RicePoster (optional).** This writes the rendered clips plus a
+   `manifest.json` as one batch directory under `RICECLIPPER_HANDOFF_DIR`. Only
+   local files are written. The contract is in
+   [`docs/integration/riceposter-handoff.md`](./docs/integration/riceposter-handoff.md).
+
+Uploaded sources, intermediate files, and renders stay in the local
+`.riceclipper_work/` cache until you click **Clear media cache**. Clearing is
+disabled while a transcription or render is running. It does not remove your
+original files or the Whisper model cache.
+
+## Troubleshooting
+
+| Symptom | Cause / fix |
+| --- | --- |
+| Render fails; the startup log says *"This ffmpeg has no libass"*, or `/api/health` shows `"libass": false` | Your ffmpeg lacks libass. Install the tap build shown [above](#ffmpeg-with-libass). |
+| Startup log: *"ffmpeg/ffprobe not found on PATH"* | Install ffmpeg, or start the server from a shell where `which ffmpeg` works. |
+| `ImportError: cannot import name 'UTC' from 'datetime'` | The Python is older than 3.11. Recreate `.venv` with 3.11–3.14. |
+| **✨ Generate** says `ANTHROPIC_API_KEY is not set` | The key isn't in the server's environment. Export it, or start with `--env-file .env`. Copying `.env.example` to `.env` is not enough on its own. Otherwise, type the header manually. |
+| `Unknown header style '…'` | `RICECLIPPER_HEADER_STYLE` names a file that isn't in `prompts/`. Only `generic-header` ships. |
+| Emoji header render fails: *"missing a text or renderable color-emoji font"* | No Apple Color Emoji, which is the case off macOS. Remove the emoji or render on macOS. |
+| Upload rejected: *"could not read video"* | ffprobe couldn't parse the file. Check it with `ffprobe <file>`. |
+| First transcription hangs or fails offline | The Whisper model is still downloading or can't be reached. Wait, or run once with network access. A smaller `RICECLIPPER_WHISPER_MODEL` downloads faster. |
+| `Address already in use` | Something else is on port 8000. Pass `--port <other>`. |
+| `pytest` / `ruff`: command not found | Install `requirements-dev.txt` into the active venv. |
 
 ## Test and quality gates
 
+The suite mocks every ffmpeg and Whisper call. It needs no ffmpeg, no network,
+no model download, and no API key.
+
 ```bash
-pip install -r requirements-dev.txt
-pytest -q                              # pure-Python core; no ffmpeg needed
+python -m pip install -r requirements-dev.txt
+python -m pytest -q                                   # full suite
 
-ruff check . && ruff format --check .  # lint + format (matches CI)
-pytest -m smoke -q                     # the 8-test fast tier
-pytest tests/ --cov=app --cov=render --cov=transcribe --cov-fail-under=85
+python -m ruff check . && python -m ruff format --check .   # lint + format (matches CI)
+python -m pytest -m smoke -q                          # the 8-test fast tier
+python -m pytest tests/ --cov=app --cov=render --cov=transcribe --cov-fail-under=85
 
-# Maintainer-only subject-crop fixture gate (six named roles + sheet review)
+# Maintainer-only subject-crop fixture gate (needs the gitignored
+# fixtures/landscape/ clips; six named roles + sheet review)
 python scripts/crop_check.py fixtures/landscape --contact-sheets-approved
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same ruff checks and the full suite
-with an **85% coverage floor** on every PR and push to `main`. `tests/test_gates.py`
-locks those numbers so they can't silently drift. Optional local hooks mirror CI:
+with an **85% coverage floor** on Python 3.12, on every PR and on every push to
+`main`. `tests/test_gates.py` locks those numbers so they can't silently drift.
+Optional local hooks mirror CI. `pre-commit` itself is not in the requirements
+files, so install it first:
 
 ```bash
+python -m pip install pre-commit
 pre-commit install --hook-type pre-commit --hook-type pre-push
 ```
 
+The hooks run in your active venv, not in an isolated pre-commit environment.
 The commit tier runs ruff + the smoke tier; the push tier runs the full suite
-and coverage floor. A `main` branch-protection ruleset is prepared in
+and the coverage floor. A `main` branch-protection ruleset is prepared in
 `.github/rulesets/` but not yet applied (rulesets need GitHub Pro on a private
 repo).
 
@@ -142,7 +263,10 @@ app/              FastAPI app — server + render orchestration endpoints
 transcribe/       faster-whisper wrapper → word-level caption lines
 render/           ffmpeg + ASS rendering (captions, header, audio mix)
   templates/      ASS caption/header templates
+  models/         vendored YuNet face-detection model
 web/              static HTML/JS review UI
+prompts/          header-generator styles (only generic-header.json is tracked)
+scripts/          maintainer subject-crop check and tuning tools
 tests/            unit tests + test_gates.py (quality-gate meta-tests)
 .riceclipper_work/ app-owned uploaded sources, intermediates, and outputs (gitignored)
 .github/          CI workflow, issue/PR templates, pending branch ruleset
@@ -150,6 +274,8 @@ pyproject.toml    ruff + pytest configuration
 docs/
   spikes/         de-risking investigations (see emoji-burn-in)
   adr/            accepted architecture decision records and amendments
+  design/         subject-crop and music-path design specs
+  integration/    RiceSearcher → RiceClipper → RicePoster handoff contracts
 SPEC.md           v1 design — source of truth
 ROADMAP.md        v1 → Wave 1 → Wave 2 → deferred
 CLAUDE.md         operating context for AI agent sessions
