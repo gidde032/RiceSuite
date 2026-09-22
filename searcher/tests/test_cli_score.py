@@ -63,3 +63,17 @@ def test_slices_empty(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.setenv("RICESEARCHER_DATA_DIR", str(tmp_path / "data"))
     assert cli.main(["slices", "--profile", "example-beat"]) == 0
     assert "no scored slices" in capsys.readouterr().out
+
+
+def test_score_without_api_key_names_the_missing_variable(
+    pulled_source: str, tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """The real scorer fails before any request with an actionable message."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    monkeypatch.chdir(tmp_path)  # no credentials.env/.env to load
+    rc = cli.main(["score", pulled_source[:12], "--profile", "example-beat"])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "ANTHROPIC_API_KEY is not set" in err
+    assert "credentials.env" in err

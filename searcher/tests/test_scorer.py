@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import pytest
+
 from ricesearcher.beat.profile import BeatProfile
 from ricesearcher.models import CandidateWindow
 from ricesearcher.score.anthropic_scorer import (
     AnthropicScorer,
+    MissingCredentialsError,
     build_prompt,
     parse_response,
+    require_credentials,
 )
 
 _PROFILE = BeatProfile(
@@ -81,3 +85,18 @@ def test_model_name_default_and_override(monkeypatch) -> None:
     assert AnthropicScorer(model="claude-sonnet-4-6").model_name == "claude-sonnet-4-6"
     monkeypatch.setenv("RICESEARCHER_SCORER_MODEL", "env-model")
     assert AnthropicScorer().model_name == "env-model"
+
+
+@pytest.mark.parametrize("var", ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"])
+def test_require_credentials_accepts_either_sdk_credential(var, monkeypatch) -> None:
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    monkeypatch.setenv(var, "x")
+    require_credentials()  # does not raise
+
+
+def test_require_credentials_rejects_missing_and_empty(monkeypatch) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    with pytest.raises(MissingCredentialsError, match="ANTHROPIC_API_KEY"):
+        require_credentials()

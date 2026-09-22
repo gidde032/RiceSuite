@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,17 @@ def pytest_collection_modifyitems(
     for item in items:
         if item.get_closest_marker("smoke"):
             SMOKE_NODEIDS.append(item.nodeid)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_ricesearcher_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Drop RICESEARCHER_* settings inherited from the developer's shell.
+
+    Tests set the paths they need; an exported RICESEARCHER_PROFILES_DIR would
+    otherwise redirect profile seeding into the developer's real directory.
+    """
+    for key in [k for k in os.environ if k.startswith("RICESEARCHER_")]:
+        monkeypatch.delenv(key)
 
 
 @pytest.fixture

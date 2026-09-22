@@ -146,6 +146,24 @@ def parse_response(text: str, n: int) -> list[ScoredResult]:
     return results
 
 
+class MissingCredentialsError(RuntimeError):
+    """No Anthropic credential is configured, so scoring cannot start."""
+
+
+def require_credentials() -> None:
+    """Fail fast, before any request, when the SDK would have no credential.
+
+    The SDK's own error ("Could not resolve authentication method") does not name
+    the variable to set or where RiceSearcher looks for it.
+    """
+    if os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_AUTH_TOKEN"):
+        return
+    raise MissingCredentialsError(
+        "ANTHROPIC_API_KEY is not set; export it, or add it to credentials.env "
+        "in the directory you run ricesearcher from"
+    )
+
+
 class AnthropicScorer:
     """Score candidate windows with an Anthropic model."""
 
@@ -161,6 +179,7 @@ class AnthropicScorer:
     ) -> list[ScoredResult]:  # pragma: no cover - live network path
         if not windows:
             return []
+        require_credentials()
         import anthropic
 
         client = anthropic.Anthropic()

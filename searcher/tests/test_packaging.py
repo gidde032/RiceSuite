@@ -12,7 +12,14 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 
 
-def test_wheel_contains_profile_and_web_assets_and_can_seed(tmp_path: Path) -> None:
+def test_wheel_contains_profile_and_web_assets_and_can_seed(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # A user's shell may export any documented RICESEARCHER_* setting. The cold
+    # install must ignore them all, never seeding into a real profiles dir.
+    shell_profiles = tmp_path / "users-real-profiles"
+    monkeypatch.setenv("RICESEARCHER_PROFILES_DIR", str(shell_profiles))
+    monkeypatch.setenv("RICESEARCHER_HANDOFF_DIR", str(tmp_path / "users-handoff"))
     source_root = tmp_path / "source"
     source_root.mkdir()
     shutil.copy2(PROJECT_ROOT / "pyproject.toml", source_root / "pyproject.toml")
@@ -44,7 +51,7 @@ def test_wheel_contains_profile_and_web_assets_and_can_seed(tmp_path: Path) -> N
         archive.extractall(tmp_path / "installed")
 
     data_dir = tmp_path / "cold-data"
-    env = os.environ.copy()
+    env = {k: v for k, v in os.environ.items() if not k.startswith("RICESEARCHER_")}
     env["PYTHONPATH"] = str(tmp_path / "installed")
     env["RICESEARCHER_DATA_DIR"] = str(data_dir)
     subprocess.run(
@@ -60,3 +67,4 @@ def test_wheel_contains_profile_and_web_assets_and_can_seed(tmp_path: Path) -> N
         text=True,
     )
     assert (data_dir / "profiles" / "example-beat.json").is_file()
+    assert not shell_profiles.exists()
