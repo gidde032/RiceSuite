@@ -61,10 +61,10 @@ RiceClipper→RicePoster *mechanism* (not its directory):
   exported end, which equals the saved `target_out` unless the source ended first);
   `clip.duration` is the measured length of the written file and clip-relative
   target is `0..duration`.
-- `transcript` is rebuilt from Searcher's source words intersecting the reviewed
-  interval. It is metadata, not caption timing: RiceClipper transcribes the exact
-  imported file afresh and uses those clip-relative Whisper words for captions and
-  pasted-lyric alignment.
+- `transcript` is rebuilt from Searcher's source words intersecting the measured
+  exported interval. It is metadata, not caption timing: RiceClipper transcribes
+  the exact imported file afresh and uses those clip-relative Whisper words for
+  captions and pasted-lyric alignment.
 - `position` (1-based) is the only routing/order signal. No account/slot/style —
   those are downstream posting-side policy, unchanged.
 
@@ -80,6 +80,9 @@ writer to `RICECLIPPER_HANDOFF_DIR` (`~/riceclipper-handoff`, for RicePoster) is
 1. **Scan** the searcher-inbox (`~/ricesearcher-handoff`) for batch dirs
    containing `manifest.json` (ignore manifest-less dirs — they're mid-write).
    **FIFO** by `created_at`, one batch per pull.
+   RiceSearcher may prepare multiple concurrent manifest-less directories, but it
+   publishes only the batch whose selected-row snapshot still matches at final
+   arbitration; losing or edited snapshots never receive `manifest.json`.
 2. **Validate** the manifest: `schema_version == 1`, `producer == "ricesearcher"`,
    nonempty `clips`, a top-level object, string/safe `batch_id`, unique positive
    integer `position`s, string file/text fields — every malformed field → a

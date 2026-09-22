@@ -24,7 +24,7 @@ from ricesearcher.acquire.watchfolder import ffprobe_duration
 from ricesearcher.config import Config, load_config
 from ricesearcher.handoff.extract import ClipExtractor, FfmpegClipExtractor
 from ricesearcher.library.store import Library
-from ricesearcher.models import CandidateSlice, SliceStatus, Source
+from ricesearcher.models import CandidateSlice, SliceStatus, Source, TranscriptWord
 
 SCHEMA_VERSION = 1
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
@@ -43,12 +43,31 @@ class HandoffEntry:
     published_at: str
     target_in: float
     target_out: float
-    transcript: str
+    transcript_words: list[TranscriptWord]
     score: float
     rationale: str
     rights_risk: str
     beat_profile_version: str
     profile_id: str
+
+    @property
+    def transcript(self) -> str:
+        """Transcript words intersecting the requested export interval."""
+        return _transcript_through(self, self.target_out)
+
+
+@dataclass(frozen=True)
+class PreparedBatch:
+    """A complete batch whose final manifest has not been published yet."""
+
+    batch_id: str
+    batch_dir: Path
+    manifest_tmp: Path
+    clip_count: int
+
+    @property
+    def result(self) -> dict:
+        return {"batch_id": self.batch_id, "clip_count": self.clip_count}
 
 
 def _now() -> datetime:
@@ -62,6 +81,22 @@ def write_batch(
     root: Path,
 ) -> dict:
     """Write ``entries`` as one atomic handoff batch; return its id + clip count."""
+    prepared = _prepare_batch(entries, extractor=extractor, root=root)
+    try:
+        _publish_batch(prepared)
+    except BaseException:
+        _discard_batch(prepared)
+        raise
+    return prepared.result
+
+
+def _prepare_batch(
+    entries: list[HandoffEntry],
+    *,
+    extractor: ClipExtractor,
+    root: Path,
+) -> PreparedBatch:
+    """Write clips and a temporary manifest without exposing a complete batch."""
     if not entries:
         raise HandoffError("no slices to hand off")
     positions = [e.position for e in entries]
@@ -83,7 +118,7 @@ def write_batch(
         batch_dir.mkdir()
     except FileExistsError as exc:  # batch_id collision (negligibly rare)
         raise HandoffError(f"batch id {batch_id} already exists") from exc
-    committed = False
+    prepared = False
     try:
         manifest_clips = []
         for entry in sorted(entries, key=lambda e: e.position):
@@ -108,6 +143,8 @@ def write_batch(
             measured = extractor.extract(
                 source, entry.target_in, entry.target_out, dest
             )
+            if not math.isfinite(measured) or measured <= 0:
+                raise HandoffError(f"clip {entry.position}: invalid measured duration")
             manifest_clips.append(_manifest_clip(entry, filename, measured))
 
         manifest = {
@@ -120,15 +157,14 @@ def write_batch(
         # Write the manifest LAST via atomic rename — the "batch complete" signal.
         tmp = batch_dir / "manifest.json.tmp"
         tmp.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-        os.replace(tmp, batch_dir / "manifest.json")
-        committed = True
+        prepared = True
     finally:
         # Leave no half-written batch behind (integration-ledger lesson M-05).
         # A ``finally`` (not ``except Exception``) so cleanup also runs on
         # KeyboardInterrupt/SystemExit — e.g. Ctrl-C while ffmpeg is extracting a
         # clip — which BaseException-derived interrupts would otherwise skip,
         # orphaning a manifest-less batch dir.
-        if not committed:
+        if not prepared:
             # Swallow any cleanup failure so it can't mask the propagating
             # error (L2); in a ``finally`` a raised rmtree would replace it.
             try:
@@ -136,7 +172,33 @@ def write_batch(
             except Exception:
                 pass
 
-    return {"batch_id": batch_id, "clip_count": len(manifest_clips)}
+    return PreparedBatch(
+        batch_id=batch_id,
+        batch_dir=batch_dir,
+        manifest_tmp=tmp,
+        clip_count=len(manifest_clips),
+    )
+
+
+def _publish_batch(prepared: PreparedBatch) -> None:
+    """Atomically make a prepared batch visible to the filesystem consumer."""
+    os.replace(prepared.manifest_tmp, prepared.batch_dir / "manifest.json")
+
+
+def _discard_batch(prepared: PreparedBatch) -> None:
+    """Best-effort removal that never masks the governing handoff outcome."""
+    try:
+        shutil.rmtree(prepared.batch_dir, ignore_errors=True)
+    except Exception:
+        pass
+
+
+def _transcript_through(entry: HandoffEntry, delivered_out: float) -> str:
+    return " ".join(
+        word.text
+        for word in entry.transcript_words
+        if word.start < delivered_out and word.end > entry.target_in
+    )
 
 
 def _manifest_clip(
@@ -169,7 +231,7 @@ def _manifest_clip(
             "target_in": 0.0,
             "target_out": duration,
         },
-        "transcript": entry.transcript,
+        "transcript": _transcript_through(entry, delivered_out),
         "score": entry.score,
         "rationale": entry.rationale,
         "rights_risk": entry.rights_risk,
@@ -189,11 +251,11 @@ def _entry_for(
     # (finding B2); the transcript is rebuilt against the interval actually
     # exported, not the unclamped review value.
     effective_out = slice_.target_out if target_out is None else target_out
-    transcript = " ".join(
-        word.text
+    transcript_words = [
+        word
         for word in source.words
         if word.start < effective_out and word.end > slice_.target_in
-    )
+    ]
     return HandoffEntry(
         position=position,
         source_media=Path(source.media_path),
@@ -202,7 +264,7 @@ def _entry_for(
         published_at=source.published_at,
         target_in=slice_.target_in,
         target_out=effective_out,
-        transcript=transcript,
+        transcript_words=transcript_words,
         score=slice_.score,
         rationale=slice_.rationale,
         rights_risk=slice_.rights_risk,
@@ -246,6 +308,12 @@ def hand_off_selected(
     durations: dict[str, float] = {}
     probe = duration_prober or ffprobe_duration
     for i, sl in enumerate(ordered, start=1):
+        if not (
+            math.isfinite(sl.target_in)
+            and math.isfinite(sl.target_out)
+            and 0 <= sl.target_in < sl.target_out
+        ):
+            raise HandoffError(f"clip {i}: invalid window")
         source = sources.get(sl.source_id) or library.get_source(sl.source_id)
         if source is None:
             raise HandoffError(f"slice {sl.id}: source {sl.source_id} not found")
@@ -276,33 +344,42 @@ def hand_off_selected(
         entries.append(_entry_for(sl, source, i, target_out=target_out))
     snapshot_ids = [sl.id for sl in ordered]
 
-    # Phase 2 — encode and write the batch with NO database lock held.
-    result = write_batch(
+    # Phase 2 — encode and prepare the batch with NO database lock held. The
+    # temporary manifest keeps the batch invisible to the pickup consumer.
+    prepared = _prepare_batch(
         entries, extractor=extractor or FfmpegClipExtractor(), root=cfg.handoff_dir
     )
 
-    # Phase 3 — short critical section. Under the write lock, re-read and mark the
-    # snapshot handed_off ONLY if it is still exactly the selected set. A second
-    # concurrent handoff (or an intervening reject) that changed the set makes
-    # this call a no-op whose already-written batch is discarded, so a batch is
-    # delivered exactly once. SQLite still cannot enlist the filesystem in its
-    # transaction, so a crash in this narrow window can require manual recovery.
-    batch_dir = Path(cfg.handoff_dir) / str(result["batch_id"])
+    # Phase 3 — short critical section. Under the write lock, re-read every
+    # snapshotted row and publish/mark it handed_off ONLY if its exported state is
+    # unchanged. A second concurrent handoff or an intervening review edit makes
+    # this call a no-op whose invisible prepared batch is discarded. SQLite still
+    # cannot enlist the filesystem in its transaction, so a crash in this narrow
+    # publication window can require manual recovery.
     try:
         with library.immediate_transaction():
             still_selected = {
-                s.id
+                s.id: s
                 for s in library.list_slices(
                     profile_id=profile_id, status=SliceStatus.SELECTED
                 )
             }
-            if not all(sid in still_selected for sid in snapshot_ids):
-                shutil.rmtree(batch_dir, ignore_errors=True)
-                return {"batch_id": None, "clip_count": 0}
-            library.bulk_update_status(snapshot_ids, SliceStatus.HANDED_OFF)
+            snapshot_unchanged = all(still_selected.get(sl.id) == sl for sl in ordered)
+            if snapshot_unchanged:
+                # Manifest-last publication remains the consumer's completeness
+                # signal. Publishing under the short DB write lock ensures a
+                # competing handoff cannot publish the same snapshot before its
+                # terminal status update becomes visible.
+                _publish_batch(prepared)
+                library.bulk_update_status(snapshot_ids, SliceStatus.HANDED_OFF)
     except BaseException:
         # A failure marking the snapshot must not leave an unmarked batch on disk
         # that a reader would pick up while the slices are still ``selected``.
-        shutil.rmtree(batch_dir, ignore_errors=True)
+        _discard_batch(prepared)
         raise
-    return result
+    if not snapshot_unchanged:
+        # Filesystem cleanup stays outside the DB transaction so a large batch
+        # cannot extend the SQLite write-lock lifetime.
+        _discard_batch(prepared)
+        return {"batch_id": None, "clip_count": 0}
+    return prepared.result

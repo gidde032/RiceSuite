@@ -53,7 +53,7 @@ def _entry(tmp: Path, position: int = 1) -> HandoffEntry:
         published_at="20260101",
         target_in=10.0,
         target_out=40.0,
-        transcript="a moment",
+        transcript_words=[TranscriptWord("a moment", 10.0, 40.0)],
         score=0.8,
         rationale="good",
         rights_risk="med",
@@ -679,6 +679,168 @@ def test_b1_manifest_records_measured_not_requested_duration(tmp_path: Path) -> 
     assert clip["clip"]["duration"] == 16.0
     assert clip["source_window"]["target_out"] == 21.0  # target_in 5 + measured 16
     lib.close()
+
+
+def test_manifest_transcript_stops_at_measured_output_end(tmp_path: Path) -> None:
+    class OneSecondExtractor(FakeExtractor):
+        def extract(self, source, start, end, dest):
+            super().extract(source, start, end, dest)
+            return 1.0
+
+    cfg, lib = _lib_with_selected(tmp_path)
+    hand_off_selected(
+        lib,
+        extractor=OneSecondExtractor(),
+        duration_prober=lambda _path: 30.0,
+        config=cfg,
+        profile_id=LEGACY_PROFILE_ID,
+    )
+    manifest_path = next(cfg.handoff_dir.glob("batch_*/manifest.json"))
+    clip = json.loads(manifest_path.read_text())["clips"][0]
+    assert clip["source_window"]["target_out"] == 6.0
+    assert clip["transcript"] == "selected"
+    lib.close()
+
+
+@pytest.mark.parametrize("measured", [0.0, -1.0, float("nan"), float("inf")])
+def test_write_batch_rejects_invalid_measured_duration(
+    tmp_path: Path, measured: float
+) -> None:
+    class InvalidDurationExtractor(FakeExtractor):
+        def extract(self, source, start, end, dest):
+            super().extract(source, start, end, dest)
+            return measured
+
+    root = tmp_path / "handoff"
+    with pytest.raises(HandoffError, match="invalid measured duration"):
+        write_batch([_entry(tmp_path)], extractor=InvalidDurationExtractor(), root=root)
+    assert list(root.iterdir()) == []
+
+
+def test_hand_off_rejects_nonfinite_target_before_clamping(tmp_path: Path) -> None:
+    cfg, lib = _lib_with_selected(tmp_path)
+    selected = lib.get_slice("a")
+    assert selected is not None
+    selected.target_out = float("inf")
+    lib.upsert_slices([selected])
+    extractor = FakeExtractor()
+
+    with pytest.raises(HandoffError, match="invalid window"):
+        hand_off_selected(
+            lib,
+            extractor=extractor,
+            duration_prober=lambda _path: 30.0,
+            config=cfg,
+            profile_id=LEGACY_PROFILE_ID,
+        )
+
+    assert extractor.calls == []
+    assert lib.get_slice("a").status is SliceStatus.SELECTED
+    assert not cfg.handoff_dir.exists() or not any(cfg.handoff_dir.iterdir())
+    lib.close()
+
+
+def test_window_change_during_encode_discards_unpublished_batch(
+    tmp_path: Path,
+) -> None:
+    import threading
+
+    cfg, lib = _lib_with_selected(tmp_path)
+    lib.close()
+    started = threading.Event()
+    release = threading.Event()
+
+    class GatedExtractor(FakeExtractor):
+        def extract(self, source, start, end, dest):
+            started.set()
+            assert release.wait(10)
+            return super().extract(source, start, end, dest)
+
+    result: dict = {}
+
+    def run_handoff() -> None:
+        with Library(cfg.db_path) as worker_lib:
+            result.update(
+                hand_off_selected(
+                    worker_lib,
+                    extractor=GatedExtractor(),
+                    duration_prober=lambda _path: 30.0,
+                    config=cfg,
+                    profile_id=LEGACY_PROFILE_ID,
+                )
+            )
+
+    worker = threading.Thread(target=run_handoff)
+    worker.start()
+    assert started.wait(5)
+    with Library(cfg.db_path) as reviewer:
+        assert reviewer.update_slice_window("a", 6.0, 24.0)
+    release.set()
+    worker.join(10)
+
+    assert result == {"batch_id": None, "clip_count": 0}
+    assert list(cfg.handoff_dir.glob("*/manifest.json")) == []
+    with Library(cfg.db_path) as check:
+        selected = check.get_slice("a")
+        assert selected is not None
+        assert selected.status is SliceStatus.SELECTED
+        assert (selected.target_in, selected.target_out) == (6.0, 24.0)
+
+
+def test_concurrent_handoffs_do_not_publish_before_arbitration(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import threading
+    from contextlib import contextmanager
+
+    cfg, lib = _lib_with_selected(tmp_path)
+    lib.close()
+    original_transaction = Library.immediate_transaction
+    waiting = 0
+    waiting_lock = threading.Lock()
+    both_waiting = threading.Event()
+    release = threading.Event()
+
+    @contextmanager
+    def gated_transaction(self):
+        nonlocal waiting
+        with waiting_lock:
+            waiting += 1
+            if waiting == 2:
+                both_waiting.set()
+        assert release.wait(10)
+        with original_transaction(self):
+            yield
+
+    monkeypatch.setattr(Library, "immediate_transaction", gated_transaction)
+    barrier = threading.Barrier(2)
+    results: list[dict] = []
+
+    def run_handoff() -> None:
+        with Library(cfg.db_path) as worker_lib:
+            barrier.wait()
+            results.append(
+                hand_off_selected(
+                    worker_lib,
+                    extractor=FakeExtractor(),
+                    duration_prober=lambda _path: 30.0,
+                    config=cfg,
+                    profile_id=LEGACY_PROFILE_ID,
+                )
+            )
+
+    workers = [threading.Thread(target=run_handoff) for _ in range(2)]
+    for worker in workers:
+        worker.start()
+    assert both_waiting.wait(5)
+    visible_before_arbitration = list(cfg.handoff_dir.glob("*/manifest.json"))
+    release.set()
+    for worker in workers:
+        worker.join(10)
+
+    assert visible_before_arbitration == []
+    assert sorted(result["clip_count"] for result in results) == [0, 1]
+    assert len(list(cfg.handoff_dir.glob("*/manifest.json"))) == 1
 
 
 def test_a_concurrent_review_write_not_blocked_during_handoff(tmp_path: Path) -> None:

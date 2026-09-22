@@ -112,10 +112,11 @@ files only.
   saved target interval and write a filesystem handoff batch to the shared root:
   clip media + `manifest.json` written **last** as the atomicity signal, with the
   schema-1 superset contract in §7. The handoff transcript is rebuilt from source
-  words intersecting the selected interval; RiceClipper independently transcribes
-  the exported bytes and remains authoritative for caption and lyric timing. A batch holds the
-  selected slices of one profile and carries `profile_id` per clip. Producer only ever
-  writes; it never deletes or ingests. Batch identity is stable and idempotent.
+  words intersecting the measured exported interval; RiceClipper independently
+  transcribes the exported bytes and remains authoritative for caption and lyric
+  timing. A batch holds the selected slices of one profile and carries `profile_id`
+  per clip. Producer only ever writes; it never deletes or ingests. Batch identity
+  is stable and idempotent.
 - **FR-10 — Safety.** No network call posts, publishes, or uploads content. The
   only outbound calls are source acquisition (yt-dlp fetch) and the scoring LLM
   API; neither touches any account, platform, or posting surface.
@@ -135,8 +136,10 @@ files only.
   scoring within a target measured at Phase 2 (dominated by faster-whisper on CPU).
 - **Local-first:** no cloud storage; SQLite + local disk only. Media cache is
   content-addressed and de-duplicated on disk.
-- **Handoff atomicity:** a reader never sees a partial batch (manifest-last
-  guarantee); a failed write leaves no pickup-visible artifact.
+- **Handoff atomicity:** clips and a temporary manifest are prepared without a
+  database write lock; the final manifest becomes visible only after the selected
+  snapshot is revalidated under a short transaction. A reader never sees a partial
+  or losing concurrent batch, and a failed write leaves no pickup-visible artifact.
 
 ## 6. Library — candidate-slice schema (D5, SQLite)
 
@@ -235,6 +238,13 @@ the imported bytes or importing Searcher's transcript timings. See
 > tiny (a human-driven action) and both are individually correct; the consumer
 > should therefore be robust to the same source content arriving in two batches
 > (content-level idempotency, not only `batch_id` dedup).
+
+For ordinary concurrency (no process crash), each handoff prepares only a temporary
+manifest. Under a short SQLite write transaction it re-reads every snapshotted row;
+only an unchanged selected snapshot receives the final `manifest.json` and moves to
+`handed_off`. A concurrent edit or losing handoff is discarded while still invisible
+to the consumer, and filesystem cleanup happens after the transaction releases its
+write lock.
 
 **Integration-ledger lessons applied up front** (from
 `RiceClipper/internal/riceposter-integration-review.md`): stable idempotent batch

@@ -42,17 +42,26 @@ Last updated: 2026-09-21.
     503 (retryable) instead of a raw 500.
   - **D** — removed the dead `HandoffEntry.pad_in/pad_out` fields.
   - **E** — re-anchored `PROFILE_ID_PATTERN` (`\A…\Z`, safe-by-default).
+- A three-reviewer Luna/max validation of PR #34 found four material follow-up
+  defects; all are repaired with observed fail-before-fix regressions:
+  - concurrent edits to an in-flight selected window now invalidate the snapshot
+    instead of publishing stale bytes and terminally marking the edited row;
+  - concurrently prepared batches stay consumer-invisible until final arbitration,
+    so a losing handoff never exposes its `manifest.json`;
+  - non-finite stored windows fail closed before source-duration clamping; and
+  - manifest transcript metadata stops at the measured exported end. The writer
+    also rejects non-finite or non-positive extractor duration results.
 - Docs reconciled to the new behavior: SPEC §7 + D8, ADR-001 Q4/trade-offs,
   README review workflow, and the RiceClipper pickup plan.
-- Green evidence: Ruff format/lint; mypy on 33 source files; JS syntax; 17 Node
-  behavior tests; 244 Python tests at 93.90% coverage; pinned smoke tier 5.
+- Green evidence: Ruff format/lint; mypy on 35 source files; JS syntax; 17 Node
+  behavior tests; 252 Python tests at 93.72% coverage; pinned smoke tier 5.
 - Authorized: scoped repairs, tests, documentation, branch/commits/push, and PR
   creation. Withheld: merge, publish, deploy, visibility changes, tag, release.
 
 ## Next action
 
-Maintainer review of the review-repair PR. Merge remains explicitly withheld from
-the agent.
+Verify PR #34's repository-owned `gates` check after the validation-repair push,
+then maintainer review. Merge remains explicitly withheld from the agent.
 
 ## Deferred
 
