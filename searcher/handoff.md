@@ -3,7 +3,23 @@
 **Read this before editing.** Current-state continuity only; product contract →
 `SPEC.md`/`ADR-001.md`/`ADR-002.md`; planned work → GitHub Issues.
 
-Last updated: 2026-09-21.
+Last updated: 2026-09-22.
+
+## Active delivery — offline scoring (#2)
+
+- Branch `feat/offline-scoring-2` from `74dc2c6`; draft PR open for maintainer
+  review. Adds `score --offline` (`HeuristicScorer`, `scorer_model =
+  "heuristic-offline"`), the `slices` `offl` marker, the review-UI *offline score*
+  badge, and `scorer_model` in manifest clips (additive; schema 1).
+- README First run now walks the whole flow offline; SPEC D4/FR-4/§7, CHANGELOG,
+  ROADMAP, and the pickup plan are reconciled.
+- Three cold reviewers (correctness, contract/docs, skeptic): no HIGH findings.
+  Repaired with regressions: README/SPEC network and credential wording,
+  order-independent flag-conflict row, `slices` column list, a socket guard on
+  the offline tests, and a JS/Python offline-name pin. Deferred: mixed-profile
+  score ordering → #5.
+- Authorized: implementation, tests, docs, branch/commits/push, draft PR, and
+  the review-and-repair cycle. Withheld: marking ready, merge, release.
 
 ## Verified main state
 

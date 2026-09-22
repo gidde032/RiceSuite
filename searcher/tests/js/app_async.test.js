@@ -323,3 +323,25 @@ test("network window failures preserve typed values and explain the failure", as
   assert.equal(outInput.value, "6");
   assert.equal(cardMessage(harness).textContent, "couldn't save window: offline");
 });
+
+test("offline-scored slices carry an offline badge; LLM-scored slices do not (#2)", async () => {
+  const harness = await boot([
+    slice("a", "alpha", { scorer_model: "heuristic-offline" }),
+    slice("b", "alpha", { scorer_model: "claude-haiku-4-5" }),
+  ]);
+  const offlineBadges = [];
+  const collect = (node) => {
+    if (node.attributes.class === "badge offline") offlineBadges.push(node);
+    node.children.forEach(collect);
+  };
+  collect(harness.nodes.list);
+  assert.equal(offlineBadges.length, 1);
+  assert.equal(textOf(offlineBadges[0]), "offline score");
+  const scores = [];
+  const collectScores = (node) => {
+    if (node.attributes.class === "score") scores.push(node.attributes.title);
+    node.children.forEach(collectScores);
+  };
+  collectScores(harness.nodes.list);
+  assert.deepEqual(scores, ["offline heuristic score (not LLM-scored)", "LLM clippability score"]);
+});

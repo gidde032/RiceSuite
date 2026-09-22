@@ -49,6 +49,7 @@ class HandoffEntry:
     rights_risk: str
     beat_profile_version: str
     profile_id: str
+    scorer_model: str = ""
 
     @property
     def transcript(self) -> str:
@@ -237,6 +238,7 @@ def _manifest_clip(
         "rights_risk": entry.rights_risk,
         "beat_profile_version": entry.beat_profile_version,
         "profile_id": entry.profile_id,
+        "scorer_model": entry.scorer_model,
     }
 
 
@@ -270,6 +272,7 @@ def _entry_for(
         rights_risk=slice_.rights_risk,
         beat_profile_version=slice_.beat_profile_version,
         profile_id=slice_.profile_id,
+        scorer_model=slice_.scorer_model,
     )
 
 

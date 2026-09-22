@@ -11,6 +11,14 @@ All notable changes to RiceSearcher are documented here. This project adheres to
   downloads), venv install, configuration table, an offline-first first run, how
   each stage works, beat profiles, the RiceClipper handoff layout, and
   troubleshooting.
+- `score --offline` (#2): ranks candidates by the heuristic prefilter score with
+  no API key and no network call. Offline slices record
+  `scorer_model = "heuristic-offline"` and a "not LLM-scored" rationale. `slices`
+  marks them `offl`, and the review UI shows an *offline score* badge. The
+  README's First run now walks the whole flow offline. `--offline` and `--model`
+  are mutually exclusive.
+- Handoff manifest clips carry `scorer_model`. This is an additive field; the
+  schema version stays 1.
 - CI job `tests (Python 3.14)` (not required): runs the test suite on 3.14 and
   checks that the runtime pins resolve there.
 

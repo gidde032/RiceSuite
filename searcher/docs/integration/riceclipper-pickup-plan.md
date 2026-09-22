@@ -49,7 +49,7 @@ RiceClipper→RicePoster *mechanism* (not its directory):
       "clip":         { "duration": 30, "target_in": 0, "target_out": 30 },
       "transcript": "...", "score": 0.8, "rationale": "...",
       "rights_risk": "low|med|high", "beat_profile_version": "...",
-      "profile_id": "..."
+      "profile_id": "...", "scorer_model": "claude-haiku-4-5 | heuristic-offline"
     }
   ]
 }

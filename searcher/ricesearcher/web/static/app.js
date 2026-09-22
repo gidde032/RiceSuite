@@ -179,8 +179,10 @@ function card(s) {
 
   // Right: metadata + gate controls.
   const meta = el("div", { class: "meta" });
+  // Offline slices were ranked by the heuristic prefilter only, never by the LLM.
+  const offline = s.scorer_model === "heuristic-offline";
   meta.append(el("div", { class: "meta-top" }, [
-    el("span", { class: "score", title: "LLM clippability score" }, s.score.toFixed(2)),
+    el("span", { class: "score", title: offline ? "offline heuristic score (not LLM-scored)" : "LLM clippability score" }, s.score.toFixed(2)),
     el("span", { class: "title" }, s.source_title),
   ]));
 
@@ -190,6 +192,10 @@ function card(s) {
       el("span", { class: "badge" }, "rights: " + s.rights_risk),
       el("span", { class: "badge" }, "heur " + s.heuristic_score.toFixed(2)),
     ];
+    if (offline) {
+      kids.push(el("span", { class: "badge offline", title: "scored offline by the heuristic prefilter; not LLM-scored" },
+        "offline score"));
+    }
     if (s.status === "selected") kids.push(el("span", { class: "badge status-selected" }, "selected"));
     if (s.status === "rejected") kids.push(el("span", { class: "badge status-rejected" }, "rejected"));
     if (s.status === "reviewed") kids.push(el("span", { class: "badge" }, "reviewed"));

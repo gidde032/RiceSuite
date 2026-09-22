@@ -43,7 +43,7 @@ files only.
 | D1 | Discovery source & acquisition | **yt-dlp pull (URL/channel) + local watch-folder**, one thin acquisition layer → shared pipeline; search-query acquisition deferred to [#15](https://github.com/gidde032/RiceSearcher/issues/15) |
 | D2 | Niche definition | Versioned **beat-profile**: NL brief + few-shot good/bad exemplars; many **saved profiles**, one JSON file each (D9) |
 | D3 | Transcription ownership | **RiceSearcher owns it** via local faster-whisper; source captions optional, never depended on |
-| D4 | Scoring | **Hybrid**: heuristic prefilter shortlists windows → LLM scores + explains the shortlist |
+| D4 | Scoring | **Hybrid**: heuristic prefilter shortlists windows → LLM scores + explains the shortlist. An explicit `score --offline` mode ranks by the heuristic score alone, with no network call, and records `scorer_model = "heuristic-offline"` ([#2](https://github.com/gidde032/RiceSearcher/issues/2)) |
 | D5 | Library store | **SQLite** slice index + **content-addressed disk cache** for source/clips |
 | D6 | Moment dedup | Hybrid (intra-source time-overlap + cross-source transcript embedding), **advisory-only — never filters, discards, or blocks** |
 | D7 | Interface | **CLI pipeline first**, then a minimal **Slate-styled** local review UI for the select gate |
@@ -66,7 +66,15 @@ files only.
   against the versioned beat-profile, producing a clippability score (0–1) and a
   short rationale. The `profile_id`, beat-profile version, and model id are
   recorded on the slice. A scoring run names one profile (D9); a re-score
-  replaces candidate rows of that profile only.
+  replaces candidate rows of that profile only. **Offline mode (#2):**
+  `score --offline` skips the LLM. Each window's heuristic score becomes its
+  slice score, the rationale states it was not LLM-scored, no credential is
+  required or used, and scoring makes no network call. The model id recorded is
+  `heuristic-offline`, which `slices`, the review UI, and the handoff manifest
+  surface. Offline slices pass
+  through the same dedup, select gate, and handoff unchanged. Heuristic and LLM
+  scores share one `score` sort order within a profile; the ordering policy for
+  mixed profiles is open in [#5](https://github.com/gidde032/RiceSearcher/issues/5).
 - **FR-5 — Store scored slices (D5, ADR Q3/Q4).** Each scored candidate slice is
   written to the SQLite library with the schema in §6, including an original
   **padded context window** and editable **target in/out**. Once reviewed, target
@@ -202,7 +210,8 @@ dedupe by stable `batch_id`; **producer only writes** and never manages lifecycl
       "score": 0.0, "rationale": "...",
       "rights_risk": "low|med|high",
       "beat_profile_version": "...",
-      "profile_id": "..."
+      "profile_id": "...",
+      "scorer_model": "claude-haiku-4-5 | heuristic-offline"
     }
   ]
 }
