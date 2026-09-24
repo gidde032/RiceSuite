@@ -22,6 +22,7 @@ from app.probe import MediaInfo
 
 WORK_ROOT = Path(__file__).resolve().parent.parent / ".riceclipper_work"
 JOB_METADATA_FILENAME = "job.json"
+RENDERED_OUTPUT_FILENAME = "output.mp4"
 _JOB_METADATA_SCHEMA = 1
 _SAFE_JOB_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
 
@@ -140,6 +141,15 @@ def persist_searcher_job(job: Job) -> None:
         "reference_words": [word.model_dump() for word in job.reference_words],
         "crop_plan": job.crop_plan.model_dump() if job.crop_plan else None,
         "music_plan": job.music_plan.model_dump() if job.music_plan else None,
+        # A completed render is recorded only after ffmpeg exits successfully.
+        # An interrupted render may leave a partial output.mp4 behind.
+        "rendered_output": (
+            RENDERED_OUTPUT_FILENAME
+            if job.status == "done"
+            and job.output_path == job.dir / RENDERED_OUTPUT_FILENAME
+            and job.output_path.is_file()
+            else None
+        ),
     }
     metadata = job.dir / JOB_METADATA_FILENAME
     temporary = metadata.with_suffix(".json.tmp")
@@ -171,6 +181,7 @@ def _recover_searcher_job(job_dir: Path) -> Job | None:
         music_plan = (
             CropPlan.model_validate(raw_music) if raw_music is not None else None
         )
+        rendered_output = payload.get("rendered_output")
         if (
             payload["schema_version"] != _JOB_METADATA_SCHEMA
             or not isinstance(job_id, str)
@@ -185,6 +196,7 @@ def _recover_searcher_job(job_dir: Path) -> Job | None:
             or not isinstance(manifest, dict)
             or not isinstance(title, str)
             or not isinstance(raw_words, list)
+            or rendered_output not in (None, RENDERED_OUTPUT_FILENAME)
         ):
             return None
     except (KeyError, OSError, TypeError, ValueError):
@@ -196,6 +208,16 @@ def _recover_searcher_job(job_dir: Path) -> Job | None:
         return None
     if stat.S_ISLNK(source_stat.st_mode) or not stat.S_ISREG(source_stat.st_mode):
         return None
+    output_path = None
+    if rendered_output == RENDERED_OUTPUT_FILENAME:
+        candidate = job_dir / RENDERED_OUTPUT_FILENAME
+        try:
+            output_stat = candidate.lstat()
+        except OSError:
+            pass
+        else:
+            if stat.S_ISREG(output_stat.st_mode) and output_stat.st_size > 0:
+                output_path = candidate
     return Job(
         id=job_id,
         dir=job_dir,
@@ -203,7 +225,8 @@ def _recover_searcher_job(job_dir: Path) -> Job | None:
         info=info,
         words=words,
         reference_words=reference_words,
-        status="ready",
+        status="done" if output_path else "ready",
+        output_path=output_path,
         searcher_title=title,
         searcher_metadata=clip,
         searcher_manifest=manifest,

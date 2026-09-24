@@ -787,15 +787,14 @@ async function renderClip(clip) {
 }
 
 async function showResult(clip) {
-  const resp = await fetch(`/api/jobs/${clip.jobId}/output`);
-  if (!resp.ok) throw new Error(`could not load output (${resp.status})`);
-  const blob = await resp.blob();
-
+  const endpoint = `/api/jobs/${clip.jobId}/output`;
+  // The video element requests playable ranges on demand. Fetching the whole
+  // MP4 as a blob first can fail even after the server has finished rendering.
   if (clip.outputUrl) URL.revokeObjectURL(clip.outputUrl);
-  clip.outputUrl = URL.createObjectURL(blob);
-  clip.outputVideoEl.src = clip.outputUrl;
+  clip.outputUrl = null;
+  clip.outputVideoEl.src = endpoint;
 
-  clip.downloadEl.href = clip.outputUrl;
+  clip.downloadEl.href = endpoint;
   clip.downloadEl.download = `riceclipper-${clip.jobId}.mp4`;
   clip.resultEl.classList.remove("hidden");
 }

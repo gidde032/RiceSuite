@@ -470,6 +470,50 @@ def main():
                         tab_reachability(devtools, "music", disabled_target=target)
                     except AssertionError as error:
                         failures.append(f"keyboard {target} negative control: {error}")
+                output_link = devtools.evaluate(
+                    """(async () => {
+                      const previousFetch = window.fetch;
+                      let visible = false;
+                      const clip = {
+                        jobId: "fixture",
+                        outputUrl: null,
+                        outputVideoEl: { src: "" },
+                        downloadEl: { href: "", download: "" },
+                        resultEl: { classList: { remove: () => { visible = true; } } },
+                      };
+                      let outputFetches = 0;
+                      window.fetch = async (url, options) => {
+                        if (String(url).endsWith("/output")) {
+                          outputFetches += 1;
+                          throw new TypeError("Failed to fetch");
+                        }
+                        return previousFetch(url, options);
+                      };
+                      try {
+                        await showResult(clip);
+                        return {
+                          video: clip.outputVideoEl.src,
+                          download: clip.downloadEl.href,
+                          filename: clip.downloadEl.download,
+                          visible,
+                          blobUrl: clip.outputUrl,
+                          outputFetches,
+                        };
+                      } finally {
+                        window.fetch = previousFetch;
+                      }
+                    })()"""
+                )
+                endpoint = "/api/jobs/fixture/output"
+                if output_link != {
+                    "video": endpoint,
+                    "download": endpoint,
+                    "filename": "riceclipper-fixture.mp4",
+                    "visible": True,
+                    "blobUrl": None,
+                    "outputFetches": 0,
+                }:
+                    failures.append(f"completed-render direct output: {output_link}")
                 if devtools.errors:
                     failures.append(f"browser console/JS errors: {devtools.errors}")
                 if failures:

@@ -13,7 +13,7 @@ import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -69,6 +69,15 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="RiceClipper", version="0.1.0", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def no_store_review_assets(request: Request, call_next):
+    """A long-lived local tab must reload current HTML, CSS, and JavaScript."""
+    response = await call_next(request)
+    if request.url.path in {"/", "/index.html", "/app.js", "/style.css"}:
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.get("/api/health")
@@ -192,6 +201,8 @@ def lyrics_job(job_id: str, req: LyricsRequest) -> LyricsResult:
         if job.output_path and job.output_path.exists():
             job.output_path.unlink(missing_ok=True)
         job.output_path = None
+        if job.searcher_manifest is not None:
+            jobs.persist_searcher_job(job)
         return result
 
 
@@ -212,6 +223,8 @@ def restore_transcript(job_id: str) -> JobState:
         if job.output_path and job.output_path.exists():
             job.output_path.unlink(missing_ok=True)
         job.output_path = None
+        if job.searcher_manifest is not None:
+            jobs.persist_searcher_job(job)
         return job.state()
 
 
@@ -329,11 +342,14 @@ def render_job(job_id: str, req: RenderRequest) -> JobState:
         # run does not pin this request behind other jobs (Issue #30). A second
         # render of a job already ``rendering`` is rejected by the status check
         # above with 409.
+        # Clear the prior completion record before ffmpeg writes output.mp4.
+        # This also removes a partial file left by an interrupted render.
+        (job.dir / jobs.RENDERED_OUTPUT_FILENAME).unlink(missing_ok=True)
+        job.output_path = None
+        if job.searcher_manifest is not None:
+            jobs.persist_searcher_job(job)
         job.status = "rendering"
         job.error = None
-        if job.output_path is not None:
-            job.output_path.unlink(missing_ok=True)
-            job.output_path = None
         render_lock = job.render_lock
         source_path = job.source_path
         info = job.info
@@ -360,6 +376,8 @@ def render_job(job_id: str, req: RenderRequest) -> JobState:
         with jobs.job_operation_lock():
             job.output_path = out
             job.status = "done"
+            if job.searcher_manifest is not None:
+                jobs.persist_searcher_job(job)
             return job.state()
 
 

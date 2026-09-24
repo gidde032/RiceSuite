@@ -79,6 +79,63 @@ def test_media_routes_work_over_http(isolated_jobs):
     assert cleared.json()["job_dirs_removed"] == 1
 
 
+def test_review_assets_are_not_cached_across_local_code_changes():
+    with TestClient(main.app) as client:
+        for path in ("/", "/index.html", "/app.js", "/style.css"):
+            response = client.get(path)
+            assert response.status_code == 200
+            assert response.headers["cache-control"] == "no-store"
+
+
+def test_searcher_render_survives_restart(monkeypatch, isolated_jobs):
+    job = _ready_job(isolated_jobs)
+    job.searcher_manifest = {"batch": "one"}
+    job.searcher_metadata = {"id": "clip"}
+    jobs.persist_searcher_job(job)
+
+    def fake_render(work_dir, *_args, **_kwargs):
+        output = work_dir / jobs.RENDERED_OUTPUT_FILENAME
+        output.write_bytes(b"complete video")
+        return output
+
+    monkeypatch.setattr(main, "render", fake_render)
+    state = main.render_job(job.id, RenderRequest())
+    assert state.status == "done" and state.has_output
+
+    jobs._JOBS.clear()  # simulate a server restart
+    recovered = jobs.get_job(job.id)
+    assert recovered is not None
+    assert recovered.status == "done" and recovered.state().has_output
+    assert main.get_output(job.id).path == recovered.output_path
+
+
+def test_interrupted_searcher_rerender_cannot_revive_prior_output(
+    monkeypatch, isolated_jobs
+):
+    job = _ready_job(isolated_jobs)
+    job.searcher_manifest = {"batch": "one"}
+    job.searcher_metadata = {"id": "clip"}
+    old_output = job.dir / jobs.RENDERED_OUTPUT_FILENAME
+    old_output.write_bytes(b"old render")
+    job.output_path = old_output
+    job.status = "done"
+    jobs.persist_searcher_job(job)
+
+    def interrupted_render(work_dir, *_args, **_kwargs):
+        assert not old_output.exists()
+        old_output.write_bytes(b"partial render")
+        raise OSError("interrupted")
+
+    monkeypatch.setattr(main, "render", interrupted_render)
+    with pytest.raises(HTTPException):
+        main.render_job(job.id, RenderRequest())
+
+    jobs._JOBS.clear()
+    recovered = jobs.get_job(job.id)
+    assert recovered is not None
+    assert recovered.status == "ready" and not recovered.state().has_output
+
+
 def test_media_clear_route_returns_conflict_while_job_is_active(isolated_jobs):
     job = jobs.Job(id="active", dir=isolated_jobs / "active", status="rendering")
     job.dir.mkdir()
