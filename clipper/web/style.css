@@ -10,6 +10,7 @@
   --charcoal: #3b4044;
   --text: #e5e8ea;
   --danger: #ff7979;
+  --destructive: #d8413b;
   --focus: #d5d9db;
   --shadow: 0 18px 50px rgb(0 0 0 / 28%);
 }
@@ -48,7 +49,7 @@ body:has(#batch-panel:not(.hidden)) main { width: 100%; padding: calc(var(--edit
 .clip-head { display: flex; min-height: 48px; padding: var(--editor-space); align-items: center; gap: var(--editor-space); border-bottom: 1px solid var(--hairline); }
 .clip-title { overflow: hidden; font-size: 13px; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
 .clip-head .clip-status { flex: 1; margin: 0; text-align: right; }
-.clip-remove { width: 36px; min-height: 36px; padding: 0; border-color: #8b0000; color: var(--muted); }
+.clip-remove { width: 36px; min-height: 36px; padding: 0; border-color: var(--destructive); color: var(--destructive); }
 .review-grid { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: var(--editor-space); padding: var(--editor-space); }
 .preview-col { display: flex; grid-column: 1 / span 4; grid-row: 1; min-width: 0; padding: var(--editor-space); flex-direction: column; border: 1px solid var(--hairline); border-radius: 6px; background: var(--backdrop); }
 .preview-col video, .output-video { display: block; width: 100%; background: #000; }
@@ -115,7 +116,7 @@ input[type="file"]::file-selector-button { margin-right: 10px; border: 1px solid
 .text-heading { display: flex; min-height: 28px; align-items: start; justify-content: space-between; gap: var(--editor-space); padding-bottom: calc(var(--editor-space) * 0.5); }
 .text-heading .hint { margin: 0; }
 .text-heading .field-label { padding: 0; }
-.transcript, .lyrics-input { display: block; width: 100%; height: clamp(280px, 36vh, 440px); min-height: 280px; max-height: 440px; overflow: auto; padding: var(--editor-space); border: 1px solid var(--control-line); border-radius: 6px; background: var(--backdrop); color: var(--text); font: 14px/1.5 Arial, sans-serif; letter-spacing: normal; }
+.transcript, .lyrics-input { display: block; width: 100%; height: clamp(280px, 36vh, 440px); min-height: 280px; max-height: 440px; overflow: auto; padding: var(--editor-space); border: 1px solid var(--control-line); border-radius: 6px; background: var(--backdrop); color: var(--text); font: 15px/1.5 Arial, sans-serif; letter-spacing: normal; }
 .lyrics-input { resize: none; }
 .transcript .word { display: inline-block; padding: 0; border-radius: 3px; outline: none; }
 .transcript .word:focus { background: rgb(174 179 182 / 20%); outline: 1px solid var(--rice); }
@@ -131,12 +132,12 @@ input[type="file"]::file-selector-button { margin-right: 10px; border: 1px solid
 
 .clip-result { padding: 16px; border-top: 1px solid var(--hairline); }
 .batch-actions { display: grid; grid-template-columns: 1fr 1.3fr 1.3fr; gap: var(--editor-space); margin-top: var(--editor-space); padding: var(--editor-space) 0; border-top: 1px solid var(--hairline); background: var(--backdrop); }
-#restart-btn { border-color: #8b0000; }
+#restart-btn { border-color: var(--destructive); color: var(--destructive); }
 #batch-panel button { min-height: 36px; padding: calc(var(--editor-space) * 0.5) var(--editor-space); }
 #batch-panel .clip-remove { padding: 0; }
 button, .primary { display: inline-flex; min-height: 44px; padding: 9px 16px; align-items: center; justify-content: center; border: 1px solid var(--control-line); border-radius: 5px; background: var(--backdrop); color: var(--text); cursor: pointer; text-decoration: none; }
 button:hover, .primary:hover { border-color: var(--rice); }
-.clip-remove:hover, #restart-btn:hover { border-color: #8b0000; }
+.clip-remove:hover, #restart-btn:hover { border-color: var(--destructive); }
 .primary { border-color: #555b60; background: var(--charcoal); font-weight: 650; }
 button:disabled, .primary:disabled { border-color: var(--hairline); background: var(--interior); color: var(--muted); cursor: not-allowed; }
 button:focus-visible, .primary:focus-visible, textarea:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }

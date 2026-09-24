@@ -187,7 +187,8 @@ CHECKS = r"""
   const measure = document.createElement("canvas").getContext("2d");
   measure.font = css(clip.transcriptEl).font;
   check(near(wordGap, measure.measureText(" ").width, 0.75), "generated words use ordinary text spacing");
-  check(css(clip.transcriptEl).fontSize === "14px" && css(clip.transcriptEl).lineHeight === "21px", "reading scale");
+  check(css(clip.transcriptEl).fontSize === "15px" && css(clip.transcriptEl).lineHeight === "22.5px", "reading scale");
+  check(css(clip.transcriptEl).fontSize === css(clip.el.querySelector(".header-input")).fontSize, "transcript matches header text size");
   check(css(clip.lyricsInputEl).resize === "none", "lyrics cannot resize away from transcript");
   check(transcript.height >= 280 && transcript.height <= 440, "transcript height");
   if (mode === "music") check(lyrics.height >= 280 && lyrics.height <= 440, "lyric height");
@@ -202,7 +203,8 @@ CHECKS = r"""
   const normalButton = css(clip.el.querySelector(".header-generate"));
   for (const el of [clip.el.querySelector(".clip-remove"), document.getElementById("restart-btn")]) {
     check(css(el).backgroundColor === normalButton.backgroundColor, "red-bordered button uses normal interior");
-    check(css(el).borderTopColor === "rgb(139, 0, 0)", "red-bordered button edge");
+    check(css(el).borderTopColor === "rgb(216, 65, 59)", "red-bordered button edge");
+    check(css(el).color === "rgb(216, 65, 59)", "red-bordered button text matches edge");
   }
   const captionPlan = { decision: "crop", reason: "caption_zone", face_rate: 1, safe_rate: 1, warning: "caption_zone" };
   applyGeometry(clip, { width: 1920, height: 1080, crop_plan: captionPlan, music_plan: captionPlan });
