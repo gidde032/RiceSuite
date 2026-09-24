@@ -138,17 +138,19 @@ CHECKS = r"""
   const lyrics = rect(clip.lyricsInputEl);
   const action = rect(document.querySelector(".batch-actions"));
   const wide = innerWidth > 880;
+  // Layout width excludes a classic (non-overlay) scrollbar; media queries do not.
+  const pageWidth = document.documentElement.clientWidth;
   const unit = Number.parseFloat(css(document.getElementById("batch-panel")).getPropertyValue("--editor-space"));
   check(unit === 8, "editor spacing token");
   check(near(card.x, wide ? unit * 2 : unit), "page inset");
-  check(near(card.right, innerWidth - (wide ? unit * 2 : unit)), "right page inset");
+  check(near(card.right, pageWidth - (wide ? unit * 2 : unit)), "right page inset");
   document.body.style.setProperty("--editor-space", "10px");
   check(near(rect(clip.el).x, wide ? 20 : 10), "page inset follows spacing token");
-  check(near(rect(clip.el).right, innerWidth - (wide ? 20 : 10)), "right page inset follows spacing token");
+  check(near(rect(clip.el).right, pageWidth - (wide ? 20 : 10)), "right page inset follows spacing token");
   document.body.style.removeProperty("--editor-space");
-  check(document.documentElement.scrollWidth <= innerWidth, "horizontal document overflow");
+  check(document.documentElement.scrollWidth <= pageWidth, "horizontal document overflow");
   check(preview.x >= grid.x && settings.right <= grid.right, "clip inset");
-  check(card.right <= innerWidth - (wide ? unit * 2 : unit) + 1, "clip exceeds page");
+  check(card.right <= pageWidth - (wide ? unit * 2 : unit) + 1, "clip exceeds page");
   check(action.y >= card.bottom, "action bar overlaps clip content");
   check(video.height >= 360, "preview minimum video height");
   check(video.bottom <= geoNote.y && geoNote.bottom <= previewStatus.y, "notes follow video");
@@ -199,7 +201,7 @@ CHECKS = r"""
   check(css(clip.el.querySelector(".sample-mono")).fontFamily.includes("monospace"), "Mono sample font");
   const warning = clip.geometryEl.querySelector(".geometry-warning");
   check(!warning.hidden && warning.textContent === "face near header", "header warning remains visible and labeled");
-  check(css(warning).backgroundColor === "rgb(139, 0, 0)" && css(warning).color === "rgb(255, 255, 255)", "header warning keeps solid red treatment");
+  check(css(warning).backgroundColor === "rgb(216, 65, 59)" && css(warning).color === "rgb(255, 255, 255)", "header warning keeps solid red treatment");
   const normalButton = css(clip.el.querySelector(".header-generate"));
   for (const el of [clip.el.querySelector(".clip-remove"), document.getElementById("restart-btn")]) {
     check(css(el).backgroundColor === normalButton.backgroundColor, "red-bordered button uses normal interior");
@@ -209,7 +211,7 @@ CHECKS = r"""
   const captionPlan = { decision: "crop", reason: "caption_zone", face_rate: 1, safe_rate: 1, warning: "caption_zone" };
   applyGeometry(clip, { width: 1920, height: 1080, crop_plan: captionPlan, music_plan: captionPlan });
   check(!warning.hidden && warning.textContent === "face near captions", "caption warning remains visible and labeled");
-  check(css(warning).backgroundColor !== "rgb(139, 0, 0)", "caption warning keeps its existing treatment");
+  check(css(warning).backgroundColor !== "rgb(216, 65, 59)", "caption warning keeps its existing treatment");
   const headerPlan = { ...captionPlan, warning: "header_zone" };
   applyGeometry(clip, { width: 1920, height: 1080, crop_plan: headerPlan, music_plan: headerPlan });
   for (const selector of [".clip-remove", ".choice-card", ".header-generate", ".lyrics-align", ".lyrics-restore", ".switch-label", ".vol"]) {
