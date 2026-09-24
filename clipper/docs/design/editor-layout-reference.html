@@ -17,10 +17,10 @@
     #rc-editor-reference .clip-title-row { display: flex; min-height: 38px; align-items: center; gap: 10px; padding: 5px 10px 5px 12px; border-bottom: 1px solid #2b3136; }
     #rc-editor-reference .clip-title { overflow: hidden; flex: 1; font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
     #rc-editor-reference .clip-status { color: #aeb3b6; font-size: 12px; white-space: nowrap; }
-    #rc-editor-reference .remove { width: 36px; height: 36px; border: 1px solid #8B0000; border-radius: 4px; background: #8B0000; color: #fff; font-size: 16px; line-height: 1; }
+    #rc-editor-reference .remove { width: 36px; height: 36px; border: 1px solid #8B0000; border-radius: 4px; background: #04060a; color: #80878c; font-size: 16px; line-height: 1; }
     #rc-editor-reference .stage { display: grid; gap: var(--editor-space); padding: var(--editor-space); }
-    #rc-editor-reference .preview { grid-area: preview; min-width: 0; }
-    #rc-editor-reference .video { position: relative; display: grid; height: 253px; place-items: center; overflow: hidden; border: 1px solid #2b3136; border-radius: 5px; background: #000; }
+    #rc-editor-reference .preview { display: flex; grid-area: preview; min-width: 0; flex-direction: column; }
+    #rc-editor-reference .video { position: relative; display: grid; min-height: 360px; flex: 1 1 360px; place-items: center; overflow: hidden; border: 1px solid #2b3136; border-radius: 5px; background: #000; }
     #rc-editor-reference .video::after { position: absolute; right: 8px; bottom: 9px; left: 8px; height: 3px; background: linear-gradient(to right, #aeb3b6 0 28%, #626a70 28% 100%); content: ""; }
     #rc-editor-reference .play { position: absolute; bottom: 18px; left: 13px; color: #fff; font-size: 11px; }
     #rc-editor-reference .player-icons { position: absolute; right: 14px; bottom: 18px; color: #fff; font-size: 13px; letter-spacing: 12px; }
@@ -68,7 +68,7 @@
     #rc-editor-reference .text-foot .muted { margin-left: auto; }
     #rc-editor-reference .actions { display: grid; grid-template-columns: 1fr 1.3fr 1.3fr; gap: var(--editor-space); margin-top: var(--editor-space); padding-top: var(--editor-space); border-top: 1px solid #2b3136; }
     #rc-editor-reference .actions button { min-height: 36px; padding: 5px 8px; border: 1px solid #626a70; border-radius: 4px; background: #04060a; color: #e5e8ea; font: 12px Arial, sans-serif; }
-    #rc-editor-reference .actions .start-over { border-color: #8B0000; background: #8B0000; color: #fff; }
+    #rc-editor-reference .actions .start-over { border-color: #8B0000; }
     #rc-editor-reference .actions .render { background: #3b4044; font-weight: 700; }
     #rc-editor-reference.mode-speech .compare-panel { display: none; }
     #rc-editor-reference.mode-speech .transcript-panel { grid-column: 1 / -1; }
@@ -88,7 +88,7 @@
       #rc-editor-reference .settings { order: 2; }
       #rc-editor-reference .transcript-panel { order: 3; }
       #rc-editor-reference .compare-panel { order: 4; }
-      #rc-editor-reference .video { height: 220px !important; }
+      #rc-editor-reference .video { height: min(80vh, 900px) !important; min-height: 0; flex: none; }
       #rc-editor-reference .actions { grid-template-columns: 1fr; }
     }
     @media (pointer: coarse) {

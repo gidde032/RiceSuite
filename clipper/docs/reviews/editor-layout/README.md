@@ -9,7 +9,8 @@ completed media render.
 
 The filenames identify mode and viewport: 390×844, 768×1024, 1024×768,
 1440×900, and 1920×1080. The script separately asserts computed pane geometry,
-spacing, typography, colors, overflow, keyboard focus, action-bar clearance,
-settings stability between modes, and coarse-pointer target size. It fails on
-JavaScript or console errors. Its detailed local results are written to
+preview height and note placement, normal transcript word spacing, typography,
+colors, overflow, keyboard focus, action-bar clearance, settings stability
+between modes, and coarse-pointer target size. It fails on JavaScript or console
+errors. Its detailed local results are written to
 `.riceclipper_work/editor-browser/results.json`.

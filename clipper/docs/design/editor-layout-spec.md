@@ -24,9 +24,10 @@ At viewport widths of **881 px and above**, the editor has two rows:
 
 1. **Upper row:** video preview and its existing geometry/source notes on the
    left; all existing editing and caption settings on the right. Target a
-   **40/60** preview-to-settings split. Keep the video near its current useful
-   size, with a maximum displayed height of **360 px**; expanding text is the
-   priority when more screen space becomes available. Condense Content,
+   **40/60** preview-to-settings split. Let the video player grow vertically to
+   use the preview side's available height, with the geometry and muted-playback
+   notes directly below it. Preserve the full video frame rather than cropping
+   it; portrait clips can retain side letterboxing. Condense Content,
    Geometry, Header style, Burn captions, Caption style, and optional Music
    controls into short, consistently spaced rows. Keep Header and Generate in
    the settings area.
@@ -71,6 +72,10 @@ existing Slate **15 px** body scale. Caption preset samples, including the actua
 **Mono** preset sample, keep their established treatment fonts because they
 preview rendered output.
 
+Generated transcript words have ordinary single-space separation, matching
+pasted-lyrics text. Editable word targets add no horizontal padding between
+words.
+
 Choice cards, row padding, and ordinary action buttons become shorter than in
 the current editor, while every interactive target remains at least **36 px**
 high for fine pointers and **44 px** for coarse pointers. Do not reduce text
@@ -78,16 +83,13 @@ size to fit controls; wrap caption choices into more rows when needed.
 
 ## Color amendment
 
-Use **`#8B0000`** as a solid fill with **white text** for these three controls
-only:
+Use **`#8B0000`** as a solid fill with **white text** for the
+`face near header` warning badge.
 
-- the `face near header` warning badge;
-- each clip's remove `×` button; and
-- the batch `Start over` button.
-
-The warning remains text-labeled. Keep visible focus indication. The Slate
-palette, other status/error colors, logo, and caption preset colors remain as
-already specified.
+Each clip's remove `×` and the batch `Start over` button retain the original
+Slate dark interior and text treatment, with **`#8B0000` borders**. The
+warning remains text-labeled. Keep visible focus indication. The Slate palette,
+other status/error colors, logo, and caption preset colors remain as specified.
 
 ## Responsive layout
 
@@ -112,10 +114,13 @@ styles rather than relying on a screenshot alone:
 - Music transcript and lyric panes have equal computed width and height and
   aligned top edges; Speech transcript spans the full lower row;
 - settings remain in the same location and order across modes;
+- the video player fills the preview side down to its notes on desktop and
+  grows with viewport height on narrow screens without cropping;
 - transcript and lyrics use identical computed Arial font, line height,
   padding, border, and background; small grey operational text also uses Arial;
-- warning, remove, and Start over have computed `#8B0000` backgrounds and
-  white text;
+- generated word gaps match a normal space in the shared reading font;
+- the header warning has a `#8B0000` fill and white text; remove and Start
+  over have `#8B0000` borders and the usual Slate button interior;
 - controls remain reachable by keyboard with visible focus, and the action
   bar does not obscure editing at any tested viewport.
 
@@ -126,6 +131,8 @@ page.
 ## Decision record
 
 On 2026-09-23, the user selected **Balanced** from three rendered layouts, with
-the `#8B0000` amendment and a full-width Speech transcript. Settings retain
-their Music-mode position in Speech. The Settings rail and Text first options
-were considered but not selected.
+the initial `#8B0000` amendment and a full-width Speech transcript. Settings
+retain their Music-mode position in Speech. The Settings rail and Text first
+options were considered but not selected. On 2026-09-24, the user amended the
+preview height, transcript word spacing, and red-button fill from live usage;
+those amendments supersede the corresponding reference details.

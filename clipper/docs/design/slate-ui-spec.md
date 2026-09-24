@@ -5,9 +5,9 @@ layout amendment is tracked in Issue #6.**
 
 The [editing page layout amendment](editor-layout-spec.md), ratified on
 2026-09-23, is the authority for current review-page geometry, spacing,
-operational text typography, and the three dark-red controls. The Slate concept
-image below remains the theme and identity reference, not the current review
-layout reference.
+operational text typography, and the red warning and button borders. The Slate
+concept image below remains the theme and identity reference, not the current
+review layout reference.
 
 Slate is the browser-interface theme for RiceClipper. It redesigns the existing
 local review workflow without changing its behavior, data contracts, rendering
@@ -167,7 +167,8 @@ both the visible toolbar symbol and the favicon.
 
 - `Render all` is the single solid charcoal primary action.
 - `Send to RicePoster` remains an outlined secondary action. `Start over` uses
-  the solid `#8B0000` treatment specified by the editing layout amendment.
+  the `#8B0000` border specified by the editing layout amendment, with the
+  normal Slate button interior.
 - Disabled controls must be visibly disabled and retain readable contrast.
 - Keyboard focus uses a rice-grey ring distinct from hover and selection.
 - Loading, ready, success, failure, and destructive states remain explicit in

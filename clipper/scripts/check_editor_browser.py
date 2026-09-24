@@ -102,7 +102,6 @@ CHECKS = r"""
     const plan = { decision: "crop", reason: "header_zone", face_rate: 1, safe_rate: 1, warning: "header_zone" };
     applyGeometry(item, { width: 1920, height: 1080, crop_plan: plan, music_plan: plan });
     item.sourceVideoEl.style.aspectRatio = "9 / 16";
-    item.sourceVideoEl.style.height = "360px";
     item.words = "Correct every word while timing stays locked.".split(" ").map((text, i) => ({
       text, start: i * 0.2, end: (i + 1) * 0.2, line_start: i === 0,
     }));
@@ -128,6 +127,9 @@ CHECKS = r"""
   const card = rect(clip.el);
   const grid = rect(clip.reviewGridEl);
   const preview = rect(clip.el.querySelector(".preview-col"));
+  const video = rect(clip.sourceVideoEl);
+  const geoNote = rect(clip.geoEl);
+  const previewStatus = rect(clip.el.querySelector(".preview-status"));
   const settings = rect(clip.el.querySelector(".edit-col"));
   const settingsDocument = { ...settings, y: settings.y + scrollY, bottom: settings.bottom + scrollY };
   const transcriptPanel = rect(clip.el.querySelector(".transcript-panel"));
@@ -148,7 +150,10 @@ CHECKS = r"""
   check(preview.x >= grid.x && settings.right <= grid.right, "clip inset");
   check(card.right <= innerWidth - (wide ? unit * 2 : unit) + 1, "clip exceeds page");
   check(action.y >= card.bottom, "action bar overlaps clip content");
-  check(css(clip.sourceVideoEl).maxHeight === "360px", "video maximum height");
+  check(video.height >= 360, "preview minimum video height");
+  check(video.bottom <= geoNote.y && geoNote.bottom <= previewStatus.y, "notes follow video");
+  check(preview.bottom - previewStatus.bottom <= unit * 2 + 2, "preview has no unused space below video and notes");
+  check(css(clip.sourceVideoEl).objectFit === "contain", "video keeps its full frame");
   check(!clip.lyricsEl.hidden === (mode === "music"), "lyric visibility");
   if (wide) {
     check(near(preview.y, settings.y), "upper row alignment");
@@ -177,6 +182,11 @@ CHECKS = r"""
   }
   check(css(clip.transcriptEl).fontFamily === "Arial, sans-serif", "Arial transcript");
   check(clip.transcriptEl.querySelector(".word").isContentEditable, "rendered transcript word remains editable");
+  const words = clip.transcriptEl.querySelectorAll(".word");
+  const wordGap = words[1].getBoundingClientRect().left - words[0].getBoundingClientRect().right;
+  const measure = document.createElement("canvas").getContext("2d");
+  measure.font = css(clip.transcriptEl).font;
+  check(near(wordGap, measure.measureText(" ").width, 0.75), "generated words use ordinary text spacing");
   check(css(clip.transcriptEl).fontSize === "14px" && css(clip.transcriptEl).lineHeight === "21px", "reading scale");
   check(css(clip.lyricsInputEl).resize === "none", "lyrics cannot resize away from transcript");
   check(transcript.height >= 280 && transcript.height <= 440, "transcript height");
@@ -188,9 +198,11 @@ CHECKS = r"""
   check(css(clip.el.querySelector(".sample-mono")).fontFamily.includes("monospace"), "Mono sample font");
   const warning = clip.geometryEl.querySelector(".geometry-warning");
   check(!warning.hidden && warning.textContent === "face near header", "header warning remains visible and labeled");
-  for (const el of [warning, clip.el.querySelector(".clip-remove"), document.getElementById("restart-btn")]) {
-    check(css(el).backgroundColor === "rgb(139, 0, 0)", "dark-red fill");
-    check(css(el).color === "rgb(255, 255, 255)", "white control text");
+  check(css(warning).backgroundColor === "rgb(139, 0, 0)" && css(warning).color === "rgb(255, 255, 255)", "header warning keeps solid red treatment");
+  const normalButton = css(clip.el.querySelector(".header-generate"));
+  for (const el of [clip.el.querySelector(".clip-remove"), document.getElementById("restart-btn")]) {
+    check(css(el).backgroundColor === normalButton.backgroundColor, "red-bordered button uses normal interior");
+    check(css(el).borderTopColor === "rgb(139, 0, 0)", "red-bordered button edge");
   }
   const captionPlan = { decision: "crop", reason: "caption_zone", face_rate: 1, safe_rate: 1, warning: "caption_zone" };
   applyGeometry(clip, { width: 1920, height: 1080, crop_plan: captionPlan, music_plan: captionPlan });
