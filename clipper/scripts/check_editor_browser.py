@@ -99,10 +99,8 @@ CHECKS = r"""
     const item = { localId: 1, ord: 1, name: "Review fixture", status: "ready" };
     buildCard(item);
     item.geoEl.textContent = "1920x1080 — will use subject crop or blur-pad to 1080x1920.";
-    item.geometryEl.hidden = false;
-    const warning = item.geometryEl.querySelector(".geometry-warning");
-    warning.hidden = false;
-    warning.textContent = "face near header";
+    const plan = { decision: "crop", reason: "header_zone", face_rate: 1, safe_rate: 1, warning: "header_zone" };
+    applyGeometry(item, { width: 1920, height: 1080, crop_plan: plan, music_plan: plan });
     item.sourceVideoEl.style.aspectRatio = "9 / 16";
     item.sourceVideoEl.style.height = "360px";
     item.transcriptEl.innerHTML = '<span class="word" contenteditable="true" tabindex="0">Correct</span> every word while timing stays locked.';
@@ -139,6 +137,9 @@ CHECKS = r"""
   check(unit === 8, "editor spacing token");
   check(near(card.x, wide ? unit * 2 : unit), "page inset");
   check(near(card.right, innerWidth - (wide ? unit * 2 : unit)), "right page inset");
+  document.body.style.setProperty("--editor-space", "10px");
+  check(near(rect(clip.el).x, wide ? 20 : 10), "page inset follows spacing token");
+  document.body.style.removeProperty("--editor-space");
   check(document.documentElement.scrollWidth <= innerWidth, "horizontal document overflow");
   check(preview.x >= grid.x && settings.right <= grid.right, "clip inset");
   check(card.right <= innerWidth - (wide ? unit * 2 : unit) + 1, "clip exceeds page");
@@ -172,24 +173,27 @@ CHECKS = r"""
   }
   check(css(clip.transcriptEl).fontFamily === "Arial, sans-serif", "Arial transcript");
   check(css(clip.transcriptEl).fontSize === "14px" && css(clip.transcriptEl).lineHeight === "21px", "reading scale");
+  check(css(clip.lyricsInputEl).resize === "none", "lyrics cannot resize away from transcript");
   check(transcript.height >= 280 && transcript.height <= 440, "transcript height");
   if (mode === "music") check(lyrics.height >= 280 && lyrics.height <= 440, "lyric height");
-  for (const selector of [".geo-note", ".geometry-summary", ".lyrics-badge", ".hint"]) {
+  for (const selector of [".geo-note", ".geometry-summary", ".lyrics-badge", ".hint", ".preview-status", ".clip-status"]) {
     check(css(clip.el.querySelector(selector)).fontFamily === "Arial, sans-serif", "Arial operational " + selector);
   }
+  check(css(document.getElementById("capbadge")).fontFamily === "Arial, sans-serif", "Arial tool status");
   check(css(clip.el.querySelector(".sample-mono")).fontFamily.includes("monospace"), "Mono sample font");
   for (const el of [clip.el.querySelector(".geometry-warning"), clip.el.querySelector(".clip-remove"), document.getElementById("restart-btn")]) {
     check(css(el).backgroundColor === "rgb(139, 0, 0)", "dark-red fill");
     check(css(el).color === "rgb(255, 255, 255)", "white control text");
   }
-  for (const selector of [".clip-remove", ".choice-card", ".header-generate", ".lyrics-align", ".lyrics-restore"]) {
+  const captionPlan = { decision: "crop", reason: "caption_zone", face_rate: 1, safe_rate: 1, warning: "caption_zone" };
+  applyGeometry(clip, { width: 1920, height: 1080, crop_plan: captionPlan, music_plan: captionPlan });
+  check(css(clip.geometryEl.querySelector(".geometry-warning")).backgroundColor !== "rgb(139, 0, 0)", "caption warning keeps its existing treatment");
+  const headerPlan = { ...captionPlan, warning: "header_zone" };
+  applyGeometry(clip, { width: 1920, height: 1080, crop_plan: headerPlan, music_plan: headerPlan });
+  for (const selector of [".clip-remove", ".choice-card", ".header-generate", ".lyrics-align", ".lyrics-restore", ".switch-label", ".vol"]) {
     const el = clip.el.querySelector(selector);
     if (el && el.getClientRects().length) check(rect(el).height >= (matchMedia("(pointer: coarse)").matches ? 44 : 36), "target size " + selector);
   }
-  const focusTarget = mode === "music" ? clip.lyricsInputEl : clip.el.querySelector(".clip-remove");
-  focusTarget.focus();
-  check(document.activeElement === focusTarget, "keyboard focus reaches control");
-  check(css(focusTarget).outlineStyle !== "none" && Number.parseFloat(css(focusTarget).outlineWidth) >= 2, "visible focus ring");
   window.scrollTo(0, document.documentElement.scrollHeight);
   const paneBottom = mode === "music" ? rect(clip.lyricsEl).bottom : rect(clip.transcriptEl).bottom;
   check(paneBottom <= rect(document.querySelector(".batch-actions")).y + 1, "action bar clears editor at page end");
@@ -197,6 +201,66 @@ CHECKS = r"""
   return { issues, settings: settingsDocument, preview, transcriptPanel, lyricsPanel, action, scrollWidth: document.documentElement.scrollWidth, width: innerWidth, mode };
 })()
 """
+
+
+def tab_reachability(devtools, mode, *, negative_control=False):
+    """Walk the real Tab sequence and check focus rings on representative controls."""
+    if negative_control:
+        devtools.evaluate("window.__editorFixture.lyricsInputEl.tabIndex = -1")
+    devtools.evaluate("document.body.tabIndex = -1; document.body.focus()")
+    expected = {"remove", "word"}
+    if mode == "music":
+        expected.update({"lyrics", "align", "restore"})
+    seen = set()
+    for _ in range(60):
+        devtools.call(
+            "Input.dispatchKeyEvent",
+            {
+                "type": "keyDown",
+                "key": "Tab",
+                "code": "Tab",
+                "windowsVirtualKeyCode": 9,
+            },
+        )
+        devtools.call(
+            "Input.dispatchKeyEvent",
+            {"type": "keyUp", "key": "Tab", "code": "Tab", "windowsVirtualKeyCode": 9},
+        )
+        state = devtools.evaluate(
+            """(() => {
+              const c = window.__editorFixture, el = document.activeElement;
+              const targets = {
+                remove: c.el.querySelector(".clip-remove"),
+                word: c.transcriptEl.querySelector(".word"),
+                lyrics: c.lyricsInputEl,
+                align: c.lyricsAlignEl,
+                restore: c.lyricsRestoreEl,
+              };
+              const name = Object.keys(targets).find((key) => targets[key] === el) || "";
+              const style = getComputedStyle(el);
+              return { name, outline: style.outlineStyle, width: parseFloat(style.outlineWidth) };
+            })()"""
+        )
+        if state["name"]:
+            seen.add(state["name"])
+            if state["outline"] == "none" or state["width"] < 1:
+                raise AssertionError(
+                    f"Tab focused {state['name']} without a visible ring"
+                )
+        if expected <= seen:
+            break
+    if negative_control:
+        devtools.evaluate(
+            "window.__editorFixture.lyricsInputEl.removeAttribute('tabindex')"
+        )
+        if "lyrics" in seen:
+            raise AssertionError(
+                "keyboard probe accepted a lyric field removed from Tab order"
+            )
+    elif not expected <= seen:
+        raise AssertionError(
+            f"{mode}: Tab missed {sorted(expected - seen)}; reached {sorted(seen)}"
+        )
 
 
 def browser_binary():
@@ -260,6 +324,23 @@ def main():
                     time.sleep(0.1)
                 else:
                     raise RuntimeError("editor page did not load")
+                failures = []
+                devtools.call(
+                    "Emulation.setDeviceMetricsOverride",
+                    {
+                        "width": 1920,
+                        "height": 1080,
+                        "deviceScaleFactor": 1,
+                        "mobile": False,
+                    },
+                )
+                upload_width = devtools.evaluate(
+                    'document.querySelector("main").getBoundingClientRect().width'
+                )
+                if upload_width > 1540:
+                    failures.append(
+                        f"upload workspace exceeded prior 1540px cap: {upload_width}"
+                    )
                 results = []
                 for width, height in VIEWPORTS:
                     devtools.call(
@@ -273,29 +354,11 @@ def main():
                     )
                     by_mode = {}
                     for mode in ("music", "speech"):
-                        devtools.call(
-                            "Input.dispatchKeyEvent",
-                            {
-                                "type": "keyDown",
-                                "key": "Tab",
-                                "code": "Tab",
-                                "windowsVirtualKeyCode": 9,
-                            },
-                        )
-                        devtools.call(
-                            "Input.dispatchKeyEvent",
-                            {
-                                "type": "keyUp",
-                                "key": "Tab",
-                                "code": "Tab",
-                                "windowsVirtualKeyCode": 9,
-                            },
-                        )
                         result = devtools.evaluate(
                             CHECKS.replace("MODE", json.dumps(mode), 1)
                         )
                         if result["issues"]:
-                            raise AssertionError(
+                            failures.append(
                                 f"{width}x{height} {mode}: {result['issues']}"
                             )
                         by_mode[mode] = result
@@ -306,13 +369,16 @@ def main():
                         (OUTPUT / f"{mode}-{width}x{height}.png").write_bytes(
                             base64.b64decode(screenshot["data"])
                         )
+                        try:
+                            tab_reachability(devtools, mode)
+                        except AssertionError as error:
+                            failures.append(f"{width}x{height} {mode}: {error}")
                     music = by_mode["music"]["settings"]
                     speech = by_mode["speech"]["settings"]
                     if any(
-                        abs(music[key] - speech[key]) > 1
-                        for key in ("x", "y", "width", "height")
+                        abs(music[key] - speech[key]) > 1 for key in ("x", "y", "width")
                     ):
-                        raise AssertionError(
+                        failures.append(
                             f"{width}x{height}: settings shifted between modes: {music} vs {speech}"
                         )
                     results.extend(by_mode.values())
@@ -345,13 +411,25 @@ def main():
                             CHECKS.replace("MODE", json.dumps(mode), 1)
                         )
                         if result["issues"]:
-                            raise AssertionError(
+                            failures.append(
                                 f"coarse {width}x{height} {mode}: {result['issues']}"
                             )
+                devtools.evaluate(
+                    """(() => {
+                      const c = window.__editorFixture;
+                      const radio = c.contentEl.querySelector('[value="music"]');
+                      radio.checked = true;
+                      radio.dispatchEvent(new Event("change", { bubbles: true }));
+                    })()"""
+                )
+                try:
+                    tab_reachability(devtools, "music", negative_control=True)
+                except AssertionError as error:
+                    failures.append(f"keyboard negative control: {error}")
                 if devtools.errors:
-                    raise AssertionError(
-                        f"browser console/JS errors: {devtools.errors}"
-                    )
+                    failures.append(f"browser console/JS errors: {devtools.errors}")
+                if failures:
+                    raise AssertionError("\n".join(failures))
                 (OUTPUT / "results.json").write_text(
                     json.dumps(results, indent=2) + "\n"
                 )

@@ -337,6 +337,7 @@ function applyGeometry(clip, state) {
     content === "music" ? _musicSummary(plan) : _speechSummary(plan, pct);
 
   const warning = plan ? plan.warning : null;
+  warnEl.classList.toggle("header-warning", warning === "header_zone");
   if (warning === "header_zone") {
     warnEl.textContent = "face near header";
     warnEl.hidden = false;
