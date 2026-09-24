@@ -242,6 +242,7 @@ python -m pytest -q                                   # full suite
 python -m ruff check . && python -m ruff format --check .   # lint + format (matches CI)
 python -m pytest -m smoke -q                          # the 8-test fast tier
 python -m pytest tests/ --cov=app --cov=render --cov=transcribe --cov-fail-under=85
+python scripts/check_editor_browser.py                  # Chrome layout, focus, overflow, screenshots
 
 # Maintainer-only subject-crop fixture gate (needs the gitignored
 # fixtures/landscape/ clips; six named roles + sheet review)
@@ -252,6 +253,9 @@ CI (`.github/workflows/ci.yml`) runs the same ruff checks and the full suite
 with an **85% coverage floor** on Python 3.12, on every PR and on every push to
 `main`. That job is the required check. A second, non-required job runs the
 suite on Python 3.14. `tests/test_gates.py` locks those numbers so they can't silently drift.
+The editor browser check uses a locally installed Chrome or Chromium (or
+`RICECLIPPER_CHROME`) and writes ten full-page screenshots to
+`.riceclipper_work/editor-browser/`.
 Optional local hooks mirror CI. `pre-commit` is pinned in
 `requirements-dev.txt`:
 

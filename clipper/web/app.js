@@ -171,6 +171,7 @@ function setRadioDisabled(group, disabled) {
 function buildCard(clip) {
   const node = $("clip-card-template").content.firstElementChild.cloneNode(true);
   clip.el = node;
+  clip.reviewGridEl = node.querySelector(".review-grid");
   clip.titleEl = node.querySelector(".clip-title");
   clip.statusEl = node.querySelector(".clip-status");
   clip.previewStatusEl = node.querySelector(".preview-status");
@@ -214,6 +215,8 @@ function buildCard(clip) {
   const headerHelp = node.querySelector("#header-help");
   headerHelp.id = `header-help-${clip.localId}`;
   clip.headerEl.id = `header-input-${clip.localId}`;
+  clip.lyricsInputEl.id = `lyrics-input-${clip.localId}`;
+  node.querySelector(".lyrics .field-label").htmlFor = clip.lyricsInputEl.id;
   node.querySelector(".header-label").htmlFor = clip.headerEl.id;
   clip.headerEl.setAttribute("aria-describedby", headerHelp.id);
 
@@ -237,7 +240,9 @@ function buildCard(clip) {
     rememberSlotStyle(clip.ord, "header", radioValue(clip.headerStyleEl));
   });
   clip.contentEl.addEventListener("change", () => {
-    clip.lyricsEl.hidden = radioValue(clip.contentEl) !== "music";
+    const isMusic = radioValue(clip.contentEl) === "music";
+    clip.lyricsEl.hidden = !isMusic;
+    clip.reviewGridEl.classList.toggle("music-review", isMusic);
     if (clip.geoState) applyGeometry(clip, clip.geoState);
   });
 
