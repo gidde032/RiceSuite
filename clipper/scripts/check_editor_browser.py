@@ -103,7 +103,10 @@ CHECKS = r"""
     applyGeometry(item, { width: 1920, height: 1080, crop_plan: plan, music_plan: plan });
     item.sourceVideoEl.style.aspectRatio = "9 / 16";
     item.sourceVideoEl.style.height = "360px";
-    item.transcriptEl.innerHTML = '<span class="word" contenteditable="true" tabindex="0">Correct</span> every word while timing stays locked.';
+    item.words = "Correct every word while timing stays locked.".split(" ").map((text, i) => ({
+      text, start: i * 0.2, end: (i + 1) * 0.2, line_start: i === 0,
+    }));
+    renderTranscript(item);
     item.lyricsInputEl.value = "Correct every word\nAlign the second line";
     document.getElementById("upload-panel").classList.add("hidden");
     document.getElementById("batch-panel").classList.remove("hidden");
@@ -139,6 +142,7 @@ CHECKS = r"""
   check(near(card.right, innerWidth - (wide ? unit * 2 : unit)), "right page inset");
   document.body.style.setProperty("--editor-space", "10px");
   check(near(rect(clip.el).x, wide ? 20 : 10), "page inset follows spacing token");
+  check(near(rect(clip.el).right, innerWidth - (wide ? 20 : 10)), "right page inset follows spacing token");
   document.body.style.removeProperty("--editor-space");
   check(document.documentElement.scrollWidth <= innerWidth, "horizontal document overflow");
   check(preview.x >= grid.x && settings.right <= grid.right, "clip inset");
@@ -172,6 +176,7 @@ CHECKS = r"""
     check(css(clip.transcriptEl)[property] === css(clip.lyricsInputEl)[property], "matching text " + property);
   }
   check(css(clip.transcriptEl).fontFamily === "Arial, sans-serif", "Arial transcript");
+  check(clip.transcriptEl.querySelector(".word").isContentEditable, "rendered transcript word remains editable");
   check(css(clip.transcriptEl).fontSize === "14px" && css(clip.transcriptEl).lineHeight === "21px", "reading scale");
   check(css(clip.lyricsInputEl).resize === "none", "lyrics cannot resize away from transcript");
   check(transcript.height >= 280 && transcript.height <= 440, "transcript height");
@@ -181,13 +186,16 @@ CHECKS = r"""
   }
   check(css(document.getElementById("capbadge")).fontFamily === "Arial, sans-serif", "Arial tool status");
   check(css(clip.el.querySelector(".sample-mono")).fontFamily.includes("monospace"), "Mono sample font");
-  for (const el of [clip.el.querySelector(".geometry-warning"), clip.el.querySelector(".clip-remove"), document.getElementById("restart-btn")]) {
+  const warning = clip.geometryEl.querySelector(".geometry-warning");
+  check(!warning.hidden && warning.textContent === "face near header", "header warning remains visible and labeled");
+  for (const el of [warning, clip.el.querySelector(".clip-remove"), document.getElementById("restart-btn")]) {
     check(css(el).backgroundColor === "rgb(139, 0, 0)", "dark-red fill");
     check(css(el).color === "rgb(255, 255, 255)", "white control text");
   }
   const captionPlan = { decision: "crop", reason: "caption_zone", face_rate: 1, safe_rate: 1, warning: "caption_zone" };
   applyGeometry(clip, { width: 1920, height: 1080, crop_plan: captionPlan, music_plan: captionPlan });
-  check(css(clip.geometryEl.querySelector(".geometry-warning")).backgroundColor !== "rgb(139, 0, 0)", "caption warning keeps its existing treatment");
+  check(!warning.hidden && warning.textContent === "face near captions", "caption warning remains visible and labeled");
+  check(css(warning).backgroundColor !== "rgb(139, 0, 0)", "caption warning keeps its existing treatment");
   const headerPlan = { ...captionPlan, warning: "header_zone" };
   applyGeometry(clip, { width: 1920, height: 1080, crop_plan: headerPlan, music_plan: headerPlan });
   for (const selector of [".clip-remove", ".choice-card", ".header-generate", ".lyrics-align", ".lyrics-restore", ".switch-label", ".vol"]) {
@@ -203,12 +211,20 @@ CHECKS = r"""
 """
 
 
-def tab_reachability(devtools, mode, *, negative_control=False):
+def tab_reachability(devtools, mode, *, disabled_target=None):
     """Walk the real Tab sequence and check focus rings on representative controls."""
-    if negative_control:
+    if disabled_target == "lyrics":
         devtools.evaluate("window.__editorFixture.lyricsInputEl.tabIndex = -1")
+    elif disabled_target == "content":
+        devtools.evaluate(
+            """window.__editorFixture.contentEl.querySelectorAll('input[type="radio"]').forEach((radio) => { radio.tabIndex = -1; })"""
+        )
+    elif disabled_target == "word":
+        devtools.evaluate(
+            'window.__editorFixture.transcriptEl.querySelector(".word").contentEditable = "false"'
+        )
     devtools.evaluate("document.body.tabIndex = -1; document.body.focus()")
-    expected = {"remove", "word"}
+    expected = {"remove", "content", "word"}
     if mode == "music":
         expected.update({"lyrics", "align", "restore"})
     seen = set()
@@ -231,13 +247,14 @@ def tab_reachability(devtools, mode, *, negative_control=False):
               const c = window.__editorFixture, el = document.activeElement;
               const targets = {
                 remove: c.el.querySelector(".clip-remove"),
+                content: c.contentEl.querySelector('input[type="radio"]:checked'),
                 word: c.transcriptEl.querySelector(".word"),
                 lyrics: c.lyricsInputEl,
                 align: c.lyricsAlignEl,
                 restore: c.lyricsRestoreEl,
               };
               const name = Object.keys(targets).find((key) => targets[key] === el) || "";
-              const style = getComputedStyle(el);
+              const style = getComputedStyle(name === "content" ? el.closest(".choice-card") : el);
               return { name, outline: style.outlineStyle, width: parseFloat(style.outlineWidth) };
             })()"""
         )
@@ -249,18 +266,43 @@ def tab_reachability(devtools, mode, *, negative_control=False):
                 )
         if expected <= seen:
             break
-    if negative_control:
-        devtools.evaluate(
-            "window.__editorFixture.lyricsInputEl.removeAttribute('tabindex')"
-        )
-        if "lyrics" in seen:
+    if disabled_target:
+        if disabled_target == "lyrics":
+            devtools.evaluate(
+                "window.__editorFixture.lyricsInputEl.removeAttribute('tabindex')"
+            )
+        elif disabled_target == "content":
+            devtools.evaluate(
+                """window.__editorFixture.contentEl.querySelectorAll('input[type="radio"]').forEach((radio) => { radio.removeAttribute("tabindex"); })"""
+            )
+        else:
+            devtools.evaluate(
+                'window.__editorFixture.transcriptEl.querySelector(".word").contentEditable = "true"'
+            )
+        if disabled_target in seen:
             raise AssertionError(
-                "keyboard probe accepted a lyric field removed from Tab order"
+                f"keyboard probe accepted {disabled_target} removed from Tab order"
             )
     elif not expected <= seen:
         raise AssertionError(
             f"{mode}: Tab missed {sorted(expected - seen)}; reached {sorted(seen)}"
         )
+
+
+def content_arrow_switch(devtools, mode):
+    """Check that a keyboard arrow changes the real Content mode."""
+    devtools.evaluate(
+        """window.__editorFixture.contentEl.querySelector('input[type="radio"]:checked').focus()"""
+    )
+    key = "ArrowRight" if mode == "speech" else "ArrowLeft"
+    devtools.call(
+        "Input.dispatchKeyEvent", {"type": "keyDown", "key": key, "code": key}
+    )
+    devtools.call("Input.dispatchKeyEvent", {"type": "keyUp", "key": key, "code": key})
+    actual = devtools.evaluate("radioValue(window.__editorFixture.contentEl)")
+    expected = "music" if mode == "speech" else "speech"
+    if actual != expected:
+        raise AssertionError(f"{mode} radio did not switch to {expected} with {key}")
 
 
 def browser_binary():
@@ -371,6 +413,7 @@ def main():
                         )
                         try:
                             tab_reachability(devtools, mode)
+                            content_arrow_switch(devtools, mode)
                         except AssertionError as error:
                             failures.append(f"{width}x{height} {mode}: {error}")
                     music = by_mode["music"]["settings"]
@@ -422,10 +465,11 @@ def main():
                       radio.dispatchEvent(new Event("change", { bubbles: true }));
                     })()"""
                 )
-                try:
-                    tab_reachability(devtools, "music", negative_control=True)
-                except AssertionError as error:
-                    failures.append(f"keyboard negative control: {error}")
+                for target in ("lyrics", "content", "word"):
+                    try:
+                        tab_reachability(devtools, "music", disabled_target=target)
+                    except AssertionError as error:
+                        failures.append(f"keyboard {target} negative control: {error}")
                 if devtools.errors:
                     failures.append(f"browser console/JS errors: {devtools.errors}")
                 if failures:
