@@ -1,0 +1,148 @@
+<div id="rc-editor-reference" class="mode-music">
+  <style>
+    #rc-editor-reference { --editor-space: 8px; color: #e5e8ea; font: 15px/1.4 Arial, sans-serif; }
+    #rc-editor-reference * { box-sizing: border-box; }
+    #rc-editor-reference .view-switch { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 0 0 12px; }
+    #rc-editor-reference .view-switch span { margin-right: 3px; color: #80878c; font-size: 12px; }
+    #rc-editor-reference button { cursor: pointer; }
+    #rc-editor-reference .view-switch button { min-height: 34px; padding: 5px 12px; border: 1px solid #626a70; border-radius: 5px; background: #04060a; color: #e5e8ea; font: inherit; }
+    #rc-editor-reference .view-switch button[aria-pressed="true"] { border-color: #aeb3b6; box-shadow: inset 0 0 0 1px #aeb3b6; }
+    #rc-editor-reference .view-switch .view-gap { width: 8px; }
+    #rc-editor-reference .app { width: 100%; overflow: hidden; border: 1px solid #2b3136; border-radius: 8px; background: #04060a; }
+    #rc-editor-reference .top { display: flex; height: 38px; align-items: center; gap: 9px; padding: 4px 15px; border-bottom: 1px solid #2b3136; color: #aeb3b6; font-size: 11px; }
+    #rc-editor-reference .brand { display: inline-block; width: 26px; height: 26px; object-fit: contain; }
+    #rc-editor-reference .ready-dot { width: 7px; height: 7px; border-radius: 50%; background: #aeb3b6; }
+    #rc-editor-reference .main { padding: calc(2 * var(--editor-space)); }
+    #rc-editor-reference .clip { overflow: hidden; border: 1px solid #2b3136; border-radius: 8px; background: #0c1116; }
+    #rc-editor-reference .clip-title-row { display: flex; min-height: 38px; align-items: center; gap: 10px; padding: 5px 10px 5px 12px; border-bottom: 1px solid #2b3136; }
+    #rc-editor-reference .clip-title { overflow: hidden; flex: 1; font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+    #rc-editor-reference .clip-status { color: #aeb3b6; font-size: 12px; white-space: nowrap; }
+    #rc-editor-reference .remove { width: 36px; height: 36px; border: 1px solid #8B0000; border-radius: 4px; background: #04060a; color: #80878c; font-size: 16px; line-height: 1; }
+    #rc-editor-reference .stage { display: grid; gap: var(--editor-space); padding: var(--editor-space); }
+    #rc-editor-reference .preview { display: flex; grid-area: preview; min-width: 0; flex-direction: column; }
+    #rc-editor-reference .video { position: relative; display: grid; min-height: 360px; flex: 1 1 360px; place-items: center; overflow: hidden; border: 1px solid #2b3136; border-radius: 5px; background: #000; }
+    #rc-editor-reference .video::after { position: absolute; right: 8px; bottom: 9px; left: 8px; height: 3px; background: linear-gradient(to right, #aeb3b6 0 28%, #626a70 28% 100%); content: ""; }
+    #rc-editor-reference .play { position: absolute; bottom: 18px; left: 13px; color: #fff; font-size: 11px; }
+    #rc-editor-reference .player-icons { position: absolute; right: 14px; bottom: 18px; color: #fff; font-size: 13px; letter-spacing: 12px; }
+    #rc-editor-reference .geo { margin-top: 7px; padding: 6px 9px; border: 1px solid #2b3136; border-radius: 4px; background: #14191e; color: #aeb3b6; font-size: 12px; }
+    #rc-editor-reference .muted { color: #80878c; font-size: 12px; }
+    #rc-editor-reference .preview .muted { margin-top: 5px; }
+    #rc-editor-reference .settings { grid-area: settings; min-width: 0; }
+    #rc-editor-reference .setting { display: grid; grid-template-columns: 91px minmax(0, 1fr); gap: var(--editor-space); align-items: start; padding: calc(.5 * var(--editor-space)) 0; border-bottom: 1px solid #2b3136; }
+    #rc-editor-reference .setting:last-child { border-bottom: 0; }
+    #rc-editor-reference .label { padding-top: 6px; color: #e5e8ea; font-size: 12px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; }
+    #rc-editor-reference .setting-body { min-width: 0; }
+    #rc-editor-reference .header-box { min-height: 38px; padding: 7px 9px; border: 1px solid #626a70; border-radius: 5px; background: #04060a; font-size: 13px; font-weight: 600; }
+    #rc-editor-reference .header-tools { display: flex; gap: 5px; margin-top: 5px; }
+    #rc-editor-reference .tiny-action, #rc-editor-reference .tiny-input, #rc-editor-reference .tiny-select { min-height: 36px; padding: 5px 7px; border: 1px solid #626a70; border-radius: 4px; background: #04060a; color: #e5e8ea; font: 12px Arial, sans-serif; }
+    #rc-editor-reference .tiny-input { flex: 1; min-width: 0; color: #80878c; background: #3b4044; }
+    #rc-editor-reference .tiny-action { white-space: nowrap; }
+    #rc-editor-reference .choices { display: grid; gap: 5px; }
+    #rc-editor-reference .choices.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    #rc-editor-reference .choices.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    #rc-editor-reference .choice { display: flex; min-height: 36px; flex-wrap: wrap; align-items: center; justify-content: center; padding: 3px 5px; border: 1px solid #626a70; border-radius: 4px; background: #04060a; font-size: 12px; text-align: center; }
+    #rc-editor-reference .choice.selected { border-color: #aeb3b6; box-shadow: inset 0 0 0 1px #aeb3b6; }
+    #rc-editor-reference .danger-note { margin-left: 5px; padding: 1px 4px; border: 1px solid #8B0000; border-radius: 3px; background: #8B0000; color: #fff; font-size: 11px; }
+    #rc-editor-reference .caption-line { display: flex; flex-wrap: wrap; gap: 4px; }
+    #rc-editor-reference .caption-tile { display: grid; width: 47px; height: 44px; place-items: center; border: 1px solid #626a70; border-radius: 4px; background: #04060a; font-size: 15px; font-weight: 700; line-height: 1; }
+    #rc-editor-reference .caption-tile small { font-size: 11px; font-weight: 400; }
+    #rc-editor-reference .caption-tile.selected { border-color: #aeb3b6; box-shadow: inset 0 0 0 1px #aeb3b6; }
+    #rc-editor-reference .caption-tile.gold { color: #e7b75d; }
+    #rc-editor-reference .caption-tile.pink { color: #ff97bb; }
+    #rc-editor-reference .caption-tile.mint { color: #bcf4dc; }
+    #rc-editor-reference .caption-tile.orange { color: #ff9a76; }
+    #rc-editor-reference .caption-tile.purple { color: #d6c5ff; }
+    #rc-editor-reference .caption-tile.yellow { color: #fff0a6; }
+    #rc-editor-reference .caption-tile.cyan { color: #00e5ff; }
+    #rc-editor-reference .caption-tile.red { color: #ff3654; }
+    #rc-editor-reference .caption-tile.blue { color: #a8c7e8; }
+    #rc-editor-reference .audio-row { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+    #rc-editor-reference .audio-row .tiny-select { flex: 1 1 105px; }
+    #rc-editor-reference .audio-row .track { flex: 1 1 80px; height: 3px; background: linear-gradient(to right, #aeb3b6 35%, #626a70 35%); }
+    #rc-editor-reference .transcript-panel { grid-area: transcript; min-width: 0; }
+    #rc-editor-reference .compare-panel { grid-area: compare; min-width: 0; }
+    #rc-editor-reference .text-heading { display: flex; min-height: 24px; align-items: center; justify-content: space-between; gap: 5px; color: #e5e8ea; font-size: 12px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; }
+    #rc-editor-reference .text-box { width: 100%; height: clamp(280px, 36vh, 440px); overflow: auto; padding: var(--editor-space); border: 1px solid #626a70; border-radius: 5px; background: #04060a; color: #e5e8ea; font: 14px/1.5 Arial, sans-serif; white-space: pre-wrap; }
+    #rc-editor-reference .compare-panel textarea { display: block; resize: none; }
+    #rc-editor-reference .text-foot { display: flex; flex-wrap: wrap; min-height: 32px; align-items: center; gap: 6px; padding-top: 5px; }
+    #rc-editor-reference .text-foot .muted { margin-left: auto; }
+    #rc-editor-reference .actions { display: grid; grid-template-columns: 1fr 1.3fr 1.3fr; gap: var(--editor-space); margin-top: var(--editor-space); padding-top: var(--editor-space); border-top: 1px solid #2b3136; }
+    #rc-editor-reference .actions button { min-height: 36px; padding: 5px 8px; border: 1px solid #626a70; border-radius: 4px; background: #04060a; color: #e5e8ea; font: 12px Arial, sans-serif; }
+    #rc-editor-reference .actions .start-over { border-color: #8B0000; }
+    #rc-editor-reference .actions .render { background: #3b4044; font-weight: 700; }
+    #rc-editor-reference.mode-speech .compare-panel { display: none; }
+    #rc-editor-reference.mode-speech .transcript-panel { grid-column: 1 / -1; }
+    #rc-editor-reference.mode-speech .music-only { display: none !important; }
+    #rc-editor-reference.mode-speech .music-choice { border-color: #626a70; box-shadow: none; }
+    #rc-editor-reference.mode-speech .speech-choice { border-color: #aeb3b6; box-shadow: inset 0 0 0 1px #aeb3b6; }
+    #rc-editor-reference.mode-music .speech-only { display: none !important; }
+    #rc-editor-reference .stage { grid-template-columns: repeat(10, minmax(0, 1fr)); grid-template-areas: "preview preview preview preview settings settings settings settings settings settings" "transcript transcript transcript transcript transcript compare compare compare compare compare"; }
+    #rc-editor-reference .transcript-panel, #rc-editor-reference .compare-panel { margin-top: 3px; }
+    @media (max-width: 880px) {
+      #rc-editor-reference .view-switch .view-gap { display: none; }
+      #rc-editor-reference .clip-status { display: none; }
+      #rc-editor-reference .stage { display: flex; flex-direction: column; }
+      #rc-editor-reference .main { padding: var(--editor-space); }
+      #rc-editor-reference .stage > * { width: 100%; }
+      #rc-editor-reference .preview { order: 1; }
+      #rc-editor-reference .settings { order: 2; }
+      #rc-editor-reference .transcript-panel { order: 3; }
+      #rc-editor-reference .compare-panel { order: 4; }
+      #rc-editor-reference .video { height: min(80vh, 900px) !important; min-height: 0; flex: none; }
+      #rc-editor-reference .actions { grid-template-columns: 1fr; }
+    }
+    @media (pointer: coarse) {
+      #rc-editor-reference .remove, #rc-editor-reference .tiny-action, #rc-editor-reference .choice, #rc-editor-reference .caption-tile, #rc-editor-reference .actions button { min-height: 44px; }
+      #rc-editor-reference .remove { width: 44px; }
+    }
+  </style>
+  <div class="view-switch" role="group" aria-label="Preview choices">
+    <span>Content</span>
+    <button type="button" data-mode="music" aria-pressed="true">Music</button>
+    <button type="button" data-mode="speech" aria-pressed="false">Speech</button>
+  </div>
+  <div class="app">
+    <div class="top"><img class="brand" src="data:image/png;base64,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" alt="" /><span class="ready-dot"></span> ffmpeg + libass ready</div>
+    <div class="main">
+      <div class="clip">
+        <div class="clip-title-row"><span class="clip-title">Clip 1 — example-clip.mp4</span><span class="clip-status">Ready — review &amp; render</span><button type="button" class="remove" aria-label="Remove clip">×</button></div>
+        <div class="stage">
+          <div class="preview"><div class="video"><span class="play">▶ &nbsp; 0:00 / 0:39</span><span class="player-icons">◀ ⛶ ⋮</span></div><div class="geo">854×468 — subject crop or blur-pad to 1080×1920.</div><div class="muted">Preview starts muted (unmute with player controls).</div></div>
+          <div class="settings">
+            <div class="setting header-setting"><span class="label">Header</span><div class="setting-body"><div class="header-box">Yk I cut faster 💨🔨</div><div class="header-tools"><button type="button" class="tiny-action">✨ Generate</button><div class="tiny-input">Optional guidance for regenerate…</div></div></div></div>
+            <div class="setting content-setting"><span class="label">Content</span><div class="setting-body choices two"><div class="choice speech-choice">Speech</div><div class="choice music-choice selected">Music</div></div></div>
+            <div class="setting geometry-setting"><span class="label">Geometry</span><div class="setting-body choices three"><div class="choice selected">Auto <span class="danger-note">face near header</span></div><div class="choice">Blur-pad</div><div class="choice">Crop</div></div></div>
+            <div class="setting"><span class="label">Header style</span><div class="setting-body choices three"><div class="choice selected">Plain text</div><div class="choice">Black plate</div><div class="choice">White plate</div></div></div>
+            <div class="setting"><span class="label">Burn captions</span><div class="setting-body" style="padding-top:4px;font-size:11px"><span aria-hidden="true">☑</span> Burn captions into video</div></div>
+            <div class="setting caption-setting"><span class="label">Caption style</span><div class="setting-body caption-line"><div class="caption-tile">Aa<small>Classic</small></div><div class="caption-tile gold">Aa<small>Clean</small></div><div class="caption-tile pink selected">Aa<small>Punch</small></div><div class="caption-tile mint">Aa<small>Friendly</small></div><div class="caption-tile orange">Aa<small>Sunset</small></div><div class="caption-tile purple">Aa<small>Mono</small></div><div class="caption-tile yellow">Aa<small>Editorial</small></div><div class="caption-tile cyan">Aa<small>Lyric</small></div><div class="caption-tile red">Aa<small>Velvet</small></div><div class="caption-tile blue">Aa<small>Powder</small></div><div class="caption-tile">Aa<small>Bask.</small></div></div></div>
+            <div class="setting audio-setting"><span class="label">Music <span class="muted">optional</span></span><div class="setting-body"><div class="audio-row"><button type="button" class="tiny-action">Choose file</button><span class="muted">No file chosen</span><span class="tiny-select">No added music ▾</span><span class="muted">Volume</span><span class="track"></span><span class="muted">0.35</span></div></div></div>
+          </div>
+          <div class="transcript-panel"><div class="text-heading"><span>Generated transcript</span><span class="muted">word timing locked</span></div><div class="text-box"><span class="music-only">Cut through the noise and stay on time. Keep the rhythm moving from line to line. Every word is here so you can check the beat, correct what was heard, and compare it with the lyrics beside it.
+
+The next phrase keeps rolling forward. Read it once, then line up each phrase with the track. The words stay in sequence as you make small corrections.</span><span class="speech-only">The first thing I check is whether the subject stays centered. If the camera moves, I review the crop before rendering. Then I read through the transcript and fix any words that were misheard.
+
+I keep the timing locked while I make those corrections. After that, I choose a caption style, check the header, and render the clip.</span></div><div class="text-foot"><span class="muted">Edit any misheard word. Timing stays locked.</span></div></div>
+          <div class="compare-panel">
+            <div class="lyrics-controls"><div class="text-heading"><span>Paste lyrics <span class="muted">optional</span></span><span class="muted">same reading size</span></div><textarea class="text-box" aria-label="Paste lyrics">Cut through the noise and stay on time.&#10;Keep the rhythm moving from line to line.&#10;Every word is here so you can check the beat.&#10;Correct what was heard.&#10;Compare it with the lyrics beside it.&#10;&#10;The next phrase keeps rolling forward.&#10;Read it once, then line up each phrase.</textarea><div class="text-foot"><button type="button" class="tiny-action">Align</button><button type="button" class="tiny-action">Restore transcript</button><span class="muted">aligned · 81% anchors</span></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="actions"><button type="button" class="start-over">Start over</button><button type="button">Send to RicePoster</button><button type="button" class="render">Render all</button></div>
+    </div>
+  </div>
+  <script>
+    (() => {
+      const root = document.getElementById('rc-editor-reference');
+      root.querySelectorAll('[data-mode]').forEach(button => {
+        button.addEventListener('click', () => {
+          const mode = button.dataset.mode;
+          root.classList.remove('mode-music', 'mode-speech');
+          root.classList.add('mode-' + mode);
+          root.querySelectorAll('[data-mode]').forEach(choice => {
+            choice.setAttribute('aria-pressed', String(choice.dataset.mode === mode));
+          });
+        });
+      });
+    })();
+  </script>
+</div>

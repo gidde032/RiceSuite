@@ -171,6 +171,7 @@ function setRadioDisabled(group, disabled) {
 function buildCard(clip) {
   const node = $("clip-card-template").content.firstElementChild.cloneNode(true);
   clip.el = node;
+  clip.reviewGridEl = node.querySelector(".review-grid");
   clip.titleEl = node.querySelector(".clip-title");
   clip.statusEl = node.querySelector(".clip-status");
   clip.previewStatusEl = node.querySelector(".preview-status");
@@ -214,6 +215,8 @@ function buildCard(clip) {
   const headerHelp = node.querySelector("#header-help");
   headerHelp.id = `header-help-${clip.localId}`;
   clip.headerEl.id = `header-input-${clip.localId}`;
+  clip.lyricsInputEl.id = `lyrics-input-${clip.localId}`;
+  node.querySelector(".lyrics .field-label").htmlFor = clip.lyricsInputEl.id;
   node.querySelector(".header-label").htmlFor = clip.headerEl.id;
   clip.headerEl.setAttribute("aria-describedby", headerHelp.id);
 
@@ -237,7 +240,9 @@ function buildCard(clip) {
     rememberSlotStyle(clip.ord, "header", radioValue(clip.headerStyleEl));
   });
   clip.contentEl.addEventListener("change", () => {
-    clip.lyricsEl.hidden = radioValue(clip.contentEl) !== "music";
+    const isMusic = radioValue(clip.contentEl) === "music";
+    clip.lyricsEl.hidden = !isMusic;
+    clip.reviewGridEl.classList.toggle("music-review", isMusic);
     if (clip.geoState) applyGeometry(clip, clip.geoState);
   });
 
@@ -332,6 +337,7 @@ function applyGeometry(clip, state) {
     content === "music" ? _musicSummary(plan) : _speechSummary(plan, pct);
 
   const warning = plan ? plan.warning : null;
+  warnEl.classList.toggle("header-warning", warning === "header_zone");
   if (warning === "header_zone") {
     warnEl.textContent = "face near header";
     warnEl.hidden = false;
@@ -781,15 +787,14 @@ async function renderClip(clip) {
 }
 
 async function showResult(clip) {
-  const resp = await fetch(`/api/jobs/${clip.jobId}/output`);
-  if (!resp.ok) throw new Error(`could not load output (${resp.status})`);
-  const blob = await resp.blob();
-
+  const endpoint = `/api/jobs/${clip.jobId}/output`;
+  // The video element requests playable ranges on demand. Fetching the whole
+  // MP4 as a blob first can fail even after the server has finished rendering.
   if (clip.outputUrl) URL.revokeObjectURL(clip.outputUrl);
-  clip.outputUrl = URL.createObjectURL(blob);
-  clip.outputVideoEl.src = clip.outputUrl;
+  clip.outputUrl = null;
+  clip.outputVideoEl.src = endpoint;
 
-  clip.downloadEl.href = clip.outputUrl;
+  clip.downloadEl.href = endpoint;
   clip.downloadEl.download = `riceclipper-${clip.jobId}.mp4`;
   clip.resultEl.classList.remove("hidden");
 }

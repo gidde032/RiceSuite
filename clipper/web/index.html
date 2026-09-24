@@ -174,22 +174,6 @@
             </div>
           </fieldset>
 
-          <div class="field field-row transcript-field">
-            <label>Transcript</label>
-            <div>
-              <div class="transcript" contenteditable="false" aria-label="Editable transcript"></div>
-              <p class="hint">Edit any misheard word. Timing stays locked.</p>
-              <div class="lyrics" hidden>
-                <textarea class="lyrics-input" rows="4" placeholder="Paste lyrics, one line per caption line"></textarea>
-                <div class="lyrics-actions">
-                  <button class="lyrics-align" type="button">Align</button>
-                  <button class="lyrics-restore" type="button">Restore transcript</button>
-                  <span class="lyrics-badge" aria-live="polite"></span>
-                </div>
-              </div>
-            </div>
-          </div>
-
           <div class="field field-row music-field">
             <label>Music <span class="hint">optional</span></label>
             <div class="music-stack">
@@ -206,6 +190,27 @@
                 </label>
               </div>
             </div>
+          </div>
+        </div>
+
+        <div class="text-panel transcript-panel">
+          <div class="text-heading">
+            <span class="field-label">Generated transcript</span>
+            <span class="hint">Edit any misheard word. Timing stays locked.</span>
+          </div>
+          <div class="transcript" contenteditable="false" aria-label="Editable transcript"></div>
+        </div>
+
+        <div class="text-panel lyrics" hidden>
+          <div class="text-heading">
+            <label class="field-label" for="lyrics-input">Paste lyrics</label>
+            <span class="hint">Optional</span>
+          </div>
+          <textarea id="lyrics-input" class="lyrics-input" rows="4" placeholder="Paste lyrics, one line per caption line"></textarea>
+          <div class="lyrics-actions">
+            <button class="lyrics-align" type="button">Align</button>
+            <button class="lyrics-restore" type="button">Restore transcript</button>
+            <span class="lyrics-badge" aria-live="polite"></span>
           </div>
         </div>
       </div>

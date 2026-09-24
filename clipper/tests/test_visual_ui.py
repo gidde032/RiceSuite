@@ -79,7 +79,7 @@ def test_music_content_offers_lyric_alignment_and_preserves_line_breaks():
     html = _html()
     javascript = _js()
 
-    assert 'class="lyrics" hidden' in html
+    assert 'class="text-panel lyrics" hidden' in html
     assert 'class="lyrics-input"' in html
     assert 'placeholder="Paste lyrics, one line per caption line"' in html
     assert 'class="lyrics-align"' in html

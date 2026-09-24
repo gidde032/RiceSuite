@@ -1,6 +1,13 @@
 # RiceClipper Slate UI
 
-Status: **Ratified visual contract; implementation authorized in GitHub Issue #9.**
+Status: **Ratified visual contract; base implementation is on main. The editing
+layout amendment is tracked in Issue #6.**
+
+The [editing page layout amendment](editor-layout-spec.md), ratified on
+2026-09-23, is the authority for current review-page geometry, spacing,
+operational text typography, and the red warning and button borders. The Slate
+concept image below remains the theme and identity reference, not the current
+review layout reference.
 
 Slate is the browser-interface theme for RiceClipper. It redesigns the existing
 local review workflow without changing its behavior, data contracts, rendering
@@ -104,9 +111,9 @@ both the visible toolbar symbol and the favicon.
 
 ### Review state
 
-- Video and source metadata occupy the left column.
-- Header, captions, transcript, and music controls occupy the right column.
-- Desktop target is approximately a 40/60 preview-to-controls split.
+- Follow the [editing page layout amendment](editor-layout-spec.md) for the
+  approved upper-row preview/settings split and lower-row Music/Speech text
+  arrangements.
 - Each clip retains its filename, status, removal control, geometry note, source
   preview, output preview, download link, and error/status messages.
 - Multiple clips remain sequential cards in the existing bounded batch model.
@@ -143,8 +150,9 @@ both the visible toolbar symbol and the favicon.
 ### Transcript
 
 - Preserve per-word editing and locked timestamps.
-- Improve focus visibility and reading rhythm without changing word collection,
-  timing, sanitization, or render payloads.
+- Follow the [editing page layout amendment](editor-layout-spec.md) for Arial
+  operational text and the matching transcript/lyrics reading style, without
+  changing word collection, timing, sanitization, or render payloads.
 
 ### Music
 
@@ -158,7 +166,9 @@ both the visible toolbar symbol and the favicon.
 ### Actions and states
 
 - `Render all` is the single solid charcoal primary action.
-- `Send to RicePoster` and `Start over` remain outlined secondary actions.
+- `Send to RicePoster` remains an outlined secondary action. `Start over` uses
+  the `#8B0000` border specified by the editing layout amendment, with the
+  normal Slate button interior.
 - Disabled controls must be visibly disabled and retain readable contrast.
 - Keyboard focus uses a rice-grey ring distinct from hover and selection.
 - Loading, ready, success, failure, and destructive states remain explicit in

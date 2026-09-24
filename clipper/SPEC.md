@@ -152,6 +152,8 @@ values, defaults, API contracts, rendering behavior, and workflow boundaries.
 
 The complete visual, responsive, accessibility, asset, and non-goal contract is
 owned by [`docs/design/slate-ui-spec.md`](docs/design/slate-ui-spec.md).
+The ratified wide-viewport editing arrangement and its Music/Speech states are
+owned by [`docs/design/editor-layout-spec.md`](docs/design/editor-layout-spec.md).
 
 ## 6. Header
 

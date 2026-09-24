@@ -197,6 +197,34 @@ def test_old_sidecar_without_reference_words_uses_words(isolated_cache):
     assert recovered.reference_words == recovered.words
 
 
+def test_output_without_completion_record_is_not_recovered(isolated_cache):
+    job = _searcher_job_with_plan(isolated_cache, None)
+    jobs.persist_searcher_job(job)
+    (job.dir / jobs.RENDERED_OUTPUT_FILENAME).write_bytes(b"partial video")
+
+    recovered = jobs._recover_searcher_job(job.dir)
+
+    assert recovered is not None
+    assert recovered.status == "ready"
+    assert recovered.output_path is None
+
+
+def test_missing_recorded_output_is_not_recovered(isolated_cache):
+    job = _searcher_job_with_plan(isolated_cache, None)
+    output = job.dir / jobs.RENDERED_OUTPUT_FILENAME
+    output.write_bytes(b"completed video")
+    job.output_path = output
+    job.status = "done"
+    jobs.persist_searcher_job(job)
+    output.unlink()
+
+    recovered = jobs._recover_searcher_job(job.dir)
+
+    assert recovered is not None
+    assert recovered.status == "ready"
+    assert recovered.output_path is None
+
+
 def test_recover_old_sidecar_without_plan_or_words_yields_defaults(isolated_cache):
     job = _searcher_job_with_plan(isolated_cache, None)
 
