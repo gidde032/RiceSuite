@@ -100,6 +100,31 @@ def test_a_cancelled_run_is_recorded_unconfirmed(
     assert [r["slot"] for r in _history(tmp_history_file)] == ["A"]
 
 
+def test_a_finished_run_keeps_its_marker_when_history_cannot_be_written(
+    tmp_inflight_marker, tmp_media, tmp_path, monkeypatch
+):
+    """W1-03: `_append_history` swallows its own errors. A finished run whose
+    rows never reached History must keep its marker, the only evidence that
+    its posts may be live, for the next start to record as unconfirmed."""
+    from backend.models import PostResult
+
+    async def posted(slots):
+        return [PostResult(slot="A", ig_post_id="ig_1", tt_post_id="tt_1")]
+
+    monkeypatch.setattr(main, "post_all_api", posted)
+    monkeypatch.setattr(main, "_validate_active_targets", lambda ids: None)
+    monkeypatch.setattr(main, "HISTORY_FILE", tmp_path / "no-such-dir" / "history.jsonl")
+    (tmp_media / "a.mp4").write_bytes(b"x")
+    request = main.PostRequest(slots=[{"slot": "A", "filename": "a.mp4", "caption": "c"}])
+    results = asyncio.run(main._run_post(request, True))
+    assert [r.slot for r in results] == ["A"]  # the browser still gets its results
+    assert tmp_inflight_marker.exists()
+    history = tmp_path / "history.jsonl"
+    rows = inflight.recover(history)
+    assert [r["slot"] for r in rows] == ["A"]
+    assert outcomes.classify_history_row(rows[0])["instagram"] == "unconfirmed"
+
+
 def test_recover_skips_a_malformed_slot_entry(tmp_inflight_marker, tmp_history_file):
     tmp_inflight_marker.write_text(json.dumps(
         {"run_id": "r", "slots": [{"platforms": ["tiktok"]}, {"slot": "B", "platforms": ["tiktok"]}]}

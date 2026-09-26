@@ -641,8 +641,9 @@ async def post_progress():
 # file before that redirect existed (tests/test_history_isolation.py).
 
 
-def _append_history(slots: list[dict], results, headless_used: bool):
-    """Record one line per slot-result. History must never break a run."""
+def _append_history(slots: list[dict], results, headless_used: bool) -> bool:
+    """Record one line per slot-result. History must never break a run, so a
+    failure is logged and returned as False, never raised."""
     try:
         run_id = uuid.uuid4().hex
         with open(HISTORY_FILE, "a") as f:
@@ -675,6 +676,8 @@ def _append_history(slots: list[dict], results, headless_used: bool):
                 }) + "\n")
     except Exception as e:
         _log.warning(f"[history] Warning: failed to record run history: {e}")
+        return False
+    return True
 
 
 @app.get("/api/history")
@@ -792,14 +795,15 @@ async def _run_post(request: PostRequest, effective_headless: bool) -> list[Post
         else:
             results = await post_all_api(slots)
 
-        _append_history(slots, results, effective_headless)
-        recorded = True
+        recorded = _append_history(slots, results, effective_headless)
     finally:
         if recorded:
             inflight.end()
         else:
             # Cut off in-process (an exception, or cancellation at shutdown)
-            # after posting may have started: unconfirmed, never retried.
+            # after posting may have started, or its results never reached
+            # History: unconfirmed, never retried. If History still cannot be
+            # written, the marker stays for the next start.
             inflight.recover(HISTORY_FILE)
     return results
 

@@ -156,8 +156,9 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
   **unconfirmed** and is never retried automatically, whether it was a manual
   Post All run or a scheduled batch. Manual runs: an in-flight marker in the
   data root, turned into unconfirmed History rows at once when the run is cut
-  off in-process (an exception or a cancellation at shutdown), or on the next
-  start after a process death. Scheduled runs: RicePoster's existing running →
+  off in-process (an exception or a cancellation at shutdown) or its results
+  cannot be written to History, or on the next start after a process death.
+  While History cannot be written at all, the marker stays. Scheduled runs: RicePoster's existing running →
   interrupted startup sweep. (A process killed in the instant between writing
   a run's History rows and removing the marker can leave an extra unconfirmed
   row for that run: accepted, it errs towards checking.)
