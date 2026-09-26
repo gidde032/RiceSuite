@@ -108,7 +108,12 @@ files only.
     **delete** and a whole-cache **clear**. These are **full-purge** (maintainer-
     ratified 2026-09-10): deleting a source cascades to its transcript and *all*
     its candidate slices — including `selected` and `handed_off` rows — and
-    unlinks the on-disk media once no other source references it. This is
+    unlinks the on-disk media once no other source references it. The
+    reference check and the unlink run under the cache's custody lock, which a
+    pull also holds when it commits its row (and a failed pull holds for its
+    cleanup), so a concurrent same-content pull never leaves a row whose media
+    is gone; a pull whose cached copy was removed during transcription puts it
+    back before it commits (RiceSuite #17, RiceSearcher #6). This is
     **local-only** (SQLite rows + local files; no external surface) and is the
     one deliberate exception to §7's "durable custody before any purge" lesson:
     it destroys *library* state, never a written handoff batch (those stay

@@ -11,9 +11,18 @@ import hashlib
 import os
 import shutil
 import tempfile
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - no flock on Windows; see custody()
+    fcntl = None  # type: ignore[assignment]
+
 _CHUNK = 1 << 20  # 1 MiB
+_IN_PROCESS_CUSTODY = threading.Lock()  # used only where flock is missing
 
 
 def hash_file(path: Path) -> str:
@@ -30,6 +39,38 @@ class MediaCache:
 
     def __init__(self, root: Path) -> None:
         self.root = Path(root)
+
+    @property
+    def custody_path(self) -> Path:
+        """The custody lock file. It sits beside the root, not in it: clear()
+        empties the root, and a removed lock file would let the next opener
+        lock a different file. The root is resolved, so a cache reached
+        through a symlink or a relative path shares one lock (review S-3)."""
+        root = self.root.resolve()
+        return root.parent / f"{root.name}.custody.lock"
+
+    @contextmanager
+    def custody(self) -> Iterator[None]:
+        """Hold the cache's custody lock (RiceSuite #17, RiceSearcher #6).
+
+        Each step that checks whether a cached file is referenced and then
+        unlinks it (source delete, cache clear, failed-pull cleanup), and the
+        pull step that commits a row pointing at a cached file, runs under
+        this lock. It is an exclusive flock, so the web app and CLI pulls
+        exclude each other, as do threads with their own open file. Not
+        re-entrant: never take it while it is held.
+        """
+        self.custody_path.parent.mkdir(parents=True, exist_ok=True)
+        if fcntl is None:  # pragma: no cover - in-process exclusion only
+            with _IN_PROCESS_CUSTODY:
+                yield
+            return
+        with open(self.custody_path, "a+") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle, fcntl.LOCK_UN)
 
     def _dest_for(self, digest: str, suffix: str) -> Path:
         # Shard by the first two hex chars to keep directories small.
@@ -121,6 +162,7 @@ class MediaCache:
 
         Backs the media page's "clear the whole cache" control. The root itself
         is recreated empty so the cache stays usable immediately afterward.
+        Callers hold ``custody()`` so no pull commits a row mid-clear.
         """
         count = 0
         if self.root.exists():
