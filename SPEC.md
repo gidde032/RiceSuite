@@ -137,7 +137,15 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
   Clipper pulls only when nothing unsent would be displaced: the workspace is
   empty, or it holds exactly what was last sent (a later edit or re-render
   holds it). One Searcher batch stays one Clipper batch; a batch sends itself
-  at most once, and sending it again takes the reviewer's confirmation.
+  at most once, and sending it again takes the reviewer's confirmation. Each
+  send carries a key (`send_key` on `POST api/handoff`); a retry after a lost
+  reply reuses it, and Clipper returns the batch that key already wrote
+  (`replayed: true`) instead of writing a second one. A pulled Searcher batch
+  stays open in Clipper until it is sent or the reviewer discards it (Start
+  over, or removing every clip). Before it pulls anything new, a page whose
+  workspace is empty or sent restores the oldest open batch
+  (`GET api/workspace`), so a lost pull reply or a reload strands nothing;
+  browser-only edits are still lost on a reload.
   Poster pulls only when its manual Pull would not have to ask before
   overwriting a draft, re-checks that after the request returns, and never
   replays an unacknowledged batch (it calls `POST api/pull-from-clipper?replay=0`,

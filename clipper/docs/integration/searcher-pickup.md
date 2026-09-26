@@ -70,6 +70,15 @@ unrendered clip holds the batch until it is re-rendered or removed, and
 sending an already-sent batch again asks first. Rendering itself stays a human
 action.
 
+A pull removes the Searcher batch, so Clipper records it as **open** in its
+work root until it is sent or discarded. `GET /api/workspace` returns the
+oldest open batch in the pull's shape, and `DELETE /api/workspace?batch_id=…`
+discards one (Start over, or removing every clip). A page with an empty or
+sent workspace restores the open batch before it pulls another, so a lost pull
+reply or a page reload does not strand it. `POST /api/handoff` takes a
+`send_key`: a retry with the key of a send that already wrote its batch gets
+that batch back with `replayed: true`, and nothing new is written.
+
 ## Idempotency note
 
 RiceSearcher's writer has an accepted two-phase gap (it writes a batch to disk,

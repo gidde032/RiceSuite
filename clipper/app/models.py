@@ -119,6 +119,9 @@ class HandoffRequest(BaseModel):
     """Client-assembled batch for POST /api/handoff."""
 
     clips: list[HandoffClip] = Field(default_factory=list)
+    # The page reuses a send's key when it retries a send whose reply it never
+    # saw; a key that already wrote a batch gets that batch back (W1-01).
+    send_key: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{8,64}$")
 
 
 class JobState(BaseModel):

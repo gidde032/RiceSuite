@@ -227,3 +227,101 @@ test("any edit inside a clip card after a send holds the workspace", async () =>
   assert.equal(posts(calls, "api/pull-from-searcher").length, 0);
   assert.equal(js("clips.length"), 1);
 });
+
+// --- functional audit repairs: lost replies and reloads strand nothing -------
+
+const jobIds = (js) => JSON.parse(js("JSON.stringify(clips.map((c) => c.jobId))"));
+
+test("W1-02: a pull whose reply was lost is restored on the next poll", async () => {
+  let pulled = false;
+  const { js, calls } = boot({
+    "GET api/searcher-inbox": () => [200, { batches: pulled ? [] : [{ batch_id: "b1", clip_count: 1 }] }],
+    "POST api/pull-from-searcher": () => {
+      pulled = true; // the server took custody, then the reply was lost
+      throw new TypeError("network connection lost");
+    },
+    "GET api/workspace": () => [200, pulled
+      ? { batch_id: "b1", clip_count: 1, jobs: [job("j1")] }
+      : { batch_id: null, clip_count: 0, jobs: [] }],
+    "POST api/jobs/j1/transcribe": { status: "ready", words: [] },
+  });
+  await js("autoPullFromSearcher()");
+  assert.equal(js("clips.length"), 0);
+  await js("autoPullFromSearcher()");
+  await settle();
+  assert.deepEqual(jobIds(js), ["j1"]);
+  assert.equal(posts(calls, "api/pull-from-searcher").length, 1);
+  assert.equal(posts(calls, "api/jobs/j1/transcribe").length, 1);
+});
+
+test("W1-02: a reloaded page restores its pulled batch before it pulls another", async () => {
+  const { js, calls } = boot({
+    "GET api/workspace": { batch_id: "b1", clip_count: 1, jobs: [job("j1")] },
+    "GET api/searcher-inbox": { batches: [{ batch_id: "b2", clip_count: 1 }] },
+    "POST api/pull-from-searcher": () => [500, { detail: "must not be called" }],
+    "POST api/jobs/j1/transcribe": { status: "ready", words: [] },
+  });
+  await js("autoPullFromSearcher()");
+  await settle();
+  assert.deepEqual(jobIds(js), ["j1"]);
+  assert.equal(posts(calls, "api/pull-from-searcher").length, 0);
+});
+
+test("Start over discards the pulled batch, so it is not restored again", async () => {
+  const { js, calls } = boot(
+    {
+      "POST api/pull-from-searcher": { batch_id: "b1", clip_count: 1, jobs: [job("j1")] },
+      "GET api/searcher-inbox": { batches: [{ batch_id: "b1", clip_count: 1 }] },
+      "POST api/jobs/j1/transcribe": { status: "ready", words: [] },
+      "DELETE api/workspace": { discarded: true },
+    },
+    { confirm: () => true },
+  );
+  await js("autoPullFromSearcher()");
+  await settle();
+  js("resetAll()");
+  await settle();
+  const discards = calls.filter((c) => c.method === "DELETE" && c.path === "api/workspace");
+  assert.equal(discards.length, 1);
+  assert.match(discards[0].url, /batch_id=b1/);
+});
+
+test("W1-01: a send whose reply was lost is retried with the same key", async () => {
+  const bodies = [];
+  const { js } = boot({
+    "POST api/handoff": (call) => {
+      bodies.push(JSON.parse(call.body));
+      if (bodies.length === 1) throw new TypeError("network connection lost");
+      return [200, { batch_id: "out1", clip_count: 1, replayed: true }];
+    },
+  });
+  js(`clips.push(${sendable("j1", "done")})`);
+  js("collectWords = () => []; radioValue = () => 'x';");
+  await js("maybeAutoSend()");
+  assert.equal(js("batchSent"), false);
+  await js("sendBatch()"); // no confirm: the harness's confirm() throws
+  assert.equal(bodies.length, 2);
+  assert.ok(bodies[0].send_key, "each send carries a key");
+  assert.equal(bodies[1].send_key, bodies[0].send_key);
+  assert.equal(js("batchSent"), true);
+  assert.equal(js("sentBatchId"), "out1");
+});
+
+test("W1-01: a confirmed second send of a sent batch uses a new key", async () => {
+  const bodies = [];
+  const { js } = boot(
+    {
+      "POST api/handoff": (call) => {
+        bodies.push(JSON.parse(call.body));
+        return [200, { batch_id: `out${bodies.length}`, clip_count: 1 }];
+      },
+    },
+    { confirm: () => true },
+  );
+  js(`clips.push(${sendable("j1", "done")})`);
+  js("collectWords = () => []; radioValue = () => 'x';");
+  await js("maybeAutoSend()");
+  await js("sendBatch()");
+  assert.equal(bodies.length, 2);
+  assert.notEqual(bodies[1].send_key, bodies[0].send_key);
+});

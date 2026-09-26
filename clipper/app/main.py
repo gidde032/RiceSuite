@@ -22,7 +22,14 @@ from app import env
 # Before the imports below: transcribe.whisper reads its settings at import.
 env.load_dotenv_file()
 
-from app import handoff, header_gen, jobs, probe, searcher_pickup  # noqa: E402
+from app import (  # noqa: E402
+    handoff,
+    header_gen,
+    jobs,
+    probe,
+    searcher_pickup,
+    send_keys,
+)
 from app.models import (  # noqa: E402
     HandoffRequest,
     HeaderRequest,
@@ -389,10 +396,39 @@ def handoff_batch(req: HandoffRequest) -> dict:
     and writes local files only — no posting, no network. The batch grouping and
     the reviewed transcript come from the client (the batch is client-driven);
     the server contributes the rendered mp4s and the manifest.
+
+    A retry that carries the ``send_key`` of a send that already wrote its
+    batch gets that batch back with ``replayed: true`` and writes nothing, so a
+    lost reply never hands RicePoster the same clips twice (W1-01).
     """
     if not req.clips:
         raise HTTPException(status_code=400, detail="no clips provided")
 
+    key = req.send_key
+    if key:
+        try:
+            done = send_keys.begin(key)
+        except send_keys.SendInProgress as exc:
+            raise HTTPException(
+                status_code=409,
+                detail="The first attempt of this send has not finished. "
+                "Try again in a moment.",
+            ) from exc
+        if done is not None:
+            searcher_pickup.close_open_batches(c.job_id for c in req.clips)
+            return {**done, "replayed": True}
+    try:
+        result = _write_handoff(req)
+        if key:
+            send_keys.record(key, result)
+    finally:
+        if key:
+            send_keys.end(key)
+    searcher_pickup.close_open_batches(c.job_id for c in req.clips)
+    return result
+
+
+def _write_handoff(req: HandoffRequest) -> dict:
     entries: list[handoff.HandoffEntry] = []
     with jobs.job_operation_lock():
         for clip in req.clips:
@@ -422,6 +458,20 @@ def handoff_batch(req: HandoffRequest) -> dict:
         return handoff.write_batch(entries)
     except handoff.HandoffError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/workspace")
+def open_workspace_batch() -> dict:
+    """The oldest pulled Searcher batch not yet sent or discarded, shaped like
+    a pull, so a page that lost a pull reply or reloaded can restore it (W1-02).
+    Consumes nothing."""
+    return searcher_pickup.open_batch()
+
+
+@app.delete("/api/workspace")
+def discard_workspace_batch(batch_id: str) -> dict:
+    """The reviewer discarded this pulled batch (Start over): stop offering it."""
+    return {"discarded": searcher_pickup.discard_open_batch(batch_id)}
 
 
 @app.get("/api/searcher-inbox")

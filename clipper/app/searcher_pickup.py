@@ -18,9 +18,11 @@ manifest-last scan, FIFO, batch_id dedupe, validate-before-write, durable custod
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
+from collections.abc import Iterable
 from pathlib import Path
 
 from app import jobs, probe
@@ -29,6 +31,11 @@ _INBOX_ENV = "RICECLIPPER_SEARCHER_INBOX"
 _DEFAULT_INBOX = "~/ricesearcher-handoff"
 _CONSUMED_FILE = ".riceclipper_consumed.json"
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
+# Pulled batches not yet sent or discarded, oldest first, in the work root.
+_OPEN_FILE = ".searcher_open_batches.json"
+_EMPTY = {"batch_id": None, "clip_count": 0, "jobs": []}
+
+logger = logging.getLogger(__name__)
 
 
 class PickupError(RuntimeError):
@@ -228,7 +235,16 @@ def pull_next_batch() -> dict:
             # sidecars and finish this commit without duplicating live jobs.
             raise PickupError(f"could not record consumed batch: {exc}") from exc
         shutil.rmtree(batch_dir, ignore_errors=True)
+        # The source batch is gone: until it is sent or discarded, the page can
+        # get it back from open_batch() if this reply never reaches it.
+        records = [r for r in _load_open() if r["batch_id"] != batch_id]
+        opened = {"batch_id": batch_id, "job_ids": [j.id for j in batch_jobs]}
+        _save_open([*records, opened])
 
+    return _batch_payload(batch_id, batch_jobs)
+
+
+def _batch_payload(batch_id: str, batch_jobs: list) -> dict:
     return {
         "batch_id": batch_id,
         "clip_count": len(batch_jobs),
@@ -242,6 +258,91 @@ def pull_next_batch() -> dict:
             for job in batch_jobs
         ],
     }
+
+
+# --- open batches (RiceSuite functional audit W1-02) -------------------------
+# A pull removes the Searcher batch, so a lost pull reply or a page reload
+# would strand its jobs in the work root with no way back to Review. The page
+# asks for the oldest open batch whenever its workspace is empty, before it
+# pulls anything new.
+
+
+def _open_path() -> Path:
+    return jobs._ensure_work_root() / _OPEN_FILE
+
+
+def _load_open() -> list[dict]:
+    try:
+        data = json.loads(_open_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(data, list):
+        return []
+    return [
+        r
+        for r in data
+        if isinstance(r, dict)
+        and isinstance(r.get("batch_id"), str)
+        and isinstance(r.get("job_ids"), list)
+    ]
+
+
+def _save_open(records: list[dict]) -> bool:
+    """Write the open batches. A failure is logged, not raised: it must not
+    fail a pull or a send whose own work is already done."""
+    try:
+        path = _open_path()
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps(records, indent=2), encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError as exc:
+        logger.error("could not record open Searcher batches: %s", exc)
+        return False
+    return True
+
+
+def open_batch() -> dict:
+    """The oldest pulled batch not yet sent or discarded, shaped like a pull.
+
+    A batch none of whose jobs still exist (the media cache was cleared) is
+    dropped. Consumes nothing.
+    """
+    with jobs.job_operation_lock():
+        records = _load_open()
+        kept: list[dict] = []
+        payload = None
+        for record in records:
+            batch_jobs = [
+                job
+                for job in (jobs.get_job(i) for i in record["job_ids"])
+                if job is not None
+            ]
+            if not batch_jobs:
+                continue
+            kept.append(record)
+            if payload is None:
+                payload = _batch_payload(record["batch_id"], batch_jobs)
+        if kept != records:
+            _save_open(kept)
+        return payload or dict(_EMPTY)
+
+
+def close_open_batches(job_ids: Iterable[str]) -> None:
+    """A send to RicePoster closes every open batch it took clips from."""
+    sent = set(job_ids)
+    with jobs.job_operation_lock():
+        records = _load_open()
+        kept = [r for r in records if not sent.intersection(r["job_ids"])]
+        if kept != records:
+            _save_open(kept)
+
+
+def discard_open_batch(batch_id: str) -> bool:
+    """The reviewer discarded this pulled batch: stop offering it."""
+    with jobs.job_operation_lock():
+        records = _load_open()
+        kept = [r for r in records if r["batch_id"] != batch_id]
+        return kept != records and _save_open(kept)
 
 
 def _rollback(created: list) -> None:

@@ -23,6 +23,9 @@ let batchSent = false; // the loaded batch has reached RicePoster
 let sentBatchId = ""; // the handoff batch id it was sent as
 let sentSnapshot = null; // batchSnapshot() at the moment it was sent
 let sendInFlight = false;
+let sendKey = ""; // reused when a send whose reply never came is retried
+let sendKeySnapshot = null; // batchSnapshot() when sendKey was made
+let pulledBatchId = ""; // the Searcher batch this workspace holds, if pulled
 
 const MEDIA_CACHE_INFO_ENDPOINT = "api/media-info";
 const ACTIVE_JOB_STATUSES = new Set(["transcribing", "rendering"]);
@@ -462,6 +465,8 @@ function removeClip(clip) {
   if (clips.length === 0) {
     $("batch-panel").classList.add("hidden");
     $("upload-panel").classList.remove("hidden");
+    // The reviewer removed every clip: the pulled batch is not restored.
+    discardPulledBatch();
   }
   updateRenderAllButton();
   updateCacheControls();
@@ -559,8 +564,9 @@ function setPullStatus(text, isError = false) {
 // Add jobs pulled from RiceSearcher as review cards. They already have a server
 // job (source stored + geometry probed), so they skip the upload and go straight
 // to transcription via the normal ingest queue.
-function addPulledJobs(pulled) {
+function addPulledJobs(pulled, batchId = "") {
   if (!pulled.length) return;
+  if (batchId) pulledBatchId = batchId;
   $("upload-panel").classList.add("hidden");
   $("batch-panel").classList.remove("hidden");
   for (const state of pulled) {
@@ -603,7 +609,7 @@ $("pull-searcher-btn").addEventListener("click", async () => {
       return;
     }
     setPullStatus(`Pulled ${data.clip_count} clip(s) from batch ${data.batch_id}.`);
-    addPulledJobs(data.jobs || []);
+    addPulledJobs(data.jobs || [], data.batch_id);
   } catch (err) {
     setPullStatus("pull failed: " + err.message, true);
   } finally {
@@ -873,11 +879,19 @@ async function sendBatch({ automatic = false } = {}) {
   }
   sendInFlight = true;
   const snapshot = batchSnapshot();
+  // One key per send (W1-01). A retry after a reply that never came reuses
+  // it, so Clipper returns the batch that attempt wrote instead of a second.
+  if (!sendKey) {
+    sendKey = newSendKey();
+    sendKeySnapshot = snapshot;
+  }
+  let answered = false;
 
   $("send-handoff-btn").disabled = true;
   setBatchStatus(`Sending ${done.length} clip${done.length === 1 ? "" : "s"} to RicePoster…`);
   try {
     const payload = {
+      send_key: sendKey,
       clips: done.map((c, i) => ({
         job_id: c.jobId,
         position: i + 1, // handoff order → RicePoster slot order
@@ -892,20 +906,38 @@ async function sendBatch({ automatic = false } = {}) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
+    answered = true;
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "handoff failed");
     const n = data.clip_count;
     batchSent = true;
     sentBatchId = data.batch_id;
-    sentSnapshot = snapshot;
-    const how = automatic ? "Every clip rendered — sent" : "Sent";
+    // A replayed batch is what the earlier attempt sent, before any later edit.
+    sentSnapshot = data.replayed ? sendKeySnapshot : snapshot;
+    sendKey = "";
+    sendKeySnapshot = null;
+    const how = data.replayed
+      ? "The earlier send had arrived: sent"
+      : automatic
+        ? "Every clip rendered — sent"
+        : "Sent";
     setBatchStatus(`${how} batch ${data.batch_id} (${n} clip${n === 1 ? "" : "s"}) to RicePoster.`);
   } catch (err) {
-    setBatchStatus(err.message, true);
+    const lost = answered
+      ? ""
+      : " The reply was lost. Send again: a batch that already arrived is not sent twice.";
+    setBatchStatus(err.message + lost, true);
   } finally {
     sendInFlight = false;
     updateRenderAllButton();
   }
+}
+
+function newSendKey() {
+  if (window.crypto && typeof window.crypto.randomUUID === "function") {
+    return window.crypto.randomUUID();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
 // --- start over -------------------------------------------------------------
@@ -924,7 +956,20 @@ function resetAll() {
   ) {
     return;
   }
+  const pulled = pulledBatchId;
   clearWorkspace();
+  discardPulledBatch(pulled);
+}
+
+// Tell Clipper the reviewer let this pulled batch go, so the page does not
+// restore it (W1-02). Best effort: a batch that stays open is only offered
+// again, never lost.
+function discardPulledBatch(batchId = pulledBatchId) {
+  pulledBatchId = "";
+  if (!batchId) return;
+  fetch(`api/workspace?batch_id=${encodeURIComponent(batchId)}`, { method: "DELETE" }).catch(
+    () => {},
+  );
 }
 
 function clearWorkspace() {
@@ -950,6 +995,9 @@ function clearWorkspace() {
   batchSent = false;
   sentBatchId = "";
   sentSnapshot = null;
+  sendKey = "";
+  sendKeySnapshot = null;
+  pulledBatchId = "";
   updateRenderAllButton();
   updateCacheControls();
 }
@@ -966,6 +1014,10 @@ let autoPullPausedUntil = 0;
 
 function workspaceFree() {
   if (ingesting || batchBusy || autoPulling || sendInFlight) return false;
+  return nothingUnsent();
+}
+
+function nothingUnsent() {
   if (clips.length === 0) return true;
   // Replace a batch only if exactly what it holds now is what was sent.
   return (
@@ -975,7 +1027,35 @@ function workspaceFree() {
   );
 }
 
+// A batch Clipper already pulled, whose reply was lost or which a reload
+// dropped, comes back before anything new is pulled (W1-02).
+async function restoreOpenBatch() {
+  autoPulling = true;
+  try {
+    const res = await fetch("api/workspace");
+    if (!res.ok) return false;
+    const data = await res.json();
+    const pulled = data.jobs || [];
+    if (!data.clip_count || !pulled.length) return false;
+    if (ingesting || batchBusy || sendInFlight || !nothingUnsent()) return false;
+    const loaded = new Set(clips.map((c) => c.jobId));
+    if (pulled.some((j) => loaded.has(j.id))) return false; // already here
+    if (clips.length) clearWorkspace(); // only a fully sent batch gets here
+    addPulledJobs(pulled, data.batch_id);
+    setBatchStatus(
+      `Batch ${data.batch_id} from RiceSearcher was restored; transcribing ${data.clip_count} clip(s) again…`,
+    );
+    return true;
+  } catch {
+    return false;
+  } finally {
+    autoPulling = false;
+  }
+}
+
 async function autoPullFromSearcher() {
+  if (!workspaceFree()) return;
+  if (await restoreOpenBatch()) return;
   if (!workspaceFree() || Date.now() < autoPullPausedUntil) return;
   let waiting = [];
   try {
@@ -997,7 +1077,7 @@ async function autoPullFromSearcher() {
       return;
     }
     if (!data.clip_count) return;
-    addPulledJobs(data.jobs || []);
+    addPulledJobs(data.jobs || [], data.batch_id);
     setBatchStatus(`Batch ${data.batch_id} arrived from RiceSearcher; transcribing ${data.clip_count} clip(s)…`);
   } catch (err) {
     autoPullPausedUntil = Date.now() + AUTO_PULL_BACKOFF_MS;
