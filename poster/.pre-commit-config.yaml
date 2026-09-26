@@ -1,0 +1,49 @@
+repos:
+  - repo: local
+    hooks:
+      # Commit tier: 6 fast happy-path tests
+      - id: pytest-smoke
+        name: pytest smoke tier
+        entry: pytest -m smoke -q --no-header
+        language: python
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+        additional_dependencies:
+          # Runtime
+          - fastapi==0.141.1
+          - uvicorn==0.52.1
+          - python-multipart==0.0.32
+          - anthropic==0.121.0
+          - httpx==0.28.1
+          - python-dotenv==1.2.2
+          - pydantic==2.13.4
+          - playwright==1.62.0
+          # Development / quality gates
+          - pytest==9.0.3
+          - pytest-cov==7.1.0
+
+      # Push tier: full suite catches regressions smoke misses, and enforces
+      # the coverage floor. These --cov flags are the ONLY thing enforcing that
+      # floor (audit B1 / finding #3: it was documented in CLAUDE.md and
+      # SPEC.md but ran nowhere). test_gates.py asserts they are still here.
+      - id: pytest-full
+        name: pytest full suite + coverage floor
+        entry: pytest tests/ -q --no-header --cov=backend --cov-fail-under=43
+        language: python
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+        additional_dependencies:
+          # Runtime
+          - fastapi==0.141.1
+          - uvicorn==0.52.1
+          - python-multipart==0.0.32
+          - anthropic==0.121.0
+          - httpx==0.28.1
+          - python-dotenv==1.2.2
+          - pydantic==2.13.4
+          - playwright==1.62.0
+          # Development / quality gates
+          - pytest==9.0.3
+          - pytest-cov==7.1.0

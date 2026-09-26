@@ -1,0 +1,88 @@
+"""Official-API orchestration. DORMANT BY DECISION: the browser path is live; ROADMAP.md lists completing the API clients as a non-goal."""
+
+import asyncio
+from pathlib import Path
+from backend.config import MOCK_MODE, get_accounts
+from backend.models import PostResult
+from backend.outcomes import PLATFORMS, disabled_skip_error
+from backend import instagram, tiktok
+
+
+def _redact(text: str, *secrets: str) -> str:
+    """Strip token values from error text — httpx errors embed the full
+    request URL, which carries access_token as a query param."""
+    for s in secrets:
+        if s:
+            text = text.replace(s, "***REDACTED***")
+    return text
+
+
+async def post_slot(
+    slot: str,
+    media_path: Path,
+    caption: str,
+    media_type: str,
+    enabled_platforms: set[str] | None = None,
+) -> PostResult:
+    """Post one media+caption to IG and TikTok for a given account slot,
+    leaving out any platform missing from `enabled_platforms` (None = both)."""
+    accounts = {a.slot: a for a in get_accounts()}
+    account = accounts.get(slot)
+    if account is None and not MOCK_MODE:
+        raise ValueError(
+            f"Official-API posting has no credentials-backed ACCOUNT_SLOTS entry for {slot!r}."
+        )
+    result = PostResult(slot=slot)
+    ig_user_id = account.ig_user_id if account else ""
+    ig_token = account.ig_token.get_secret_value() if account else ""
+    tt_token = account.tt_token.get_secret_value() if account else ""
+
+    enabled = set(PLATFORMS) if enabled_platforms is None else set(enabled_platforms)
+
+    # Instagram post
+    if "instagram" not in enabled:
+        result.errors.append(disabled_skip_error("instagram"))
+    else:
+        try:
+            result.ig_post_id = await instagram.post_media(
+                ig_user_id=ig_user_id,
+                token=ig_token,
+                media_path=media_path,
+                caption=caption,
+                media_type=media_type,
+            )
+        except Exception as e:
+            result.errors.append(_redact(f"IG post failed: {e}", ig_token, tt_token))
+
+    # TikTok post
+    if "tiktok" not in enabled:
+        result.errors.append(disabled_skip_error("tiktok"))
+    else:
+        try:
+            result.tt_post_id = await tiktok.post_media(
+                token=tt_token,
+                media_path=media_path,
+                caption=caption,
+                media_type=media_type,
+            )
+        except Exception as e:
+            result.errors.append(_redact(f"TT post failed: {e}", ig_token, tt_token))
+
+    return result
+
+
+async def post_all(
+    slots: list[dict],  # [{"slot": "A", "media_path": Path, "caption": str, "media_type": str}]
+) -> list[PostResult]:
+    """Post to all account slots concurrently."""
+    tasks = [
+        post_slot(
+            slot=s["slot"],
+            media_path=s["media_path"],
+            caption=s["caption"],
+            media_type=s["media_type"],
+            enabled_platforms=s.get("enabled_platforms"),
+        )
+        for s in slots
+    ]
+    return await asyncio.gather(*tasks)

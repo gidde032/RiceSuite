@@ -1,0 +1,15 @@
+fastapi==0.141.1
+uvicorn==0.52.1
+python-multipart==0.0.32
+anthropic==0.121.0
+httpx==0.28.1
+python-dotenv==1.2.2
+pydantic==2.13.4
+playwright==1.62.0
+
+# Development / quality gates. Not imported by backend/, but the test suite
+# and both pre-commit hooks are unrunnable without them, so a clone that
+# installs only the runtime deps cannot commit (audit Phase 2, finding #5).
+pytest==9.0.3
+pytest-cov==7.1.0
+pre-commit==4.6.0
