@@ -19,9 +19,36 @@ posted automatically. The design contract is
 
 **Burn-in candidate, not yet supported.** The original repositories
 (`gidde032/RiceSearcher`, `gidde032/RiceClipper`, `gidde032/RicePoster`) remain
-the supported apps until the burn-in in ADR-001 Q9 passes. Until the suite
-launcher lands, run each pillar from its own directory as described in its
-README.
+the supported apps until the burn-in in ADR-001 Q9 passes.
+
+## Run
+
+```bash
+rice            # or: rice start — foreground; open http://127.0.0.1:8790
+rice status     # from another terminal
+rice stop       # refuses while Post is posting; --force overrides
+```
+
+`rice` starts a localhost-only gateway on port 8790 and the three pillars on
+8791–8793, restarts a pillar that crashes, and refuses to start while anything
+answers on the old apps' ports (8765 / 8000 / 1738): RiceSuite and the old apps
+share live data, so only one side runs at a time. Ctrl-C runs the same safety
+check as `rice stop`; press it twice to force. See [SPEC.md](SPEC.md) §2–3.
+
+To try it without touching real data, point every data root at a temp dir:
+
+```bash
+T=$(mktemp -d); mkdir -p $T/poster
+cat > $T/ricesuite.env <<EOT
+RICESEARCHER_DATA_DIR=$T/searcher
+RICESEARCHER_HANDOFF_DIR=$T/h1
+RICECLIPPER_HANDOFF_DIR=$T/h2
+RICEPOSTER_DATA_DIR=$T/poster
+POST_MODE=mock
+SCHEDULER_ENABLED=false
+EOT
+RICESUITE_ENV=$T/ricesuite.env RICESUITE_RUN_DIR=$T/run rice
+```
 
 ## Install (one environment)
 
