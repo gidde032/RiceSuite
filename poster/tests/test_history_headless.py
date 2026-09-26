@@ -113,5 +113,5 @@ def test_frontend_headless_and_history_wiring(frontend_src):
     assert "headlessBadge" in html
     assert "payload.headless = state.headlessOverride" in html
     assert "toggleHistory" in html
-    assert "/api/history" in html
+    assert "'api/history" in html
     assert "historyPanel" in html

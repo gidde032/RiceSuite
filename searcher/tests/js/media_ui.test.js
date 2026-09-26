@@ -249,7 +249,7 @@ async function boot(initialSources = [], initialResult = "success") {
   });
   vm.runInContext(MEDIA_JS, context);
   const harness = { context, nodes, requests, allRequests, scheduler };
-  const request = takeRequest(harness, "/api/sources");
+  const request = takeRequest(harness, "api/sources");
   if (initialResult === "success") request.resolve(response(initialSources));
   else if (initialResult === "http-error") request.resolve(response({}, false, 503));
   else request.reject(new Error("network down"));
@@ -286,7 +286,7 @@ test("confirming a row delete posts once, ignores repeated clicks while pending,
   const { row } = await armDelete(harness);
   const confirmBtn = findButton(row, "Confirm delete");
   const deleting = confirmBtn.click();
-  const request = takeRequest(harness, "/api/sources/a/delete");
+  const request = takeRequest(harness, "api/sources/a/delete");
   assert.equal(request.options.method, "POST");
   assert.equal(confirmBtn.disabled, true);
 
@@ -296,14 +296,14 @@ test("confirming a row delete posts once, ignores repeated clicks while pending,
   request.resolve(response({ id: "a", deleted: true }));
   await flush();
   assert.equal(row.parentNode, null);
-  const refresh = takeRequest(harness, "/api/sources");
+  const refresh = takeRequest(harness, "api/sources");
   refresh.resolve(response([]));
   await deleting;
 
   assert.equal(harness.nodes.count.textContent, "0 sources");
   assert.match(harness.nodes.status.textContent, /deleted A source/);
   assert.equal(
-    harness.allRequests.filter((item) => item.url === "/api/sources/a/delete").length,
+    harness.allRequests.filter((item) => item.url === "api/sources/a/delete").length,
     1,
   );
 });
@@ -315,7 +315,7 @@ test("row delete HTTP and network failures retain the row and re-enable both con
     const confirmBtn = findButton(row, "Confirm delete");
     const cancelBtn = findButton(row, "Cancel");
     const deleting = confirmBtn.click();
-    const request = takeRequest(harness, "/api/sources/a/delete");
+    const request = takeRequest(harness, "api/sources/a/delete");
     if (failure === "http") request.resolve(response({}, false, 503));
     else request.reject(new Error("connection lost"));
     await deleting;
@@ -351,7 +351,7 @@ test("clear-all confirmation posts once, ignores repeated clicks while pending, 
 
   await btn.click();
   const clearing = btn.click();
-  const request = takeRequest(harness, "/api/cache/clear");
+  const request = takeRequest(harness, "api/cache/clear");
   assert.equal(request.options.method, "POST");
   assert.equal(btn.disabled, true);
 
@@ -360,7 +360,7 @@ test("clear-all confirmation posts once, ignores repeated clicks while pending, 
 
   request.resolve(response({ sources_deleted: 2, files_removed: 2 }));
   await flush();
-  const refresh = takeRequest(harness, "/api/sources");
+  const refresh = takeRequest(harness, "api/sources");
   refresh.resolve(response([]));
   await clearing;
 
@@ -368,7 +368,7 @@ test("clear-all confirmation posts once, ignores repeated clicks while pending, 
   assert.equal(harness.nodes.count.textContent, "0 sources");
   assert.equal(harness.nodes.status.textContent, "purged 2 source(s), removed 2 file(s)");
   assert.equal(
-    harness.allRequests.filter((item) => item.url === "/api/cache/clear").length,
+    harness.allRequests.filter((item) => item.url === "api/cache/clear").length,
     1,
   );
 });
@@ -397,10 +397,10 @@ test("a completed clear-all cycle cancels its old timer before a fresh cycle", a
   await btn.click();
   harness.scheduler.advance(1000);
   const clearing = btn.click();
-  const request = takeRequest(harness, "/api/cache/clear");
+  const request = takeRequest(harness, "api/cache/clear");
   request.resolve(response({ sources_deleted: 0, files_removed: 0 }));
   await flush();
-  const refresh = takeRequest(harness, "/api/sources");
+  const refresh = takeRequest(harness, "api/sources");
   refresh.resolve(response([]));
   await clearing;
 
@@ -421,7 +421,7 @@ test("clear-all HTTP and network failures always re-enable the control", async (
     const btn = harness.nodes.clearAllBtn;
     await btn.click();
     const clearing = btn.click();
-    const request = takeRequest(harness, "/api/cache/clear");
+    const request = takeRequest(harness, "api/cache/clear");
     if (failure === "http") request.resolve(response({ detail: "cache busy" }, false, 409));
     else request.reject(new Error("connection lost"));
     await clearing;

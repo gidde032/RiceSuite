@@ -137,7 +137,7 @@ def create_app(config: Config | None = None) -> FastAPI:
             rel = Path(media_path).resolve().relative_to(cfg.cache_dir.resolve())
         except ValueError:
             return None
-        return "/cache/" + str(rel)
+        return "cache/" + str(rel)
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:

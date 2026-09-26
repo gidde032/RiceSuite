@@ -79,15 +79,15 @@ def test_index_serves_html(client: TestClient) -> None:
     r = client.get("/")
     assert r.status_code == 200
     assert "RiceSearcher" in r.text
-    assert "/static/app.js" in r.text
+    assert '"static/app.js"' in r.text
 
 
 def test_selected_logo_asset_is_served_and_used(client: TestClient) -> None:
     for path in ("/", "/media"):
         html = client.get(path)
         assert html.status_code == 200
-        assert "/static/mark.png" in html.text
-        assert "/static/mark.svg" not in html.text
+        assert '"static/mark.png"' in html.text
+        assert "static/mark.svg" not in html.text
 
     asset = client.get("/static/mark.png")
     assert asset.status_code == 200
@@ -101,7 +101,7 @@ def test_list_slices_dto(client: TestClient) -> None:
     data = {s["id"]: s for s in r.json()}
     s = data["sl1"]
     assert s["source_title"] == "Guest interview"
-    assert s["media_url"] == "/cache/ab/abc123.mp4"
+    assert s["media_url"] == "cache/ab/abc123.mp4"
     assert s["score"] == 0.8 and s["rationale"] == "chemistry + quotable"
     assert s["target_in"] == 10 and s["pad_out"] == 42
     assert s["status"] == "candidate"
@@ -341,7 +341,7 @@ def test_profiles_page_serves_html(client: TestClient) -> None:
     r = client.get("/profiles")
     assert r.status_code == 200
     assert "RiceSearcher" in r.text
-    assert "/static/profiles.js" in r.text
+    assert '"static/profiles.js"' in r.text
 
 
 def test_profiles_and_review_scripts_share_the_storage_key(client: TestClient) -> None:
@@ -352,7 +352,7 @@ def test_profiles_and_review_scripts_share_the_storage_key(client: TestClient) -
     key = 'PROFILE_KEY = "ricesearcher.profile"'
     assert key in profiles_js and key in app_js
     assert profiles_js.index("localStorage.setItem(PROFILE_KEY") < profiles_js.index(
-        'window.location.assign("/")'
+        'window.location.assign("./")'
     )
 
 
@@ -360,7 +360,7 @@ def test_media_page_serves_html(client: TestClient) -> None:
     r = client.get("/media")
     assert r.status_code == 200
     assert "RiceSearcher" in r.text
-    assert "/static/media.js" in r.text
+    assert '"static/media.js"' in r.text
 
 
 def test_list_sources_dto(client: TestClient) -> None:
@@ -370,7 +370,7 @@ def test_list_sources_dto(client: TestClient) -> None:
     src = rows["src1"]
     assert src["ref"] == "https://y/x"
     assert src["title"] == "Guest interview"
-    assert src["media_url"] == "/cache/ab/abc123.mp4"
+    assert src["media_url"] == "cache/ab/abc123.mp4"
     assert src["size_bytes"] == len(b"\x00fake video bytes\x01")
     assert src["slice_count"] == 2  # sl1 + sl2
     assert "media_path" not in src  # absolute local path is not surfaced (skeptic #3)

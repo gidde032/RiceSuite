@@ -125,7 +125,7 @@ async function boot(initialSlices = []) {
   const harness = { context, nodes, requests };
 
   let request = await nextRequest(harness);
-  assert.equal(request.url, "/api/profiles");
+  assert.equal(request.url, "api/profiles");
   request.resolve(
     response([
       { id: "alpha", name: "Alpha", selected: 0 },

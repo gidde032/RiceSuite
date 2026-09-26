@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>RicePoster</title>
-  <link rel="icon" href="/static/logo-ratified.png" type="image/png">
+  <link rel="icon" href="static/logo-ratified.png" type="image/png">
 <style>
   /* ---- RiceClipper Slate tokens (exact values, ratified contract) ---- */
   :root {
@@ -849,7 +849,7 @@
     <div class="brand">
       <!-- Approved symbol-only RicePoster logo, served as the ratified PNG.
            Never recreate in SVG/CSS/glyph; pinned by SHA-256 regression test. -->
-      <img src="/static/logo-ratified.png" alt="RicePoster logo">
+      <img src="static/logo-ratified.png" alt="RicePoster logo">
     </div>
 
     <nav aria-label="Primary">
@@ -892,7 +892,7 @@
   <!-- ===================== Main ===================== -->
   <div class="main">
     <header class="topbar">
-      <img class="topbar-logo" src="/static/logo-ratified.png" alt="RicePoster logo">
+      <img class="topbar-logo" src="static/logo-ratified.png" alt="RicePoster logo">
       <div class="breadcrumb" id="breadcrumb"><span class="crumb-muted">RICEPOSTER</span> &rsaquo; Review</div>
       <div class="topbar-right">
         <div class="header-badges" id="headerBadges"></div>
@@ -1201,7 +1201,7 @@ function buildSlotsPayload() {
 // Init: load account names and mode
 async function init() {
   try {
-    const resp = await fetchWithTimeout('/api/accounts');
+    const resp = await fetchWithTimeout('api/accounts');
     await handleFetchError(resp);
     const data = await resp.json();
     state.accounts = data.accounts;
@@ -1478,7 +1478,7 @@ function renderSlotPreview(slot) {
     s.previewUrl = URL.createObjectURL(s.file);
     s.previewIsObjectUrl = true;
   } else if (!s.previewUrl && s.filename) {
-    s.previewUrl = `/api/media/${encodeURIComponent(s.filename)}`;
+    s.previewUrl = `api/media/${encodeURIComponent(s.filename)}`;
     s.previewIsObjectUrl = false;
   }
   if (!s.previewUrl) {
@@ -1548,7 +1548,7 @@ async function pullFromClipper() {
   if (btn) btn.disabled = true;
   setPullStatus('Pulling the oldest batch from RiceClipper…');
   try {
-    const resp = await fetchWithTimeout('/api/pull-from-clipper', { method: 'POST' });
+    const resp = await fetchWithTimeout('api/pull-from-clipper', { method: 'POST' });
     await handleFetchError(resp);
     const data = await resp.json();
     if (!data.pulled) {
@@ -1582,7 +1582,7 @@ async function pullFromClipper() {
     }
 
     const ack = await fetchWithTimeout(
-      `/api/pull-from-clipper/${encodeURIComponent(data.batch_id)}/ack`,
+      `api/pull-from-clipper/${encodeURIComponent(data.batch_id)}/ack`,
       { method: 'POST' },
     );
     await handleFetchError(ack);
@@ -1649,7 +1649,7 @@ function applyPulledSlot(entry) {
   setCaptionError(slot, '');
 
   // Playable preview straight from the server-staged media.
-  const mediaUrl = `/api/media/${encodeURIComponent(entry.filename)}`;
+  const mediaUrl = `api/media/${encodeURIComponent(entry.filename)}`;
   s.previewUrl = mediaUrl;
   s.previewIsObjectUrl = false;
   renderSlotPreview(slot);
@@ -1784,7 +1784,7 @@ async function handleFile(slot, file) {
   try {
     const data = await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `/api/upload/${slot}`);
+      xhr.open('POST', `api/upload/${slot}`);
       xhr.upload.onprogress = e => {
         if (e.lengthComputable) fill.style.width = `${Math.round(e.loaded / e.total * 100)}%`;
       };
@@ -1861,7 +1861,7 @@ async function generateAll() {
     try {
       setCaptionError(slot, '');
       const resp = await fetchWithTimeout(
-        '/api/generate-caption',
+        'api/generate-caption',
         { method: 'POST', body: formData },
         CAPTION_TIMEOUT_MS,
       );
@@ -1903,7 +1903,7 @@ async function regenerateCaption(slot) {
 
   try {
     const resp = await fetchWithTimeout(
-      '/api/generate-caption',
+      'api/generate-caption',
       { method: 'POST', body: formData },
       CAPTION_TIMEOUT_MS,
     );
@@ -2075,7 +2075,7 @@ function resetRun() {
 
 async function refreshMediaInfo() {
   try {
-    const resp = await fetchWithTimeout('/api/media-info');
+    const resp = await fetchWithTimeout('api/media-info');
     await handleFetchError(resp);
     const d = await resp.json();
     const mb = (d.total_bytes / (1024 * 1024)).toFixed(1);
@@ -2090,7 +2090,7 @@ async function refreshMediaInfo() {
 async function clearMedia() {
   if (!confirm('Delete all uploaded copies in media/? Slots will be reset (your original files are untouched).')) return;
   try {
-    const resp = await fetchWithTimeout('/api/media/clear', { method: 'POST' });
+    const resp = await fetchWithTimeout('api/media/clear', { method: 'POST' });
     await handleFetchError(resp);
     resetRun();
     refreshMediaInfo();
@@ -2106,7 +2106,7 @@ async function clearConsumedBatches() {
   const status = el('consumedArchiveStatus');
   status.textContent = 'Clearing acknowledged batches…';
   try {
-    const resp = await fetchWithTimeout('/api/handoff/consumed/clear', { method: 'POST' });
+    const resp = await fetchWithTimeout('api/handoff/consumed/clear', { method: 'POST' });
     await handleFetchError(resp);
     const result = await resp.json();
     const removed = result.removed_batches || 0;
@@ -2197,7 +2197,7 @@ function renderAccounts() {
 }
 
 async function persistAccountState() {
-  const response = await fetchWithTimeout('/api/accounts/state', {
+  const response = await fetchWithTimeout('api/accounts/state', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -2385,7 +2385,7 @@ async function loadStats() {
   const panel = el('statsPanel');
   panel.innerHTML = '<div class="history-empty">Loading local totals…</div>';
   try {
-    const response = await fetchWithTimeout('/api/stats');
+    const response = await fetchWithTimeout('api/stats');
     await handleFetchError(response);
     const stats = await response.json();
     const cards = [
@@ -2432,7 +2432,7 @@ async function toggleHistory() {
     return;
   }
   try {
-    const resp = await fetchWithTimeout('/api/history?limit=25');
+    const resp = await fetchWithTimeout('api/history?limit=25');
     await handleFetchError(resp);
     const d = await resp.json();
     if (!d.entries.length) {
@@ -2486,7 +2486,7 @@ function startProgressPolling() {
   stopProgressPolling();
   progressTimer = setInterval(async () => {
     try {
-      const resp = await fetchWithTimeout('/api/post-progress');
+      const resp = await fetchWithTimeout('api/post-progress');
       await handleFetchError(resp);
       renderProgress(await resp.json());
     } catch (e) {
@@ -2596,7 +2596,7 @@ async function postAll() {
     // Intentionally a bare fetch: see the fetchWithTimeout note above. A live
     // posting run has no honest client-side ceiling, and aborting here would
     // not stop it.
-    const resp = await fetch('/api/post', {
+    const resp = await fetch('api/post', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -2699,7 +2699,7 @@ async function scheduleAll() {
     // Bare fetch, like /api/post: this write is what arms an unattended live
     // run, so the UI must never report a failure it cannot actually guarantee
     // (maintainer decision 2026-07-30).
-    const resp = await fetch('/api/queue', {
+    const resp = await fetch('api/queue', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -2723,7 +2723,7 @@ async function scheduleAll() {
 
 async function refreshQueue() {
   try {
-    const resp = await fetchWithTimeout('/api/queue');
+    const resp = await fetchWithTimeout('api/queue');
     await handleFetchError(resp);
     const data = await resp.json();
     const batches = data.batches || [];
@@ -2766,7 +2766,7 @@ async function refreshQueue() {
 // primary content. Returns [] on any failure and logs; the batches still render.
 async function fetchRetainedMedia() {
   try {
-    const resp = await fetchWithTimeout('/api/queue/media');
+    const resp = await fetchWithTimeout('api/queue/media');
     if (!resp.ok) return [];
     const data = await resp.json();
     // Only snapshots the maintainer may actually act on. Active batches' media
@@ -2901,7 +2901,7 @@ async function deleteQueueMedia(batchId, classification, reason) {
   }
   try {
     const resp = await fetchWithTimeout(
-      `/api/queue/media/${encodeURIComponent(batchId)}`, { method: 'DELETE' });
+      `api/queue/media/${encodeURIComponent(batchId)}`, { method: 'DELETE' });
     await handleFetchError(resp);
     refreshQueue();
   } catch (e) {
@@ -2912,7 +2912,7 @@ async function deleteQueueMedia(batchId, classification, reason) {
 async function cancelQueueBatch(batchId) {
   try {
     const resp = await fetchWithTimeout(
-      `/api/queue/${encodeURIComponent(batchId)}`, { method: 'DELETE' });
+      `api/queue/${encodeURIComponent(batchId)}`, { method: 'DELETE' });
     await handleFetchError(resp);
     refreshQueue();
   } catch (e) {

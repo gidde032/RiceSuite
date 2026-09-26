@@ -65,7 +65,12 @@ Each requirement is written so a test can check it. "The launcher" means the
   gateway and each pillar, whether it is running, its port, and its restart
   count.
 - **FR-3** Every listener binds to 127.0.0.1 only. No option binds to another
-  interface.
+  interface. The gateway answers only requests addressed to
+  `127.0.0.1:<port>` or `localhost:<port>` (DNS-rebinding guard) and refuses
+  state-changing requests carrying another origin, because Poster's API is
+  unauthenticated. This covers traffic through the gateway only: each pillar
+  still listens on its own loopback port, exactly as the old apps did
+  (hardening tracked in #14).
 - **FR-4** The launcher refuses to start, and exits non-zero naming the port,
   if anything is accepting connections on 8765, 8000 or 1738 (an old app may be
   running; only one side runs at a time, Q10). It also refuses if a suite port
@@ -134,7 +139,27 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
   Post All run or a scheduled batch.
 - **FR-17** `rice stop` refuses, exits non-zero and changes nothing, while a
   Poster posting run is active, unless `--force` is given. If the launcher
-  cannot confirm Poster is idle, it treats the run as possibly active.
+  cannot confirm Poster is idle, it treats the run as possibly active: an
+  error status, a body that is not the expected JSON object, or an absent
+  field all count as unconfirmed. The check takes Poster's **stop hold**
+  (`POST api/stop-hold`): Poster refuses it while a run is active, and while
+  it is set Poster refuses every new posting run, manual or scheduled, so no
+  run can start between the check and the stop. A stop that is refused, or
+  that cannot signal or end its processes, releases the hold
+  (`DELETE api/stop-hold`); otherwise it ends after a 120-second lease. A
+  due scheduled batch skipped under the hold stays pending and fires on the
+  next start (FR-18). Pillars run in their own sessions, so a terminal Ctrl-C
+  reaches only the launcher, which applies the same check; a second Ctrl-C
+  within 10 seconds forces the stop. A SIGTERM sent to the launcher directly
+  (what `rice stop` sends after its check, and what an OS shutdown sends)
+  stops at once. Launcher liveness is a lock the launcher holds, never a
+  recorded pid, so a stale state file or a reused pid is never mistaken for
+  RiceSuite. A starting launcher removes a stale state file before it spawns
+  anything, and it rewrites the state after every spawn and restart, so each
+  running child is recorded. (A launcher killed in the instant between a spawn
+  and that write can leave one child unrecorded: accepted.) Processes left
+  behind by a launcher that was killed are reported by `rice status` and
+  stopped by `rice stop` through the same check.
 - **FR-18** `rice stop` warns, naming the batches, when a scheduled batch is
   overdue or due within the next 30 minutes, and says it will fire on the next
   start (Poster's startup catch-up). The warning does not block the stop.
