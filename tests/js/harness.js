@@ -58,7 +58,7 @@ function scriptedFetch(routes) {
   async function fetch(url, options = {}) {
     const method = (options.method || "GET").toUpperCase();
     const path = String(url).split("?")[0];
-    const call = { method, path, body: options.body };
+    const call = { method, path, url: String(url), body: options.body };
     calls.push(call);
     const route = routes[`${method} ${path}`];
     if (route === undefined) return response(404, { detail: `no route ${method} ${path}` });

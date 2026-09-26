@@ -25,13 +25,13 @@ function sendable(jobId, status) {
   return `{ jobId: "${jobId}", status: "${status}", headerEl: { value: "" }, captionStyleEl: {}, headerStyleEl: {}, transcriptEl: {} }`;
 }
 
-function boot(routes) {
+function boot(routes, extra = {}) {
   const { fetch, calls } = scriptedFetch({
     "GET api/health": { ok: true },
     "GET api/media-info": { files: 0, bytes: 0 },
     ...routes,
   });
-  const { ctx, timers } = context(fetch);
+  const { ctx, timers } = context(fetch, extra);
   const js = run(SOURCE, ctx);
   return { js, calls, timers };
 }
@@ -117,8 +117,11 @@ test("after a batch is sent, the next Searcher batch replaces it", async () => {
     "GET api/searcher-inbox": { batches: [{ batch_id: "b2", clip_count: 1 }] },
     "POST api/pull-from-searcher": { batch_id: "b2", clip_count: 1, jobs: [job("j9")] },
     "POST api/jobs/j9/transcribe": { status: "ready", words: [] },
+    "POST api/handoff": { batch_id: "out1", clip_count: 1 },
   });
-  js(`clips.push({ jobId: "j1", status: "done", el: { remove() {} } }); batchSent = true;`);
+  js(`clips.push(${sendable("j1", "done")})`);
+  js("collectWords = () => []; radioValue = () => 'x';");
+  await js("maybeAutoSend()"); // sent exactly as it stands
   await js("autoPullFromSearcher()");
   await settle();
   assert.equal(posts(calls, "api/pull-from-searcher").length, 1);
@@ -135,4 +138,50 @@ test("a failed pull backs off instead of retrying every poll", async () => {
   await js("autoPullFromSearcher()");
   assert.equal(posts(calls, "api/pull-from-searcher").length, 1);
   assert.equal(js("clips.length"), 0);
+});
+
+// --- review repairs: nothing unsent is ever displaced; each batch sends once --
+
+test("work done after a send holds the workspace: nothing unsent is wiped", async () => {
+  const { js, calls } = boot({
+    "POST api/handoff": { batch_id: "out1", clip_count: 1 },
+    "GET api/searcher-inbox": { batches: [{ batch_id: "b2", clip_count: 1 }] },
+    "POST api/pull-from-searcher": () => [500, { detail: "must not be called" }],
+  });
+  js(`clips.push(${sendable("j1", "done")})`);
+  js("collectWords = () => []; radioValue = () => 'x';");
+  await js("maybeAutoSend()");
+  assert.equal(posts(calls, "api/handoff").length, 1);
+  // The reviewer edits the header and re-renders after the automatic send.
+  js(`clips[0].headerEl.value = "a better header"; clips[0].renders = 1;`);
+  await js("autoPullFromSearcher()");
+  assert.equal(posts(calls, "api/pull-from-searcher").length, 0);
+  assert.equal(js("clips.length"), 1);
+  // And the edited batch is not sent again behind the reviewer's back.
+  await js("maybeAutoSend()");
+  assert.equal(posts(calls, "api/handoff").length, 1);
+});
+
+test("a send already in flight is never started twice", async () => {
+  const { js, calls } = boot({ "POST api/handoff": { batch_id: "out1", clip_count: 1 } });
+  js(`clips.push(${sendable("j1", "done")})`);
+  js("collectWords = () => []; radioValue = () => 'x';");
+  // A click on Send and the automatic send racing, neither awaited first.
+  await js("Promise.all([sendBatch(), maybeAutoSend()])");
+  assert.equal(posts(calls, "api/handoff").length, 1);
+});
+
+test("sending an already-sent batch again needs the reviewer's confirmation", async () => {
+  const asked = [];
+  const { js, calls } = boot(
+    { "POST api/handoff": { batch_id: "out1", clip_count: 1 } },
+    { confirm: (message) => { asked.push(message); return false; } },
+  );
+  js(`clips.push(${sendable("j1", "done")})`);
+  js("collectWords = () => []; radioValue = () => 'x';");
+  await js("maybeAutoSend()");
+  await js("sendBatch()"); // the Send button, clicked out of habit
+  assert.equal(posts(calls, "api/handoff").length, 1);
+  assert.equal(asked.length, 1);
+  assert.match(asked[0], /out1/);
 });

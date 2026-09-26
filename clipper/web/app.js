@@ -20,6 +20,9 @@ let ingesting = false; // upload+transcribe queue is draining
 let batchBusy = false; // render-all in progress
 let clearInProgress = false;
 let batchSent = false; // the loaded batch has reached RicePoster
+let sentBatchId = ""; // the handoff batch id it was sent as
+let sentSnapshot = null; // batchSnapshot() at the moment it was sent
+let sendInFlight = false;
 
 const MEDIA_CACHE_INFO_ENDPOINT = "api/media-info";
 const ACTIVE_JOB_STATUSES = new Set(["transcribing", "rendering"]);
@@ -767,6 +770,7 @@ async function renderClip(clip) {
       // browser's patience while the server still finishes (Issue #30). Poll job
       // state; treat done+output as success, error as failure, timeout as drop.
       if (await pollRenderCompletion(clip)) {
+        clip.renders = (clip.renders || 0) + 1;
         clip.status = "done";
         setClipStatus(clip, "Rendered ✓");
         await showResult(clip);
@@ -777,6 +781,7 @@ async function renderClip(clip) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "render failed");
 
+    clip.renders = (clip.renders || 0) + 1;
     clip.status = "done";
     setClipStatus(clip, "Rendered ✓");
     await showResult(clip);
@@ -810,9 +815,26 @@ $("send-handoff-btn").addEventListener("click", () => sendBatch());
 // rendered successfully, send it exactly as the button would. A failed or
 // unrendered clip holds the whole batch until it is fixed and re-rendered (or
 // removed). Rendering itself stays a human action.
+// Everything that would reach RicePoster: comparing it with what was sent
+// tells "nothing unsent" apart from "rendered or edited again after sending".
+function batchSnapshot() {
+  return JSON.stringify(
+    clips.map((c) => [
+      c.jobId,
+      c.status,
+      c.renders || 0,
+      c.headerEl ? c.headerEl.value : "",
+      c.captionStyleEl ? radioValue(c.captionStyleEl) : "",
+      c.headerStyleEl ? radioValue(c.headerStyleEl) : "",
+      c.transcriptEl ? collectWords(c).map((w) => w.text).join(" ") : "",
+    ]),
+  );
+}
+
 function batchReadyToSend() {
   return (
     !batchSent &&
+    !sendInFlight &&
     !batchBusy &&
     !ingesting &&
     clips.length > 0 &&
@@ -825,11 +847,23 @@ async function maybeAutoSend() {
 }
 
 async function sendBatch({ automatic = false } = {}) {
+  if (sendInFlight) return;
   const done = clips.filter((c) => c.jobId && c.status === "done");
   if (done.length === 0) {
     setBatchStatus("Render clips before sending to RicePoster.", true);
     return;
   }
+  if (
+    !automatic &&
+    batchSent &&
+    !window.confirm(
+      `This batch was already sent to RicePoster as ${sentBatchId}. Send it again as a new batch?`,
+    )
+  ) {
+    return;
+  }
+  sendInFlight = true;
+  const snapshot = batchSnapshot();
 
   $("send-handoff-btn").disabled = true;
   setBatchStatus(`Sending ${done.length} clip${done.length === 1 ? "" : "s"} to RicePoster…`);
@@ -853,11 +887,14 @@ async function sendBatch({ automatic = false } = {}) {
     if (!res.ok) throw new Error(data.detail || "handoff failed");
     const n = data.clip_count;
     batchSent = true;
+    sentBatchId = data.batch_id;
+    sentSnapshot = snapshot;
     const how = automatic ? "Every clip rendered — sent" : "Sent";
     setBatchStatus(`${how} batch ${data.batch_id} (${n} clip${n === 1 ? "" : "s"}) to RicePoster.`);
   } catch (err) {
     setBatchStatus(err.message, true);
   } finally {
+    sendInFlight = false;
     updateRenderAllButton();
   }
 }
@@ -902,6 +939,8 @@ function clearWorkspace() {
   $("upload-status").textContent = "";
   setBatchStatus("");
   batchSent = false;
+  sentBatchId = "";
+  sentSnapshot = null;
   updateRenderAllButton();
   updateCacheControls();
 }
@@ -917,9 +956,14 @@ let autoPulling = false;
 let autoPullPausedUntil = 0;
 
 function workspaceFree() {
-  if (ingesting || batchBusy || autoPulling) return false;
+  if (ingesting || batchBusy || autoPulling || sendInFlight) return false;
   if (clips.length === 0) return true;
-  return batchSent && clips.every((c) => c.status === "done");
+  // Replace a batch only if exactly what it holds now is what was sent.
+  return (
+    batchSent &&
+    clips.every((c) => c.status === "done") &&
+    batchSnapshot() === sentSnapshot
+  );
 }
 
 async function autoPullFromSearcher() {
