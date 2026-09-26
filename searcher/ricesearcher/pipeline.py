@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import shutil
 from collections.abc import Sequence
+from contextlib import AbstractContextManager, nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -59,30 +60,48 @@ def _put_cached_media(cache: MediaCache, media_path: Path) -> tuple[str, Path, b
     return put_with_status(media_path)
 
 
+def _custody(cache: MediaCache) -> AbstractContextManager[None]:
+    """The cache's custody lock; a no-op for minimal injected cache doubles."""
+    custody = getattr(cache, "custody", None)
+    return custody() if custody is not None else nullcontext()
+
+
+def _identity(path: Path) -> tuple[int, int] | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return stat.st_dev, stat.st_ino
+
+
 def _cleanup_new_cache_file(
     path: Path | None,
     created: bool,
     created_identity: tuple[int, int] | None,
     library: Library,
+    cache: MediaCache,
 ) -> None:
     """Remove only an unreferenced cache file created by this pull.
 
     Reviewer lens: cache custody (HIGH). The identity and single-link checks
     protect against deleting a path that was replaced or shared meanwhile;
     cleanup errors are intentionally ignored so they cannot mask the primary
-    transcription/persistence failure.
+    transcription/persistence failure. The reference check and the unlink
+    run under the cache's custody lock, so a same-content pull cannot commit
+    its row between them (RiceSuite #17, RiceSearcher #6).
     """
     if not created or path is None or created_identity is None:
         return
     try:
-        if library.is_media_path_referenced(path):
-            return
-        current = path.stat()
-        if (current.st_dev, current.st_ino) != created_identity:
-            return
-        if current.st_nlink != 1:
-            return
-        path.unlink()
+        with _custody(cache):
+            if library.is_media_path_referenced(path):
+                return
+            current = path.stat()
+            if (current.st_dev, current.st_ino) != created_identity:
+                return
+            if current.st_nlink != 1:
+                return
+            path.unlink()
     except Exception:
         # Failure cleanup is best-effort and must never replace the primary
         # transcription/persistence error.
@@ -109,7 +128,9 @@ def pull(
 
     Reviewer lens: acquisition custody (HIGH). A newly-created cache copy is
     removed on a later transcription/persistence failure only while it remains
-    unreferenced and unchanged.
+    unreferenced and unchanged. Transcription runs outside the cache's custody
+    lock; the commit runs inside it, after the cached copy is put back if a
+    delete, a clear, or another pull's cleanup removed it meanwhile.
     """
     acquirer = next((a for a in acquirers if a.can_handle(request)), None)
     if acquirer is None:
@@ -124,29 +145,40 @@ def pull(
             cache, acquired.media_path
         )
         if cache_created:
-            try:
-                stat = cached_path.stat()
-                cache_identity = (stat.st_dev, stat.st_ino)
-            except OSError:
-                cache_created = False
+            cache_identity = _identity(cached_path)
+            cache_created = cache_identity is not None
         words = transcriber.transcribe(cached_path)
 
-        source = Source(
-            id=digest,
-            kind=acquired.kind,
-            ref=acquired.ref,
-            media_path=str(cached_path),
-            title=acquired.title,
-            channel=acquired.channel,
-            published_at=acquired.published_at,
-            acquired_at=_now_iso(),
-            duration_s=acquired.duration_s,
-            words=list(words),
-        )
-        library.upsert_source(source)
+        with _custody(cache):
+            if not cached_path.is_file():
+                # Removed while this pull transcribed: put it back before the
+                # row points at it (RiceSuite #17, RiceSearcher #6).
+                again, cached_path, created = _put_cached_media(
+                    cache, acquired.media_path
+                )
+                if again != digest:
+                    raise RuntimeError("the acquired media changed during the pull")
+                if created:
+                    cache_identity = _identity(cached_path)
+                    cache_created = cache_identity is not None
+            source = Source(
+                id=digest,
+                kind=acquired.kind,
+                ref=acquired.ref,
+                media_path=str(cached_path),
+                title=acquired.title,
+                channel=acquired.channel,
+                published_at=acquired.published_at,
+                acquired_at=_now_iso(),
+                duration_s=acquired.duration_s,
+                words=list(words),
+            )
+            library.upsert_source(source)
         return source
     except Exception:
-        _cleanup_new_cache_file(cached_path, cache_created, cache_identity, library)
+        _cleanup_new_cache_file(
+            cached_path, cache_created, cache_identity, library, cache
+        )
         raise
     finally:
         _cleanup_owned_download_dir(acquired.owned_temp_dir)

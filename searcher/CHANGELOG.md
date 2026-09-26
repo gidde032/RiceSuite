@@ -24,6 +24,12 @@ All notable changes to RiceSearcher are documented here. This project adheres to
 
 ### Fixed
 
+- A source deleted, a cache cleared, or a failed pull cleaned up while a pull of
+  the same content ran could leave that pull's committed row pointing at a
+  removed media file. Each removal now checks references and unlinks under a
+  cache custody lock (an flock beside the cache directory) that a pull also
+  holds when it commits, and a pull puts back a cached copy removed during its
+  transcription (#6).
 - `score` with no Anthropic credential now fails before any request with
   `ANTHROPIC_API_KEY is not set; …` instead of the SDK's generic
   "Could not resolve authentication method".

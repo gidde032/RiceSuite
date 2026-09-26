@@ -370,29 +370,35 @@ def create_app(config: Config | None = None) -> FastAPI:
         it (the cache is content-addressed, so two sources can share one file).
         """
         cache = MediaCache(cfg.cache_dir)
-        with Library(cfg.db_path) as lib:
-            media_path = lib.delete_source(source_id)
-            if media_path is None:
-                raise HTTPException(404, "no such source")
-            still_shared = lib.is_media_path_referenced(Path(media_path))
-        # The DB row is already gone; a failure to unlink the file (permissions,
-        # read-only mount) must not 500 and imply the source survived — report
-        # media_removed False and let the maintainer retry/clean up.
-        media_removed = False
-        if not still_shared:
-            try:
-                media_removed = cache.delete(Path(media_path))
-            except OSError:
-                media_removed = False
+        # Custody spans the reference check and the unlink, so a same-content
+        # pull cannot commit its row in between (RiceSuite #17).
+        with cache.custody():
+            with Library(cfg.db_path) as lib:
+                media_path = lib.delete_source(source_id)
+                if media_path is None:
+                    raise HTTPException(404, "no such source")
+                still_shared = lib.is_media_path_referenced(Path(media_path))
+            # The DB row is already gone; a failure to unlink the file
+            # (permissions, read-only mount) must not 500 and imply the source
+            # survived — report media_removed False and let the maintainer
+            # retry/clean up.
+            media_removed = False
+            if not still_shared:
+                try:
+                    media_removed = cache.delete(Path(media_path))
+                except OSError:
+                    media_removed = False
         return {"id": source_id, "deleted": True, "media_removed": media_removed}
 
     @app.post("/api/cache/clear")
     def clear_cache() -> dict:
         """Full-purge the whole library: every source, slice, and cached file."""
         cache = MediaCache(cfg.cache_dir)
-        with Library(cfg.db_path) as lib:
-            sources_deleted = lib.delete_all_sources()
-        files_removed = cache.clear()
+        # No pull may commit between the purge and the wipe (RiceSuite #17).
+        with cache.custody():
+            with Library(cfg.db_path) as lib:
+                sources_deleted = lib.delete_all_sources()
+            files_removed = cache.clear()
         return {"sources_deleted": sources_deleted, "files_removed": files_removed}
 
     return app
