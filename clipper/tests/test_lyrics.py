@@ -1,0 +1,497 @@
+import random
+
+import pytest
+
+from app import jobs
+from app.models import Word
+from transcribe.lyrics import ANCHOR_DRIFT_WARN_S, MIN_WORD_S, align, normalize
+from transcribe.phrasing import group_words
+
+
+@pytest.fixture()
+def isolated_jobs(tmp_path, monkeypatch):
+    root = tmp_path / ".riceclipper_work"
+    root.mkdir()
+    monkeypatch.setattr(jobs, "WORK_ROOT", root)
+    previous_jobs = jobs._JOBS.copy()
+    jobs._JOBS.clear()
+    yield root
+    jobs._JOBS.clear()
+    jobs._JOBS.update(previous_jobs)
+
+
+def _words(*specs: tuple[str, float, float]) -> list[Word]:
+    return [Word(text=t, start=s, end=e) for t, s, e in specs]
+
+
+def _assert_invariants(words: list[Word], duration: float) -> None:
+    feasible = len(words) * MIN_WORD_S <= duration
+    for i, w in enumerate(words):
+        assert w.end > w.start, f"word {i} end <= start"
+        if feasible:
+            assert w.end - w.start >= MIN_WORD_S - 1e-9, f"word {i} too short"
+        assert w.start >= -1e-9, f"word {i} start negative"
+        assert w.end <= duration + 1e-9, f"word {i} end past duration"
+        if i > 0:
+            assert w.start >= words[i - 1].end - 1e-9, f"word {i} overlaps {i - 1}"
+
+
+# --- normalize ---------------------------------------------------------------
+
+
+@pytest.mark.smoke
+def test_normalize_strips_punctuation_keeps_apostrophe():
+    assert normalize("Hello,") == "hello"
+    assert normalize("don't") == "don't"
+    assert normalize("...world!") == "world"
+
+
+def test_normalize_strips_internal_unicode_punctuation():
+    assert normalize("\u2018hello\u2014world\u2019") == "helloworld"
+    assert normalize("don't") == "don't"
+
+
+# --- exact match --------------------------------------------------------------
+
+
+@pytest.mark.smoke
+def test_exact_match():
+    ref = _words(("hello", 1.0, 1.5), ("world", 1.5, 2.0))
+    result = align("hello world", ref, 3.0)
+    assert result.anchor_rate == 1.0
+    assert result.method == "anchors"
+    assert len(result.words) == 2
+    assert result.words[0].start == 1.0
+    assert result.words[1].end == 2.0
+    _assert_invariants(result.words, 3.0)
+
+
+# --- partial match ------------------------------------------------------------
+
+
+def test_partial_match():
+    ref = _words(
+        ("the", 0.5, 0.7),
+        ("sun", 0.7, 1.0),
+        ("is", 1.0, 1.2),
+        ("bright", 1.5, 2.0),
+        ("today", 2.0, 2.5),
+        ("now", 3.0, 3.5),
+    )
+    lyrics_text = "the sun is very bright today oh so very now"
+    result = align(lyrics_text, ref, 4.0)
+    assert result.method == "anchors"
+    assert result.anchor_rate == 6 / 10
+    _assert_invariants(result.words, 4.0)
+    starts = [w.start for w in result.words]
+    assert starts == sorted(starts)
+    w = result.words
+    assert w[3].start >= w[2].end - 1e-9, "very starts before is ends"
+    assert w[3].end <= w[4].start + 1e-9, "very ends after bright starts"
+    for idx in (6, 7, 8):
+        assert w[idx].start >= w[5].end - 1e-9, f"word {idx} before today end"
+        assert w[idx].end <= w[9].start + 1e-9, f"word {idx} after now start"
+    gap_words = [w[6], w[7], w[8]]
+    chars = [max(len(gw.text), 1) for gw in gap_words]
+    total_chars = sum(chars)
+    gap_span = w[9].start - w[5].end
+    for i, gw in enumerate(gap_words):
+        expected_frac = chars[i] / total_chars
+        actual_frac = (gw.end - gw.start) / gap_span
+        assert abs(actual_frac - expected_frac) < 0.05, (
+            f"word {gw.text!r} fraction {actual_frac:.3f} != {expected_frac:.3f}"
+        )
+
+
+# --- repeated hooks stay chronological ----------------------------------------
+
+
+def test_repeated_hook_misheard_word_stays_chronological():
+    ref = _words(
+        ("we", 0.0, 0.8),
+        ("are", 0.8, 1.6),
+        ("gone", 1.6, 2.4),
+        ("we", 3.0, 3.8),
+        ("are", 3.8, 4.6),
+        ("young", 4.6, 5.4),
+    )
+    result = align("we are young\nwe are young", ref, 6.0)
+    assert result.method == "anchors"
+    assert result.anchor_rate == 5 / 6
+    w = result.words
+    assert w[0].start == 0.0 and w[1].end == 1.6
+    assert 1.6 <= w[2].start and w[2].end <= 3.0
+    assert w[3].start == 3.0 and w[5].end == 5.4
+    assert w[3].line_start
+    _assert_invariants(w, 6.0)
+
+
+def test_repeated_hook_omitted_token_stays_chronological():
+    ref = _words(("love", 0.0, 0.5), ("love", 2.0, 2.5), ("me", 2.5, 3.0))
+    result = align("love me\nlove me", ref, 4.0)
+    assert result.anchor_rate == 3 / 4
+    w = result.words
+    assert w[0].start == 0.0
+    assert 0.5 <= w[1].start and w[1].end <= 2.0
+    assert w[2].start == 2.0 and w[3].end == 3.0
+    _assert_invariants(w, 4.0)
+
+
+def test_tie_breaks_to_earliest_reference():
+    ref = _words(("you", 1.0, 1.5), ("you", 3.0, 3.5))
+    result = align("you", ref, 4.0)
+    assert result.words[0].start == 1.0
+
+
+def test_tie_prefers_first_lyric_token_when_refs_are_fewer():
+    ref = _words(("you", 1.0, 1.5))
+    result = align("you\nyou", ref, 4.0)
+    assert result.anchor_rate == 1 / 2
+    assert result.words[0].start == 1.0
+    assert result.words[1].start >= 1.5 - 1e-9
+    _assert_invariants(result.words, 4.0)
+
+
+# --- below threshold ----------------------------------------------------------
+
+
+def test_below_threshold_even_fill():
+    ref = _words(
+        ("one", 1.0, 1.5),
+    )
+    lyrics_text = "one two three four five six seven eight nine ten"
+    result = align(lyrics_text, ref, 5.0)
+    assert result.method == "even_fill"
+    assert result.anchor_rate == pytest.approx(1 / 10)
+    _assert_invariants(result.words, 5.0)
+
+
+# --- no reference words -------------------------------------------------------
+
+
+def test_no_reference():
+    result = align("hello world foo", [], 3.0)
+    assert result.method == "even_fill"
+    assert result.anchor_rate == 0.0
+    assert result.words[0].start == pytest.approx(0.0)
+    _assert_invariants(result.words, 3.0)
+
+
+# --- punctuation and case -----------------------------------------------------
+
+
+def test_punctuation_case_match():
+    ref = _words(("hello", 1.0, 1.5), ("world", 2.0, 2.5))
+    result = align("Hello, World!", ref, 3.0)
+    assert result.words[0].text == "Hello,"
+    assert result.words[1].text == "World!"
+    assert result.words[0].start == 1.0
+    assert result.words[1].start == 2.0
+    _assert_invariants(result.words, 3.0)
+
+
+# --- line_start and group_words -----------------------------------------------
+
+
+def test_line_start_set():
+    ref = _words(("a", 0.5, 1.0), ("b", 1.0, 1.5), ("c", 1.5, 2.0), ("d", 2.0, 2.5))
+    result = align("a b\nc d", ref, 3.0)
+    assert result.words[0].line_start is True
+    assert result.words[1].line_start is False
+    assert result.words[2].line_start is True
+    assert result.words[3].line_start is False
+
+
+def test_group_words_breaks_on_line_start():
+    ref = _words(("a", 0.5, 1.0), ("b", 1.0, 1.5), ("c", 1.5, 2.0), ("d", 2.0, 2.5))
+    result = align("a b\nc d", ref, 3.0)
+    phrases = group_words(result.words, max_words=10, max_gap=10.0)
+    assert len(phrases) == 2
+    assert phrases[0].text == "a b"
+    assert phrases[1].text == "c d"
+
+
+# --- random invariant ---------------------------------------------------------
+
+
+def test_random_invariants_anchors():
+    rng = random.Random(42)
+    tokens = [f"w{i}" for i in range(200)]
+    lyrics_text = " ".join(tokens)
+    anchor_count = 60
+    ref_words: list[Word] = []
+    t = 0.5
+    for i in range(anchor_count):
+        dur = rng.uniform(0.1, 0.5)
+        ref_words.append(Word(text=tokens[i], start=t, end=t + dur))
+        t += dur + rng.uniform(0.0, 0.3)
+    duration = t + 2.0
+    result = align(lyrics_text, ref_words, duration)
+    assert result.method == "anchors"
+    _assert_invariants(result.words, duration)
+    assert len(result.words) == 200
+
+
+def test_random_invariants_even_fill():
+    rng = random.Random(99)
+    tokens = [f"w{i}" for i in range(200)]
+    lyrics_text = " ".join(tokens)
+    ref_words: list[Word] = []
+    t = 0.5
+    for _i in range(5):
+        dur = rng.uniform(0.1, 0.5)
+        ref_words.append(Word(text=tokens[rng.randint(0, 199)], start=t, end=t + dur))
+        t += dur + rng.uniform(0.0, 0.3)
+    duration = t + 2.0
+    result = align(lyrics_text, ref_words, duration)
+    assert result.method == "even_fill"
+    _assert_invariants(result.words, duration)
+    assert len(result.words) == 200
+
+
+# --- 2A-5 empty normalized tokens as anchors ----------------------------------
+
+
+def test_empty_normalized_token_not_anchor():
+    ref = _words(("...", 0.1, 0.2))
+    result = align("...", ref, 1.0)
+    assert result.anchor_rate == 0.0
+    assert result.method == "even_fill"
+    _assert_invariants(result.words, 1.0)
+
+
+# --- 2A-3 zero-duration reference words ---------------------------------------
+
+
+def test_zero_duration_ref_word_dropped():
+    ref = _words(("hello", 2.0, 2.0))
+    result = align("hello", ref, 2.0)
+    assert result.method == "even_fill"
+    for w in result.words:
+        assert w.end <= 2.0 + 1e-9
+    _assert_invariants(result.words, 2.0)
+
+
+# --- 2A-2 shortfall cascade past duration ------------------------------------
+
+
+def test_shortfall_cascade_clamped_to_duration():
+    ref = _words(("a", 0.90, 0.95), ("b", 0.96, 0.97))
+    result = align("a x b", ref, 1.0)
+    for w in result.words:
+        assert w.end <= 1.0 + 1e-9, f"word {w.text!r} end {w.end} > duration"
+    _assert_invariants(result.words, 1.0)
+
+
+# --- empty raises -------------------------------------------------------------
+
+
+def test_even_fill_stays_inside_clip_when_words_outnumber_slots():
+    lyrics_text = " ".join(["la"] * 30)
+    result = align(lyrics_text, [], 1.0)
+    assert result.method == "even_fill"
+    _assert_invariants(result.words, 1.0)
+    assert result.words[-1].end <= 1.0
+
+
+def test_anchors_stay_inside_clip_when_words_outnumber_slots():
+    ref = _words(*[("la", 0.03 * i, 0.03 * i + 0.02) for i in range(30)])
+    lyrics_text = " ".join(["la"] * 30)
+    result = align(lyrics_text, ref, 1.0)
+    assert result.method == "anchors"
+    _assert_invariants(result.words, 1.0)
+
+
+def test_empty_lyrics_raises():
+    with pytest.raises(ValueError):
+        align("", [], 3.0)
+
+
+def test_blank_lines_only_raises():
+    with pytest.raises(ValueError):
+        align("\n\n  \n", [], 3.0)
+
+
+# --- endpoint tests ----------------------------------------------------------
+
+
+def test_lyrics_endpoint_409_while_active(monkeypatch, isolated_jobs):
+    from app import jobs as job_store
+    from app import main
+
+    job = job_store.create_job()
+    job.status = "transcribing"
+    with pytest.raises(Exception) as exc_info:
+        main.lyrics_job(job.id, main.LyricsRequest(lyrics="hello"))
+    assert exc_info.value.status_code == 409
+
+
+def test_lyrics_endpoint_422_on_blank(monkeypatch, isolated_jobs):
+    from app import jobs as job_store
+    from app import main
+
+    job = job_store.create_job()
+    job.status = "ready"
+    with pytest.raises(Exception) as exc_info:
+        main.lyrics_job(job.id, main.LyricsRequest(lyrics=""))
+    assert exc_info.value.status_code == 422
+
+
+def test_lyrics_endpoint_success_replaces_words(monkeypatch, isolated_jobs):
+    from app import jobs as job_store
+    from app import main
+    from app.models import Word as WordModel
+
+    job = job_store.create_job()
+    job.status = "ready"
+    whisper_words = [WordModel(text="hello", start=1.0, end=1.5)]
+    job.words = list(whisper_words)
+    job.reference_words = list(whisper_words)
+
+    class FakeInfo:
+        duration = 3.0
+
+    job.info = FakeInfo()
+    result = main.lyrics_job(job.id, main.LyricsRequest(lyrics="hello"))
+    assert result.anchor_rate == 1.0
+    assert job.words[0].text == "hello"
+    assert job.words[0].line_start is True
+
+
+def test_retranscribe_restores_whisper_words(monkeypatch, isolated_jobs):
+    from app import jobs as job_store
+    from app import main
+    from app.models import Word as WordModel
+
+    job = job_store.create_job()
+    job.status = "ready"
+    job.source_path = job.dir / "source.mp4"
+    job.source_path.write_bytes(b"source")
+    original = [WordModel(text="original", start=0.5, end=1.0)]
+    job.words = [WordModel(text="lyric", start=0.5, end=1.0, line_start=True)]
+    monkeypatch.setattr(main.whisper, "transcribe", lambda path: original)
+    result = main.transcribe_job(job.id)
+    assert result.words[0].text == "original"
+    assert result.words[0].line_start is False
+
+
+# --- PR-21 triage repairs -----------------------------------------------------
+
+
+def test_curly_apostrophe_matches_straight_quote():
+    # A2: smart quotes from pasted lyrics must anchor against whisper's ASCII.
+    rsquo = chr(0x2019)  # right single quotation mark (smart apostrophe)
+    assert normalize(f"don{rsquo}t") == normalize("don't") == "don't"
+    ref = _words(("i", 0.0, 0.3), ("don't", 0.3, 0.7), ("go", 0.7, 1.0))
+    result = align(f"I don{rsquo}t go", ref, 1.5)
+    assert result.method == "anchors"
+    assert result.anchor_rate == 1.0
+    assert result.words[1].start == pytest.approx(0.3)
+    assert result.words[1].end == pytest.approx(0.7)
+    _assert_invariants(result.words, 1.5)
+
+
+def test_hyphenated_token_anchors_against_word_split_reference():
+    # A3: a fused compound must anchor against whisper's separate words.
+    ref = _words(("mother", 0.0, 0.4), ("in", 0.4, 0.6), ("law", 0.6, 1.0))
+    result = align("mother-in-law", ref, 1.5)
+    assert result.method == "anchors"
+    assert result.anchor_rate == 1.0
+    assert len(result.words) == 1
+    assert result.words[0].text == "mother-in-law"
+    assert result.words[0].start == pytest.approx(0.0)
+    assert result.words[0].end == pytest.approx(1.0)
+    _assert_invariants(result.words, 1.5)
+
+
+def test_transcribe_invalidates_prior_render(monkeypatch, isolated_jobs):
+    # A4: re-transcribing must drop a stale render so it can't reach the handoff.
+    from app import jobs as job_store
+    from app import main
+    from app.models import Word as WordModel
+
+    job = job_store.create_job()
+    job.status = "done"
+    job.source_path = job.dir / "source.mp4"
+    job.source_path.write_bytes(b"src")
+    out = job.dir / "out.mp4"
+    out.write_bytes(b"rendered")
+    job.output_path = out
+    monkeypatch.setattr(
+        main.whisper,
+        "transcribe",
+        lambda path: [WordModel(text="new", start=0.0, end=0.5)],
+    )
+    main.transcribe_job(job.id)
+    assert job.output_path is None
+    assert not out.exists()
+
+
+def test_lyrics_endpoint_409_when_no_probe_info(isolated_jobs):
+    # A5: a non-blank align against a job with no probe info is refused, not
+    # aligned to a zero-length clip.
+    from app import jobs as job_store
+    from app import main
+
+    job = job_store.create_job()
+    job.status = "ready"
+    job.info = None
+    with pytest.raises(Exception) as exc_info:
+        main.lyrics_job(job.id, main.LyricsRequest(lyrics="hello world"))
+    assert exc_info.value.status_code == 409
+
+
+def test_lyrics_endpoint_422_on_blank_without_info(isolated_jobs):
+    # A5: blank input still reports 422 even when there is no probe info.
+    from app import jobs as job_store
+    from app import main
+
+    job = job_store.create_job()
+    job.status = "ready"
+    job.info = None
+    with pytest.raises(Exception) as exc_info:
+        main.lyrics_job(job.id, main.LyricsRequest(lyrics="   "))
+    assert exc_info.value.status_code == 422
+
+
+# --- A1 anchor-drift signal (no behavior change) ------------------------------
+
+
+def test_anchor_drift_warning_flags_large_shift():
+    # 20 real anchors + 20 trailing untranscribed filler force the last anchors
+    # to shift well past the tolerance bar; the result must raise the signal.
+    ref = _words(*[(f"w{i}", 0.1 + i * 0.5, 0.1 + i * 0.5 + 0.1) for i in range(20)])
+    duration = ref[-1].end + 0.05
+    lyrics_text = (
+        " ".join(f"w{i}" for i in range(20))
+        + " "
+        + " ".join(f"x{i}" for i in range(20))
+    )
+    result = align(lyrics_text, ref, duration)
+    assert result.method == "anchors"
+    assert result.anchor_drift > ANCHOR_DRIFT_WARN_S
+    assert result.anchor_drift_warning is True
+
+
+def test_no_anchor_drift_warning_on_clean_alignment():
+    ref = _words(("hello", 1.0, 1.5), ("world", 1.5, 2.0))
+    result = align("hello world", ref, 3.0)
+    assert result.method == "anchors"
+    assert result.anchor_drift == pytest.approx(0.0)
+    assert result.anchor_drift_warning is False
+
+
+def test_small_anchor_shift_stays_below_warning_threshold():
+    # Two filler words drop into a roomy gap: anchors don't move, so no warning.
+    ref = _words(("a", 0.0, 0.2), ("b", 1.0, 1.2))
+    result = align("a x y b", ref, 2.0)
+    assert result.method == "anchors"
+    assert result.anchor_drift <= ANCHOR_DRIFT_WARN_S
+    assert result.anchor_drift_warning is False
+
+
+def test_even_fill_has_no_anchor_drift_warning():
+    result = align("one two three four five", [], 3.0)
+    assert result.method == "even_fill"
+    assert result.anchor_drift == pytest.approx(0.0)
+    assert result.anchor_drift_warning is False

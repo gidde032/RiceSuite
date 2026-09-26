@@ -1,0 +1,252 @@
+# Changelog
+
+All notable changes to RiceClipper are recorded here.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project aims to follow [Semantic Versioning](https://semver.org/).
+
+## [Unreleased]
+
+### Changed
+- **`.env` is loaded automatically** (#2). `app.main` loads the repo-root `.env`
+  at startup, before any settings are read, so a bare `uvicorn app.main:app`
+  picks it up; `--env-file` is no longer needed. Variables already set in the
+  environment take precedence. `python-dotenv` is now pinned directly
+  (1.2.3) instead of arriving through `uvicorn[standard]`. Tests redirect the
+  path so they never read a developer's real `.env`.
+
+### Added
+- **First-time-user README.** Requirements table (Python 3.11–3.14, ffmpeg with
+  libass, macOS emoji fonts, the Whisper model download), venv install steps, a
+  configuration table verified against the code, a first run with a generated
+  sample clip, a feature walkthrough, and troubleshooting.
+- **Non-required Python 3.14 CI job** (`Python 3.14 tests (non-required)`). The
+  required check `Python 3.12 tests and coverage` is unchanged. `test_gates.py`
+  now locks the required check's name against the ruleset and asserts that the
+  3.14 job exists and stays non-required.
+
+### Fixed
+- **Emoji headers render off macOS** (#3). Header fonts are now also looked up
+  at the Linux package paths (Noto Color Emoji; Liberation Sans / DejaVu Sans)
+  and, failing those, through fontconfig (`fc-match`, `fc-list :color=true`).
+  Every emoji candidate is still probed for a non-blank render. Verified with
+  the Debian `fonts-noto-color-emoji` 2.051 CBDT font. When a font is still
+  missing, the render error now says which one and is shown in the UI rather
+  than a generic "render failed".
+- `pre-commit` is now pinned in `requirements-dev.txt` (4.6.2), so the
+  documented `pre-commit install` works in a fresh dev venv.
+
+## [1.0.0] - 2026-09-20
+
+First public release. RiceClipper is published under the MIT License as a
+sanitized public repository: private identifiers were removed while the detailed
+engineering, testing, review, and CI history was preserved.
+
+### Changed
+- **Header generation is now opt-in.** The on-screen header generator is no
+  longer invoked automatically after transcription. Nothing — neither the clip
+  frame nor the transcript — is sent to Anthropic unless the user explicitly
+  clicks **✨ Generate** and an `ANTHROPIC_API_KEY` is configured. Manual header
+  entry remains the always-available fallback. `SECURITY.md` documents exactly
+  what a triggered request transmits.
+
+### Added
+- **Public-repository hygiene.** Root MIT `LICENSE`; `SECURITY.md` covering
+  privacy, secret handling, localhost-only operation, and what leaves the
+  machine; a tracked `.env.example` documenting every supported environment
+  variable; and hardened `.gitignore` coverage for credentials, keys,
+  certificates, sessions, databases, and logs.
+
+### Fixed
+- **Subject-crop idle jitter.** Speech and music framing now use the ratified
+  Level-5 strong lock universally: hold inside an outer 20% window-width zone,
+  settle ordinary corrections at the inner 10% boundary, and interpolate those
+  corrections into 30 Hz crop commands. Scene cuts, inferred face jumps, and
+  loss returns remain immediate. Older persisted plans retain their original
+  non-interpolated behavior.
+- Lyric alignment keeps repeated hooks chronological when Whisper mishears or omits a word (#29).
+- Lyric alignment keeps every word inside the clip when the block has more words than 50 ms slots (#33).
+- **Batch render no longer drops browser requests.** `render()` now runs
+  outside the global job lock under a per-job render lock, so renders of
+  different jobs run concurrently instead of one behind another. A second
+  render of the same job still returns 409, and cache clear refuses (409)
+  while any render lock is held. The review UI polls job state after a
+  dropped render fetch and reports success once the job finishes (Issue #30,
+  PR #31).
+
+### Added
+- **Pasted-lyric alignment for music clips.** Music review cards now reveal a
+  session-only lyric textarea and Align action that replaces the editable
+  transcript with locally aligned lyric words, reports anchor coverage (or an
+  even-fill fallback), and preserves pasted line breaks through rendering.
+  Repeated Align always re-anchors against the original whisper words. A
+  Restore transcript button resets the editable words to the whisper output.
+  Both Align and Restore invalidate any rendered output so the user re-renders.
+- **Subject-focused 9:16 crop for landscape input.** Landscape sources can now
+  be cropped to a moving 9:16 window that keeps one speaker in frame, instead of
+  blur-padding. A per-clip `geometry` control (`auto` / `blur_pad` / `crop`)
+  chooses the framing: `auto` follows the detector's decision, `crop` forces a
+  crop, `blur_pad` keeps the letterboxed fallback. Detection runs at ingest and
+  falls back to blur-pad when it is weak or fails. The review card shows the
+  Geometry row only for landscape jobs, with the plan summary and a near-zone
+  warning. Vertical input is unchanged. See
+  [`docs/adr/ADR-001-subject-crop.md`](./docs/adr/ADR-001-subject-crop.md).
+- **Per-slot saved caption/header style.** The universal pre-upload caption and
+  header dropdowns are gone. Each slot (the "Clip N" ordinal that maps to the
+  RicePoster handoff position) now remembers its caption and header style in the
+  browser (`localStorage`, local-first — no server state). A clip in slot N seeds
+  from slot N's saved default, falling back to the v1 Classic/Plain defaults;
+  editing a clip persists that slot's default so it carries to later batches and
+  sessions. The per-clip render and handoff `caption_style`/`header_style`
+  contracts are unchanged.
+- **Music mode convenience default.** Choosing a music file now defaults the mode
+  to *mix under original*, but only while the mode is still untouched, so a
+  deliberate *replace* (or *none*) is never overridden. No new audio mode (D13
+  unchanged).
+- **Auto-header generation (Wave-1).** After transcription, RiceClipper now
+  auto-fills the on-screen header from an early frame snapshot plus the reviewed
+  transcript via an Anthropic Sonnet vision model (`app/header_gen.py`,
+  `render/frame.py`, `POST /api/jobs/{id}/header`). One sentence ending in one or
+  two emoji; emoji burn in via the existing Pillow PNG-overlay path. A per-clip
+  **Generate** button regenerates with optional guidance (mirrors RicePoster's
+  caption regenerate-with-feedback), and manual entry remains the fallback — any
+  failure (missing key, API error, undecodable frame) leaves the header field
+  manual and never blocks a render. This is the design's only outbound call; it
+  generates text and posts nothing (SPEC §3). Prompt styles live in
+  `prompts/*.json`: only the neutral `generic-header` seed is tracked, a
+  maintainer-specific style stays local and gitignored (pinned by
+  `tests/test_prompts.py`), and the default style is chosen by
+  `RICECLIPPER_HEADER_STYLE`. Requires `ANTHROPIC_API_KEY`.
+- **Pull from RiceSearcher (content-sourcing intake).** RiceClipper now ingests
+  batches of selected clips that RiceSearcher writes to `~/ricesearcher-handoff`
+  (`RICECLIPPER_SEARCHER_INBOX`), turning each into a normal review job:
+  `app/searcher_pickup.py`, `POST /api/pull-from-searcher`, and a "Pull from
+  RiceSearcher" button in the review UI. Mirrors RicePoster's pickup discipline —
+  manifest-last scan, FIFO, `batch_id` dedupe via a durable consumed registry,
+  validate-before-write (malformed → 400, zero writes), and durable custody (clip
+  bytes copied into the job dir) before the source batch is removed, with
+  rollback on failure. RiceClipper is the intermediary: it *reads* the
+  RiceSearcher inbox and still *writes* the separate `~/riceclipper-handoff` for
+  RicePoster; RiceSearcher and RicePoster never share a directory. Contract in
+  `docs/integration/searcher-pickup.md`.
+- **CI and quality gates.** GitHub Actions workflow (`Python 3.12 tests and
+  coverage`) runs ruff lint + format checks and the full test suite with an
+  **85% coverage floor** on every PR and push to `main`. A two-tier
+  `pre-commit` config mirrors it locally (ruff + an 8-test smoke tier on commit;
+  full suite + coverage on push). `tests/test_gates.py` locks the gate numbers
+  so they cannot drift. A `main` branch-protection ruleset (block force-push +
+  deletion, require the PR check) is prepared in `.github/rulesets/main.json`
+  but not yet applied: repository rulesets require GitHub Pro for a private
+  repo. Ruff config lives in `pyproject.toml`.
+- **RicePoster handoff writer (producer side).** A "Send to RicePoster" button
+  posts the rendered batch to `POST /api/handoff` (`app/handoff.py`), which
+  copies each clip to `clip_<position>.mp4` under a fresh `batch_<ts>/` in the
+  handoff root (`RICECLIPPER_HANDOFF_DIR`, default `~/riceclipper-handoff/`) and
+  writes `manifest.json` last via an atomic rename. The manifest carries the
+  reviewed transcript (for RicePoster's caption grounding), header, and preset
+  provenance; it holds no account/slot/posting fields. RiceClipper still writes
+  local files only. Implements the producer half of
+  `docs/integration/riceposter-handoff.md`; the RicePoster-side pickup is a
+  separate effort in that repo.
+- **Bounded batch review (queue N, review each).** The review UI now accepts
+  several clips in one session: multi-file upload, a review card per clip, and a
+  single "Approve & Render All". Transcription and render run strictly one clip
+  at a time (client-driven over the existing per-job routes; the server keeps its
+  single Whisper model / CPU-bound ffmpeg serialization). Per-clip caption and
+  header presets inherit a batch default and can be overridden individually. This
+  is the first leg of the RicePoster integration (see
+  `docs/integration/riceposter-handoff.md`); the handoff writer is a later phase.
+  SPEC §9 updated: the prior "single-clip, no batch" default is superseded; the
+  per-clip human-in-the-loop gate is unchanged.
+
+- **Music-path framing (ADR-002 part 1).** A `Content` control (Speech / Music)
+  on each landscape clip card selects the framing profile. The music profile holds
+  through faceless spans, uses a lower scene-cut threshold (0.2), and always
+  decides `crop` (or `hold_static` when no face appears). The review card shows
+  the active plan summary. The render resolves geometry from the music plan when
+  `content=music`. Speech profile output is unchanged. See
+  [`docs/adr/ADR-002-music-path.md`](./docs/adr/ADR-002-music-path.md).
+
+### Changed
+- **Subject-crop reliability hardening.** Probe, OpenCV analysis, and ffmpeg now
+  share display-oriented square-pixel coordinates for rotated and anamorphic
+  sources. Detection records decoded timestamps, rejects partial decode and
+  scene-analysis failures, and runs in a killable subprocess with a hard wall
+  clock bound. Cut/loss returns snap consistently, failed analysis retains a
+  centered explicit-crop fallback, and pulled RiceSearcher jobs persist their
+  transcript and crop plan for restart recovery. The six-clip fixture gate now
+  validates its role inventory, runtime, governed pan cap, failure count, and
+  contact-sheet review. The vendored YuNet model is verified against its MIT
+  license.
+- **Retryable render failures.** A failed batch render returns the affected clip
+  to the ready state, so the user can change geometry or other settings and run
+  **Render all** again without restarting the batch.
+- **Upload-page layout.** Removed the batch-defaults block and its dead space,
+  and moved the media-cache controls up into the upload panel — paired with the
+  RiceSearcher intake in one tool row — retiring the standalone bottom cache
+  panel. The upload state now fits without scroll across wide, mid, and narrow
+  viewports.
+- **Slate browser interface.** Reworked the local review UI into the ratified
+  dark, compact editing-console layout with rice-grey interaction states,
+  treatment-preview cards, the selected rice-and-shears production mark, and
+  responsive/accessibility hardening while preserving the existing API,
+  render, batch, and handoff contracts.
+- **Lyric caption preset addition.** Added four fixed, selectable lyric
+  treatments: Lyric Block (italic Avenir Next Condensed with cyan highlight),
+  Velvet Serif (Bodoni 72 with red highlight), Powder (DIN Condensed font with
+  powder-blue highlight), and Baskerville (with teal highlight). The catalog
+  remains bounded; arbitrary font/color editing and user-authored preset
+  persistence remain deferred.
+- **Visual preset follow-up.** Added seven selectable caption appearances
+  (including the original Classic default) and three compact header treatments:
+  plain text, black plate, and white plate. The default header is now a
+  reference-matched 42px plain overlay with no plate.
+- **v1 hardening.** Added manual media-cache clearing, bounded Whisper/ffmpeg
+  threading, owned subprocess timeouts and shutdown cleanup, explicit model
+  disposal, and stricter job/API error handling.
+- Updated project documentation to reflect the implemented v1 slice and the
+  resolved color-emoji PNG-overlay path.
+
+### Added
+- **v1 vertical slice — initial implementation.** End-to-end pipeline from the
+  ratified design (SPEC.md D1–D13):
+  - `transcribe/` — faster-whisper wrapper (`whisper.py`, env-tunable model) and
+    pure word→phrase chunking (`phrasing.py`).
+  - `render/` — parameterised ASS builder with word-highlight captions + top
+    header plate (`ass.py`, `StyleConfig`), 9:16 passthrough vs blur-pad
+    geometry (`geometry.py`), and single-`filter_complex` ffmpeg orchestration
+    with audio replace/mix-under (`pipeline.py`).
+  - `app/` — local FastAPI server, in-memory job store, ffprobe + libass
+    capability checks, Pydantic contracts.
+  - `web/` — vanilla review-gate UI: upload → edit transcript / header / music →
+    render → download.
+  - `tests/` — unit tests over phrasing, ASS generation, and emoji detection.
+  - Pinned `requirements.txt`; added `requirements-dev.txt`.
+- **Color-emoji headers (spike PASSED).** libass can't burn color emoji on the
+  macOS/CoreText toolchain, so headers containing emoji are rendered to a
+  transparent PNG (`render/header_image.py`, Pillow + Apple Color Emoji) and
+  composited via ffmpeg `overlay`; text-only headers stay on the libass path.
+  The PNG path now applies the selected plain/black-plate/white-plate
+  treatment and degrades to the libass header if image rendering fails.
+
+### Fixed
+- **Replace-mode duration.** Short replacement music is padded instead of
+  allowing ffmpeg's `-shortest` path to truncate the video; regression coverage
+  covers music shorter than the source clip.
+- **Transcription semaphore cleanup.** faster-whisper's tqdm progress lock now
+  uses a thread-only lock, preventing the Conda/uvicorn reload shutdown warning
+  about leaked multiprocessing semaphores.
+- **Rendered-clip playback.** Output audio is resampled to **48 kHz** — 44.1 kHz
+  content against a 48 kHz macOS output device triggered Chrome
+  `AUDIO_RENDERER_ERROR`. (Root cause of the remaining no-sound case was a local
+  audio-stack/virtual-HAL issue, not the files.)
+- **Review UI video preview** now plays from client-side blobs (fresh `<video>`
+  element per file), and transcription is a separate request so the upload no
+  longer holds the client File during playback. Source preview starts muted;
+  audio review is on the rendered output. "Start over" now stops playback.
+
+### Requirements
+- ffmpeg must be **built with libass** (`subtitles` filter). Homebrew's stock
+  formula omits it — use `brew install homebrew-ffmpeg/ffmpeg/ffmpeg`.
+- Color-emoji headers need a Pillow-renderable color-emoji font (Apple Color
+  Emoji on macOS; the Homebrew Noto build rasterizes blank).

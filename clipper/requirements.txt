@@ -1,0 +1,16 @@
+# RiceClipper — core dependencies (v1).
+# ffmpeg is a SYSTEM dependency and MUST include libass (the `subtitles` filter).
+# Homebrew's stock `ffmpeg` formula does NOT bundle libass; install a libass build:
+#   brew unlink ffmpeg && brew install homebrew-ffmpeg/ffmpeg/ffmpeg
+
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-dotenv==1.2.3     # loads the repo-root .env at startup
+python-multipart==0.0.20  # file uploads in the review UI
+faster-whisper==1.1.1     # word-level transcription
+requests==2.32.3          # faster-whisper imports requests at runtime
+Pillow==12.3.0            # emoji header image (libass can't burn color emoji)
+anthropic==1.5.0          # Sonnet vision agent for the Wave-1 auto-header
+# YuNet face detector for the subject-focused 9:16 crop (ADR-001). Headless: no
+# GUI libs, local-only inference, no network at runtime.
+opencv-python-headless==5.0.0.93

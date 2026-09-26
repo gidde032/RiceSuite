@@ -1,0 +1,274 @@
+# RiceClipper — v1 Specification
+
+> Status: **Ratified and implemented** (design locked via decision-challenge
+> session). The v1 hardening pass and bounded visual preset follow-up are merged
+> to `main`. The separately ratified **Slate** browser-interface polish and its
+> bounded four-preset lyric-caption follow-up are also merged to `main`; Slate
+> is governed by [`docs/design/slate-ui-spec.md`](docs/design/slate-ui-spec.md)
+> and does not change v1 functionality. This document remains the source of
+> truth for v1 scope and the deferred roadmap.
+>
+> Project: **RiceClipper** — a standalone short-form video captioning tool.
+> Distinct repo/project from **RicePoster** (the posting harness).
+
+---
+
+## 1. Purpose
+
+RiceClipper ingests short (**under ~1 minute**) vertical or landscape videos and outputs
+post-ready clips with **burned-in, word-synced captions** and an **on-screen
+header**. It is the "Path 3" of a larger clipping concept: no clip *selection*
+intelligence, just a clean caption/header/export render chassis.
+
+It was built standalone for v1 with an output contract that now lets its clips
+drop straight into RicePoster through a local-filesystem handoff. Building the
+render chassis first is deliberate — the future Paths 2 and 1 (clip extraction
+from longer video) sit directly on top of it.
+
+## 2. Scope
+
+**In scope (v1):**
+decode → transcribe (word-level) → word-highlight captions → manual on-screen
+header → normalize geometry (pass-through 9:16; subject crop or blur-pad for
+landscape, D15; music follow profile, D16) → optional pasted-lyric fallback
+(D16) → optional added-music track →
+export 1080×1920 H.264 — all through a local web review UI with a
+human-in-the-loop gate.
+
+**Explicitly out of scope for the original v1 slice (see §7 for delivery status):**
+clip selection/extraction (Paths 2 & 1), active-speaker switching and zoom,
+dead-space/filler trimming, auto-generated header, RicePoster integration,
+arbitrary caption style/position editing, animated (Tier-3) captions,
+auto-ducking.
+
+The approved post-v1 visual follow-up adds a bounded set of built-in choices:
+eleven caption presets and three header treatments. It does not add a general
+text editor, arbitrary font/color input, or user-authored preset persistence.
+
+## 3. Boundary & safety note
+
+RiceClipper **performs no posting, publishing, or network upload of content**. It
+reads local video files and writes local output files. The "no live post without
+explicit approval" safety rule belongs to RicePoster and remains RicePoster's
+responsibility after it separately pulls from the implemented local handoff
+(§7, Wave 1). RiceClipper's only outbound network call is the implemented header
+agent's API request (§6.2), which is **opt-in** (never automatic; requires an
+API key and an explicit UI action) and which generates text and posts nothing.
+
+## 4. Pipeline (data flow)
+
+1. **Ingest** — user uploads a clip via the local UI.
+2. **Normalize geometry** — if exactly 9:16 (1080×1920), pass through untouched.
+   Landscape input runs local face detection at ingest and, per clip, resolves
+   `auto` / `blur_pad` / `crop`: **subject crop** slides a full-height 9:16
+   window that keeps the speaker inside a central safe zone; otherwise
+   **blur-pad** the same-frame fill to 1080×1920 (D12, D15,
+   [ADR-001](docs/adr/ADR-001-subject-crop.md),
+   [design spec](docs/design/subject-crop-spec.md)). A per-clip
+   `content: speech | music` setting selects the **music follow profile**:
+   no face-rate gate, hold through faceless spans, static centered window
+   when no face is ever found (D16, [ADR-002](docs/adr/ADR-002-music-path.md)).
+   Both profiles share the Level-5 motion policy: hold minor movement,
+   interpolate ordinary corrections at 30 Hz, and snap confirmed cuts, inferred
+   face jumps, and returns after track loss.
+3. **Transcribe** — faster-whisper produces caption text with **word-level
+   timestamps**, pinned to the clip timeline in seconds.
+4. **Review gate (human-in-the-loop)** — user edits transcript text (timing
+   stays locked to detected boundaries), toggles captions off if desired, and
+   types the header. Preview available. Under `content: music` the user may
+   paste a lyric block and align it: the lyric words replace the transcript,
+   with whisper word timings used as anchors only (D16,
+   [design spec](docs/design/music-path-spec.md)).
+5. **Render captions** — emit an ASS subtitle file; burn with ffmpeg/libass:
+   phrase groups with per-word highlight synced to the timestamps.
+6. **Render header** — burn the user's 1–2 line header at the top using the
+   selected compact plain-text or plate treatment, cleared above the caption
+   zone.
+7. **Mix audio** — original audio passes through; if the user supplied a music
+   file, apply **replace** or **mix-under** (with a volume level). Because
+   caption timing is already baked to the timeline in seconds, adding music at
+   this stage cannot affect sync, and the source speech transcribed in step 3 was
+   never contaminated by music.
+8. **Export** — 1080×1920, H.264 / AAC, mp4.
+
+## 5. Caption rendering — the complexity tiers
+
+Rendering is ASS subtitles burned via libass. This defines a clear complexity
+ladder:
+
+- **Tier 1 (native to libass — v1 preset lives here):** font family/size/weight,
+  text color, outline + shadow, position, phrase blocks, and **per-word color
+  highlight / left-to-right fill synced to audio**. The target "native TikTok /
+  Opus" look is entirely Tier 1.
+- **Tier 2 (libass + scripting effort — natural stretch):** a highlight *box*
+  behind the active word (CapCut style), computed per-word from font metrics; a
+  simple scale "pop" on word appearance.
+- **Tier 3 (requires a second render engine — the real fork):** fluid
+  spring/bounce motion, animated resizing boxes. Needs a frame-compositing or
+  HTML-to-video renderer (MoviePy / Remotion-class). This is an engine decision,
+  not a style toggle, and is consciously deferred.
+
+**v1 preset:** phrase group of ~4–5 words, bold sans font, thick outline +
+shadow for legibility on any background, per-word color highlight, lower-third
+position with the header cleared above. The ASS template is parameterized from
+day one so exposing font/color/highlight/position config later (§7, Wave 2) is
+filling in variables, not rebuilding.
+
+### 5.1 Bounded visual preset follow-up
+
+The review UI exposes eleven named caption presets: **Classic** (the original
+v1 treatment), **Clean**, **Punch**, **Friendly**, **Sunset**, **Mono**,
+**Editorial**, **Lyric Block**, **Velvet Serif**, **Powder**, and
+**Baskerville**. Each remains a Tier-1 ASS/libass combination of font, size,
+outline/shadow, position, base color, and active-word highlight color. The
+four approved lyric treatments are fixed combinations: Avenir Next Condensed
+italic with cyan (`#00E5FF`), Bodoni 72 with red (`#FF3654`), **Powder** using
+the DIN Condensed font with powder blue (`#A8C7E8`), and Baskerville with teal
+(`#00A7A7`). The stable internal identifier for Powder remains
+`din_condensed`.
+
+The UI also exposes three header treatments at the same compact,
+reference-matched scale: **Plain text**, **Black plate**, and **White plate**.
+Plain text is the default. Headers with emoji use the existing Pillow PNG
+overlay path and apply the same selected treatment; text-only headers remain on
+libass.
+
+Caption and header style are chosen per clip, seeded from a **per-slot saved
+default** rather than a universal pre-upload dropdown: each slot (the "Clip N"
+ordinal that maps to the RicePoster handoff position) remembers its style in the
+browser (`localStorage`, local-first), starting from the v1 Classic/Plain
+defaults, and editing a clip persists that slot's default for later batches. On
+the audio side, choosing a music file defaults the mode to *mix under original*
+while the mode is still untouched — a convenience default that never overrides a
+deliberate choice and adds no new mode (D13 unchanged).
+
+### 5.2 Slate browser-interface polish
+
+**Slate** is the ratified visual theme for the local browser review UI. It
+reorganizes the existing controls into a dark, compact editing-console layout,
+uses treatment-preview radio cards for per-clip header and caption selection,
+and introduces a symbol-only rice-and-shears mark. It preserves all existing
+values, defaults, API contracts, rendering behavior, and workflow boundaries.
+
+The complete visual, responsive, accessibility, asset, and non-goal contract is
+owned by [`docs/design/slate-ui-spec.md`](docs/design/slate-ui-spec.md).
+The ratified wide-viewport editing arrangement and its Music/Speech states are
+owned by [`docs/design/editor-layout-spec.md`](docs/design/editor-layout-spec.md).
+
+## 6. Header
+
+### 6.1 v1 — manual
+A text box in the review gate. User types a 1–2 line on-screen hook. Present on
+**every** clip, captioned or silent — which is why v1 needs no hand-timing editor
+for silent clips: the header is the text layer.
+
+### 6.2 Auto-generated with manual fallback (Wave 1 — implemented)
+**Status: implemented.** After transcription the header auto-fills from an early
+frame snapshot + transcript via an Anthropic Sonnet vision model
+(`app/header_gen.py`, `render/frame.py`, `POST /api/jobs/{id}/header`); a per-clip
+**Generate** button regenerates with optional guidance, and manual entry stays
+the fallback. Prompt styles live in gitignored `prompts/*.json` (only the neutral
+`generic-header` seed is tracked); the default is selected by
+`RICECLIPPER_HEADER_STYLE`. The design is unchanged from the note below.
+
+A **new, distinct** generator modeled on RicePoster's caption-writer *pattern*
+but a separate artifact (RicePoster writes the post-caption *field* text;
+RiceClipper's header is *burned into the frame*). Inputs: early-frame snapshot +
+**transcript** (which RicePoster can't provide, since it doesn't transcribe) +
+optional user description line → an Anthropic **Sonnet** vision agent with a
+JSON-styled prompt tuned for a punchy ≤2-line hook. Manual fallback works exactly
+like the caption override — type the header, skip the agent.
+
+**Opt-in only.** The agent is never invoked automatically. Nothing (frame or
+transcript) leaves the machine after transcription on its own — the user
+triggers generation explicitly with the header **✨ Generate** button, and the
+call is skipped entirely when no `ANTHROPIC_API_KEY` is set. What is sent on an
+explicit trigger is documented in `SECURITY.md`.
+
+**Engine lean (recorded; finalized at build):** Sonnet, keeping the vision frame.
+A local/free model was considered to match the local transcription stack and
+**rejected** for v1's header: header text is language *generation* (not
+transcription), so "local" means a heavy multi-GB local LLM that writes
+noticeably weaker social hooks; the frame snapshot is also the only available
+signal on a music-only clip with no transcript. The header is the single most
+visible line on the clip and the API cost is cents — the spot where a strong
+model earns its keep. Revisit at build if desired.
+
+## 7. Deferred roadmap (ordered)
+
+- **Wave 1 — fast-follow (the "first improvements" cluster):**
+  1. **RicePoster integration — implemented.** Outputs drop into the harness's pickup contract.
+  2. **Silence-only trimming** — cut long gaps (silence detection); keep A/V sync,
+     smooth jump cuts.
+  3. **Header generator — implemented (opt-in).** The Sonnet vision agent above
+     runs only on an explicit UI action and retains manual entry as the
+     fallback; the emoji spike is resolved via the PNG-overlay path (§8).
+- **Wave 2 — early additions:**
+  - Caption **style/position configuration** (Tier-1 knobs: font, color, highlight
+    color, position) exposed in the UI.
+- **Deferred (longer-term):**
+  - Filler-word trimming ("um/uh", transcript-driven cuts).
+  - Active-speaker reframe and zoom for landscape input. Single-subject crop
+    is ratified (D15); multi-speaker switching stays deferred.
+  - Tier-3 animated captions (behind a deliberate render-engine decision).
+  - Auto-ducking + source vocal isolation for music.
+  - Forced alignment (wav2vec2) for lyrics, only if the D16 anchor method is
+    killed. Histogram cut detector if scene 0.2 still misses cuts.
+  - **Path 2** (5–10 min → clip extraction) and **Path 1** (30+ min → chunked
+    extraction) — the clip-selection engine, built on this render chassis.
+
+## 8. Resolved spike
+
+- **Color-emoji burn-in (header-critical) — passed.** The macOS/CoreText libass
+  path renders missing-glyph boxes for color emoji, so emoji headers use the
+  Pillow PNG-overlay fallback documented in
+  [`docs/spikes/emoji-burn-in.md`](docs/spikes/emoji-burn-in.md). Captions and
+  text-only headers remain on the libass path.
+
+## 9. Recorded defaults
+
+- Original audio passes through untouched when no music file is added (no ducking,
+  no auto-added music in v1).
+- **Bounded batch (queue N, review each).** The review UI accepts several clips
+  in one session and shows a review card per clip; the human still edits and
+  approves every clip. Transcription runs **one clip at a time** (single
+  Whisper model). Renders of different jobs may run concurrently: the global
+  job lock covers state changes only, and each job holds its own render lock
+  while ffmpeg runs (Issue #30). This is still a review/UX affordance, not a
+  throughput feature. The prior "single-clip, no batch" default is superseded;
+  the per-clip human-in-the-loop gate is unchanged.
+- Future-header snapshot taken from an early frame (~1s in, or first non-black
+  frame).
+- Tuned for sub-minute clips; no hard length cap enforced in v1.
+
+## 10. Tech stack
+
+- **Language / server:** Python + FastAPI, served locally (matches RicePoster).
+- **Frontend:** vanilla HTML/JS review UI.
+- **Transcription:** **faster-whisper** (word-level timestamps; small/medium model,
+  seconds on CPU for sub-minute clips). WhisperX only if word sync looks loose.
+- **Rendering:** ffmpeg + libass (ASS subtitles), blur-pad filter, audio mix.
+- **Header agent:** Anthropic Sonnet (vision), JSON-styled prompt; implemented in Wave 1.
+- **Output:** 1080×1920, H.264 / AAC, mp4.
+- Local-first throughout.
+
+## 11. Decision log
+
+| # | Decision | Settled as | Why |
+|---|----------|-----------|-----|
+| D1 | Fit | Standalone v1; output contract compatible for RicePoster drop-in | Prove the render chassis fast without coupling risk; integration is Wave-1 #1 |
+| D2 | Source geometry | Vertical-first; **landscape accepted via single-subject crop (D15, 2026-09-14)**; active-speaker reframe deferred | Original: keep Path 3 low-difficulty. Revised: interview footage is real supply; the crop is bounded by a kill criterion |
+| D3 | Caption source | Auto-transcribe (word-level) + manual override; **pasted-lyric fallback under `content: music` (D16)** | Transcription is the backbone; override is cheap insurance; sung vocals defeat whisper text, so lyrics borrow its timings |
+| D4 | Manual override | Edit transcript text (timing locked); captions-off → header-only. Hand-timed custom body captions cut from v1. Lyric alignment (D16) writes ordinary words; text stays editable, timing stays locked | Header already covers "text on a silent clip", so no hand-timing UI needed |
+| D5 | Trimming | None in v1 | The "maybe" and the riskiest component; silence-trim is Wave-1 |
+| D6 | Header (v1) | Manual 1–2 line text box, on every clip | Smallest path to end-to-end; doubles as the silent-clip text layer |
+| D7 | Header (auto) | Deferred (Wave 1): Sonnet vision + transcript + optional desc, manual fallback | Most visible line; strong model earns its keep; local LLM writes weaker hooks |
+| D8 | Caption style | Word-by-word highlight within ~4–5 word phrase groups; Tier-1 preset | The signature look; entirely native to libass |
+| D9 | Transcription | faster-whisper, local | Free, private, word timestamps built in; fits local-first setup |
+| D10 | Interface | FastAPI + vanilla HTML/JS localhost, review gate | Hosts override + header entry; matches RicePoster for easy merge |
+| D11 | Styling | One Tier-1 preset v1; style/position config Wave-2; Tier-3 deferred behind engine decision | Config is a time sink; template already parameterized for cheap later exposure |
+| D12 | Non-9:16 handling | Blur-pad fill as the **fallback and explicit choice**; subject crop when detection passes (D15) | Never loses content. The RicePoster "edge-crop failure" was withdrawn 2026-07-27 (TikTok trims edges itself); the surviving rule is a safe zone for the subject |
+| D13 | Music | Optional added audio; replace **or** mix-under toggle with volume slider; v1. Auto-ducking + vocal isolation deferred | Central to actual usage; cheap since encoding already exists; adding after sync can't affect timing |
+| D14 | Browser theme | Slate: dark carbon/grey chrome, rice-grey state accents, visual per-clip preset cards, symbol-only rice-and-shears mark | Makes the daily-driver review path faster to scan without changing behavior or adding editor features |
+| D15 | Subject crop | Local YuNet face detection at ingest; full-height 9:16 window with pan cap and universal strong lock: hold inside an outer 20% window-width zone, settle ordinary corrections at the inner 10% boundary, and interpolate them at 30 Hz; confirmed cuts, inferred face jumps, and track returns still snap (Level 5 ratified 2026-09-20). Face center stays inside the central 70% (tuned 2026-09-15); blur-pad when `face_rate < 0.80` or `safe_rate < 0.95`; per-clip `geometry` = `auto`/`blur_pad`/`crop`; kill criterion: fewer than 5 of 6 fixtures pass after two tuning rounds. The gate applies to the `speech` profile only (D16) | Ratified 2026-09-14, motion tuning amended 2026-09-20; [ADR-001](docs/adr/ADR-001-subject-crop.md) |
+| D16 | Music path | Per-clip `content` = `speech`/`music`, not remembered per slot. Music framing profile: no face-rate gate, hold through faceless spans, snap on cuts (scene 0.2, one shared pass with scores) and face return, static centered when no face; nearest-previous face between cuts, largest after a cut (both profiles). Lyric fallback: pasted block, chronological LCS anchors on whisper timings (amended 2026-09-18, #29; was `difflib`), interpolation between anchors, character-weighted fill below 25% anchors; word-level highlight survives; no new model. Kill: framing fewer than 4 of 5 music fixtures after one tuning round; lyrics visibly off on more than 2 of 5 | Ratified 2026-09-15; [ADR-002](docs/adr/ADR-002-music-path.md) |

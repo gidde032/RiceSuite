@@ -1,0 +1,55 @@
+# Two-tier local gates (mirrors the RicePoster sibling repo).
+#
+# Hooks run in the ACTIVE environment (your project venv with
+# requirements-dev.txt installed), not a pre-commit-managed one:
+# faster-whisper/ctranslate2 are too heavy to reinstall into an isolated hook
+# environment on every commit. One-time setup:
+#
+#   pip install -r requirements-dev.txt
+#   pre-commit install --hook-type pre-commit --hook-type pre-push
+#
+# The numeric gate values here (smoke tier, 85% coverage floor) are locked by
+# tests/test_gates.py so they cannot silently drift from CI.
+repos:
+  - repo: local
+    hooks:
+      # --- Commit tier: cheap enough to run on every commit ---
+      - id: ruff-check
+        name: ruff (lint)
+        entry: ruff check
+        language: system
+        types_or: [python]
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      - id: ruff-format
+        name: ruff (format check)
+        entry: ruff format --check
+        language: system
+        types_or: [python]
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      - id: pytest-smoke
+        name: pytest smoke tier
+        entry: pytest -m smoke -q --no-header
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      # --- Push tier: full suite + coverage floor ---
+      # These --cov flags are the ONLY local place the 85% floor is enforced;
+      # test_gates.py asserts they stay here and agree with the CI workflow.
+      - id: pytest-full
+        name: pytest full suite + coverage floor
+        entry: >-
+          pytest tests/ -q --no-header
+          --cov=app --cov=render --cov=transcribe
+          --cov-fail-under=85
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

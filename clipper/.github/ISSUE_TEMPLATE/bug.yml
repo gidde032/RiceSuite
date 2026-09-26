@@ -1,0 +1,72 @@
+name: Bug report
+description: Report reproducible incorrect or unsafe RiceClipper behavior.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for documenting the problem. Never attach credentials, private
+        source video, or personal content — RiceClipper is a local tool; keep
+        reports to sanitized inputs and outputs.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Problem
+      description: What went wrong, and what impact did it have?
+      placeholder: Rendered clip dropped the last caption word on short inputs.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Give the smallest sequence that reproduces the problem.
+      placeholder: |
+        1. Upload a 6s vertical clip.
+        2. Transcribe, keep the default caption preset.
+        3. Render and inspect the burned-in captions.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened instead?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: evidence_level
+    attributes:
+      label: Evidence level
+      description: What produced the report?
+      options:
+        - Source or documentation inspection only
+        - Automated test or offline probe
+        - Manual reproduction with a local clip
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: |
+        Include sanitized errors, test output, ffmpeg logs, or a description of
+        the rendered result. State explicitly when a claim is inferred rather
+        than measured.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: What observable result and regression coverage would close this?
+    validations:
+      required: true
