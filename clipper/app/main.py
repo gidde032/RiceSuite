@@ -416,6 +416,11 @@ def handoff_batch(req: HandoffRequest) -> dict:
             status_code=409,
             detail="A send of these clips has not finished. Try again in a moment.",
         ) from exc
+    except send_keys.KeyConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="This send key already sent other clips. Use a new key.",
+        ) from exc
     except send_keys.AlreadySent as exc:
         sent = exc.sent["batch_id"]
         return JSONResponse(

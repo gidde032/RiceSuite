@@ -8,7 +8,8 @@ unless the reviewer confirmed a deliberate resend. So a lost reply or a second
 tab can never put the same clips in front of RicePoster twice by accident.
 
 Keys live in the work root, beside the jobs whose outputs they sent, and go
-with them when the media cache is cleared. A process death in the instant
+with them when the media cache is cleared. A record is kept while any of its
+jobs still exists, since only an existing job can be sent again. A process death in the instant
 between writing a batch and recording its key can still let a retry write a
 second batch: accepted, like the other process-death gaps in the suite SPEC.
 """
@@ -27,7 +28,6 @@ from app import jobs
 logger = logging.getLogger(__name__)
 
 _FILE = ".handoff_send_keys.json"
-_KEEP = 500  # most recent sends kept; the media cache is cleared long before
 
 _LOCK = threading.Lock()
 _WRITING: dict[str, set[str]] = {}  # key -> job ids its send is writing
@@ -35,6 +35,10 @@ _WRITING: dict[str, set[str]] = {}  # key -> job ids its send is writing
 
 class SendInProgress(RuntimeError):
     """A send with this key, or with one of these clips, is still writing."""
+
+
+class KeyConflict(RuntimeError):
+    """This key already made a send with other clips."""
 
 
 class AlreadySent(RuntimeError):
@@ -61,15 +65,19 @@ def begin(key: str, job_ids: Iterable[str] = (), resend: bool = False) -> dict |
     """Return the batch ``key`` already wrote, or claim ``key`` for a new write.
 
     Raises ``SendInProgress`` while a send with ``key``, or with one of these
-    clips, is writing, and ``AlreadySent`` when one of these clips already
-    went under another key and ``resend`` (the reviewer's confirmation of a
-    second send) is not set. A caller that gets None must call ``end(key)``.
+    clips, is writing; ``KeyConflict`` when ``key`` already sent other clips
+    (a key replays only its own send); and ``AlreadySent`` when one of these
+    clips already went under another key and ``resend`` (the reviewer's
+    confirmation of a second send) is not set. A caller that gets None must
+    call ``end(key)``.
     """
     clips = set(job_ids)
     with _LOCK:
         data = _load()
         done = data.get(key)
         if isinstance(done, dict):
+            if set(done.get("job_ids") or ()) != clips:
+                raise KeyConflict(key)
             return done
         if key in _WRITING or any(clips & writing for writing in _WRITING.values()):
             raise SendInProgress(key)
@@ -95,7 +103,13 @@ def record(key: str, result: dict, job_ids: Iterable[str] = ()) -> None:
             "clip_count": result["clip_count"],
             "job_ids": sorted(set(job_ids)),
         }
-        data = dict(list(data.items())[-_KEEP:])
+        root = jobs._ensure_work_root()
+        data = {
+            k: v
+            for k, v in data.items()
+            if isinstance(v, dict)
+            and any((root / str(j)).is_dir() for j in v.get("job_ids") or ())
+        }
         try:
             path = _path()
             tmp = path.with_name(path.name + ".tmp")

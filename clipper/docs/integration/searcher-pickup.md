@@ -84,7 +84,8 @@ batch the tab does not hold is named on the page and opens there only on a
 
 `POST /api/handoff` takes a `send_key`: a retry with the key of a send that
 already wrote its batch gets that batch back with `replayed: true`, and
-nothing new is written. Each clip goes to RicePoster once: a send that holds
+nothing new is written; a key reused for other clips is refused (409). Each
+clip goes to RicePoster once: a send that holds
 a clip already sent under another key gets 409 with `already_sent`, unless it
 carries `resend: true`, which the page sets only after the reviewer confirms a
 second send.

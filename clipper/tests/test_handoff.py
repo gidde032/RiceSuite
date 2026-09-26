@@ -268,3 +268,37 @@ def test_a_malformed_send_key_is_rejected(isolated_jobs):
     job = _rendered_job()
     with TestClient(main.app) as client:
         assert _send(client, job, "../x").status_code == 422
+
+
+def test_a_send_key_reused_for_other_clips_is_refused(
+    isolated_jobs, tmp_path, monkeypatch
+):
+    """Re-review R-1: a key replays only the send it made. Reused for other
+    clips, it must neither claim those clips were sent nor close their batch."""
+    out = tmp_path / "handoff"
+    monkeypatch.setenv("RICECLIPPER_HANDOFF_DIR", str(out))
+    job_a, job_b = _rendered_job(), _rendered_job()
+    with TestClient(main.app) as client:
+        assert _send(client, job_a, "key-0001-aaaa").status_code == 200
+        reused = _send(client, job_b, "key-0001-aaaa")
+    assert reused.status_code == 409
+    assert "replayed" not in reused.json()
+    assert len([d for d in out.iterdir() if d.is_dir()]) == 1
+
+
+def test_a_sent_clip_stays_known_however_many_sends_follow(isolated_jobs):
+    """Re-review R-2: the record of a sent clip lasts while its job exists,
+    not only for the most recent sends."""
+    from app import send_keys
+
+    victim = _rendered_job()
+    assert send_keys.begin("key-victim-0", [victim.id]) is None
+    send_keys.record("key-victim-0", {"batch_id": "b0", "clip_count": 1}, [victim.id])
+    send_keys.end("key-victim-0")
+    for n in range(600):
+        key = f"key-filler-{n:04d}"
+        send_keys.begin(key, [f"gone{n}"])
+        send_keys.record(key, {"batch_id": f"f{n}", "clip_count": 1}, [f"gone{n}"])
+        send_keys.end(key)
+    with pytest.raises(send_keys.AlreadySent):
+        send_keys.begin("key-victim-1", [victim.id])
