@@ -8,7 +8,12 @@ import sys
 import pytest
 
 from ricesuite import cli, ports, stopguard
-from ricesuite.supervisor import Supervisor
+from ricesuite.supervisor import Child, Supervisor
+
+# Kept before the autouse fixture disables it, for the one test that spawns
+# harmless sleepers in place of the suite.
+REAL_START_ALL = Supervisor.start_all
+SLEEPER = [sys.executable, "-c", "import time; time.sleep(60)"]
 
 
 @pytest.fixture(autouse=True)
@@ -477,3 +482,83 @@ def test_process_args_survive_a_long_interpreter_path(tmp_path):
         assert "uvicorn" in args and "app.main:app" in args
     finally:
         proc.kill()
+
+
+# --- state publication (W2-02) and a stale state during startup -------------
+
+
+def _dead_pid():
+    import subprocess
+
+    proc = subprocess.Popen([sys.executable, "-c", "pass"])
+    proc.wait()
+    return proc.pid
+
+
+def test_state_names_each_child_as_soon_as_it_is_spawned(tmp_path, monkeypatch):
+    """A launcher killed right after it spawned Poster must still leave a state
+    that names Poster, so `rice status` and a guarded `rice stop` find it."""
+    monkeypatch.setattr(cli.Supervisor, "start_all", REAL_START_ALL)
+    monkeypatch.setattr(
+        cli,
+        "build_children",
+        lambda environ, state_file: [
+            Child(name=n, argv=SLEEPER, cwd=str(tmp_path), env=dict(os.environ), port=p)
+            for n, p in (("searcher", 1), ("clipper", 2), ("poster", 3), ("gateway", 4))
+        ],
+    )
+    seen = []
+    real_spawn = Supervisor._spawn
+
+    def spawn_then_die(self, child):
+        real_spawn(self, child)
+        if child.name == "poster":
+            seen.append(cli.read_state())
+            raise KeyboardInterrupt  # the launcher is gone from here on
+
+    monkeypatch.setattr(Supervisor, "_spawn", spawn_then_die)
+    previous = signal.getsignal(signal.SIGINT), signal.getsignal(signal.SIGTERM)
+    try:
+        assert cli.main([]) == 0
+    finally:
+        signal.signal(signal.SIGINT, previous[0])
+        signal.signal(signal.SIGTERM, previous[1])
+    [state] = seen
+    assert state is not None, "Poster ran with no state naming it"
+    assert state["launcher_pid"] == os.getpid()
+    assert state["children"]["poster"]["pid"]
+    assert state["children"]["poster"]["state"] == "running"
+
+
+def test_start_removes_a_stale_state_before_it_spawns(tmp_path, monkeypatch):
+    """While a new launcher starts, a state left by an earlier one must not
+    offer `rice stop` the old launcher pid to signal."""
+    stale = _write_state(tmp_path)
+    stale.write_text(json.dumps({"launcher_pid": _dead_pid(), "children": {}}))
+    seen = []
+
+    class FakeSupervisor(Supervisor):
+        def start_all(self):
+            seen.append(cli.read_state())
+            raise KeyboardInterrupt
+
+        def stop_all(self, timeout=15.0):
+            pass
+
+    monkeypatch.setattr(cli, "Supervisor", FakeSupervisor)
+    previous = signal.getsignal(signal.SIGINT), signal.getsignal(signal.SIGTERM)
+    try:
+        assert cli.main([]) == 0
+    finally:
+        signal.signal(signal.SIGINT, previous[0])
+        signal.signal(signal.SIGTERM, previous[1])
+    assert seen == [None]
+
+
+def test_stop_with_a_dead_recorded_launcher_pid_does_not_crash(
+    tmp_path, capsys, launcher_lock
+):
+    path = _write_state(tmp_path)
+    path.write_text(json.dumps({"launcher_pid": _dead_pid(), "children": {}}))
+    assert cli.main(["stop"]) == 1
+    assert "try again" in capsys.readouterr().err

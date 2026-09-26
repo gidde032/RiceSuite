@@ -124,3 +124,28 @@ def test_snapshot_reports_state_pid_port_and_restarts(tmp_path):
         assert snap["port"] == 8792 and snap["restarts"] == 0
     finally:
         sup.stop_all(timeout=5)
+
+
+def test_on_spawn_runs_after_every_spawn_and_restart(tmp_path):
+    """The launcher publishes its state from this hook, so no child runs
+    unrecorded until the next poll (W2-02)."""
+    clock = FakeClock()
+    seen = []
+    crasher = _child("clipper", CRASHER, tmp_path)
+    sup = Supervisor(
+        [crasher],
+        log=lambda _: None,
+        clock=clock,
+        backoff=(1,),
+        on_spawn=lambda: seen.append(crasher.proc.pid),
+    )
+    try:
+        sup.start_all()
+        assert seen == [crasher.proc.pid]
+        _wait_exit(crasher)
+        sup.poll_once()
+        clock.now += 1
+        sup.poll_once()
+        assert len(seen) == 2 and seen[1] == crasher.proc.pid
+    finally:
+        sup.stop_all(timeout=5)
