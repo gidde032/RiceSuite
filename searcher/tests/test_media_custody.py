@@ -170,3 +170,13 @@ def test_cache_clear_keeps_the_custody_lock_file(storage) -> None:
     with cache.custody():
         cache.clear()
     assert cache.custody_path.exists()
+
+
+def test_one_cache_reached_two_ways_shares_one_custody_lock(tmp_path: Path) -> None:
+    """Review S-3: the CLI and the web app may reach the same cache through a
+    symlink or a relative path; they must still lock the same file."""
+    real = tmp_path / "data" / "cache"
+    real.mkdir(parents=True)
+    (tmp_path / "link").symlink_to(tmp_path / "data")
+    via_link = MediaCache(tmp_path / "link" / "cache")
+    assert via_link.custody_path == MediaCache(real).custody_path

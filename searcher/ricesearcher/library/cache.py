@@ -44,8 +44,10 @@ class MediaCache:
     def custody_path(self) -> Path:
         """The custody lock file. It sits beside the root, not in it: clear()
         empties the root, and a removed lock file would let the next opener
-        lock a different file."""
-        return self.root.parent / f"{self.root.name}.custody.lock"
+        lock a different file. The root is resolved, so a cache reached
+        through a symlink or a relative path shares one lock (review S-3)."""
+        root = self.root.resolve()
+        return root.parent / f"{root.name}.custody.lock"
 
     @contextmanager
     def custody(self) -> Iterator[None]:
@@ -58,7 +60,7 @@ class MediaCache:
         exclude each other, as do threads with their own open file. Not
         re-entrant: never take it while it is held.
         """
-        self.root.parent.mkdir(parents=True, exist_ok=True)
+        self.custody_path.parent.mkdir(parents=True, exist_ok=True)
         if fcntl is None:  # pragma: no cover - in-process exclusion only
             with _IN_PROCESS_CUSTODY:
                 yield
