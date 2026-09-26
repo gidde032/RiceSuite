@@ -7,8 +7,10 @@ durable trace, so a crash mid-run (or the RiceSuite supervisor restarting a
 dead Poster) lost the fact that live posts might exist.
 
 This marker closes that gap. It is written after the request is validated and
-before any platform is touched, and removed once the run has ended in this
-process. If it survives to the next startup, every slot of that run is
+before any platform is touched. When the run's results are recorded it is
+removed; when the run is cut off in-process (an exception or a cancellation at
+shutdown) it is turned into unconfirmed rows at once; and if it survives a
+process death, the next startup does the same. Every slot of the run is then
 recorded in history as unconfirmed on each platform it targeted, and nothing
 is retried: the maintainer checks the accounts before posting again.
 """
@@ -66,7 +68,7 @@ def recover(history_file: Path) -> list[dict]:
         return []
     try:
         record = json.loads(MARKER.read_text())
-        slots = record["slots"]
+        slots = [s for s in record["slots"] if isinstance(s, dict) and s.get("slot")]
     except (OSError, ValueError, KeyError, TypeError):
         os.replace(MARKER, MARKER.with_name(MARKER.name + ".corrupt"))
         return []
@@ -91,8 +93,12 @@ def recover(history_file: Path) -> list[dict]:
             "errors": [],
             "interrupted": NOTE,
         })
-    with open(history_file, "a") as f:
-        for row in rows:
-            f.write(json.dumps(row) + "\n")
+    try:
+        with open(history_file, "a") as f:
+            for row in rows:
+                f.write(json.dumps(row) + "\n")
+    except OSError:
+        # Keep the evidence for the next start rather than crash-looping.
+        return []
     MARKER.unlink(missing_ok=True)
     return rows

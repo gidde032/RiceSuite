@@ -747,6 +747,7 @@ async def _run_post(request: PostRequest, effective_headless: bool) -> list[Post
     # Durable until the run ends in this process: a crash leaves it for the
     # next startup to record as unconfirmed (RiceSuite ADR-001 Q17).
     inflight.begin(slots, POST_MODE, effective_headless)
+    recorded = False
     try:
         if POST_MODE == "browser":
             results = await post_all_browser(
@@ -759,8 +760,14 @@ async def _run_post(request: PostRequest, effective_headless: bool) -> list[Post
             results = await post_all_api(slots)
 
         _append_history(slots, results, effective_headless)
+        recorded = True
     finally:
-        inflight.end()
+        if recorded:
+            inflight.end()
+        else:
+            # Cut off in-process (an exception, or cancellation at shutdown)
+            # after posting may have started: unconfirmed, never retried.
+            inflight.recover(HISTORY_FILE)
     return results
 
 

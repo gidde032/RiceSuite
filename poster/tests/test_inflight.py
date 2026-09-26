@@ -56,9 +56,11 @@ def test_marker_is_written_before_posting_and_removed_after(
     assert not tmp_inflight_marker.exists()
 
 
-def test_marker_is_removed_when_the_run_raises_in_process(
-    tmp_inflight_marker, monkeypatch
+def test_a_run_that_raises_in_process_is_recorded_unconfirmed(
+    tmp_inflight_marker, tmp_history_file, monkeypatch
 ):
+    """An exception mid-run (a browser failure, a bad slot) may come after some
+    posts went live. The run must leave unconfirmed rows, not vanish."""
     async def boom(slots):
         raise RuntimeError("browser failed")
 
@@ -73,6 +75,49 @@ def test_marker_is_removed_when_the_run_raises_in_process(
     finally:
         media.unlink(missing_ok=True)
     assert not tmp_inflight_marker.exists()
+    rows = _history(tmp_history_file)
+    assert [r["slot"] for r in rows] == ["A"]
+    assert outcomes.classify_history_row(rows[0])["instagram"] == "unconfirmed"
+
+
+def test_a_cancelled_run_is_recorded_unconfirmed(
+    tmp_inflight_marker, tmp_history_file, monkeypatch
+):
+    """A graceful shutdown or supervisor restart cancels the request task."""
+    async def cancelled(slots):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(main, "post_all_api", cancelled)
+    monkeypatch.setattr(main, "_validate_active_targets", lambda ids: None)
+    media = main.MEDIA_DIR / "inflight-test3.mp4"
+    media.write_bytes(b"x")
+    try:
+        request = main.PostRequest(slots=[{"slot": "A", "filename": media.name, "caption": "c"}])
+        with pytest.raises(asyncio.CancelledError):
+            asyncio.run(main._run_post(request, True))
+    finally:
+        media.unlink(missing_ok=True)
+    assert [r["slot"] for r in _history(tmp_history_file)] == ["A"]
+
+
+def test_recover_skips_a_malformed_slot_entry(tmp_inflight_marker, tmp_history_file):
+    tmp_inflight_marker.write_text(json.dumps(
+        {"run_id": "r", "slots": [{"platforms": ["tiktok"]}, {"slot": "B", "platforms": ["tiktok"]}]}
+    ))
+    rows = inflight.recover(tmp_history_file)
+    assert [r["slot"] for r in rows] == ["B"]
+    assert not tmp_inflight_marker.exists()
+
+
+def test_recover_keeps_the_marker_when_history_cannot_be_written(
+    tmp_inflight_marker, tmp_path, tmp_history_file
+):
+    """Startup must not crash-loop, and the evidence must survive for the
+    next start."""
+    inflight.begin(_slots(tmp_path), "browser", False)
+    unwritable = tmp_path / "no-such-dir" / "history.jsonl"
+    assert inflight.recover(unwritable) == []
+    assert tmp_inflight_marker.exists()
 
 
 def test_crash_mid_run_is_recorded_unconfirmed_on_next_start_and_not_retried(
