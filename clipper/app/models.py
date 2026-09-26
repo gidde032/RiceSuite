@@ -122,6 +122,8 @@ class HandoffRequest(BaseModel):
     # The page reuses a send's key when it retries a send whose reply it never
     # saw; a key that already wrote a batch gets that batch back (W1-01).
     send_key: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{8,64}$")
+    # The reviewer confirmed sending clips that already went to RicePoster.
+    resend: bool = False
 
 
 class JobState(BaseModel):

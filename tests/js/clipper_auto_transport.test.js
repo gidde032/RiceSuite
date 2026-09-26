@@ -232,17 +232,29 @@ test("any edit inside a clip card after a send holds the workspace", async () =>
 
 const jobIds = (js) => JSON.parse(js("JSON.stringify(clips.map((c) => c.jobId))"));
 
-test("W1-02: a pull whose reply was lost is restored on the next poll", async () => {
-  let pulled = false;
-  const { js, calls } = boot({
-    "GET api/searcher-inbox": () => [200, { batches: pulled ? [] : [{ batch_id: "b1", clip_count: 1 }] }],
-    "POST api/pull-from-searcher": () => {
-      pulled = true; // the server took custody, then the reply was lost
-      throw new TypeError("network connection lost");
+// sessionStorage for one tab: it survives a reload of that tab only.
+function session(initial = {}) {
+  const store = { "riceclipper.tab.v1": JSON.stringify(initial) };
+  return {
+    store,
+    getItem: (k) => (k in store ? store[k] : null),
+    setItem: (k, v) => { store[k] = String(v); },
+    removeItem: (k) => { delete store[k]; },
+  };
+}
+
+const pullKey = (call) => new URL(call.url, "http://page/").searchParams.get("pull_key");
+
+test("W1-02: a pull whose reply was lost is retried with its key", async () => {
+  const keys = [];
+  const { js } = boot({
+    // Clipper took custody on the first attempt, so the inbox is empty after it.
+    "GET api/searcher-inbox": () => [200, { batches: keys.length ? [] : [{ batch_id: "b1", clip_count: 1 }] }],
+    "POST api/pull-from-searcher": (call) => {
+      keys.push(pullKey(call));
+      if (keys.length === 1) throw new TypeError("network connection lost");
+      return [200, { batch_id: "b1", clip_count: 1, jobs: [job("j1")], replayed: true }];
     },
-    "GET api/workspace": () => [200, pulled
-      ? { batch_id: "b1", clip_count: 1, jobs: [job("j1")] }
-      : { batch_id: null, clip_count: 0, jobs: [] }],
     "POST api/jobs/j1/transcribe": { status: "ready", words: [] },
   });
   await js("autoPullFromSearcher()");
@@ -250,17 +262,23 @@ test("W1-02: a pull whose reply was lost is restored on the next poll", async ()
   await js("autoPullFromSearcher()");
   await settle();
   assert.deepEqual(jobIds(js), ["j1"]);
-  assert.equal(posts(calls, "api/pull-from-searcher").length, 1);
-  assert.equal(posts(calls, "api/jobs/j1/transcribe").length, 1);
+  assert.equal(keys.length, 2);
+  assert.ok(keys[0], "each pull carries a key");
+  assert.equal(keys[1], keys[0]);
 });
 
-test("W1-02: a reloaded page restores its pulled batch before it pulls another", async () => {
-  const { js, calls } = boot({
-    "GET api/workspace": { batch_id: "b1", clip_count: 1, jobs: [job("j1")] },
-    "GET api/searcher-inbox": { batches: [{ batch_id: "b2", clip_count: 1 }] },
-    "POST api/pull-from-searcher": () => [500, { detail: "must not be called" }],
-    "POST api/jobs/j1/transcribe": { status: "ready", words: [] },
-  });
+test("W1-02: a reloaded tab restores the batch it had pulled", async () => {
+  const { js, calls } = boot(
+    {
+      "GET api/workspace": (call) => [200, call.url.includes("batch_id=b1")
+        ? { batch_id: "b1", clip_count: 1, jobs: [job("j1")] }
+        : { batch_id: null, clip_count: 0, jobs: [] }],
+      "GET api/searcher-inbox": { batches: [{ batch_id: "b2", clip_count: 1 }] },
+      "POST api/pull-from-searcher": () => [500, { detail: "must not be called" }],
+      "POST api/jobs/j1/transcribe": { status: "ready", words: [] },
+    },
+    { sessionStorage: session({ pulledBatchId: "b1" }) },
+  );
   await js("autoPullFromSearcher()");
   await settle();
   assert.deepEqual(jobIds(js), ["j1"]);
@@ -324,6 +342,8 @@ test("W1-01: a confirmed second send of a sent batch uses a new key", async () =
   await js("sendBatch()");
   assert.equal(bodies.length, 2);
   assert.notEqual(bodies[1].send_key, bodies[0].send_key);
+  assert.equal(bodies[0].resend, false);
+  assert.equal(bodies[1].resend, true, "only a confirmed second send may resend clips");
 });
 
 // --- functional audit repairs: one pull at a time; only current renders send --
@@ -505,4 +525,59 @@ test("W3-02: once the failed clip is removed, the rest of the batch sends", asyn
   const sent = posts(calls, "api/handoff");
   assert.equal(sent.length, 1);
   assert.deepEqual(JSON.parse(sent[0].body).clips.map((c) => c.job_id), ["j1"]);
+});
+
+// --- review S-1: a second tab, or a reload, never sends a batch twice --------
+
+test("S-1: a second tab never takes another tab's open batch by itself", async () => {
+  const { js, byId } = bootWithButtons(
+    {
+      "GET api/workspace": { batch_id: "b1", clip_count: 1, jobs: [job("j1")] },
+      "GET api/searcher-inbox": { batches: [{ batch_id: "b2", clip_count: 1 }] },
+      "POST api/pull-from-searcher": { batch_id: "b2", clip_count: 1, jobs: [job("j2")] },
+      "POST api/jobs/j2/transcribe": { status: "ready", words: [] },
+    },
+    { sessionStorage: session() },
+  );
+  await js("autoPullFromSearcher()");
+  await settle();
+  assert.deepEqual(jobIds(js), ["j2"]);
+  assert.match(byId["pull-status"].textContent, /b1/, "the open batch is named");
+});
+
+test("S-1: a Pull click opens an open batch before it pulls a new one", async () => {
+  const { js, calls, click } = bootWithButtons(
+    {
+      "GET api/workspace": { batch_id: "b1", clip_count: 1, jobs: [job("j1")] },
+      "GET api/searcher-inbox": { batches: [{ batch_id: "b2", clip_count: 1 }] },
+      "POST api/pull-from-searcher": () => [500, { detail: "must not be called" }],
+      "POST api/jobs/j1/transcribe": { status: "ready", words: [] },
+    },
+    { sessionStorage: session() },
+  );
+  await click("pull-searcher-btn");
+  await settle();
+  assert.deepEqual(jobIds(js), ["j1"]);
+  assert.equal(posts(calls, "api/pull-from-searcher").length, 0);
+});
+
+test("S-1: a send refused as already sent holds the batch and names it", async () => {
+  const { js, calls, byId } = bootWithButtons({
+    "POST api/handoff": () => [409, {
+      detail: "These clips already went to RicePoster as batch out1.",
+      already_sent: "out1",
+    }],
+    "GET api/searcher-inbox": { batches: [{ batch_id: "b2", clip_count: 1 }] },
+    "POST api/pull-from-searcher": () => [500, { detail: "must not be called" }],
+  });
+  js(`clips.push(${sendable("j1", "done")})`);
+  js("collectWords = () => []; radioValue = () => 'x';");
+  await js("maybeAutoSend()");
+  assert.equal(js("batchSent"), true);
+  assert.equal(js("sentBatchId"), "out1");
+  assert.match(byId["batch-status"].textContent, /out1/);
+  await js("maybeAutoSend()");
+  await js("autoPullFromSearcher()");
+  assert.equal(posts(calls, "api/handoff").length, 1);
+  assert.equal(posts(calls, "api/pull-from-searcher").length, 0, "the workspace stays held");
 });

@@ -73,13 +73,21 @@ The **Send** button refuses such a batch too and names the clips; it never
 sends part of a batch. Rendering itself stays a human action.
 
 A pull removes the Searcher batch, so Clipper records it as **open** in its
-work root until it is sent or discarded. `GET /api/workspace` returns the
-oldest open batch in the pull's shape, and `DELETE /api/workspace?batch_id=…`
-discards one (Start over, or removing every clip). A page with an empty or
-sent workspace restores the open batch before it pulls another, so a lost pull
-reply or a page reload does not strand it. `POST /api/handoff` takes a
-`send_key`: a retry with the key of a send that already wrote its batch gets
-that batch back with `replayed: true`, and nothing new is written.
+work root until it is sent or discarded. `GET /api/workspace` returns an open
+batch in the pull's shape (`?batch_id=` names one; else the oldest), and
+`DELETE /api/workspace?batch_id=…` discards one (Start over, or removing every
+clip). A pull takes a `pull_key`: a retry with the key of a pull whose reply
+was lost gets the same batch back with `replayed: true`. Each tab keeps its
+own pulled batch in `sessionStorage` and restores it after a reload; an open
+batch the tab does not hold is named on the page and opens there only on a
+**Pull** click.
+
+`POST /api/handoff` takes a `send_key`: a retry with the key of a send that
+already wrote its batch gets that batch back with `replayed: true`, and
+nothing new is written. Each clip goes to RicePoster once: a send that holds
+a clip already sent under another key gets 409 with `already_sent`, unless it
+carries `resend: true`, which the page sets only after the reviewer confirms a
+second send.
 
 ## Idempotency note
 

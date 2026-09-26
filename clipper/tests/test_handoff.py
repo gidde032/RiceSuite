@@ -193,13 +193,40 @@ def test_a_retried_send_key_returns_the_batch_it_wrote(
     assert len([d for d in out.iterdir() if d.is_dir()]) == 1
 
 
-def test_a_new_send_key_writes_a_new_batch(isolated_jobs, tmp_path, monkeypatch):
+def test_the_same_clips_under_a_new_key_are_refused_as_already_sent(
+    isolated_jobs, tmp_path, monkeypatch
+):
+    """Review S-1: two tabs, or a tab and a reload, each make their own key.
+    Clips already sent go to RicePoster again only on a confirmed resend."""
     out = tmp_path / "handoff"
     monkeypatch.setenv("RICECLIPPER_HANDOFF_DIR", str(out))
     job = _rendered_job()
     with TestClient(main.app) as client:
         first = _send(client, job, "key-0001-aaaa").json()
-        second = _send(client, job, "key-0002-bbbb").json()
+        second = _send(client, job, "key-0002-bbbb")
+        unkeyed = client.post(
+            "/api/handoff", json={"clips": [{"job_id": job.id, "position": 1}]}
+        )
+    assert second.status_code == unkeyed.status_code == 409
+    assert second.json()["already_sent"] == first["batch_id"]
+    assert first["batch_id"] in second.json()["detail"]
+    assert len([d for d in out.iterdir() if d.is_dir()]) == 1
+
+
+def test_a_confirmed_resend_writes_a_new_batch(isolated_jobs, tmp_path, monkeypatch):
+    out = tmp_path / "handoff"
+    monkeypatch.setenv("RICECLIPPER_HANDOFF_DIR", str(out))
+    job = _rendered_job()
+    with TestClient(main.app) as client:
+        first = _send(client, job, "key-0001-aaaa").json()
+        second = client.post(
+            "/api/handoff",
+            json={
+                "send_key": "key-0002-bbbb",
+                "resend": True,
+                "clips": [{"job_id": job.id, "position": 1}],
+            },
+        ).json()
     assert first["batch_id"] != second["batch_id"]
     assert "replayed" not in second
     assert len([d for d in out.iterdir() if d.is_dir()]) == 2

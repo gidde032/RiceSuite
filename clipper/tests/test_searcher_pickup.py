@@ -307,3 +307,33 @@ def test_an_open_batch_whose_jobs_are_gone_is_dropped(env: Path) -> None:
         shutil.rmtree(jobs.WORK_ROOT / j["id"])
     jobs._JOBS.clear()
     assert client.get("/api/workspace").json()["batch_id"] is None
+
+
+def test_a_retried_pull_key_returns_the_batch_it_pulled(env: Path) -> None:
+    """Review S-1: a lost pull reply is retried with its key, and gets the same
+    batch back, never the next one."""
+    _write_batch(env, "b1", created_at="2026-09-04T00:00:00Z")
+    _write_batch(env, "b2", created_at="2026-09-05T00:00:00Z")
+    client = TestClient(main.app)
+    key = {"pull_key": "pull-0001-aaaa"}
+    first = client.post("/api/pull-from-searcher", params=key).json()
+    again = client.post("/api/pull-from-searcher", params=key).json()
+    assert first["batch_id"] == again["batch_id"] == "b1"
+    assert again["replayed"] is True
+    assert [j["id"] for j in again["jobs"]] == [j["id"] for j in first["jobs"]]
+    other = client.post(
+        "/api/pull-from-searcher", params={"pull_key": "pull-0002-bbbb"}
+    )
+    assert other.json()["batch_id"] == "b2"
+
+
+def test_the_workspace_answers_for_one_named_batch(env: Path) -> None:
+    _write_batch(env, "b1", created_at="2026-09-04T00:00:00Z")
+    _write_batch(env, "b2", created_at="2026-09-05T00:00:00Z")
+    client = TestClient(main.app)
+    client.post("/api/pull-from-searcher")
+    client.post("/api/pull-from-searcher")
+    named = client.get("/api/workspace", params={"batch_id": "b2"}).json()
+    assert named["batch_id"] == "b2"
+    gone = client.get("/api/workspace", params={"batch_id": "b9"}).json()
+    assert gone["batch_id"] is None

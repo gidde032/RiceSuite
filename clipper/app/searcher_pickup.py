@@ -163,7 +163,7 @@ def _validated_clips(batch_dir: Path, data: dict) -> list[dict]:
     return sorted(clips, key=lambda c: c["position"])
 
 
-def pull_next_batch() -> dict:
+def pull_next_batch(pull_key: str | None = None) -> dict:
     """Ingest the oldest un-consumed batch into durable review jobs.
 
     Returns ``{"batch_id", "clip_count", "jobs": [ {job state + "title"} ]}``.
@@ -172,7 +172,15 @@ def pull_next_batch() -> dict:
     place, un-consumed, so the pull is retryable. If recording consumption fails
     after custody, durable job sidecars allow a later process to resume without
     creating duplicate live jobs (review lens: HIGH).
+
+    A ``pull_key`` that already pulled a batch still open gets that batch back
+    with ``replayed: true``: a page retries a pull whose reply it never saw
+    with the same key, and must not get the next batch instead (W1-02).
     """
+    if pull_key:
+        replay = _open_payload(lambda r: r.get("pull_key") == pull_key)
+        if replay["batch_id"] is not None:
+            return {**replay, "replayed": True}
     root = inbox_root()
     if not root.is_dir():
         return {"batch_id": None, "clip_count": 0, "jobs": []}
@@ -238,7 +246,11 @@ def pull_next_batch() -> dict:
         # The source batch is gone: until it is sent or discarded, the page can
         # get it back from open_batch() if this reply never reaches it.
         records = [r for r in _load_open() if r["batch_id"] != batch_id]
-        opened = {"batch_id": batch_id, "job_ids": [j.id for j in batch_jobs]}
+        opened = {
+            "batch_id": batch_id,
+            "job_ids": [j.id for j in batch_jobs],
+            "pull_key": pull_key,
+        }
         _save_open([*records, opened])
 
     return _batch_payload(batch_id, batch_jobs)
@@ -301,12 +313,17 @@ def _save_open(records: list[dict]) -> bool:
     return True
 
 
-def open_batch() -> dict:
-    """The oldest pulled batch not yet sent or discarded, shaped like a pull.
+def open_batch(batch_id: str | None = None) -> dict:
+    """A pulled batch not yet sent or discarded, shaped like a pull: the one
+    named ``batch_id``, or else the oldest. Consumes nothing."""
+    if batch_id is None:
+        return _open_payload(lambda r: True)
+    return _open_payload(lambda r: r["batch_id"] == batch_id)
 
-    A batch none of whose jobs still exist (the media cache was cleared) is
-    dropped. Consumes nothing.
-    """
+
+def _open_payload(wanted) -> dict:
+    """The oldest open batch whose record ``wanted`` accepts. A batch none of
+    whose jobs still exist (the media cache was cleared) is dropped."""
     with jobs.job_operation_lock():
         records = _load_open()
         kept: list[dict] = []
@@ -320,7 +337,7 @@ def open_batch() -> dict:
             if not batch_jobs:
                 continue
             kept.append(record)
-            if payload is None:
+            if payload is None and wanted(record):
                 payload = _batch_payload(record["batch_id"], batch_jobs)
         if kept != records:
             _save_open(kept)
