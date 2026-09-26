@@ -140,8 +140,9 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
   at most once, and sending it again takes the reviewer's confirmation.
   Poster pulls only when its manual Pull would not have to ask before
   overwriting a draft, re-checks that after the request returns, and never
-  replays an unacknowledged batch (the server refuses a replay for the
-  automatic path); recovering one stays the maintainer's Pull. The shell loads
+  replays an unacknowledged batch (it calls `POST api/pull-from-clipper?replay=0`,
+  which answers `pulled: false` instead of replaying; the default, used by
+  the button, still replays); recovering one stays the maintainer's Pull. The shell loads
   all three pages up front and keeps them alive, so transport runs whenever
   RiceSuite is open (Q18: v1 runs while open). Limits of page-driven transport
   (background-tab throttling, a sleeping laptop, a second open tab) are

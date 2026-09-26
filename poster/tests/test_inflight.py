@@ -178,3 +178,52 @@ def test_scheduled_batch_running_at_crash_becomes_interrupted_never_rerun(tmp_pa
     assert overdue == []  # never handed back for execution
     (reloaded,) = queue_mod.load_queue(qf)
     assert reloaded.status == "interrupted"
+
+
+def test_an_unrecorded_earlier_run_is_recorded_before_a_new_one_starts(
+    tmp_inflight_marker, tmp_history_file, tmp_path, monkeypatch
+):
+    """A marker kept because History could not be written must never be
+    overwritten by the next run: record it first."""
+    inflight.begin(_slots(tmp_path), "browser", False)  # run 1, unrecorded
+
+    async def fake_post(slots):
+        return []
+
+    monkeypatch.setattr(main, "post_all_api", fake_post)
+    monkeypatch.setattr(main, "_validate_active_targets", lambda ids: None)
+    media = main.MEDIA_DIR / "inflight-test4.mp4"
+    media.write_bytes(b"x")
+    try:
+        request = main.PostRequest(slots=[{"slot": "A", "filename": media.name, "caption": "c"}])
+        asyncio.run(main._run_post(request, True))
+    finally:
+        media.unlink(missing_ok=True)
+    rows = _history(tmp_history_file)
+    assert [r["slot"] for r in rows if r.get("interrupted")] == ["A", "B"]
+
+
+def test_a_new_run_is_refused_while_an_earlier_one_cannot_be_recorded(
+    tmp_inflight_marker, tmp_path, monkeypatch
+):
+    from fastapi import HTTPException
+
+    inflight.begin(_slots(tmp_path), "browser", False)
+    before = tmp_inflight_marker.read_text()
+    monkeypatch.setattr(main, "HISTORY_FILE", tmp_path / "no-such-dir" / "history.jsonl")
+    monkeypatch.setattr(main, "_validate_active_targets", lambda ids: None)
+
+    async def never(slots):
+        raise AssertionError("must not post while an earlier run is unrecorded")
+
+    monkeypatch.setattr(main, "post_all_api", never)
+    media = main.MEDIA_DIR / "inflight-test5.mp4"
+    media.write_bytes(b"x")
+    try:
+        request = main.PostRequest(slots=[{"slot": "A", "filename": media.name, "caption": "c"}])
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(main._run_post(request, True))
+    finally:
+        media.unlink(missing_ok=True)
+    assert exc.value.status_code == 409
+    assert tmp_inflight_marker.read_text() == before  # evidence intact

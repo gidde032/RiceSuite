@@ -744,6 +744,18 @@ async def _run_post(request: PostRequest, effective_headless: bool) -> list[Post
                 "enabled_platforms": set(req_slot.enabled_platforms),
             })
 
+    # An earlier run's marker that could not be recorded yet (History was not
+    # writable) is recorded now; if it still cannot be, refuse rather than
+    # overwrite the only evidence that posts may be live.
+    if inflight.MARKER.exists():
+        inflight.recover(HISTORY_FILE)
+        if inflight.MARKER.exists():
+            raise HTTPException(
+                status_code=409,
+                detail="An earlier Post All run was cut off and its outcome could "
+                "not be recorded yet (is the disk full?). Free space and try "
+                "again; it will be recorded as unconfirmed first.",
+            )
     # Durable until the run ends in this process: a crash leaves it for the
     # next startup to record as unconfirmed (RiceSuite ADR-001 Q17).
     inflight.begin(slots, POST_MODE, effective_headless)

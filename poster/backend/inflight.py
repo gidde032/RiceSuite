@@ -26,8 +26,9 @@ from backend.config import DATA_ROOT
 MARKER = DATA_ROOT / ".post-in-flight.json"
 
 NOTE = (
-    "RicePoster stopped while this manual run was in flight; the outcome is "
-    "unknown and it was not retried. Check the account before posting again."
+    "This manual run was cut off (an error, a shutdown, or RicePoster stopping) "
+    "before its results were recorded; posts may or may not be live, and it was "
+    "not retried. Check the account before posting again."
 )
 
 
