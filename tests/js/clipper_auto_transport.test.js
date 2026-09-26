@@ -185,3 +185,45 @@ test("sending an already-sent batch again needs the reviewer's confirmation", as
   assert.equal(asked.length, 1);
   assert.match(asked[0], /out1/);
 });
+
+test("two Send clicks racing post one batch", async () => {
+  const { js, calls } = boot({ "POST api/handoff": { batch_id: "out1", clip_count: 1 } });
+  js(`clips.push(${sendable("j1", "done")})`);
+  js("collectWords = () => []; radioValue = () => 'x';");
+  await js("Promise.all([sendBatch(), sendBatch()])");
+  assert.equal(posts(calls, "api/handoff").length, 1);
+});
+
+test("any edit inside a clip card after a send holds the workspace", async () => {
+  // A card whose own listeners are recorded, so the test can play the part of
+  // the reviewer flipping captions off or pasting lyrics after the send.
+  const { element } = require("./harness");
+  const cardListeners = [];
+  const card = element();
+  card.addEventListener = (type, fn) => cardListeners.push({ type, fn });
+  const template = { content: { firstElementChild: { cloneNode: () => card } } };
+  const document = {
+    getElementById: (id) => (id === "clip-card-template" ? template : element()),
+    querySelector: () => element(), querySelectorAll: () => [],
+    createElement: () => element(), createTextNode: () => element(),
+    addEventListener() {}, body: element(),
+  };
+  const { js, calls } = boot(
+    {
+      "POST api/handoff": { batch_id: "out1", clip_count: 1 },
+      "GET api/searcher-inbox": { batches: [{ batch_id: "b2", clip_count: 1 }] },
+      "POST api/pull-from-searcher": () => [500, { detail: "must not be called" }],
+    },
+    { document },
+  );
+  js("collectWords = () => []; radioValue = () => 'x';");
+  js(`clips.push({ jobId: "j1", status: "done" }); buildCard(clips[0]);`);
+  await js("maybeAutoSend()");
+  assert.equal(posts(calls, "api/handoff").length, 1);
+  const edits = cardListeners.filter((l) => l.type === "input" || l.type === "change");
+  assert.ok(edits.length >= 2, "the card must watch input and change events");
+  edits.find((l) => l.type === "change").fn({ target: {} }); // e.g. captions toggled off
+  await js("autoPullFromSearcher()");
+  assert.equal(posts(calls, "api/pull-from-searcher").length, 0);
+  assert.equal(js("clips.length"), 1);
+});

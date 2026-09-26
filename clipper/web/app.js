@@ -175,6 +175,14 @@ function setRadioDisabled(group, disabled) {
 function buildCard(clip) {
   const node = $("clip-card-template").content.firstElementChild.cloneNode(true);
   clip.el = node;
+  // Every control in the card (captions, geometry, content, music, lyrics…)
+  // bubbles its input/change events here, so any edit made after a send makes
+  // the batch differ from what was sent and holds the workspace.
+  const markEdited = () => {
+    clip.edits = (clip.edits || 0) + 1;
+  };
+  node.addEventListener("input", markEdited);
+  node.addEventListener("change", markEdited);
   clip.reviewGridEl = node.querySelector(".review-grid");
   clip.titleEl = node.querySelector(".clip-title");
   clip.statusEl = node.querySelector(".clip-status");
@@ -823,6 +831,7 @@ function batchSnapshot() {
       c.jobId,
       c.status,
       c.renders || 0,
+      c.edits || 0,
       c.headerEl ? c.headerEl.value : "",
       c.captionStyleEl ? radioValue(c.captionStyleEl) : "",
       c.headerStyleEl ? radioValue(c.headerStyleEl) : "",
