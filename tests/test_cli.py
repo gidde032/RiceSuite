@@ -183,7 +183,7 @@ def test_stop_refuses_during_a_posting_run(
     _write_state(tmp_path, poster={"state": "running", "pid": os.getpid(), "port": 1})
     monkeypatch.setattr(
         stopguard,
-        "read_poster_state",
+        "hold_poster",
         lambda port: stopguard.PosterState(reachable=True, active=True),
     )
     killed = []
@@ -197,7 +197,7 @@ def test_stop_force_signals_the_launcher(tmp_path, monkeypatch, launcher_lock):
     _write_state(tmp_path, poster={"state": "running", "pid": os.getpid(), "port": 1})
     monkeypatch.setattr(
         stopguard,
-        "read_poster_state",
+        "hold_poster",
         lambda port: stopguard.PosterState(reachable=True, active=True),
     )
     sent = []
@@ -215,7 +215,7 @@ def test_stop_force_signals_the_launcher(tmp_path, monkeypatch, launcher_lock):
 def test_stop_decision_skips_poster_when_it_is_not_running(monkeypatch):
     monkeypatch.setattr(
         stopguard,
-        "read_poster_state",
+        "hold_poster",
         lambda port: pytest.fail("must not ask a stopped Poster"),
     )
     state = {"children": {"poster": {"state": "restarting", "pid": None, "port": 1}}}
