@@ -562,3 +562,55 @@ def test_stop_with_a_dead_recorded_launcher_pid_does_not_crash(
     path.write_text(json.dumps({"launcher_pid": _dead_pid(), "children": {}}))
     assert cli.main(["stop"]) == 1
     assert "try again" in capsys.readouterr().err
+
+
+# --- a stop that does not happen releases Poster's stop hold (review S-2) ----
+
+
+def _held(monkeypatch):
+    monkeypatch.setattr(
+        stopguard,
+        "hold_poster",
+        lambda port: stopguard.PosterState(reachable=True, held=True),
+    )
+    released = []
+    monkeypatch.setattr(stopguard, "release_poster", lambda port: released.append(port))
+    return released
+
+
+def test_a_stop_that_cannot_signal_the_launcher_releases_the_hold(
+    tmp_path, monkeypatch, capsys, launcher_lock
+):
+    path = _write_state(
+        tmp_path, poster={"state": "running", "pid": os.getpid(), "port": 7}
+    )
+    state = json.loads(path.read_text())
+    state["launcher_pid"] = _dead_pid()
+    path.write_text(json.dumps(state))
+    released = _held(monkeypatch)
+    assert cli.main(["stop"]) == 1
+    assert released == [7]
+
+
+def test_leftovers_that_survive_the_stop_release_the_hold(
+    tmp_path, monkeypatch, capsys
+):
+    child = _fake_child("backend.main:app", port=7)
+    try:
+        cli.state_path().parent.mkdir(parents=True)
+        cli.state_path().write_text(
+            json.dumps(
+                {
+                    "launcher_pid": 999999,
+                    "children": {
+                        "poster": {"state": "running", "pid": child.pid, "port": 7}
+                    },
+                }
+            )
+        )
+        released = _held(monkeypatch)
+        monkeypatch.setattr(cli, "_terminate", lambda found, timeout=15.0: None)
+        assert cli.main(["stop"]) == 1
+        assert released == [7]
+    finally:
+        child.kill()
