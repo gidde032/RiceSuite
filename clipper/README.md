@@ -249,7 +249,7 @@ python scripts/check_editor_browser.py                  # Chrome layout, focus, 
 python scripts/crop_check.py fixtures/landscape --contact-sheets-approved
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same ruff checks and the full suite
+CI (the RiceSuite workflow `../.github/workflows/ci.yml`, `clipper-*` jobs) runs the same ruff checks and the full suite
 with an **85% coverage floor** on Python 3.12, on every PR and on every push to
 `main`. That job is the required check. A second, non-required job runs the
 suite on Python 3.14. `tests/test_gates.py` locks those numbers so they can't silently drift.

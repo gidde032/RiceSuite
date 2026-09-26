@@ -1,0 +1,28 @@
+# RiceSuite — development and gate tooling, plus every runtime pin the three
+# test suites import. Deliberately omits Searcher's heavy lazy adapters
+# (yt-dlp, sentence-transformers/PyTorch), exactly as RiceSearcher's CI did.
+#
+# Install: pip install -r requirements-dev.txt && pip install -e . -e searcher
+
+fastapi==0.141.1
+uvicorn[standard]==0.54.0
+python-multipart==0.0.32
+python-dotenv==1.2.3
+pydantic==2.13.4
+httpx==0.28.1
+anthropic==1.8.0
+faster-whisper==1.1.1
+requests==2.32.3
+Pillow==12.3.0
+opencv-python-headless==5.0.0.93
+playwright==1.62.0
+
+# Gates
+ruff==0.16.5
+mypy==2.3.1
+pytest==9.1.1
+pytest-cov==7.1.0
+packaging==26.3
+pre-commit==4.6.2
+setuptools>=68
+websockets==17.1

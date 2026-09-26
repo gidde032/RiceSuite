@@ -60,6 +60,7 @@ See `credentials.env.example` for the full template. The essentials:
 | `INTER_SLOT_DELAY_MIN_S` / `INTER_SLOT_DELAY_MAX_S` | Randomised gap between account slots in a run, in seconds (default `60`/`180`). Both `0` disables |
 | `HANDOFF_DIR` | Shared folder RiceClipper writes finished clips into and **Pull from Clipper** reads from (default `~/riceclipper-handoff`). Must match RiceClipper's `RICECLIPPER_HANDOFF_DIR` |
 | `CLIPPER_INGEST_STYLE` | Caption style applied to clips pulled from RiceClipper (default `generic`; local styles can be selected in `credentials.env`) |
+| `RICEPOSTER_DATA_DIR` | Root for everything the app writes: `sessions/`, `debug/`, `media/`, `queue.jsonl`, `queue_media/`, `history.jsonl` (default: the repository root, i.e. today's layout). Must be an existing absolute directory (`~` allowed). Read from the process environment only — **not** from `credentials.env`, which, like `prompts/` and `frontend/`, stays in the checkout. RiceSuite sets it to use an existing data set in place |
 
 The `INTER_SLOT_DELAY_*`, `SESSION_CHECK_TTL_S` and `PREFLIGHT_CHECK_PLATFORMS` knobs reduce Instagram's automation signal. Instagram flags accounts
 that show machine-like patterns, and the three biggest ones this tool can

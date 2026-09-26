@@ -1,0 +1,197 @@
+"""ricesuite.env: one config file, every existing variable name (ADR-001 Q14)."""
+
+import re
+from pathlib import Path
+
+import pytest
+
+from ricesuite import SUITE_ROOT, env
+
+EXAMPLE = SUITE_ROOT / "ricesuite.env.example"
+
+# How each pillar spells an environment read. Literal names only; Poster's
+# per-slot names are f-strings and are covered by KNOWN_PATTERNS.
+_READ_PATTERNS = (
+    re.compile(
+        r"""(?:getenv|environ\.get|environ\[|setdefault)\(?\s*["']([A-Z][A-Z0-9_]+)["']"""
+    ),
+    re.compile(r"""_env_(?:int|float)\(\s*["']([A-Z][A-Z0-9_]+)["']"""),
+    re.compile(r"""env_bool\(\s*["']([A-Z][A-Z0-9_]+)["']"""),
+    re.compile(r"""_ENV\s*=\s*["']([A-Z][A-Z0-9_]+)["']"""),
+)
+_PILLAR_SOURCES = {
+    "searcher": ["ricesearcher"],
+    "clipper": ["app", "render", "transcribe"],
+    "poster": ["backend"],
+}
+# Platform/OS variables the pillars consult that are not suite configuration.
+_NOT_CONFIG = {"PROGRAMFILES", "LOCALAPPDATA", "HOME", "PATH"}
+
+
+def _names_read_by_pillars() -> dict[str, str]:
+    found: dict[str, str] = {}
+    for pillar, packages in _PILLAR_SOURCES.items():
+        for package in packages:
+            for path in (SUITE_ROOT / pillar / package).rglob("*.py"):
+                text = path.read_text(encoding="utf-8")
+                for pattern in _READ_PATTERNS:
+                    for name in pattern.findall(text):
+                        found.setdefault(name, f"{pillar}/{path.name}")
+    return {k: v for k, v in found.items() if k not in _NOT_CONFIG}
+
+
+def test_scan_finds_the_variables_it_is_meant_to_find():
+    """Guard the scanner itself: an empty scan would pass everything below."""
+    names = _names_read_by_pillars()
+    for expected in (
+        "ANTHROPIC_API_KEY",
+        "RICESEARCHER_HANDOFF_DIR",
+        "RICECLIPPER_WHISPER_MODEL",
+        "HANDOFF_DIR",
+        "SESSION_CHECK_TTL_S",
+        "HEADLESS",
+        "RICEPOSTER_DATA_DIR",
+    ):
+        assert expected in names
+
+
+def test_every_variable_a_pillar_reads_is_known():
+    unknown = {
+        n: where for n, where in _names_read_by_pillars().items() if not env.is_known(n)
+    }
+    assert not unknown, f"pillar reads variables ricesuite.env does not know: {unknown}"
+
+
+def test_every_known_variable_is_documented_in_the_example():
+    text = EXAMPLE.read_text(encoding="utf-8")
+    missing = sorted(n for n in env.KNOWN_VARIABLES if n not in text)
+    assert not missing, f"ricesuite.env.example never mentions {missing}"
+    for probe in (
+        "IG_ACCOUNT_A_NAME",
+        "IG_ACCOUNT_A_ID",
+        "IG_ACCOUNT_A_TOKEN",
+        "TT_ACCOUNT_A_TOKEN",
+    ):
+        assert probe in text and env.is_known(probe)
+
+
+def test_example_parses_to_nothing_but_comments():
+    """Copying the example must not silently configure anything."""
+    assert env.read_env_file(EXAMPLE) == {}
+
+
+def test_missing_file_is_an_empty_config(tmp_path):
+    assert env.read_env_file(tmp_path / "absent.env") == {}
+
+
+def test_values_pass_through_under_their_existing_names(tmp_path):
+    f = tmp_path / "ricesuite.env"
+    f.write_text(
+        "ANTHROPIC_API_KEY=sk-test\n"
+        "RICECLIPPER_WHISPER_MODEL=tiny\n"
+        "POST_MODE=mock\n"
+        "IG_ACCOUNT_B_NAME=Bee\n"
+    )
+    loaded = env.load(f, base={})
+    assert loaded["ANTHROPIC_API_KEY"] == "sk-test"
+    assert loaded["RICECLIPPER_WHISPER_MODEL"] == "tiny"
+    assert loaded["POST_MODE"] == "mock"
+    assert loaded["IG_ACCOUNT_B_NAME"] == "Bee"
+
+
+def test_shell_wins_over_the_file(tmp_path):
+    f = tmp_path / "ricesuite.env"
+    f.write_text("POST_MODE=browser\n")
+    assert env.load(f, base={"POST_MODE": "mock"})["POST_MODE"] == "mock"
+
+
+def test_ricesuite_env_variable_selects_the_file(tmp_path):
+    f = tmp_path / "other.env"
+    f.write_text("LOG_LEVEL=WARNING\n")
+    assert env.load(base={"RICESUITE_ENV": str(f)})["LOG_LEVEL"] == "WARNING"
+
+
+def test_default_file_is_at_the_suite_root():
+    assert env.DEFAULT_ENV_FILE == SUITE_ROOT / "ricesuite.env"
+
+
+def test_unknown_keys_are_reported():
+    assert env.unknown_keys(
+        {"POST_MODE": "mock", "POST_MOED": "x", "IG_ACCOUNT_Z_TOKEN": "t"}
+    ) == ["POST_MOED"]
+
+
+# --- Handoff directories: set by the suite, never mismatched ------------------
+
+
+def test_default_handoff_dirs_match_the_pillar_defaults():
+    got = env.handoff_env({})
+    first = str(Path("~/ricesearcher-handoff").expanduser())
+    second = str(Path("~/riceclipper-handoff").expanduser())
+    assert got == {
+        "RICESEARCHER_HANDOFF_DIR": first,
+        "RICECLIPPER_SEARCHER_INBOX": first,
+        "RICECLIPPER_HANDOFF_DIR": second,
+        "HANDOFF_DIR": second,
+    }
+
+
+def test_producer_setting_drives_the_consumer(tmp_path):
+    got = env.handoff_env(
+        {
+            "RICESEARCHER_HANDOFF_DIR": str(tmp_path / "a"),
+            "RICECLIPPER_HANDOFF_DIR": str(tmp_path / "b"),
+        }
+    )
+    assert got["RICECLIPPER_SEARCHER_INBOX"] == str(tmp_path / "a")
+    assert got["HANDOFF_DIR"] == str(tmp_path / "b")
+
+
+def test_consumer_only_setting_is_honoured(tmp_path):
+    got = env.handoff_env({"HANDOFF_DIR": str(tmp_path / "b")})
+    assert got["RICECLIPPER_HANDOFF_DIR"] == str(tmp_path / "b")
+
+
+def test_matching_ends_are_accepted_after_tilde_expansion():
+    home = str(Path("~").expanduser())
+    got = env.handoff_env(
+        {
+            "RICECLIPPER_HANDOFF_DIR": "~/x",
+            "HANDOFF_DIR": f"{home}/x",
+        }
+    )
+    assert got["HANDOFF_DIR"] == f"{home}/x"
+
+
+@pytest.mark.parametrize(
+    ("producer", "consumer"),
+    [
+        ("RICESEARCHER_HANDOFF_DIR", "RICECLIPPER_SEARCHER_INBOX"),
+        ("RICECLIPPER_HANDOFF_DIR", "HANDOFF_DIR"),
+    ],
+)
+def test_mismatched_ends_of_a_stage_are_refused(tmp_path, producer, consumer):
+    with pytest.raises(env.SuiteConfigError, match=consumer):
+        env.handoff_env({producer: str(tmp_path / "p"), consumer: str(tmp_path / "c")})
+
+
+def test_both_stages_sharing_one_directory_is_refused(tmp_path):
+    same = str(tmp_path / "shared")
+    with pytest.raises(env.SuiteConfigError, match="different directories"):
+        env.handoff_env(
+            {"RICESEARCHER_HANDOFF_DIR": same, "RICECLIPPER_HANDOFF_DIR": same}
+        )
+
+
+def test_load_applies_the_derived_handoff_dirs(tmp_path):
+    f = tmp_path / "ricesuite.env"
+    f.write_text(f"RICESEARCHER_HANDOFF_DIR={tmp_path / 'a'}\n")
+    loaded = env.load(f, base={})
+    assert loaded["RICECLIPPER_SEARCHER_INBOX"] == str(tmp_path / "a")
+
+
+def test_load_refuses_a_shell_export_that_contradicts_the_file(tmp_path):
+    f = tmp_path / "ricesuite.env"
+    f.write_text(f"RICECLIPPER_HANDOFF_DIR={tmp_path / 'b'}\n")
+    with pytest.raises(env.SuiteConfigError):
+        env.load(f, base={"HANDOFF_DIR": str(tmp_path / "elsewhere")})

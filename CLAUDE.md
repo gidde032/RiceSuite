@@ -31,7 +31,8 @@ RiceSuite is one local app built from three pillars: `searcher/` (RiceSearcher),
 ## Source-of-truth order
 
 1. Code and tests.
-2. ADR-001 for suite-level structure; the suite `SPEC.md` once written.
+2. ADR-001 for suite-level structure; the suite [`SPEC.md`](SPEC.md) for
+   suite functional requirements (FR-1 – FR-20).
 3. Each pillar's own `SPEC.md` / ADRs for pillar-internal behavior, unchanged
    except where ADR-001 overrides them (Q12 transport, Q14 config, Q10 Poster
    data root).

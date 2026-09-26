@@ -29,7 +29,7 @@ RicePoster-side pickup + auto-caption is
 tracked separately (RicePoster #77). Further changes still require explicit
 approval and must remain within the active phase.
 
-**Quality gates are enforced in CI.** `.github/workflows/ci.yml` runs ruff
+**Quality gates are enforced in CI.** The RiceSuite workflow `../.github/workflows/ci.yml` (`clipper-*` jobs) runs ruff
 lint + format and the full test suite with an **85% coverage floor** on every
 PR, including stacked PRs, and on every push to `main`; `tests/test_gates.py`
 locks the CI trigger and gate numbers (smoke count, coverage floor, ruff gates)

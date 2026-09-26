@@ -1,0 +1,37 @@
+# RiceSuite — the suite package (launcher, gateway, config) and its gates.
+#
+# The pillars keep their own pyproject.toml files and gates; this file governs
+# only `ricesuite/` and the suite tests in `tests/`. Runtime pins for the one
+# shared environment live in requirements.txt (see its header).
+
+[project]
+name = "ricesuite"
+version = "0.1.0"
+description = "RiceSearcher, RiceClipper and RicePoster behind one local front door."
+requires-python = ">=3.12"
+dependencies = ["python-dotenv>=1.2"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["ricesuite*"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+# The pillars are linted by their own configs, from their own directories.
+extend-exclude = ["searcher", "clipper", "poster"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["ricesuite"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# importlib mode: each pillar ships its own top-level `tests` package, and the
+# suite tests must not collide with them.
+addopts = "--import-mode=importlib --cov=ricesuite --cov-report=term-missing --cov-fail-under=90"
