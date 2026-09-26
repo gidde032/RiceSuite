@@ -13,15 +13,37 @@ from ricesuite.supervisor import Supervisor
 
 @pytest.fixture(autouse=True)
 def isolated(tmp_path, monkeypatch):
+    """Every path a pillar could touch points into tmp_path, and no test here
+    may start real processes: `Supervisor.start_all` fails unless a test
+    replaces the Supervisor. (A test that reached the real supervisor once
+    started all four processes with Searcher on its default data dir.)"""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("RICESUITE_RUN_DIR", str(tmp_path / "run"))
+    (tmp_path / "poster-data").mkdir()
     env_file = tmp_path / "ricesuite.env"
     env_file.write_text(
+        f"RICESEARCHER_DATA_DIR={tmp_path / 'searcher-data'}\n"
         f"RICESEARCHER_HANDOFF_DIR={tmp_path / 'h1'}\n"
         f"RICECLIPPER_HANDOFF_DIR={tmp_path / 'h2'}\n"
+        f"RICEPOSTER_DATA_DIR={tmp_path / 'poster-data'}\n"
+        "POST_MODE=mock\n"
+        "SCHEDULER_ENABLED=false\n"
     )
     monkeypatch.setenv("RICESUITE_ENV", str(env_file))
-    for name in ("RICECLIPPER_SEARCHER_INBOX", "HANDOFF_DIR"):
+    for name in (
+        "RICECLIPPER_SEARCHER_INBOX",
+        "HANDOFF_DIR",
+        "RICESEARCHER_DATA_DIR",
+        "RICEPOSTER_DATA_DIR",
+        "RICESEARCHER_PROFILES_DIR",
+    ):
         monkeypatch.delenv(name, raising=False)
+
+    def refuse(self):
+        pytest.fail("test_cli must never start real suite processes")
+
+    monkeypatch.setattr(cli.Supervisor, "start_all", refuse)
+    monkeypatch.setattr(ports, "startup_conflicts", lambda: [])
     return tmp_path
 
 
@@ -30,6 +52,14 @@ def _write_state(tmp_path, **children):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"launcher_pid": os.getpid(), "children": children}))
     return path
+
+
+@pytest.fixture
+def launcher_lock():
+    """Hold the launcher lock as a running launcher would."""
+    holder = cli.acquire_launcher_lock()
+    yield holder
+    holder.close()
 
 
 def test_default_command_is_start():
@@ -42,7 +72,7 @@ def test_status_when_not_running(capsys):
     assert "not running" in capsys.readouterr().out
 
 
-def test_status_lists_children(tmp_path, capsys):
+def test_status_lists_children(tmp_path, capsys, launcher_lock):
     _write_state(
         tmp_path, poster={"state": "running", "port": 8793, "pid": 1, "restarts": 2}
     )
@@ -59,6 +89,12 @@ def test_state_without_a_pid_is_not_running(tmp_path, capsys):
     assert "not running" in capsys.readouterr().out
 
 
+def test_the_fixture_refuses_a_real_start(capsys):
+    """Guard the guard: reaching the real supervisor fails the test."""
+    with pytest.raises(pytest.fail.Exception, match="never start real"):
+        cli.main(["start"])
+
+
 def test_start_refuses_on_a_port_conflict(monkeypatch, capsys):
     monkeypatch.setattr(ports, "startup_conflicts", lambda: ["port 1738 is in use"])
     assert cli.main(["start"]) == 1
@@ -72,8 +108,11 @@ def test_start_refuses_mismatched_handoff_dirs(tmp_path, monkeypatch, capsys):
 
 
 def test_start_refuses_while_already_running(tmp_path, capsys):
-    _write_state(tmp_path)
-    assert cli.main(["start"]) == 1
+    holder = cli.acquire_launcher_lock()
+    try:
+        assert cli.main(["start"]) == 1
+    finally:
+        holder.close()
     assert "already running" in capsys.readouterr().err
 
 
@@ -138,7 +177,9 @@ def test_start_runs_supervises_and_cleans_up(monkeypatch, capsys):
 # --- stop -------------------------------------------------------------------
 
 
-def test_stop_refuses_during_a_posting_run(tmp_path, monkeypatch, capsys):
+def test_stop_refuses_during_a_posting_run(
+    tmp_path, monkeypatch, capsys, launcher_lock
+):
     _write_state(tmp_path, poster={"state": "running", "pid": os.getpid(), "port": 1})
     monkeypatch.setattr(
         stopguard,
@@ -152,7 +193,7 @@ def test_stop_refuses_during_a_posting_run(tmp_path, monkeypatch, capsys):
     assert signal.SIGTERM not in killed
 
 
-def test_stop_force_signals_the_launcher(tmp_path, monkeypatch):
+def test_stop_force_signals_the_launcher(tmp_path, monkeypatch, launcher_lock):
     _write_state(tmp_path, poster={"state": "running", "pid": os.getpid(), "port": 1})
     monkeypatch.setattr(
         stopguard,
@@ -164,10 +205,9 @@ def test_stop_force_signals_the_launcher(tmp_path, monkeypatch):
     def fake_kill(pid, sig):
         sent.append(sig)
         if sig == signal.SIGTERM:
-            cli.state_path().write_text(json.dumps({"launcher_pid": 0}))
+            launcher_lock.close()  # the launcher exits and its lock is released
 
     monkeypatch.setattr(cli.os, "kill", fake_kill)
-    monkeypatch.setattr(cli, "_pid_alive", lambda pid: signal.SIGTERM not in sent)
     assert cli.main(["stop", "--force"]) == 0
     assert signal.SIGTERM in sent
 
@@ -238,3 +278,108 @@ def test_module_entry_point_runs_the_cli(tmp_path):
         text=True,
     )
     assert result.returncode == 3 and "not running" in result.stdout
+
+
+# --- launcher identity and leftovers (stale state, pid reuse, SIGKILL) -------
+
+
+def test_stale_state_with_a_reused_pid_is_not_running_and_is_never_signalled(
+    tmp_path, monkeypatch, capsys
+):
+    """The recorded launcher pid now belongs to an unrelated live process
+    (here: this test). Without the launcher's lock it is not RiceSuite."""
+    cli.state_path().parent.mkdir(parents=True)
+    cli.state_path().write_text(
+        json.dumps({"launcher_pid": os.getpid(), "children": {}})
+    )
+    sent = []
+    monkeypatch.setattr(cli.os, "kill", lambda pid, sig: sent.append((pid, sig)))
+    assert cli.main(["status"]) == 3
+    assert cli.main(["stop"]) == 0
+    assert "not running" in capsys.readouterr().out
+    assert (os.getpid(), signal.SIGTERM) not in sent
+
+
+def test_a_held_launcher_lock_means_running(tmp_path):
+    holder = cli.acquire_launcher_lock()
+    try:
+        assert holder is not None
+        assert cli.launcher_running()
+        assert cli.acquire_launcher_lock() is None  # a second launcher is refused
+    finally:
+        holder.close()
+    assert not cli.launcher_running()
+
+
+def _fake_child(target):
+    """A live process whose command line looks like a suite child. A waiter
+    thread reaps it the moment it exits, as launchd/init would for a real
+    leftover whose launcher died (an unreaped zombie still looks alive)."""
+    import subprocess
+    import threading
+
+    proc = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(60)", "uvicorn", target],
+        start_new_session=True,
+    )
+    threading.Thread(target=proc.wait, daemon=True).start()
+    return proc
+
+
+def test_leftover_children_are_reported_and_block_a_new_start(
+    tmp_path, monkeypatch, capsys
+):
+    child = _fake_child("backend.main:app")
+    try:
+        cli.state_path().parent.mkdir(parents=True)
+        cli.state_path().write_text(
+            json.dumps(
+                {
+                    "launcher_pid": 999999,
+                    "children": {
+                        "poster": {"state": "running", "pid": child.pid, "port": 1}
+                    },
+                }
+            )
+        )
+        assert cli.main(["status"]) == 4
+        assert f"pid {child.pid}" in capsys.readouterr().out
+        monkeypatch.setattr(ports, "startup_conflicts", lambda: [])
+        assert cli.main(["start"]) == 1
+        assert "still alive" in capsys.readouterr().err
+    finally:
+        child.kill()
+        child.wait()
+
+
+def test_stop_guards_then_terminates_leftovers(tmp_path, capsys):
+    child = _fake_child("backend.main:app")
+    try:
+        cli.state_path().parent.mkdir(parents=True)
+        cli.state_path().write_text(
+            json.dumps(
+                {
+                    "launcher_pid": 999999,
+                    "children": {
+                        "poster": {"state": "running", "pid": child.pid, "port": 1}
+                    },
+                }
+            )
+        )
+        # Poster's port does not answer, so a run may be active: refuse.
+        assert cli.main(["stop"]) == 1
+        assert child.poll() is None
+        assert cli.main(["stop", "--force"]) == 0
+        assert child.wait(timeout=20) is not None
+        assert not cli.state_path().exists()
+    finally:
+        if child.poll() is None:
+            child.kill()
+            child.wait()
+
+
+def test_a_live_pid_that_is_not_a_suite_child_is_not_a_leftover(tmp_path):
+    state = {
+        "children": {"poster": {"state": "running", "pid": os.getpid(), "port": 1}}
+    }
+    assert cli.leftovers(state) == []

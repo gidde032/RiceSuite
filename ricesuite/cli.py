@@ -10,9 +10,11 @@ file so `rice status` and `rice stop` can work from another terminal.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import signal
+import subprocess
 import sys
 import time
 from collections.abc import Sequence
@@ -43,6 +45,97 @@ def read_state(environ=os.environ) -> dict | None:
         return json.loads(state_path(environ).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
+
+
+def lock_path(environ=os.environ) -> Path:
+    return run_dir(environ) / "launcher.lock"
+
+
+def acquire_launcher_lock(environ=os.environ):
+    """Take the launcher lock, held for the launcher's whole life.
+
+    Liveness is "someone holds this lock", never "the recorded pid exists": a
+    state file left by a killed launcher, or its pid reused by an unrelated
+    process, cannot fake a held lock, and the kernel releases it however the
+    launcher dies. Returns the open file (keep it open), or None if held.
+    """
+    path = lock_path(environ)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(path, "a")  # noqa: SIM115 - held open for the launcher's life
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        return None
+    return handle
+
+
+def launcher_running(environ=os.environ) -> bool:
+    path = lock_path(environ)
+    if not path.exists():
+        return False
+    with open(path, "a") as handle:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        fcntl.flock(handle, fcntl.LOCK_UN)
+    return False
+
+
+_CHILD_TARGETS = {p.name: p.target for p in PILLARS} | {
+    "gateway": "ricesuite.gateway:app"
+}
+
+
+def _is_suite_child(pid: int, name: str) -> bool:
+    """The pid is alive and its command line is that child's uvicorn target,
+    so a reused pid is never mistaken for a leftover."""
+    if not _pid_alive(pid):
+        return False
+    try:
+        command = subprocess.run(
+            ["ps", "-o", "command=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return "uvicorn" in command and _CHILD_TARGETS.get(name, "\0") in command
+
+
+def leftovers(state: dict | None) -> list[dict]:
+    """Children of a launcher that died without stopping them (e.g. SIGKILL).
+    They keep running, and Poster may be mid-post, so they are surfaced by
+    `rice status` and stopped only through `rice stop`'s guard."""
+    found = []
+    for name, child in (state or {}).get("children", {}).items():
+        pid = child.get("pid")
+        if pid and _is_suite_child(int(pid), name):
+            found.append({"name": name, "pid": int(pid), "port": child.get("port")})
+    return found
+
+
+def _terminate(found: list[dict], timeout: float = 15.0) -> None:
+    for child in found:
+        try:
+            os.killpg(child["pid"], signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+    deadline = time.monotonic() + timeout
+    for child in found:
+        while _pid_alive(child["pid"]) and time.monotonic() < deadline:
+            time.sleep(0.2)
+        if _pid_alive(child["pid"]):
+            try:
+                os.killpg(child["pid"], signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+
+
+def _describe(found: list[dict]) -> str:
+    return ", ".join(f"{c['name']} (pid {c['pid']}, port {c['port']})" for c in found)
 
 
 def _write_state(path: Path, launcher_pid: int, sup: Supervisor) -> None:
@@ -150,10 +243,22 @@ class InterruptHandler:
 
 
 def cmd_start(args: argparse.Namespace) -> int:
-    existing = read_state()
-    if existing and _pid_alive(int(existing.get("launcher_pid", 0))):
+    lock = acquire_launcher_lock()
+    if lock is None:
+        print("RiceSuite is already running (see `rice status`).", file=sys.stderr)
+        return 1
+    try:
+        return _start(lock)
+    finally:
+        lock.close()
+
+
+def _start(lock) -> int:
+    found = leftovers(read_state())
+    if found:
         print(
-            f"RiceSuite is already running (launcher pid {existing['launcher_pid']}).",
+            f"rice: refusing to start: processes from an earlier RiceSuite run are "
+            f"still alive: {_describe(found)}. Run `rice stop` first.",
             file=sys.stderr,
         )
         return 1
@@ -206,9 +311,28 @@ def cmd_start(args: argparse.Namespace) -> int:
 
 def cmd_stop(args: argparse.Namespace) -> int:
     state = read_state()
-    if not state or not _pid_alive(int(state.get("launcher_pid", 0))):
-        print("RiceSuite is not running.")
+    if not launcher_running():
+        found = leftovers(state)
+        if not found:
+            state_path().unlink(missing_ok=True)
+            print("RiceSuite is not running.")
+            return 0
+        print(
+            "rice: the launcher is gone but its processes are alive: "
+            + _describe(found)
+        )
+        decision = stop_decision(state, force=args.force)
+        for message in decision.messages:
+            print(f"rice: {message}")
+        if not decision.allowed:
+            return 1
+        _terminate(found)
+        state_path().unlink(missing_ok=True)
+        print("RiceSuite's leftover processes stopped.")
         return 0
+    if not state or not state.get("launcher_pid"):
+        print("rice: RiceSuite is starting; try again in a moment.", file=sys.stderr)
+        return 1
     decision = stop_decision(state, force=args.force)
     for message in decision.messages:
         print(f"rice: {message}")
@@ -216,7 +340,7 @@ def cmd_stop(args: argparse.Namespace) -> int:
         return 1
     os.kill(int(state["launcher_pid"]), signal.SIGTERM)
     deadline = time.monotonic() + 30
-    while time.monotonic() < deadline and _pid_alive(int(state["launcher_pid"])):
+    while time.monotonic() < deadline and launcher_running():
         time.sleep(0.2)
     print("RiceSuite stopped.")
     return 0
@@ -224,7 +348,15 @@ def cmd_stop(args: argparse.Namespace) -> int:
 
 def cmd_status(args: argparse.Namespace) -> int:
     state = read_state()
-    if not state or not _pid_alive(int(state.get("launcher_pid", 0))):
+    if not launcher_running() or not state:
+        found = leftovers(state)
+        if found:
+            print(
+                "RiceSuite's launcher is not running, but processes it started are "
+                f"still alive: {_describe(found)}. Run `rice stop` (it checks for "
+                "an active Poster run first)."
+            )
+            return 4
         print("RiceSuite is not running.")
         busy = [
             f"{name} on {port}"
