@@ -26,6 +26,9 @@ node_modules/
 # Suite config (holds secrets)
 ricesuite.env
 
+# Launcher run state (`rice status` / `rice stop`)
+.ricesuite/
+
 # OS / editor
 .DS_Store
 .idea/
