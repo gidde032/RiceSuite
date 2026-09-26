@@ -10,7 +10,9 @@
 The gateway adds no capability a pillar did not already expose on localhost.
 It does refuse requests whose Host is not this loopback address (a DNS
 rebinding guard) and state-changing requests from another origin, because
-Poster's API is unauthenticated and can post to real accounts.
+Poster's API is unauthenticated and can post to real accounts. That guard
+covers traffic through the gateway only; the pillars' own loopback ports are
+as reachable as the old apps' were (tracked in #14).
 """
 
 from __future__ import annotations
