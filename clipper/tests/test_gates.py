@@ -37,7 +37,7 @@ RULESET = PROJECT_ROOT / ".github" / "rulesets" / "main.json"
 DEV_REQUIREMENTS = PROJECT_ROOT / "requirements-dev.txt"
 
 # The single required check. Renaming it would silently orphan the ruleset.
-REQUIRED_CHECK = "Clipper — Python 3.12 tests and coverage"
+REQUIRED_CHECK = "Python 3.12 tests and coverage"
 # The newest Python the README declares supported; CI must exercise it.
 NEWEST_SUPPORTED_PYTHON = "3.14"
 

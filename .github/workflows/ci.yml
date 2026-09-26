@@ -108,7 +108,9 @@ jobs:
         run: pytest
 
   clipper-tests:
-    name: Clipper — Python 3.12 tests and coverage
+    # Named exactly as in RiceClipper: clipper/.github/rulesets/main.json (the
+    # standalone repository's ruleset) requires a check with this name.
+    name: Python 3.12 tests and coverage
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:

@@ -109,3 +109,15 @@ def test_suite_job_runs_suite_tests_and_lint():
     assert "python -m pytest" in block
     text = (SUITE_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert "--cov=ricesuite" in text and "--cov-fail-under=90" in text
+
+
+def test_clipper_ruleset_matches_the_check_its_readme_documents():
+    """clipper/.github/rulesets/ is RiceClipper's own (unapplied) ruleset for the
+    standalone repository; its README names the required check. The suite must
+    not rename it, or applying it there would block every PR."""
+    rulesets = SUITE_ROOT / "clipper" / ".github" / "rulesets"
+    readme = (rulesets / "README.md").read_text(encoding="utf-8")
+    documented = re.search(r"requires the \*\*`([^`]+)`\*\*", readme).group(1)
+    ruleset = (rulesets / "main.json").read_text(encoding="utf-8")
+    contexts = re.findall(r'"context":\s*"([^"]+)"', ruleset)
+    assert contexts == [documented]
