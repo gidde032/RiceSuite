@@ -162,8 +162,10 @@ def reset_run_guard():
     from backend import run_guard
 
     run_guard._post_running = False
+    run_guard._hold_until = 0.0
     yield
     run_guard._post_running = False
+    run_guard._hold_until = 0.0
 
 
 @pytest.fixture

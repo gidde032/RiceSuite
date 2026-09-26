@@ -222,13 +222,20 @@ def build_children(environ: dict[str, str], state_file: Path) -> list[Child]:
 
 
 def stop_decision(state: dict | None, force: bool) -> stopguard.StopDecision:
+    """Decide whether a stop may go ahead. A running Poster is asked for its
+    stop hold first, so no posting run can start before the stop takes effect;
+    a refused stop releases the hold again."""
     poster = (state or {}).get("children", {}).get("poster", {})
     poster_running = poster.get("state") == "running" and bool(poster.get("pid"))
     poster_running = poster_running and _pid_alive(int(poster["pid"]))
-    poster_state = (
-        stopguard.read_poster_state(int(poster["port"])) if poster_running else None
-    )
-    return stopguard.decide(poster_state, poster_running, force)
+    if not poster_running:
+        return stopguard.decide(None, False, force)
+    port = int(poster["port"])
+    poster_state = stopguard.hold_poster(port)
+    decision = stopguard.decide(poster_state, True, force)
+    if not decision.allowed and poster_state.held:
+        stopguard.release_poster(port)
+    return decision
 
 
 class InterruptHandler:
@@ -283,6 +290,9 @@ def _start(lock) -> int:
             file=sys.stderr,
         )
         return 1
+    # Nothing it names is alive. Remove it now, so `rice stop` never signals
+    # the old launcher pid while this launcher starts.
+    state_path().unlink(missing_ok=True)
     try:
         environ = suite_env.load()
     except suite_env.SuiteConfigError as exc:
@@ -302,7 +312,12 @@ def _start(lock) -> int:
         return 1
 
     state_file = state_path()
-    sup = Supervisor(build_children(environ, state_file))
+    # Publish the state after every spawn and restart, so no child runs
+    # unrecorded if the launcher dies before its next poll.
+    sup = Supervisor(
+        build_children(environ, state_file),
+        on_spawn=lambda: _write_state(state_file, os.getpid(), sup),
+    )
     request_stop = InterruptHandler()
 
     signal.signal(signal.SIGINT, request_stop)
@@ -363,7 +378,12 @@ def cmd_stop(args: argparse.Namespace) -> int:
         print(f"rice: {message}")
     if not decision.allowed:
         return 1
-    os.kill(int(state["launcher_pid"]), signal.SIGTERM)
+    try:
+        os.kill(int(state["launcher_pid"]), signal.SIGTERM)
+    except ProcessLookupError:
+        # Only a state from an earlier launcher can name a dead pid.
+        print("rice: RiceSuite is starting; try again in a moment.", file=sys.stderr)
+        return 1
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline and launcher_running():
         time.sleep(0.2)

@@ -163,15 +163,26 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
   row for that run: accepted, it errs towards checking.)
 - **FR-17** `rice stop` refuses, exits non-zero and changes nothing, while a
   Poster posting run is active, unless `--force` is given. If the launcher
-  cannot confirm Poster is idle, it treats the run as possibly active. Pillars
-  run in their own sessions, so a terminal Ctrl-C reaches only the launcher,
-  which applies the same check; a second Ctrl-C within 10 seconds forces the
-  stop. A SIGTERM sent to the launcher directly (what `rice stop` sends after
-  its check, and what an OS shutdown sends) stops at once. Launcher liveness is
-  a lock the launcher holds, never a recorded pid, so a stale state file or a
-  reused pid is never mistaken for RiceSuite; processes left behind by a
-  launcher that was killed are reported by `rice status` and stopped by
-  `rice stop` through the same check.
+  cannot confirm Poster is idle, it treats the run as possibly active: an
+  error status, a body that is not the expected JSON object, or an absent
+  field all count as unconfirmed. The check takes Poster's **stop hold**
+  (`POST api/stop-hold`): Poster refuses it while a run is active, and while
+  it is set Poster refuses every new posting run, manual or scheduled, so no
+  run can start between the check and the stop. A refused stop releases the
+  hold (`DELETE api/stop-hold`); otherwise it ends after a 120-second lease. A
+  due scheduled batch skipped under the hold stays pending and fires on the
+  next start (FR-18). Pillars run in their own sessions, so a terminal Ctrl-C
+  reaches only the launcher, which applies the same check; a second Ctrl-C
+  within 10 seconds forces the stop. A SIGTERM sent to the launcher directly
+  (what `rice stop` sends after its check, and what an OS shutdown sends)
+  stops at once. Launcher liveness is a lock the launcher holds, never a
+  recorded pid, so a stale state file or a reused pid is never mistaken for
+  RiceSuite. A starting launcher removes a stale state file before it spawns
+  anything, and it rewrites the state after every spawn and restart, so each
+  running child is recorded. (A launcher killed in the instant between a spawn
+  and that write can leave one child unrecorded: accepted.) Processes left
+  behind by a launcher that was killed are reported by `rice status` and
+  stopped by `rice stop` through the same check.
 - **FR-18** `rice stop` warns, naming the batches, when a scheduled batch is
   overdue or due within the next 30 minutes, and says it will fire on the next
   start (Poster's startup catch-up). The warning does not block the stop.

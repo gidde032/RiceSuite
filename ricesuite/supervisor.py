@@ -51,11 +51,13 @@ class Supervisor:
         log: Callable[[str], None] = print,
         clock: Callable[[], float] = time.monotonic,
         backoff: Sequence[float] = BACKOFF_S,
+        on_spawn: Callable[[], None] | None = None,
     ) -> None:
         self.children = list(children)
         self.log = log
         self.clock = clock
         self.backoff = tuple(backoff)
+        self.on_spawn = on_spawn  # runs after every spawn and restart
         self.stopping = False
 
     def _spawn(self, child: Child) -> None:
@@ -67,6 +69,8 @@ class Supervisor:
         )
         child.started_at = self.clock()
         child.restart_at = None
+        if self.on_spawn is not None:
+            self.on_spawn()
 
     def start_all(self) -> None:
         for child in self.children:

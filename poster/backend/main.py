@@ -694,10 +694,31 @@ async def get_history(limit: int = 50):
     return {"entries": entries}
 
 
+@app.post("/api/stop-hold")
+async def take_stop_hold():
+    """RiceSuite's `rice stop` takes this hold before it signals (suite
+    ADR-001 Q17): new posting runs, manual or scheduled, are refused until it
+    is released or its lease ends. Refused while a run is active."""
+    held = run_guard.hold()
+    return {"held": held, "active": run_guard.is_running()}
+
+
+@app.delete("/api/stop-hold")
+async def release_stop_hold():
+    run_guard.release_hold()
+    return {"held": False}
+
+
 @app.post("/api/post")
 async def post_all_endpoint(request: PostRequest) -> list[PostResult]:
     """Post all requested slots to both platforms. `headless` overrides
     the env default for this run only."""
+    if run_guard.is_held():
+        raise HTTPException(
+            status_code=409,
+            detail="RiceSuite is stopping, so new posting runs are refused. "
+            "Post again after the next start.",
+        )
     if not run_guard.try_acquire():
         raise HTTPException(
             status_code=409,
