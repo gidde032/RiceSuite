@@ -96,12 +96,23 @@ test("an empty inbox pulls nothing and hides the panel", async () => {
   assert.equal(panel.hidden, true);
 });
 
-test("an unacknowledged batch counts as waiting and is replayed", async () => {
-  const inbox = { batches: [], unacknowledged: "batch_0" };
+test("an unacknowledged batch is shown but never replayed automatically", async () => {
+  const inbox = { batches: [{ batch_id: "batch_1", clip_count: 1 }], unacknowledged: "batch_0" };
   const { js, pulls, panel } = boot({ inbox, slots: { A: emptySlot() } });
   await js("pollClipperInbox()");
-  assert.equal(pulls.length, 1);
+  assert.equal(pulls.length, 0);
+  assert.equal(panel.hidden, false);
   assert.match(panel.innerHTML, /batch_0/);
+  assert.match(panel.innerHTML, /Pull from Clipper/);
+});
+
+test("an inbox error is shown, not hidden", async () => {
+  const inbox = { batches: [], unacknowledged: null, error: "handoff archive root must be a real directory" };
+  const { js, pulls, panel } = boot({ inbox });
+  await js("pollClipperInbox()");
+  assert.equal(pulls.length, 0);
+  assert.equal(panel.hidden, false);
+  assert.match(panel.innerHTML, /archive root/);
 });
 
 test("no second pull starts while one is in flight", async () => {
@@ -122,8 +133,90 @@ test("the page polls the inbox on a timer", () => {
   assert.match(HTML, /setInterval\(pollClipperInbox, INBOX_POLL_MS\)/);
 });
 
-test("the manual pull still confirms before overwriting drafts", () => {
-  const body = slice("async function pullFromClipper()", "// --- Automatic ingest from Clip");
-  assert.match(body, /const atRisk = draftsAtRisk\(\);/);
-  assert.match(body, /atRisk\.length &&\s*!confirm\(/);
+// --- the real pullFromClipper and generateAll ---------------------------------
+
+const PULL_SOURCE = [
+  slice("function draftsAtRisk()", "// --- Automatic ingest from Clip"),
+  slice("async function generateAll()", "\n}\n") + "\n}\n",
+].join("\n");
+
+function bootPull({ slots, confirmAnswer = true, onPull }) {
+  const applied = [];
+  const statuses = [];
+  const asked = [];
+  const { fetch, calls } = scriptedFetch({
+    "POST api/pull-from-clipper": () => {
+      if (onPull) onPull();
+      return [200, { pulled: true, batch_id: "batch_1", replayed: false,
+                     slots: [{ slot: "A", filename: "A_batch_1_clip_1.mp4" }] }];
+    },
+    "POST api/pull-from-clipper/batch_1/ack": { status: "applied" },
+  });
+  const ctx = vm.createContext({
+    Date, FormData: class { append() {} }, console,
+    state: { accounts: [{ slot: "A" }], slots, defaultCaptionStyle: "generic" },
+    fetchWithTimeout: fetch,
+    handleFetchError: async () => {},
+    elOpt: () => element(), el: () => element(), slotEl: () => element(),
+    setPullStatus: (m) => statuses.push(m),
+    confirm: (m) => { asked.push(m); return confirmAnswer; },
+    assertPulledTargets() {},
+    applyPulledSlot: (entry) => { applied.push(entry.slot); slots[entry.slot].filename = entry.filename; return "api/media/x"; },
+    updateButtons() {}, updateThumbChip() {}, setCaptionError() {}, autoGrow() {}, updateCharCount() {},
+    captureThumbnailFromUrl: async () => "",
+    CAPTION_TIMEOUT_MS: 1000,
+  });
+  vm.runInContext(PULL_SOURCE, ctx);
+  return { js: (e) => vm.runInContext(e, ctx), calls, applied, statuses, asked };
+}
+
+test("manual Pull asks before overwriting a draft, and Cancel pulls nothing", async () => {
+  const slots = { A: { file: null, filename: "", caption: "my caption" } };
+  const { js, calls, asked } = bootPull({ slots, confirmAnswer: false });
+  assert.equal(await js("pullFromClipper()"), false);
+  assert.equal(asked.length, 1);
+  assert.equal(calls.filter((c) => c.path === "api/pull-from-clipper").length, 0);
+  assert.equal(slots.A.caption, "my caption");
+});
+
+test("the automatic pull never asks for replay", async () => {
+  const slots = { A: { file: null, filename: "", caption: "" } };
+  const { js, calls } = bootPull({ slots });
+  js("generateAll = async () => { state.slots.A.caption = 'generated'; }");
+  await js("pullFromClipper({ automatic: true })");
+  const pull = calls.find((c) => c.method === "POST" && c.path === "api/pull-from-clipper");
+  assert.ok(pull, "no pull request");
+  assert.equal(pull.url, "api/pull-from-clipper?replay=0");
+});
+
+test("a draft started while an automatic pull is in flight is kept", async () => {
+  const slots = { A: { file: null, filename: "", caption: "" } };
+  const { js, applied, asked } = bootPull({
+    slots,
+    onPull: () => { slots.A.caption = "typed during the pull"; },
+  });
+  assert.equal(await js("pullFromClipper({ automatic: true })"), false);
+  assert.deepEqual(applied, []);
+  assert.equal(asked.length, 0);
+  assert.equal(slots.A.caption, "typed during the pull");
+});
+
+test("a caption typed while generation runs is never overwritten", async () => {
+  const slots = { A: { file: null, filename: "A.mp4", caption: "", mediaType: "video", topic: "t" } };
+  const { fetch } = scriptedFetch({
+    "POST api/generate-caption": () => {
+      slots.A.caption = "typed by hand";
+      return [200, { caption: "generated" }];
+    },
+  });
+  const ctx = vm.createContext({
+    FormData: class { append() {} }, console,
+    state: { slots, defaultCaptionStyle: "generic" },
+    fetchWithTimeout: fetch, handleFetchError: async () => {},
+    el: () => element(), slotEl: () => element(), setCaptionError() {}, autoGrow() {},
+    updateCharCount() {}, updateButtons() {}, CAPTION_TIMEOUT_MS: 1000,
+  });
+  vm.runInContext(slice("async function generateAll()", "\n}\n") + "\n}\n", ctx);
+  await vm.runInContext("generateAll()", ctx);
+  assert.equal(slots.A.caption, "typed by hand");
 });

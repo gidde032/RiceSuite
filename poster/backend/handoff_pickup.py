@@ -51,6 +51,10 @@ class NoBatchAvailable(HandoffPickupError):
     """No ready batch was found in the handoff directory."""
 
 
+class AwaitingAcknowledgement(HandoffPickupError):
+    """A pulled batch was never acknowledged and `replay=False` was asked."""
+
+
 def _ready_batches(root: Path) -> list[Path]:
     """Return batch dirs that carry a manifest, oldest first.
 
@@ -344,7 +348,7 @@ def waiting_batches() -> dict:
     return {"batches": batches, "unacknowledged": unacknowledged, "error": error}
 
 
-def ingest_oldest(target_ids: list[str]) -> dict:
+def ingest_oldest(target_ids: list[str], *, replay: bool = True) -> dict:
     """Stage the oldest ready batch and return its slot assignments.
 
     Copies each clip into `MEDIA_DIR` as `{account_id}_{batch}_{file}` and,
@@ -360,6 +364,13 @@ def ingest_oldest(target_ids: list[str]) -> dict:
     target_ids = _validate_targets(target_ids)
 
     pending = _oldest_unacknowledged()
+    if pending is not None and not replay:
+        # RiceSuite's automatic pull passes replay=False: recovering a staged
+        # batch stays the maintainer's Pull, so one batch never lands in two
+        # open pages and a posted-but-unacknowledged batch never returns.
+        raise AwaitingAcknowledgement(
+            f"batch {pending[0].name} was pulled but never acknowledged"
+        )
     if pending is not None:
         archive_dir, receipt = pending
         _require_same_targets(receipt, target_ids)

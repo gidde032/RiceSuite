@@ -1540,7 +1540,9 @@ function draftsAtRisk() {
 let pullInFlight = false;
 
 // Returns true when a batch was pulled, captioned and acknowledged.
-async function pullFromClipper() {
+// `automatic` (RiceSuite's inbox poll) never replays an unacknowledged batch
+// and never overwrites a draft started while the request was in flight.
+async function pullFromClipper({ automatic = false } = {}) {
   if (pullInFlight) return false;
   const btn = elOpt('btnPullClipper');
   // A pull overwrites active-roster slots positionally, discarding any unposted
@@ -1561,11 +1563,18 @@ async function pullFromClipper() {
   if (btn) btn.disabled = true;
   setPullStatus('Pulling the oldest batch from RiceClipper…');
   try {
-    const resp = await fetchWithTimeout('api/pull-from-clipper', { method: 'POST' });
+    const url = automatic ? 'api/pull-from-clipper?replay=0' : 'api/pull-from-clipper';
+    const resp = await fetchWithTimeout(url, { method: 'POST' });
     await handleFetchError(resp);
     const data = await resp.json();
     if (!data.pulled) {
       setPullStatus(data.reason || 'Nothing to pull.');
+      return false;
+    }
+    if (automatic && draftsAtRisk().length) {
+      // A draft appeared while the request ran. Keep it: the batch stays
+      // staged, unacknowledged, for Pull from Clipper (which asks first).
+      setPullStatus(`Batch ${data.batch_id} from Clip is staged; your new draft was kept. Use Pull from Clipper when ready.`);
       return false;
     }
     stagedBatchId = data.batch_id;
@@ -1632,7 +1641,15 @@ function renderClipperInbox(inbox) {
   const panel = elOpt('clipperInbox');
   if (!panel) return;
   const waiting = (inbox.batches || []).length + (inbox.unacknowledged ? 1 : 0);
-  panel.hidden = waiting === 0;
+  panel.hidden = waiting === 0 && !inbox.error;
+  if (inbox.error) {
+    panel.innerHTML = `
+    <div class="status-item status-error">
+      <span class="status-icon">✗</span>
+      <span>${esc(`Inbox from Clip needs attention: ${inbox.error}`)}</span>
+    </div>`;
+    return;
+  }
   if (!waiting) return;
   const ids = [
     ...(inbox.unacknowledged ? [inbox.unacknowledged] : []),
@@ -1642,7 +1659,11 @@ function renderClipperInbox(inbox) {
     <div class="status-item">
       <span class="status-icon">⇣</span>
       <span>${esc(`Inbox: ${waiting} batch${waiting === 1 ? '' : 'es'} from Clip waiting (${ids.join(', ')}). ` +
-        (draftsAtRisk().length ? 'Post or clear the current drafts, or use Pull from Clipper.' : 'Pulling automatically…'))}</span>
+        (inbox.unacknowledged
+          ? `${inbox.unacknowledged} was pulled but never acknowledged: recover it with Pull from Clipper.`
+          : draftsAtRisk().length
+            ? 'Post or clear the current drafts, or use Pull from Clipper.'
+            : 'Pulling automatically…'))}</span>
     </div>`;
 }
 
@@ -1656,10 +1677,13 @@ async function pollClipperInbox() {
     return;
   }
   renderClipperInbox(inbox);
-  const waiting = (inbox.batches || []).length + (inbox.unacknowledged ? 1 : 0);
-  if (!waiting || pullInFlight || Date.now() < inboxRetryAt) return;
+  // Only fresh batches move automatically. Recovering an unacknowledged one
+  // stays the maintainer's Pull: it may already be open in another page, or
+  // already posted.
+  if (inbox.unacknowledged || inbox.error || !(inbox.batches || []).length) return;
+  if (pullInFlight || Date.now() < inboxRetryAt) return;
   if (draftsAtRisk().length) return;
-  const ok = await pullFromClipper();
+  const ok = await pullFromClipper({ automatic: true });
   if (!ok) inboxRetryAt = Date.now() + INBOX_RETRY_MS;
 }
 
@@ -1927,6 +1951,8 @@ async function generateAll() {
       );
       await handleFetchError(resp);
       const data = await resp.json();
+      // Never overwrite a caption typed while this one was generating.
+      if (s.caption.trim()) return;
       s.caption = data.caption;
       const ta = slotEl('caption', slot);
       ta.value = s.caption;

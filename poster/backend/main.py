@@ -481,7 +481,7 @@ async def clipper_inbox():
 
 
 @app.post("/api/pull-from-clipper")
-async def pull_from_clipper():
+async def pull_from_clipper(replay: bool = True):
     """Stage the oldest RiceClipper handoff batch into a pending run.
 
     Copies the batch's media into MEDIA_DIR and returns per-slot assignments
@@ -497,7 +497,14 @@ async def pull_from_clipper():
             detail=f"Local account state is invalid; repair it before pulling: {state_error}",
         )
     try:
-        result = handoff_pickup.ingest_oldest(account_state.active_account_ids)
+        result = handoff_pickup.ingest_oldest(
+            account_state.active_account_ids, replay=replay
+        )
+    except handoff_pickup.AwaitingAcknowledgement as e:
+        return {
+            "pulled": False,
+            "reason": f"{e}; use Pull from Clipper to recover it.",
+        }
     except handoff_pickup.NoBatchAvailable:
         return {"pulled": False, "reason": "No handoff batches to pull."}
     except handoff_pickup.HandoffPickupError as e:
