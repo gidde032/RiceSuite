@@ -88,10 +88,11 @@ _CHILD_TARGETS = {p.name: p.target for p in PILLARS} | {
 }
 
 
-def _is_suite_child(pid: int, name: str) -> bool:
-    """The pid is alive and its command line is that child's uvicorn target,
-    so a reused pid is never mistaken for a leftover."""
-    if not _pid_alive(pid):
+def _is_suite_child(pid: int, name: str, port) -> bool:
+    """The pid is alive and its command line is that child's uvicorn target on
+    the recorded port, so a reused pid (or a developer's own uvicorn run) is
+    never mistaken for a leftover."""
+    if not _pid_alive(pid) or port is None:
         return False
     try:
         command = subprocess.run(
@@ -102,7 +103,13 @@ def _is_suite_child(pid: int, name: str) -> bool:
         ).stdout
     except (OSError, subprocess.SubprocessError):
         return False
-    return "uvicorn" in command and _CHILD_TARGETS.get(name, "\0") in command
+    args = command.split()
+    return (
+        "uvicorn" in args
+        and _CHILD_TARGETS.get(name) in args
+        and "--port" in args[:-1]
+        and args[args.index("--port") + 1] == str(port)
+    )
 
 
 def leftovers(state: dict | None) -> list[dict]:
@@ -112,7 +119,7 @@ def leftovers(state: dict | None) -> list[dict]:
     found = []
     for name, child in (state or {}).get("children", {}).items():
         pid = child.get("pid")
-        if pid and _is_suite_child(int(pid), name):
+        if pid and _is_suite_child(int(pid), name, child.get("port")):
             found.append({"name": name, "pid": int(pid), "port": child.get("port")})
     return found
 
@@ -327,6 +334,10 @@ def cmd_stop(args: argparse.Namespace) -> int:
         if not decision.allowed:
             return 1
         _terminate(found)
+        survivors = leftovers(state)
+        if survivors:
+            print(f"rice: could not stop, still alive: {_describe(survivors)}")
+            return 1
         state_path().unlink(missing_ok=True)
         print("RiceSuite's leftover processes stopped.")
         return 0
@@ -348,7 +359,11 @@ def cmd_stop(args: argparse.Namespace) -> int:
 
 def cmd_status(args: argparse.Namespace) -> int:
     state = read_state()
-    if not launcher_running() or not state:
+    running = launcher_running()
+    if running and not state:
+        print("RiceSuite is starting (launcher holds its lock; no state yet).")
+        return 0
+    if not running:
         found = leftovers(state)
         if found:
             print(

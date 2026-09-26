@@ -311,7 +311,7 @@ def test_a_held_launcher_lock_means_running(tmp_path):
     assert not cli.launcher_running()
 
 
-def _fake_child(target):
+def _fake_child(target, port=1):
     """A live process whose command line looks like a suite child. A waiter
     thread reaps it the moment it exits, as launchd/init would for a real
     leftover whose launcher died (an unreaped zombie still looks alive)."""
@@ -319,7 +319,15 @@ def _fake_child(target):
     import threading
 
     proc = subprocess.Popen(
-        [sys.executable, "-c", "import time; time.sleep(60)", "uvicorn", target],
+        [
+            sys.executable,
+            "-c",
+            "import time; time.sleep(60)",
+            "uvicorn",
+            target,
+            "--port",
+            str(port),
+        ],
         start_new_session=True,
     )
     threading.Thread(target=proc.wait, daemon=True).start()
@@ -383,3 +391,61 @@ def test_a_live_pid_that_is_not_a_suite_child_is_not_a_leftover(tmp_path):
         "children": {"poster": {"state": "running", "pid": os.getpid(), "port": 1}}
     }
     assert cli.leftovers(state) == []
+
+
+def test_status_while_the_launcher_is_starting(tmp_path, capsys, launcher_lock):
+    """Lock held, state not written yet: starting, not 'not running'."""
+    assert cli.main(["status"]) == 0
+    assert "starting" in capsys.readouterr().out
+
+
+def test_a_suite_target_on_another_port_is_not_a_leftover(tmp_path):
+    """A developer's own `uvicorn backend.main:app --port 1738` must never be
+    taken for a suite child just because a stale state file names its pid."""
+    import subprocess
+    import threading
+
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import time; time.sleep(60)",
+            "uvicorn",
+            "backend.main:app",
+            "--port",
+            "1738",
+        ],
+        start_new_session=True,
+    )
+    threading.Thread(target=proc.wait, daemon=True).start()
+    try:
+        state = {
+            "children": {"poster": {"state": "running", "pid": proc.pid, "port": 8793}}
+        }
+        assert cli.leftovers(state) == []
+        state["children"]["poster"]["port"] = 1738
+        assert [c["pid"] for c in cli.leftovers(state)] == [proc.pid]
+    finally:
+        proc.kill()
+
+
+def test_stop_keeps_the_record_when_a_leftover_survives(tmp_path, monkeypatch, capsys):
+    child = _fake_child("backend.main:app")
+    try:
+        cli.state_path().parent.mkdir(parents=True)
+        cli.state_path().write_text(
+            json.dumps(
+                {
+                    "launcher_pid": 999999,
+                    "children": {
+                        "poster": {"state": "running", "pid": child.pid, "port": 1}
+                    },
+                }
+            )
+        )
+        monkeypatch.setattr(cli, "_terminate", lambda found, timeout=15.0: None)
+        assert cli.main(["stop", "--force"]) == 1
+        assert cli.state_path().exists()
+        assert "still alive" in capsys.readouterr().out
+    finally:
+        child.kill()
