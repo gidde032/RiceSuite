@@ -449,3 +449,31 @@ def test_stop_keeps_the_record_when_a_leftover_survives(tmp_path, monkeypatch, c
         assert "still alive" in capsys.readouterr().out
     finally:
         child.kill()
+
+
+def test_process_args_survive_a_long_interpreter_path(tmp_path):
+    """CI's interpreter lives under a long path; the arguments after it must
+    still be visible (a plain piped `ps` truncates at 80 columns on Linux)."""
+    import subprocess
+    import threading
+
+    deep = tmp_path / ("d" * 60) / ("e" * 60)
+    deep.mkdir(parents=True)
+    link = deep / "python"
+    link.symlink_to(sys.executable)
+    proc = subprocess.Popen(
+        [str(link), "-c", "import time; time.sleep(30)", "uvicorn", "app.main:app"],
+        start_new_session=True,
+    )
+    threading.Thread(target=proc.wait, daemon=True).start()
+    try:
+        import time
+
+        for _ in range(50):
+            args = cli.process_args(proc.pid)
+            if "app.main:app" in args:
+                break
+            time.sleep(0.05)
+        assert "uvicorn" in args and "app.main:app" in args
+    finally:
+        proc.kill()

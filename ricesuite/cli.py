@@ -88,22 +88,36 @@ _CHILD_TARGETS = {p.name: p.target for p in PILLARS} | {
 }
 
 
+def process_args(pid: int) -> list[str]:
+    """The process's argv: exact from /proc on Linux, else from `ps -ww`.
+    (`ps` without -ww truncates a piped command line to 80 columns on Linux,
+    which cut off everything after a long interpreter path.)"""
+    proc = Path(f"/proc/{pid}/cmdline")
+    try:
+        raw = proc.read_bytes()
+    except OSError:
+        raw = b""
+    if raw:
+        return [a for a in raw.decode(errors="replace").split("\0") if a]
+    try:
+        command = subprocess.run(
+            ["ps", "-ww", "-o", "command=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return command.split()
+
+
 def _is_suite_child(pid: int, name: str, port) -> bool:
     """The pid is alive and its command line is that child's uvicorn target on
     the recorded port, so a reused pid (or a developer's own uvicorn run) is
     never mistaken for a leftover."""
     if not _pid_alive(pid) or port is None:
         return False
-    try:
-        command = subprocess.run(
-            ["ps", "-o", "command=", "-p", str(pid)],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        ).stdout
-    except (OSError, subprocess.SubprocessError):
-        return False
-    args = command.split()
+    args = process_args(pid)
     return (
         "uvicorn" in args
         and _CHILD_TARGETS.get(name) in args
