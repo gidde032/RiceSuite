@@ -1,0 +1,32 @@
+# Agent continuity (internal, never published)
+.agent/
+
+# Virtual environments
+.venv/
+venv/
+*.venv/
+
+# Python caches and tooling
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.egg-info/
+build/
+dist/
+
+# JS
+node_modules/
+
+# Suite config (holds secrets)
+ricesuite.env
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
