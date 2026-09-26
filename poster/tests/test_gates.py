@@ -261,10 +261,20 @@ def _pre_push_entry() -> str:
 
 
 def _ci_workflow() -> str:
-    """Return the tracked clean-environment gate."""
-    path = PROJECT_ROOT / ".github" / "workflows" / "ci.yml"
+    """Return the tracked clean-environment gate: Poster's part of it.
+
+    RiceSuite runs one CI workflow for all three pillars (ADR-001 Q16). This
+    keeps the workflow header (triggers, permissions) and only the `poster-*`
+    job blocks, so another pillar's floor can never satisfy, or break, an
+    assertion about Poster's.
+    """
+    path = PROJECT_ROOT.parent / ".github" / "workflows" / "ci.yml"
     assert path.exists(), "GitHub Actions CI workflow is missing"
-    return path.read_text()
+    header, jobs = path.read_text().split("\njobs:\n", maxsplit=1)
+    blocks = re.split(r"\n(?=  [A-Za-z0-9_-]+:\n)", "\n" + jobs)
+    mine = [b.strip("\n") for b in blocks if b.lstrip("\n").startswith("  poster-")]
+    assert mine, "no poster-* jobs in the suite CI workflow"
+    return header + "\njobs:\n" + "\n".join(mine) + "\n"
 
 
 def test_coverage_gate_is_actually_enforced():

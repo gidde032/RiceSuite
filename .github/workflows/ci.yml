@@ -1,0 +1,235 @@
+name: CI
+
+# One workflow for the whole suite (ADR-001 Q16). Each pillar keeps its own
+# gates and coverage floor, run from its own directory exactly as its original
+# repository ran them: Searcher 90, Clipper 85, Poster 43. There is no averaged
+# floor. Each pillar's gate meta-tests read the job blocks for that pillar
+# (job ids prefixed `searcher-`, `clipper-`, `poster-`), so a floor cannot move
+# here without a pillar test going red.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suite:
+    name: Suite tests (boundary, pins, config)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --requirement requirements-dev.txt
+          python -m pip install -e . -e searcher
+      - name: Ruff lint
+        run: python -m ruff check ricesuite tests
+      - name: Ruff format check
+        run: python -m ruff format --check ricesuite tests
+      - name: Suite tests + coverage floor
+        run: python -m pytest -q -ra
+
+  searcher-gates:
+    name: Searcher gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: searcher
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install
+        working-directory: .
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --requirement requirements-dev.txt
+          python -m pip install -e searcher
+      - name: Ruff format check
+        run: ruff format --check .
+      - name: Ruff lint
+        run: ruff check .
+      - name: Type check
+        run: mypy
+      - name: JS syntax check (review UI)
+        run: |
+          for f in ricesearcher/web/static/*.js; do
+            echo "node --check $f"
+            node --check "$f"
+          done
+      - name: JS behavior tests (review UI)
+        run: node --test tests/js/*.test.js
+      - name: Tests + coverage floor (90%, from searcher/pyproject.toml addopts)
+        run: pytest
+
+  searcher-py314:
+    name: Searcher tests (Python 3.14)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: searcher
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install
+        working-directory: .
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --requirement requirements-dev.txt
+          python -m pip install -e searcher
+      - name: Runtime pins resolve on 3.14
+        working-directory: .
+        run: python -m pip install --dry-run --quiet -r requirements.txt
+      - name: Tests + coverage floor
+        run: pytest
+
+  clipper-tests:
+    name: Clipper — Python 3.12 tests and coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: clipper
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install dependencies
+        working-directory: .
+        run: python -m pip install --requirement requirements-dev.txt
+
+      # ffmpeg is NOT installed: the suite mocks every ffmpeg/whisper
+      # invocation (see clipper/tests/), so CI needs no system media toolchain.
+      - name: Ruff lint
+        run: python -m ruff check .
+
+      - name: Ruff format check
+        run: python -m ruff format --check .
+
+      - name: Run tests and enforce coverage floor
+        run: >-
+          python -m pytest tests/ -q -ra
+          --cov=app --cov=render --cov=transcribe
+          --cov-fail-under=85
+
+  clipper-py314:
+    name: Clipper — Python 3.14 tests (non-required)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: clipper
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install dependencies
+        working-directory: .
+        run: python -m pip install --requirement requirements-dev.txt
+
+      - name: Run tests and enforce coverage floor
+        run: >-
+          python -m pytest tests/ -q -ra
+          --cov=app --cov=render --cov=transcribe
+          --cov-fail-under=85
+
+  poster-tests:
+    name: Poster — Python 3.12 tests and coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: poster
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      # poster/tests/test_frontend_robustness.py parses frontend/index.html's
+      # script block and skips when node is absent; pin node rather than rely
+      # on an incidental runner-image detail.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        working-directory: .
+        run: python -m pip install --requirement requirements-dev.txt
+
+      - name: Run tests and enforce coverage floor
+        run: python -m pytest tests/ -q -ra --cov=backend --cov-fail-under=43
+
+  poster-py314:
+    name: Poster — Python 3.14 tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: poster
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        working-directory: .
+        run: python -m pip install --requirement requirements-dev.txt
+
+      - name: Run tests
+        run: python -m pytest tests/ -q -ra

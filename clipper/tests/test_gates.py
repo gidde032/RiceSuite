@@ -28,12 +28,16 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 PRE_COMMIT_CONFIG = PROJECT_ROOT / ".pre-commit-config.yaml"
-CI_WORKFLOW = PROJECT_ROOT / ".github" / "workflows" / "ci.yml"
+# RiceSuite runs one CI workflow for all three pillars (ADR-001 Q16). Clipper's
+# gates are the job blocks whose ids start with CI_JOB_PREFIX; `_ci_text()`
+# narrows the workflow to them so every number asserted below is Clipper's own.
+CI_WORKFLOW = PROJECT_ROOT.parent / ".github" / "workflows" / "ci.yml"
+CI_JOB_PREFIX = "clipper-"
 RULESET = PROJECT_ROOT / ".github" / "rulesets" / "main.json"
 DEV_REQUIREMENTS = PROJECT_ROOT / "requirements-dev.txt"
 
 # The single required check. Renaming it would silently orphan the ruleset.
-REQUIRED_CHECK = "Python 3.12 tests and coverage"
+REQUIRED_CHECK = "Clipper — Python 3.12 tests and coverage"
 # The newest Python the README declares supported; CI must exercise it.
 NEWEST_SUPPORTED_PYTHON = "3.14"
 
@@ -46,9 +50,25 @@ SMOKE_TEST_COUNT = 8
 SMOKE_EXECUTION_BUDGET_S = 3.0
 
 
+def _ci_text() -> str:
+    """The suite workflow's header (triggers, permissions) plus only the
+    ``clipper-*`` job blocks — another pillar's floor must never satisfy, or
+    break, an assertion about Clipper's."""
+    text = CI_WORKFLOW.read_text(encoding="utf-8")
+    header, jobs = text.split("\njobs:\n", maxsplit=1)
+    blocks = re.split(r"\n(?=  [A-Za-z0-9_-]+:\n)", "\n" + jobs)
+    mine = [
+        block.strip("\n")
+        for block in blocks
+        if block.lstrip("\n").startswith(f"  {CI_JOB_PREFIX}")
+    ]
+    assert mine, f"no {CI_JOB_PREFIX}* jobs in {CI_WORKFLOW}"
+    return header + "\njobs:\n" + "\n".join(mine) + "\n"
+
+
 def test_ci_runs_for_pull_requests_to_any_branch():
     """The CI workflow must not exclude stacked PRs targeting feature branches."""
-    ci = CI_WORKFLOW.read_text(encoding="utf-8")
+    ci = _ci_text()
     pull_request_trigger = ci.split("pull_request:", maxsplit=1)[1].split(
         "push:", maxsplit=1
     )[0]
@@ -127,7 +147,7 @@ def test_coverage_floor_enforced_and_agrees_across_hook_and_ci():
     a number that runs nowhere.
     """
     hook = PRE_COMMIT_CONFIG.read_text(encoding="utf-8")
-    ci = CI_WORKFLOW.read_text(encoding="utf-8")
+    ci = _ci_text()
 
     hook_floors = _cov_floors(hook)
     ci_floors = _cov_floors(ci)
@@ -145,7 +165,7 @@ def test_coverage_floor_enforced_and_agrees_across_hook_and_ci():
 def test_ruff_gates_present_in_hook_and_ci():
     """Ruff lint AND format must be gated in both the pre-commit hook and CI."""
     hook = PRE_COMMIT_CONFIG.read_text(encoding="utf-8")
-    ci = CI_WORKFLOW.read_text(encoding="utf-8")
+    ci = _ci_text()
 
     assert "ruff check" in hook, "pre-commit hook does not run 'ruff check'"
     assert "ruff format --check" in hook, "pre-commit hook does not gate formatting"
@@ -167,7 +187,7 @@ def _ci_job_blocks(ci: str) -> dict[str, str]:
 
 def test_required_check_name_matches_ci_and_ruleset():
     """The ruleset's required check must still be a real CI job name."""
-    jobs = _ci_job_blocks(CI_WORKFLOW.read_text(encoding="utf-8"))
+    jobs = _ci_job_blocks(_ci_text())
     ruleset = json.loads(RULESET.read_text(encoding="utf-8"))
     required = [
         check["context"]
@@ -186,7 +206,7 @@ def test_ci_runs_newest_supported_python_as_non_required_job():
     maintainer develops on 3.14. A separate, non-required job keeps 3.14
     regressions visible without changing the required check's name.
     """
-    jobs = _ci_job_blocks(CI_WORKFLOW.read_text(encoding="utf-8"))
+    jobs = _ci_job_blocks(_ci_text())
     newest = [
         name
         for name, block in jobs.items()
