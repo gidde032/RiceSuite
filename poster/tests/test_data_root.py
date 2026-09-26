@@ -153,3 +153,18 @@ def test_data_dir_is_ignored_under_pytest(tmp_path):
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip().splitlines()[-1] == str(PROJECT_ROOT)
     assert not (tmp_path / "live").exists()
+
+
+
+def test_ignoring_a_set_data_dir_is_reported_at_startup(monkeypatch):
+    """If pytest is ever imported into a real server process, the data root
+    silently falling back to the checkout would open session-less browser
+    profiles against live accounts. The startup check must name it."""
+    monkeypatch.setenv("RICEPOSTER_DATA_DIR", "/some/where")
+    problems = config.check_startup_config()
+    assert any("RICEPOSTER_DATA_DIR" in p and "ignored" in p for p in problems)
+
+
+def test_unset_data_dir_reports_nothing_about_it(monkeypatch):
+    monkeypatch.delenv("RICEPOSTER_DATA_DIR", raising=False)
+    assert not any("RICEPOSTER_DATA_DIR" in p for p in config.check_startup_config())

@@ -75,6 +75,7 @@ DATA_ROOT = (
     PROJECT_ROOT if UNDER_PYTEST else resolve_data_root(os.getenv("RICEPOSTER_DATA_DIR"))
 )
 
+
 # Named SESSIONS_ROOT, not SESSIONS_DIR: both browser modules already export a
 # `SESSIONS_DIR` meaning their own platform subdirectory, and a future
 # `from backend.config import SESSIONS_DIR` in one of them would silently point
@@ -258,6 +259,16 @@ def check_startup_config() -> list[str]:
         problems.append(
             f"LOG_LEVEL={LOG_LEVEL!r} is not a level name — using "
             f"{DEFAULT_LEVEL}. Use DEBUG, INFO, WARNING, ERROR or CRITICAL."
+        )
+
+    # Expected inside a test run, where this function is not called at
+    # startup. In a server it means pytest got imported and the real data
+    # root was dropped for the checkout: sessions would be missing, and a
+    # missing profile makes Chrome open logged out against a live account.
+    if UNDER_PYTEST and (os.getenv("RICEPOSTER_DATA_DIR") or "").strip():
+        problems.append(
+            f"RICEPOSTER_DATA_DIR is set but ignored because pytest is loaded "
+            f"in this process; using {DATA_ROOT}. Do not post from this process."
         )
 
     if POST_MODE != "mock" and not ANTHROPIC_API_KEY.get_secret_value().strip():
