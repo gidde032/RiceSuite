@@ -224,3 +224,11 @@ def test_a_busy_poster_refuses_the_hold(poster):
     state = stopguard.hold_poster(fake.port)
     assert state.reachable and state.active and not state.held
     assert ("DELETE", "/api/stop-hold") not in fake.requests
+
+
+def test_a_malformed_hold_answer_still_releases_the_hold(poster):
+    """Review C-2: Poster may have taken the hold even if its answer is not the
+    expected one; the refused stop must give the hold back."""
+    fake = poster(routes={("POST", "/api/stop-hold"): (200, {"held": "yes"})})
+    assert not stopguard.hold_poster(fake.port).reachable
+    assert ("DELETE", "/api/stop-hold") in fake.requests

@@ -38,16 +38,18 @@ def _json_object(response: httpx.Response) -> dict:
 
 
 def hold_poster(port: int, timeout: float = 5.0) -> PosterState:
-    """Take Poster's stop hold, then read its queue. If the queue cannot be
-    read, the hold is released and Poster counts as unconfirmed."""
+    """Take Poster's stop hold, then read its queue. If Poster answered but
+    anything after that is not as expected, the hold is released (Poster may
+    have taken it) and Poster counts as unconfirmed."""
     base = f"http://{HOST}:{port}"
-    held = False
+    answered = False
     try:
         with httpx.Client(timeout=timeout) as client:
-            answer = _json_object(client.post(f"{base}/api/stop-hold"))
+            response = client.post(f"{base}/api/stop-hold")
+            answered = True
+            answer = _json_object(response)
             held, active = answer.get("held"), answer.get("active")
             if not isinstance(held, bool) or not isinstance(active, bool):
-                held = False
                 raise ValueError("stop-hold answer lacks held/active")
             batches = _json_object(client.get(f"{base}/api/queue")).get("batches")
             if not isinstance(batches, list) or not all(
@@ -55,7 +57,7 @@ def hold_poster(port: int, timeout: float = 5.0) -> PosterState:
             ):
                 raise ValueError("queue answer lacks a list of batches")
     except (httpx.HTTPError, ValueError):
-        if held:
+        if answered:
             release_poster(port)
         return PosterState(reachable=False)
     now = dt.datetime.now(dt.UTC)
