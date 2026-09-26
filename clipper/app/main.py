@@ -424,6 +424,12 @@ def handoff_batch(req: HandoffRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get("/api/searcher-inbox")
+def searcher_inbox() -> dict:
+    """Complete RiceSearcher batches waiting to be pulled (read-only)."""
+    return {"batches": searcher_pickup.waiting_batches()}
+
+
 @app.post("/api/pull-from-searcher")
 def pull_from_searcher() -> dict:
     """Ingest the oldest RiceSearcher handoff batch as new review jobs.

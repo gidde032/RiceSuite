@@ -79,6 +79,15 @@ def _read_manifest(batch_dir: Path) -> dict | None:
 
 def _oldest_unconsumed(root: Path, consumed: set[str]) -> tuple[Path, dict] | None:
     """FIFO-select the oldest batch with a manifest whose id isn't consumed."""
+    candidates = _unconsumed(root, consumed)
+    if not candidates:
+        return None
+    _, batch_dir, data = candidates[0]
+    return batch_dir, data
+
+
+def _unconsumed(root: Path, consumed: set[str]) -> list[tuple[str, Path, dict]]:
+    """Every complete, unconsumed batch, oldest first."""
     candidates: list[tuple[str, Path, dict]] = []
     for entry in root.iterdir():
         if not entry.is_dir():
@@ -90,12 +99,28 @@ def _oldest_unconsumed(root: Path, consumed: set[str]) -> tuple[Path, dict] | No
         if not isinstance(batch_id, str) or batch_id in consumed:
             continue
         candidates.append((str(data.get("created_at", "")), entry, data))
-    if not candidates:
-        return None
     # Oldest first by created_at, deterministic tie-break on dir name.
     candidates.sort(key=lambda c: (c[0], c[1].name))
-    _, batch_dir, data = candidates[0]
-    return batch_dir, data
+    return candidates
+
+
+def waiting_batches() -> list[dict]:
+    """Complete Searcher batches not yet ingested, oldest first. Read-only:
+    the review UI polls this to ingest automatically (RiceSuite ADR-001 Q12)
+    without taking the job lock on every poll."""
+    root = inbox_root()
+    if not root.is_dir():
+        return []
+    return [
+        {
+            "batch_id": data["batch_id"],
+            "created_at": created_at,
+            "clip_count": len(data["clips"])
+            if isinstance(data.get("clips"), list)
+            else 0,
+        }
+        for created_at, _dir, data in _unconsumed(root, _load_consumed(root))
+    ]
 
 
 def _validated_clips(batch_dir: Path, data: dict) -> list[dict]:

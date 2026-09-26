@@ -186,3 +186,53 @@ def test_inbox_default_is_ricesearcher_handoff(monkeypatch) -> None:
     root = searcher_pickup.inbox_root()
     assert root.name == "ricesearcher-handoff"
     assert "riceclipper-handoff" not in str(root)
+
+
+# --- RiceSuite automatic pull: the read-only inbox (ADR-001 Q12) -------------
+
+
+def _tree(root: Path) -> list[tuple[str, int]]:
+    return sorted(
+        (str(p.relative_to(root)), p.stat().st_mtime_ns) for p in root.rglob("*")
+    )
+
+
+def test_waiting_batches_lists_complete_unconsumed_batches_oldest_first(
+    env: Path,
+) -> None:
+    _write_batch(env, "batch_b", created_at="2026-09-05T00:00:00Z")
+    _write_batch(env, "batch_a", created_at="2026-09-04T00:00:00Z")
+    (env / "batch_c").mkdir()  # no manifest yet: still being written
+    (env / "batch_c" / "clip_1.mp4").write_bytes(b"x")
+    got = searcher_pickup.waiting_batches()
+    assert [b["batch_id"] for b in got] == ["batch_a", "batch_b"]
+    assert got[0]["clip_count"] == 1
+
+
+def test_waiting_batches_excludes_what_was_pulled(env: Path) -> None:
+    _write_batch(env, "batch_a", created_at="2026-09-04T00:00:00Z")
+    _write_batch(env, "batch_b", created_at="2026-09-05T00:00:00Z")
+    searcher_pickup.pull_next_batch()
+    assert [b["batch_id"] for b in searcher_pickup.waiting_batches()] == ["batch_b"]
+
+
+def test_waiting_batches_is_read_only(env: Path) -> None:
+    _write_batch(env, "batch_a")
+    before = _tree(env)
+    searcher_pickup.waiting_batches()
+    assert _tree(env) == before
+    assert not jobs._JOBS
+
+
+def test_inbox_endpoint(env: Path) -> None:
+    _write_batch(env, "batch_a")
+    client = TestClient(main.app)
+    r = client.get("/api/searcher-inbox")
+    assert r.status_code == 200
+    assert [b["batch_id"] for b in r.json()["batches"]] == ["batch_a"]
+    assert not jobs._JOBS
+
+
+def test_inbox_missing_dir_is_empty(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("RICECLIPPER_SEARCHER_INBOX", str(tmp_path / "absent"))
+    assert searcher_pickup.waiting_batches() == []

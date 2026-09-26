@@ -19,6 +19,7 @@ let clipSeq = 0; // monotonic counter for stable ordinals
 let ingesting = false; // upload+transcribe queue is draining
 let batchBusy = false; // render-all in progress
 let clearInProgress = false;
+let batchSent = false; // the loaded batch has reached RicePoster
 
 const MEDIA_CACHE_INFO_ENDPOINT = "api/media-info";
 const ACTIVE_JOB_STATUSES = new Set(["transcribing", "rendering"]);
@@ -453,6 +454,7 @@ function removeClip(clip) {
   }
   updateRenderAllButton();
   updateCacheControls();
+  maybeAutoSend();
 }
 
 // --- auto-header generation -------------------------------------------------
@@ -696,6 +698,7 @@ async function handleRenderAll() {
       : `Rendered ${ok} of ${targets.length}; see the per-clip errors above.`,
     ok !== targets.length,
   );
+  await maybeAutoSend();
 }
 
 // Poll GET /api/jobs/{id} after a dropped render fetch (Issue #30). Return true
@@ -801,7 +804,27 @@ async function showResult(clip) {
 
 // --- send to RicePoster (handoff) -------------------------------------------
 
-$("send-handoff-btn").addEventListener("click", async () => {
+$("send-handoff-btn").addEventListener("click", () => sendBatch());
+
+// Automatic send (RiceSuite ADR-001 Q12): once every clip in the batch has
+// rendered successfully, send it exactly as the button would. A failed or
+// unrendered clip holds the whole batch until it is fixed and re-rendered (or
+// removed). Rendering itself stays a human action.
+function batchReadyToSend() {
+  return (
+    !batchSent &&
+    !batchBusy &&
+    !ingesting &&
+    clips.length > 0 &&
+    clips.every((c) => c.jobId && c.status === "done")
+  );
+}
+
+async function maybeAutoSend() {
+  if (batchReadyToSend()) await sendBatch({ automatic: true });
+}
+
+async function sendBatch({ automatic = false } = {}) {
   const done = clips.filter((c) => c.jobId && c.status === "done");
   if (done.length === 0) {
     setBatchStatus("Render clips before sending to RicePoster.", true);
@@ -829,13 +852,15 @@ $("send-handoff-btn").addEventListener("click", async () => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "handoff failed");
     const n = data.clip_count;
-    setBatchStatus(`Sent batch ${data.batch_id} (${n} clip${n === 1 ? "" : "s"}) to RicePoster.`);
+    batchSent = true;
+    const how = automatic ? "Every clip rendered — sent" : "Sent";
+    setBatchStatus(`${how} batch ${data.batch_id} (${n} clip${n === 1 ? "" : "s"}) to RicePoster.`);
   } catch (err) {
     setBatchStatus(err.message, true);
   } finally {
     updateRenderAllButton();
   }
-});
+}
 
 // --- start over -------------------------------------------------------------
 
@@ -853,6 +878,10 @@ function resetAll() {
   ) {
     return;
   }
+  clearWorkspace();
+}
+
+function clearWorkspace() {
   clips.forEach((c) => {
     ["sourceVideoEl", "outputVideoEl"].forEach((k) => {
       const v = c[k];
@@ -872,9 +901,60 @@ function resetAll() {
   $("file-input").value = "";
   $("upload-status").textContent = "";
   setBatchStatus("");
+  batchSent = false;
   updateRenderAllButton();
   updateCacheControls();
 }
+
+// --- automatic pull from RiceSearcher (RiceSuite ADR-001 Q12) ---------------
+// A complete Searcher batch is pulled without a click, and its clips start
+// transcribing, whenever nothing unsent would be displaced: the workspace is
+// empty, or the batch it holds was fully rendered and sent. One Searcher batch
+// is one Clipper batch ("Send selected" stays the boundary).
+const AUTO_PULL_MS = 5000;
+const AUTO_PULL_BACKOFF_MS = 60000;
+let autoPulling = false;
+let autoPullPausedUntil = 0;
+
+function workspaceFree() {
+  if (ingesting || batchBusy || autoPulling) return false;
+  if (clips.length === 0) return true;
+  return batchSent && clips.every((c) => c.status === "done");
+}
+
+async function autoPullFromSearcher() {
+  if (!workspaceFree() || Date.now() < autoPullPausedUntil) return;
+  let waiting = [];
+  try {
+    const res = await fetch("api/searcher-inbox");
+    if (!res.ok) return;
+    waiting = (await res.json()).batches || [];
+  } catch {
+    return;
+  }
+  if (!waiting.length || !workspaceFree()) return;
+  autoPulling = true;
+  try {
+    if (clips.length) clearWorkspace(); // only a fully sent batch gets here
+    const res = await fetch("api/pull-from-searcher", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) {
+      autoPullPausedUntil = Date.now() + AUTO_PULL_BACKOFF_MS;
+      setPullStatus(`Automatic pull failed: ${data.detail || "pull failed"}`, true);
+      return;
+    }
+    if (!data.clip_count) return;
+    addPulledJobs(data.jobs || []);
+    setBatchStatus(`Batch ${data.batch_id} arrived from RiceSearcher; transcribing ${data.clip_count} clip(s)…`);
+  } catch (err) {
+    autoPullPausedUntil = Date.now() + AUTO_PULL_BACKOFF_MS;
+    setPullStatus("Automatic pull failed: " + err.message, true);
+  } finally {
+    autoPulling = false;
+  }
+}
+
+setInterval(autoPullFromSearcher, AUTO_PULL_MS);
 
 // --- clear media cache ------------------------------------------------------
 
