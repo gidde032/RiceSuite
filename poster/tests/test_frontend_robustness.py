@@ -254,25 +254,32 @@ def test_live_posting_calls_are_exempt_from_client_timeouts():
     # one of these two were converted to fetchWithTimeout, but a *new* untimed
     # call written with double quotes or a template literal would slip past the
     # exemption list entirely — the direction that actually costs safety.
-    bare = re.findall(r"""await fetch\(\s*['"`](/api/[^'"`]+)['"`]""", script)
-    assert sorted(bare) == ["/api/post", "/api/queue"], (
+    # Slash-agnostic too: the page uses relative URLs so RiceSuite can serve it
+    # under a path prefix, and a root-absolute bypass must be caught as well.
+    bare = re.findall(r"""await fetch\(\s*['"`](/?api/[^'"`]+)['"`]""", script)
+    assert sorted(bare) == ["api/post", "api/queue"], (
         f"only the two live-posting writes may bypass fetchWithTimeout; found {bare}"
     )
-    assert "fetchWithTimeout('/api/post'" not in script
-    assert "fetchWithTimeout('/api/queue'," not in script
+    for url in ("api/post", "/api/post"):
+        assert f"fetchWithTimeout('{url}'" not in script
+    for url in ("api/queue", "/api/queue"):
+        assert f"fetchWithTimeout('{url}'," not in script
 
 
 def test_the_exemption_regex_would_catch_a_double_quoted_bypass():
     """Guards the guard. The exemption test above is only a safety net if its
     pattern actually matches however a future call happens to be written, so
     this pins the quote-agnosticism rather than trusting it by inspection."""
-    pattern = r"""await fetch\(\s*['"`](/api/[^'"`]+)['"`]"""
-    for sample in (
-        """await fetch('/api/post', {})""",
-        '''await fetch("/api/post", {})''',
-        """await fetch(`/api/post`, {})""",
+    pattern = r"""await fetch\(\s*['"`](/?api/[^'"`]+)['"`]"""
+    for sample, expected in (
+        ("""await fetch('api/post', {})""", "api/post"),
+        ('''await fetch("api/post", {})''', "api/post"),
+        ("""await fetch(`api/post`, {})""", "api/post"),
+        ("""await fetch('/api/post', {})""", "/api/post"),
+        ('''await fetch("/api/post", {})''', "/api/post"),
+        ("""await fetch(`/api/post`, {})""", "/api/post"),
     ):
-        assert re.findall(pattern, sample) == ["/api/post"], (
+        assert re.findall(pattern, sample) == [expected], (
             f"the exemption pattern missed a bypass written as: {sample}"
         )
 

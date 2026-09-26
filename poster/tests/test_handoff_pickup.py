@@ -651,7 +651,7 @@ def test_pull_frontend_captures_frame_and_uses_media_route():
     caption AI sees, and routes captions through the existing generateAll path."""
     html = (PROJECT_ROOT / "frontend" / "index.html").read_text()
     assert "captureThumbnailFromUrl" in html
-    assert "/api/media/" in html
+    assert "`api/media/" in html
     assert "await generateAll();" in html
 
 
@@ -675,7 +675,7 @@ def test_consumed_cleanup_frontend_confirms_and_reports_safe_retention():
         html.index("// --- Accounts:")
     ]
     assert "Clear consumed batches" in html
-    assert "/api/handoff/consumed/clear" in body
+    assert "'api/handoff/consumed/clear'" in body
     assert "confirm(" in body
     assert "retained for recovery" in body
     assert "left untouched" in body

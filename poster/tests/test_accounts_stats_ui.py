@@ -53,14 +53,14 @@ def test_post_and_schedule_confirm_exact_names_and_platforms():
     assert 'class="slot-account-id"' in _function_body("renderSlots")
     assert "if (!confirmTargets('Post All')) return;" in _function_body("postAll")
     assert "if (!confirmTargets('Confirm Schedule')) return;" in _function_body("scheduleAll")
-    assert "fetch('/api/post'" in _function_body("postAll")
-    assert "fetch('/api/queue'" in _function_body("scheduleAll")
+    assert "fetch('api/post'" in _function_body("postAll")
+    assert "fetch('api/queue'" in _function_body("scheduleAll")
 
 
 def test_stats_is_read_only_and_labels_media_tracking_limit():
     assert 'id="statsPanel"' in _html()
     body = _function_body("loadStats")
-    assert "fetchWithTimeout('/api/stats')" in body
+    assert "fetchWithTimeout('api/stats')" in body
     assert "method:" not in body
     assert "Since tracking began" in body
     for forbidden in ("chart", "trend", "goal", "lifetime queued"):

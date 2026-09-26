@@ -20,7 +20,7 @@ let ingesting = false; // upload+transcribe queue is draining
 let batchBusy = false; // render-all in progress
 let clearInProgress = false;
 
-const MEDIA_CACHE_INFO_ENDPOINT = "/api/media-info";
+const MEDIA_CACHE_INFO_ENDPOINT = "api/media-info";
 const ACTIVE_JOB_STATUSES = new Set(["transcribing", "rendering"]);
 
 // --- per-slot saved visual defaults -----------------------------------------
@@ -71,7 +71,7 @@ function mediaErrText(video) {
 
 async function checkHealth() {
   try {
-    const h = await (await fetch("/api/health")).json();
+    const h = await (await fetch("api/health")).json();
     const badge = $("capbadge");
     if (h.ffmpeg && h.libass) {
       badge.textContent = "ffmpeg + libass ready";
@@ -278,7 +278,7 @@ function buildCard(clip) {
     clip.sourceVideoEl.src = clip.sourceUrl;
   } else if (clip.jobId) {
     // Pulled clip: no local blob — preview from the server's stored source.
-    clip.sourceVideoEl.src = `/api/jobs/${clip.jobId}/source`;
+    clip.sourceVideoEl.src = `api/jobs/${clip.jobId}/source`;
   }
   clip.previewStatusEl.textContent = "Preview starts muted (unmute with the player controls).";
 
@@ -378,7 +378,7 @@ async function alignLyrics(clip) {
   clip.lyricsAlignEl.disabled = true;
   setClipStatus(clip, "Aligning lyrics…");
   try {
-    const res = await fetch(`/api/jobs/${clip.jobId}/lyrics`, {
+    const res = await fetch(`api/jobs/${clip.jobId}/lyrics`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ lyrics: clip.lyricsInputEl.value }),
@@ -420,7 +420,7 @@ async function restoreTranscript(clip) {
   clip.lyricsRestoreEl.disabled = true;
   setClipStatus(clip, "Restoring transcript…");
   try {
-    const res = await fetch(`/api/jobs/${clip.jobId}/restore-transcript`, {
+    const res = await fetch(`api/jobs/${clip.jobId}/restore-transcript`, {
       method: "POST",
     });
     const data = await res.json().catch(() => ({}));
@@ -477,7 +477,7 @@ async function requestHeader(clip, { feedback = "", avoid = "" } = {}) {
       feedback,
       avoid,
     };
-    const res = await fetch(`/api/jobs/${clip.jobId}/header`, {
+    const res = await fetch(`api/jobs/${clip.jobId}/header`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -579,7 +579,7 @@ $("pull-searcher-btn").addEventListener("click", async () => {
   btn.disabled = true;
   setPullStatus("Pulling the next batch from RiceSearcher…");
   try {
-    const res = await fetch("/api/pull-from-searcher", { method: "POST" });
+    const res = await fetch("api/pull-from-searcher", { method: "POST" });
     const data = await res.json();
     if (!res.ok) {
       setPullStatus(data.detail || "pull failed", true);
@@ -626,7 +626,7 @@ async function ingestClip(clip) {
       updateCacheControls();
       const form = new FormData();
       form.append("file", clip.file);
-      const up = await fetch("/api/upload", { method: "POST", body: form });
+      const up = await fetch("api/upload", { method: "POST", body: form });
       const updata = await up.json();
       if (!up.ok || updata.status === "error") {
         throw new Error(updata.error || updata.detail || "upload failed");
@@ -641,7 +641,7 @@ async function ingestClip(clip) {
     clip.lyricsBadgeEl.classList.remove("lyrics-badge-warn");
     clip.lyricsBadgeEl.removeAttribute("title");
     clip.transcriptEl.innerHTML = '<span class="hint">Transcribing…</span>';
-    const tr = await fetch(`/api/jobs/${clip.jobId}/transcribe`, { method: "POST" });
+    const tr = await fetch(`api/jobs/${clip.jobId}/transcribe`, { method: "POST" });
     const trdata = await tr.json();
     if (!tr.ok || trdata.status === "error") {
       throw new Error(trdata.error || trdata.detail || "transcription failed");
@@ -709,7 +709,7 @@ async function pollRenderCompletion(clip) {
     await new Promise((resolve) => setTimeout(resolve, 3000));
     let state;
     try {
-      const resp = await fetch(`/api/jobs/${clip.jobId}`);
+      const resp = await fetch(`api/jobs/${clip.jobId}`);
       if (!resp.ok) continue;
       state = await resp.json();
     } catch {
@@ -735,7 +735,7 @@ async function renderClip(clip) {
       setClipStatus(clip, "Uploading music…");
       const form = new FormData();
       form.append("file", musicFile);
-      const mres = await fetch(`/api/jobs/${clip.jobId}/music`, { method: "POST", body: form });
+      const mres = await fetch(`api/jobs/${clip.jobId}/music`, { method: "POST", body: form });
       const mdata = await mres.json();
       if (!mres.ok) throw new Error(mdata.detail || "music upload failed");
       filename = mdata.filename;
@@ -754,7 +754,7 @@ async function renderClip(clip) {
     };
     let res;
     try {
-      res = await fetch(`/api/jobs/${clip.jobId}/render`, {
+      res = await fetch(`api/jobs/${clip.jobId}/render`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -787,7 +787,7 @@ async function renderClip(clip) {
 }
 
 async function showResult(clip) {
-  const endpoint = `/api/jobs/${clip.jobId}/output`;
+  const endpoint = `api/jobs/${clip.jobId}/output`;
   // The video element requests playable ranges on demand. Fetching the whole
   // MP4 as a blob first can fail even after the server has finished rendering.
   if (clip.outputUrl) URL.revokeObjectURL(clip.outputUrl);
@@ -821,7 +821,7 @@ $("send-handoff-btn").addEventListener("click", async () => {
         header_style: radioValue(c.headerStyleEl),
       })),
     };
-    const res = await fetch("/api/handoff", {
+    const res = await fetch("api/handoff", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -890,7 +890,7 @@ $("clear-cache-btn").addEventListener("click", async () => {
   updateCacheControls();
 
   try {
-    const response = await fetch("/api/media/clear", { method: "POST" });
+    const response = await fetch("api/media/clear", { method: "POST" });
     const data = await response.json().catch(() => ({}));
     if (response.status === 409) {
       status.className = "status error";

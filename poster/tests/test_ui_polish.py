@@ -174,7 +174,7 @@ def test_media_clear_blocked_during_post_run(client, tmp_media, monkeypatch):
 def test_frontend_polish_wiring(frontend_src):
     html = frontend_src
     # live progress polling
-    assert "/api/post-progress" in html
+    assert "'api/post-progress'" in html
     assert "startProgressPolling" in html and "stopProgressPolling" in html
     # upload progress via XHR
     assert "XMLHttpRequest" in html
@@ -185,4 +185,4 @@ def test_frontend_polish_wiring(frontend_src):
     # per-slot session dots + reset + media controls
     assert "sessDots" in html
     assert "resetRun" in html
-    assert "/api/media/clear" in html and "/api/media-info" in html
+    assert "'api/media/clear'" in html and "'api/media-info'" in html

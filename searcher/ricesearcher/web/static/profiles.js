@@ -19,7 +19,7 @@ function setStatusMsg(text, isError) {
 async function load() {
   let profiles;
   try {
-    const res = await fetch("/api/profiles");
+    const res = await fetch("api/profiles");
     if (!res.ok) throw new Error("HTTP " + res.status);
     profiles = await res.json();
   } catch (err) {

@@ -23,7 +23,7 @@ function setStatusMsg(text, isError) {
 async function load() {
   let sources;
   try {
-    const res = await fetch("/api/sources");
+    const res = await fetch("api/sources");
     if (!res.ok) throw new Error("HTTP " + res.status);
     sources = await res.json();
   } catch (err) {
@@ -85,7 +85,7 @@ async function doDelete(r, s, msg, confirmBtn, cancelBtn) {
   cancelBtn.disabled = true;
   cardMsg(msg, "deleting…", false);
   try {
-    const res = await fetch("/api/sources/" + encodeURIComponent(s.id) + "/delete", { method: "POST" });
+    const res = await fetch("api/sources/" + encodeURIComponent(s.id) + "/delete", { method: "POST" });
     if (!res.ok) {
       confirmBtn.disabled = false;
       cancelBtn.disabled = false;
@@ -133,7 +133,7 @@ async function clearAll() {
   btn.disabled = true;
   setStatusMsg("purging cache…", false);
   try {
-    const res = await fetch("/api/cache/clear", { method: "POST" });
+    const res = await fetch("api/cache/clear", { method: "POST" });
     const d = await res.json();
     if (!res.ok) { setStatusMsg("clear failed: " + (d.detail || res.status), true); return; }
     setStatusMsg("purged " + d.sources_deleted + " source(s), removed " + d.files_removed + " file(s)", false);

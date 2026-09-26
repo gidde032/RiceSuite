@@ -132,7 +132,7 @@ def test_runtime_logo_matches_design_authority_when_present():
 
 def test_logo_is_served_directly_never_recreated():
     html = _html()
-    assert 'src="/static/logo-ratified.png"' in html, (
+    assert 'src="static/logo-ratified.png"' in html, (
         "the approved PNG logo must be referenced directly"
     )
     # No SVG/CSS recreation of the logo mark: the only <img> logo is the PNG,
@@ -143,7 +143,7 @@ def test_logo_is_served_directly_never_recreated():
 
 def test_favicon_uses_the_served_logo_asset():
     html = _html()
-    assert '<link rel="icon" href="/static/logo-ratified.png" type="image/png">' in html
+    assert '<link rel="icon" href="static/logo-ratified.png" type="image/png">' in html
 
 
 # --- Global shell: seven destinations; Settings remains deferred -------------
@@ -321,12 +321,14 @@ def test_handlers_survive(fn):
     assert f"function {fn}" in _script(), f"handler {fn} was lost"
 
 
+# Relative, not root-absolute: RiceSuite serves this page under a path prefix
+# (ADR-001 Q11), and a relative URL resolves to the same endpoint standalone.
 ENDPOINTS = [
-    "/api/accounts", "/api/upload/", "/api/media-info", "/api/media/clear",
-    "/api/handoff/consumed/clear",
-    "/api/generate-caption", "/api/pull-from-clipper", "/api/media/",
-    "/api/post-progress", "/api/history", "/api/post", "/api/queue",
-    "/api/queue/media", "/api/queue/", "/api/accounts/state", "/api/stats",
+    "api/accounts", "api/upload/", "api/media-info", "api/media/clear",
+    "api/handoff/consumed/clear",
+    "api/generate-caption", "api/pull-from-clipper", "api/media/",
+    "api/post-progress", "api/history", "api/post", "api/queue",
+    "api/queue/media", "api/queue/", "api/accounts/state", "api/stats",
 ]
 
 

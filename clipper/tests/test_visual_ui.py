@@ -56,7 +56,7 @@ def test_render_drop_falls_back_to_status_poll():
 
     assert "async function pollRenderCompletion(clip)" in javascript
     assert "await pollRenderCompletion(clip)" in javascript
-    assert "fetch(`/api/jobs/${clip.jobId}`)" in javascript
+    assert "fetch(`api/jobs/${clip.jobId}`)" in javascript
     assert 'state.status === "done" && state.has_output' in javascript
     assert 'state.status === "error"' in javascript
     assert "Math.max(120, duration * 10)" in javascript
@@ -85,7 +85,7 @@ def test_music_content_offers_lyric_alignment_and_preserves_line_breaks():
     assert 'class="lyrics-align"' in html
     assert 'class="lyrics-badge"' in html
 
-    assert "/api/jobs/${clip.jobId}/lyrics" in javascript
+    assert "`api/jobs/${clip.jobId}/lyrics" in javascript
     assert "aligned · ${Math.round(data.anchor_rate * 100)}% anchors" in javascript
     assert '"even fill"' in javascript
     assert "line_start: w.line_start" in javascript
@@ -97,7 +97,7 @@ def test_restore_transcript_button_and_endpoint():
 
     assert 'class="lyrics-restore"' in html
     assert "Restore transcript" in html
-    assert "/api/jobs/${clip.jobId}/restore-transcript" in javascript
+    assert "`api/jobs/${clip.jobId}/restore-transcript" in javascript
 
 
 def test_geometry_row_is_offered_and_sent_and_toggled_by_orientation():
@@ -154,7 +154,7 @@ def test_slate_identity_and_theme_contract_are_present():
     approved_logo = (ROOT / "docs/design/assets/slate-logo-selected.png").read_bytes()
     runtime_logo = (ROOT / "web/slate-logo.png").read_bytes()
 
-    assert 'href="/slate-logo.png"' in html
+    assert 'href="slate-logo.png"' in html
     assert '<span class="sr-only">RiceClipper</span>' in html
     for token in (
         "#04060a",
@@ -279,7 +279,7 @@ def test_handoff_send_button_posts_the_batch():
     javascript = _js()
     assert 'id="send-handoff-btn"' in html
     # The send button hands the batch to the local handoff endpoint (no posting).
-    assert "/api/handoff" in javascript
+    assert '"api/handoff"' in javascript
     assert "position: i + 1" in javascript  # handoff order → RicePoster slot order
     assert "caption_style: radioValue(c.captionStyleEl)" in javascript
     assert "header_style: radioValue(c.headerStyleEl)" in javascript

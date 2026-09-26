@@ -33,7 +33,7 @@ async function loadProfiles() {
   const previousProfile = profileEl.value;
   let nextProfiles;
   try {
-    const res = await fetch("/api/profiles");
+    const res = await fetch("api/profiles");
     if (!res.ok) throw new Error("HTTP " + res.status);
     nextProfiles = await res.json();
   } catch (err) {
@@ -92,7 +92,7 @@ async function handoff() {
   refreshInteractionState();
   setStatusMsg("writing handoff batch…");
   try {
-    const res = await fetch("/api/handoff", {
+    const res = await fetch("api/handoff", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ profile }),
     });
@@ -126,7 +126,7 @@ async function load(preserveStatus = false) {
   const status = filterEl.value;
   listEl.replaceChildren(el("div", { class: "empty" }, "Loading slices…"));
   countEl.textContent = "";
-  let url = "/api/slices?profile=" + encodeURIComponent(profile);
+  let url = "api/slices?profile=" + encodeURIComponent(profile);
   if (status) url += "&status=" + encodeURIComponent(status);
   let slices;
   try {
@@ -248,7 +248,7 @@ function card(s) {
     beginMutation();
     refreshCardControls();
     try {
-      const res = await fetch("/api/slices/" + encodeURIComponent(s.id) + "/window", {
+      const res = await fetch("api/slices/" + encodeURIComponent(s.id) + "/window", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ target_in: ti, target_out: to }),
       });
@@ -291,7 +291,7 @@ function card(s) {
     beginMutation();
     refreshCardControls();
     try {
-      const res = await fetch("/api/slices/" + encodeURIComponent(s.id) + "/status", {
+      const res = await fetch("api/slices/" + encodeURIComponent(s.id) + "/status", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       });

@@ -48,7 +48,7 @@ def test_narrow_shows_topbar_logo(narrow_block):
 
 def test_topbar_logo_element_exists(html):
     assert re.search(
-        r'<img\s[^>]*class="topbar-logo"[^>]*src="/static/logo-ratified\.png"',
+        r'<img\s[^>]*class="topbar-logo"[^>]*src="static/logo-ratified\.png"',
         html,
     ), "topbar must contain an <img> with class topbar-logo and the ratified logo src"
 
