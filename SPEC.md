@@ -184,8 +184,9 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
   field all count as unconfirmed. The check takes Poster's **stop hold**
   (`POST api/stop-hold`): Poster refuses it while a run is active, and while
   it is set Poster refuses every new posting run, manual or scheduled, so no
-  run can start between the check and the stop. A refused stop releases the
-  hold (`DELETE api/stop-hold`); otherwise it ends after a 120-second lease. A
+  run can start between the check and the stop. A stop that is refused, or
+  that cannot signal or end its processes, releases the hold
+  (`DELETE api/stop-hold`); otherwise it ends after a 120-second lease. A
   due scheduled batch skipped under the hold stays pending and fires on the
   next start (FR-18). Pillars run in their own sessions, so a terminal Ctrl-C
   reaches only the launcher, which applies the same check; a second Ctrl-C

@@ -87,6 +87,9 @@ def release_poster(port: int, timeout: float = 2.0) -> None:
 class StopDecision:
     allowed: bool
     messages: list[str]
+    # Poster's port while this decision holds its stop hold. A stop that then
+    # does not happen must release it (stopguard.release_poster).
+    held_port: int | None = None
 
 
 def decide(

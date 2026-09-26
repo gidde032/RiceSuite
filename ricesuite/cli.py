@@ -224,7 +224,8 @@ def build_children(environ: dict[str, str], state_file: Path) -> list[Child]:
 def stop_decision(state: dict | None, force: bool) -> stopguard.StopDecision:
     """Decide whether a stop may go ahead. A running Poster is asked for its
     stop hold first, so no posting run can start before the stop takes effect;
-    a refused stop releases the hold again."""
+    a refused stop releases the hold again. An allowed decision that holds it
+    names Poster's port in ``held_port``; see ``_abandon``."""
     poster = (state or {}).get("children", {}).get("poster", {})
     poster_running = poster.get("state") == "running" and bool(poster.get("pid"))
     poster_running = poster_running and _pid_alive(int(poster["pid"]))
@@ -233,9 +234,20 @@ def stop_decision(state: dict | None, force: bool) -> stopguard.StopDecision:
     port = int(poster["port"])
     poster_state = stopguard.hold_poster(port)
     decision = stopguard.decide(poster_state, True, force)
-    if not decision.allowed and poster_state.held:
-        stopguard.release_poster(port)
+    if poster_state.held:
+        if decision.allowed:
+            decision.held_port = port
+        else:
+            stopguard.release_poster(port)
     return decision
+
+
+def _abandon(decision: stopguard.StopDecision) -> int:
+    """The stop did not happen: give Poster its posting back at once rather
+    than after the hold's lease."""
+    if decision.held_port is not None:
+        stopguard.release_poster(decision.held_port)
+    return 1
 
 
 class InterruptHandler:
@@ -366,7 +378,7 @@ def cmd_stop(args: argparse.Namespace) -> int:
         survivors = leftovers(state)
         if survivors:
             print(f"rice: could not stop, still alive: {_describe(survivors)}")
-            return 1
+            return _abandon(decision)
         state_path().unlink(missing_ok=True)
         print("RiceSuite's leftover processes stopped.")
         return 0
@@ -383,7 +395,7 @@ def cmd_stop(args: argparse.Namespace) -> int:
     except ProcessLookupError:
         # Only a state from an earlier launcher can name a dead pid.
         print("rice: RiceSuite is starting; try again in a moment.", file=sys.stderr)
-        return 1
+        return _abandon(decision)
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline and launcher_running():
         time.sleep(0.2)
