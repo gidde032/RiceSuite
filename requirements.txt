@@ -1,0 +1,34 @@
+# RiceSuite — one Python environment for all three pillars (ADR-001 Q6/Q13).
+#
+# This file is the single authority for shared pins. Each pillar's own
+# requirements file must stay satisfiable by these pins; tests/test_pins.py
+# enforces that, so the pillars cannot drift back apart.
+#
+# ffmpeg is a SYSTEM dependency. Clipper needs a libass build (see
+# clipper/README.md).
+
+# --- Web stack (aligned: newest compatible across all three pillars) --------
+fastapi==0.141.1
+uvicorn[standard]==0.54.0
+python-multipart==0.0.32
+python-dotenv==1.2.3
+pydantic==2.13.4
+httpx==0.28.1
+
+# --- Anthropic (one 1.x for all three call sites) ---------------------------
+anthropic==1.8.0
+
+# --- Clipper ------------------------------------------------------------------
+faster-whisper==1.1.1
+requests==2.32.3
+Pillow==12.3.0
+opencv-python-headless==5.0.0.93
+
+# --- Poster (only poster/ may import it; see tests/test_boundary.py) --------
+# Unchanged from RicePoster: the browser fingerprint depends on this version.
+playwright==1.62.0
+
+# --- Searcher (heavy adapters are imported lazily) ----------------------------
+yt-dlp>=2024.1.0
+# Pulls PyTorch. Only `ricesearcher dedup` needs it.
+sentence-transformers>=2.2.0

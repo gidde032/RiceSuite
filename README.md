@@ -23,6 +23,35 @@ the supported apps until the burn-in in ADR-001 Q9 passes. Until the suite
 launcher lands, run each pillar from its own directory as described in its
 README.
 
+## Install (one environment)
+
+Python 3.12 or newer, `ffmpeg` with libass (see `clipper/README.md`), and Node
+for Searcher's UI tests.
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt        # full runtime, incl. Searcher's PyTorch-based dedup
+pip install -r requirements-dev.txt    # gates + everything the test suites import
+pip install -e . -e searcher
+cp ricesuite.env.example ricesuite.env # optional; every variable is optional
+```
+
+`requirements.txt` is the single authority for shared pins; each pillar's own
+requirements file must accept them (`tests/test_pins.py`).
+
+## Gates
+
+One CI workflow (`.github/workflows/ci.yml`) runs every pillar's own gates at
+its own floor, from its own directory — Searcher ≥ 90%, Clipper ≥ 85%,
+Poster ≥ 43% — plus the suite tests:
+
+```bash
+python -m pytest -q                                          # suite (ricesuite/ ≥ 90%)
+(cd searcher && ruff format --check . && ruff check . && mypy && node --test tests/js/*.test.js && pytest)
+(cd clipper && ruff check . && ruff format --check . && python -m pytest tests/ -q --cov=app --cov=render --cov=transcribe --cov-fail-under=85)
+(cd poster && python -m pytest tests/ -q --cov=backend --cov-fail-under=43)
+```
+
 ## History
 
 Each pillar's full public history was imported from its repository's GitHub

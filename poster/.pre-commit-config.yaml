@@ -12,15 +12,15 @@ repos:
         additional_dependencies:
           # Runtime
           - fastapi==0.141.1
-          - uvicorn==0.52.1
+          - uvicorn==0.54.0
           - python-multipart==0.0.32
-          - anthropic==0.121.0
+          - anthropic==1.8.0
           - httpx==0.28.1
-          - python-dotenv==1.2.2
+          - python-dotenv==1.2.3
           - pydantic==2.13.4
           - playwright==1.62.0
           # Development / quality gates
-          - pytest==9.0.3
+          - pytest==9.1.1
           - pytest-cov==7.1.0
 
       # Push tier: full suite catches regressions smoke misses, and enforces
@@ -37,13 +37,13 @@ repos:
         additional_dependencies:
           # Runtime
           - fastapi==0.141.1
-          - uvicorn==0.52.1
+          - uvicorn==0.54.0
           - python-multipart==0.0.32
-          - anthropic==0.121.0
+          - anthropic==1.8.0
           - httpx==0.28.1
-          - python-dotenv==1.2.2
+          - python-dotenv==1.2.3
           - pydantic==2.13.4
           - playwright==1.62.0
           # Development / quality gates
-          - pytest==9.0.3
+          - pytest==9.1.1
           - pytest-cov==7.1.0
