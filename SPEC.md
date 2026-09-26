@@ -129,6 +129,16 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
   an inbox on the Post tab, and is never merged into or replaces existing
   drafts without the maintainer's action (preserves Poster's
   confirm-before-discard). Captions generate on ingest as today.
+- **How FR-12 – FR-14 are driven.** Clipper's batch and Poster's drafts live
+  in their pages (transcript edits, headers and captions are browser state),
+  so each consumer's page drives its own transport: it polls a read-only inbox
+  endpoint (`GET api/searcher-inbox` on Clipper, `GET api/handoff/inbox` on
+  Poster) and then performs exactly the pull or send its button performs.
+  Clipper pulls only when nothing unsent would be displaced (so one Searcher
+  batch stays one Clipper batch); Poster pulls only when its manual Pull would
+  not have to ask before overwriting a draft. The shell loads all three pages
+  up front and keeps them alive, so transport runs whenever RiceSuite is open
+  (Q18: v1 runs while open).
 - **FR-15 Never auto-post.** No transport step posts, schedules, or discards a
   draft. Post All and Schedule remain explicit human actions in Poster.
 
@@ -136,7 +146,9 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
 
 - **FR-16** A Poster post in flight when Poster's process dies is recorded as
   **unconfirmed** and is never retried automatically, whether it was a manual
-  Post All run or a scheduled batch.
+  Post All run or a scheduled batch. Manual runs: an in-flight marker in the
+  data root, turned into unconfirmed History rows on the next start. Scheduled
+  runs: RicePoster's existing running → interrupted startup sweep.
 - **FR-17** `rice stop` refuses, exits non-zero and changes nothing, while a
   Poster posting run is active, unless `--force` is given. If the launcher
   cannot confirm Poster is idle, it treats the run as possibly active. Pillars
