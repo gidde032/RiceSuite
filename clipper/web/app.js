@@ -19,6 +19,37 @@ let clipSeq = 0; // monotonic counter for stable ordinals
 let ingesting = false; // upload+transcribe queue is draining
 let batchBusy = false; // render-all in progress
 let clearInProgress = false;
+let batchSent = false; // the loaded batch has reached RicePoster
+let sentBatchId = ""; // the handoff batch id it was sent as
+let sentSnapshot = null; // batchSnapshot() at the moment it was sent
+let sendInFlight = false;
+let sendKey = ""; // reused when a send whose reply never came is retried
+let sendKeySnapshot = null; // batchSnapshot() when sendKey was made
+
+// This tab's own pull state, kept in sessionStorage so it survives a reload of
+// this tab and no other (W1-02, review S-1): the Searcher batch the workspace
+// holds, and the key of a pull whose reply never came.
+const TAB_STATE_KEY = "riceclipper.tab.v1";
+const tabMemory = { pulledBatchId: "", pendingPullKey: "" };
+
+function readTab() {
+  try {
+    const raw = window.sessionStorage.getItem(TAB_STATE_KEY);
+    if (raw) return { ...tabMemory, ...JSON.parse(raw) };
+  } catch {
+    // no sessionStorage: this page load only
+  }
+  return { ...tabMemory };
+}
+
+function writeTab(patch) {
+  Object.assign(tabMemory, readTab(), patch);
+  try {
+    window.sessionStorage.setItem(TAB_STATE_KEY, JSON.stringify(tabMemory));
+  } catch {
+    // no sessionStorage: this page load only
+  }
+}
 
 const MEDIA_CACHE_INFO_ENDPOINT = "api/media-info";
 const ACTIVE_JOB_STATUSES = new Set(["transcribing", "rendering"]);
@@ -149,6 +180,14 @@ function updateRenderAllButton() {
   // Handoff is offered once at least one clip has a rendered output.
   const anyDone = clips.some((c) => c.jobId && c.status === "done");
   $("send-handoff-btn").disabled = batchBusy || ingesting || !anyDone;
+  // One Searcher batch stays one Clipper batch (W2-01).
+  $("pull-searcher-btn").disabled = !workspaceFree();
+}
+
+// Rendered, and nothing in the card changed since its render request (W1-06):
+// the MP4 matches the header and transcript that would be sent with it.
+function clipCurrent(c) {
+  return Boolean(c.jobId) && c.status === "done" && (c.edits || 0) === (c.renderedEdits || 0);
 }
 
 function radioValue(group) {
@@ -171,6 +210,17 @@ function setRadioDisabled(group, disabled) {
 function buildCard(clip) {
   const node = $("clip-card-template").content.firstElementChild.cloneNode(true);
   clip.el = node;
+  // Every control in the card (captions, geometry, content, music, lyrics…)
+  // bubbles its input/change events here, so any edit made after a send makes
+  // the batch differ from what was sent and holds the workspace.
+  const markEdited = () => {
+    clip.edits = (clip.edits || 0) + 1;
+    if (clip.status === "done") {
+      setClipStatus(clip, "Edited since its render. Render it again before it is sent.");
+    }
+  };
+  node.addEventListener("input", markEdited);
+  node.addEventListener("change", markEdited);
   clip.reviewGridEl = node.querySelector(".review-grid");
   clip.titleEl = node.querySelector(".clip-title");
   clip.statusEl = node.querySelector(".clip-status");
@@ -450,9 +500,12 @@ function removeClip(clip) {
   if (clips.length === 0) {
     $("batch-panel").classList.add("hidden");
     $("upload-panel").classList.remove("hidden");
+    // The reviewer removed every clip: the pulled batch is not restored.
+    discardPulledBatch();
   }
   updateRenderAllButton();
   updateCacheControls();
+  maybeAutoSend();
 }
 
 // --- auto-header generation -------------------------------------------------
@@ -484,7 +537,10 @@ async function requestHeader(clip, { feedback = "", avoid = "" } = {}) {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || "header generation failed");
-    if (data.header) clip.headerEl.value = data.header;
+    if (data.header) {
+      clip.headerEl.value = data.header;
+      clip.edits = (clip.edits || 0) + 1; // a new header needs a new render
+    }
     setHeaderGenStatus(clip, "");
   } catch (err) {
     setHeaderGenStatus(clip, err.message, true);
@@ -546,8 +602,9 @@ function setPullStatus(text, isError = false) {
 // Add jobs pulled from RiceSearcher as review cards. They already have a server
 // job (source stored + geometry probed), so they skip the upload and go straight
 // to transcription via the normal ingest queue.
-function addPulledJobs(pulled) {
+function addPulledJobs(pulled, batchId = "") {
   if (!pulled.length) return;
+  if (batchId) writeTab({ pulledBatchId: batchId });
   $("upload-panel").classList.add("hidden");
   $("batch-panel").classList.remove("hidden");
   for (const state of pulled) {
@@ -574,29 +631,77 @@ function addPulledJobs(pulled) {
   processIngestQueue();
 }
 
-$("pull-searcher-btn").addEventListener("click", async () => {
-  const btn = $("pull-searcher-btn");
-  btn.disabled = true;
-  setPullStatus("Pulling the next batch from RiceSearcher…");
+$("pull-searcher-btn").addEventListener("click", pullFromSearcherClick);
+
+// The Pull button follows the timer's rules (W2-01): one pull at a time, and
+// only when nothing unsent would be displaced. A pull whose reply never came
+// is retried first; then a batch pulled earlier and not sent (in another tab,
+// or one that was closed) opens here; only then is a new batch pulled.
+async function pullFromSearcherClick() {
+  if (!workspaceFree()) {
+    setPullStatus(
+      pullInFlight
+        ? "A pull is already running."
+        : "Send this batch or start over first: one Searcher batch stays one Clipper batch.",
+      true,
+    );
+    return;
+  }
+  if (!readTab().pendingPullKey && (await restoreOpenBatch())) return;
+  if (!workspaceFree()) return;
+  await pullNext({ automatic: false });
+}
+
+// One pull, from the timer or the button. It carries a key, kept until a
+// reply arrives, so a retry after a lost reply gets the same batch back
+// instead of the next one (W1-02).
+async function pullNext({ automatic }) {
+  pullInFlight = true;
+  updateRenderAllButton();
+  const key = readTab().pendingPullKey || newSendKey();
+  writeTab({ pendingPullKey: key });
+  if (!automatic) setPullStatus("Pulling the next batch from RiceSearcher…");
+  const failed = (message) => {
+    if (automatic) {
+      autoPullPausedUntil = Date.now() + AUTO_PULL_BACKOFF_MS;
+      setPullStatus(`Automatic pull failed: ${message}`, true);
+    } else {
+      setPullStatus(`pull failed: ${message}`, true);
+    }
+  };
   try {
-    const res = await fetch("api/pull-from-searcher", { method: "POST" });
+    if (clips.length) clearWorkspace(); // only a fully sent batch gets here
+    const res = await fetch(`api/pull-from-searcher?pull_key=${encodeURIComponent(key)}`, {
+      method: "POST",
+    });
+    writeTab({ pendingPullKey: "" }); // answered: nothing left to retry
     const data = await res.json();
     if (!res.ok) {
-      setPullStatus(data.detail || "pull failed", true);
+      failed(data.detail || "pull failed");
       return;
     }
     if (!data.clip_count) {
-      setPullStatus("No batches waiting in ~/ricesearcher-handoff.");
+      if (!automatic) setPullStatus("No batches waiting in ~/ricesearcher-handoff.");
       return;
     }
-    setPullStatus(`Pulled ${data.clip_count} clip(s) from batch ${data.batch_id}.`);
-    addPulledJobs(data.jobs || []);
+    addPulledJobs(data.jobs || [], data.batch_id);
+    if (automatic) {
+      setBatchStatus(`Batch ${data.batch_id} arrived from RiceSearcher; transcribing ${data.clip_count} clip(s)…`);
+    } else {
+      setPullStatus(`Pulled ${data.clip_count} clip(s) from batch ${data.batch_id}.`);
+    }
   } catch (err) {
-    setPullStatus("pull failed: " + err.message, true);
+    if (readTab().pendingPullKey) {
+      // The reply was lost: the next poll retries with the same key.
+      setPullStatus(`The pull's reply was lost (${err.message}); retrying…`, true);
+    } else {
+      failed(err.message);
+    }
   } finally {
-    btn.disabled = false;
+    pullInFlight = false;
+    updateRenderAllButton();
   }
-});
+}
 
 async function processIngestQueue() {
   if (ingesting) return; // a running drain picks up newly-queued clips itself
@@ -696,6 +801,7 @@ async function handleRenderAll() {
       : `Rendered ${ok} of ${targets.length}; see the per-clip errors above.`,
     ok !== targets.length,
   );
+  await maybeAutoSend();
 }
 
 // Poll GET /api/jobs/{id} after a dropped render fetch (Issue #30). Return true
@@ -742,6 +848,8 @@ async function renderClip(clip) {
     }
 
     setClipStatus(clip, "Rendering… (captions, header & audio)");
+    // Any edit after this point is not in the MP4 (W1-06).
+    const editsAtRender = clip.edits || 0;
     const payload = {
       words: collectWords(clip),
       header: clip.headerEl.value,
@@ -764,8 +872,10 @@ async function renderClip(clip) {
       // browser's patience while the server still finishes (Issue #30). Poll job
       // state; treat done+output as success, error as failure, timeout as drop.
       if (await pollRenderCompletion(clip)) {
+        clip.renders = (clip.renders || 0) + 1;
+        clip.renderedEdits = editsAtRender;
         clip.status = "done";
-        setClipStatus(clip, "Rendered ✓");
+        setClipStatus(clip, clipCurrent(clip) ? "Rendered ✓" : "Edited since its render. Render it again before it is sent.");
         await showResult(clip);
         return true;
       }
@@ -774,8 +884,10 @@ async function renderClip(clip) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "render failed");
 
+    clip.renders = (clip.renders || 0) + 1;
+    clip.renderedEdits = editsAtRender;
     clip.status = "done";
-    setClipStatus(clip, "Rendered ✓");
+    setClipStatus(clip, clipCurrent(clip) ? "Rendered ✓" : "Edited since its render. Render it again before it is sent.");
     await showResult(clip);
     return true;
   } catch (err) {
@@ -801,17 +913,97 @@ async function showResult(clip) {
 
 // --- send to RicePoster (handoff) -------------------------------------------
 
-$("send-handoff-btn").addEventListener("click", async () => {
-  const done = clips.filter((c) => c.jobId && c.status === "done");
-  if (done.length === 0) {
+$("send-handoff-btn").addEventListener("click", () => sendBatch());
+
+// Automatic send (RiceSuite ADR-001 Q12): once every clip in the batch has
+// rendered successfully, send it exactly as the button would. A failed or
+// unrendered clip, or one edited since its render, holds the whole batch until
+// it is rendered again (or removed); the button refuses it too (W3-02).
+// Rendering itself stays a human action.
+// Everything that would reach RicePoster: comparing it with what was sent
+// tells "nothing unsent" apart from "rendered or edited again after sending".
+function batchSnapshot() {
+  return JSON.stringify(
+    clips.map((c) => [
+      c.jobId,
+      c.status,
+      c.renders || 0,
+      c.edits || 0,
+      c.headerEl ? c.headerEl.value : "",
+      c.captionStyleEl ? radioValue(c.captionStyleEl) : "",
+      c.headerStyleEl ? radioValue(c.headerStyleEl) : "",
+      c.transcriptEl ? collectWords(c).map((w) => w.text).join(" ") : "",
+    ]),
+  );
+}
+
+function batchReadyToSend() {
+  return (
+    !batchSent &&
+    !sendInFlight &&
+    !batchBusy &&
+    !ingesting &&
+    clips.length > 0 &&
+    clips.every(clipCurrent)
+  );
+}
+
+// Why a clip holds the batch, for the reviewer.
+function heldReason(c) {
+  if (c.status === "done") return `Clip ${c.ord} changed after its render`;
+  if (c.error) return `Clip ${c.ord} failed to render`;
+  return `Clip ${c.ord} is not rendered`;
+}
+
+async function maybeAutoSend() {
+  if (batchReadyToSend()) await sendBatch({ automatic: true });
+}
+
+async function sendBatch({ automatic = false } = {}) {
+  if (sendInFlight) return;
+  if (!clips.some((c) => c.jobId && c.status === "done")) {
     setBatchStatus("Render clips before sending to RicePoster.", true);
     return;
   }
+  // The whole batch goes together: nothing is left out silently (W3-02).
+  const held = clips.filter((c) => !clipCurrent(c));
+  if (held.length) {
+    const them = held.length === 1 ? "it" : "them";
+    setBatchStatus(
+      `${held.map(heldReason).join("; ")}. Render ${them} or remove ${them} from the batch, then send.`,
+      true,
+    );
+    return;
+  }
+  const done = clips;
+  if (
+    !automatic &&
+    batchSent &&
+    !window.confirm(
+      `This batch was already sent to RicePoster as ${sentBatchId}. Send it again as a new batch?`,
+    )
+  ) {
+    return;
+  }
+  const resend = batchSent; // the reviewer confirmed a second send above
+  sendInFlight = true;
+  const snapshot = batchSnapshot();
+  // One key per send (W1-01). A retry of the unchanged batch after a reply
+  // that never came reuses it, so Clipper returns the batch that attempt
+  // wrote. A batch changed since then is a new send (review C-1): if the
+  // first attempt did arrive, Clipper answers `already_sent` instead.
+  if (!sendKey || snapshot !== sendKeySnapshot) {
+    sendKey = newSendKey();
+    sendKeySnapshot = snapshot;
+  }
+  let answered = false;
 
   $("send-handoff-btn").disabled = true;
   setBatchStatus(`Sending ${done.length} clip${done.length === 1 ? "" : "s"} to RicePoster…`);
   try {
     const payload = {
+      send_key: sendKey,
+      resend,
       clips: done.map((c, i) => ({
         job_id: c.jobId,
         position: i + 1, // handoff order → RicePoster slot order
@@ -826,16 +1018,50 @@ $("send-handoff-btn").addEventListener("click", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
+    answered = true;
     const data = await res.json();
+    if (res.status === 409 && data.already_sent) {
+      // These clips already went (another tab, or before a reload). What went
+      // is not known here, so the workspace stays held (review S-1).
+      batchSent = true;
+      sentBatchId = data.already_sent;
+      sentSnapshot = null;
+      sendKey = "";
+      sendKeySnapshot = null;
+      setBatchStatus(data.detail, true);
+      return;
+    }
     if (!res.ok) throw new Error(data.detail || "handoff failed");
     const n = data.clip_count;
-    setBatchStatus(`Sent batch ${data.batch_id} (${n} clip${n === 1 ? "" : "s"}) to RicePoster.`);
+    batchSent = true;
+    sentBatchId = data.batch_id;
+    // A replayed batch is what the earlier attempt sent, before any later edit.
+    sentSnapshot = data.replayed ? sendKeySnapshot : snapshot;
+    sendKey = "";
+    sendKeySnapshot = null;
+    const how = data.replayed
+      ? "The earlier send had arrived: sent"
+      : automatic
+        ? "Every clip rendered — sent"
+        : "Sent";
+    setBatchStatus(`${how} batch ${data.batch_id} (${n} clip${n === 1 ? "" : "s"}) to RicePoster.`);
   } catch (err) {
-    setBatchStatus(err.message, true);
+    const lost = answered
+      ? ""
+      : " The reply was lost. Send again: a batch that already arrived is not sent twice.";
+    setBatchStatus(err.message + lost, true);
   } finally {
+    sendInFlight = false;
     updateRenderAllButton();
   }
-});
+}
+
+function newSendKey() {
+  if (window.crypto && typeof window.crypto.randomUUID === "function") {
+    return window.crypto.randomUUID();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
 
 // --- start over -------------------------------------------------------------
 
@@ -853,6 +1079,23 @@ function resetAll() {
   ) {
     return;
   }
+  const pulled = readTab().pulledBatchId;
+  clearWorkspace();
+  discardPulledBatch(pulled);
+}
+
+// Tell Clipper the reviewer let this pulled batch go, so the page does not
+// restore it (W1-02). Best effort: a batch that stays open is only offered
+// again, never lost.
+function discardPulledBatch(batchId = readTab().pulledBatchId) {
+  writeTab({ pulledBatchId: "" });
+  if (!batchId) return;
+  fetch(`api/workspace?batch_id=${encodeURIComponent(batchId)}`, { method: "DELETE" }).catch(
+    () => {},
+  );
+}
+
+function clearWorkspace() {
   clips.forEach((c) => {
     ["sourceVideoEl", "outputVideoEl"].forEach((k) => {
       const v = c[k];
@@ -872,9 +1115,117 @@ function resetAll() {
   $("file-input").value = "";
   $("upload-status").textContent = "";
   setBatchStatus("");
+  batchSent = false;
+  sentBatchId = "";
+  sentSnapshot = null;
+  sendKey = "";
+  sendKeySnapshot = null;
+  writeTab({ pulledBatchId: "" });
   updateRenderAllButton();
   updateCacheControls();
 }
+
+// --- automatic pull from RiceSearcher (RiceSuite ADR-001 Q12) ---------------
+// A complete Searcher batch is pulled without a click, and its clips start
+// transcribing, whenever nothing unsent would be displaced: the workspace is
+// empty, or the batch it holds was fully rendered and sent. One Searcher batch
+// is one Clipper batch ("Send selected" stays the boundary).
+const AUTO_PULL_MS = 5000;
+const AUTO_PULL_BACKOFF_MS = 60000;
+let pullInFlight = false; // one pull at a time, from the button or the timer
+let autoPullPausedUntil = 0;
+
+function workspaceFree() {
+  if (ingesting || batchBusy || pullInFlight || sendInFlight) return false;
+  return nothingUnsent();
+}
+
+function nothingUnsent() {
+  if (clips.length === 0) return true;
+  // Replace a batch only if exactly what it holds now is what was sent.
+  return (
+    batchSent &&
+    clips.every((c) => c.status === "done") &&
+    batchSnapshot() === sentSnapshot
+  );
+}
+
+// Open a pulled batch that was not sent: ``batchId``'s (this tab's own, after
+// a reload), or else the oldest (only on a Pull click: it may be another
+// tab's, or a closed tab's).
+async function restoreOpenBatch(batchId = "") {
+  pullInFlight = true;
+  try {
+    const query = batchId ? `?batch_id=${encodeURIComponent(batchId)}` : "";
+    const res = await fetch(`api/workspace${query}`);
+    if (!res.ok) return false;
+    const data = await res.json();
+    const pulled = data.jobs || [];
+    if (!data.clip_count || !pulled.length) {
+      if (batchId) writeTab({ pulledBatchId: "" }); // sent or discarded meanwhile
+      return false;
+    }
+    if (ingesting || batchBusy || sendInFlight || !nothingUnsent()) return false;
+    const loaded = new Set(clips.map((c) => c.jobId));
+    if (pulled.some((j) => loaded.has(j.id))) return false; // already here
+    if (clips.length) clearWorkspace(); // only a fully sent batch gets here
+    addPulledJobs(pulled, data.batch_id);
+    const n = data.clip_count;
+    setBatchStatus(
+      batchId
+        ? `Batch ${data.batch_id} from RiceSearcher was restored; transcribing ${n} clip(s) again…`
+        : `Opened batch ${data.batch_id}: it was pulled earlier and not sent. If another tab works on it, use that tab.`,
+    );
+    return true;
+  } catch {
+    return false;
+  } finally {
+    pullInFlight = false;
+  }
+}
+
+// Name an open batch this tab does not hold, so a batch stranded by a closed
+// tab is not forgotten. It opens here only on a Pull click.
+async function noteOpenBatch() {
+  try {
+    const res = await fetch("api/workspace");
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.batch_id) {
+      setPullStatus(
+        `Batch ${data.batch_id} was pulled and not sent (in another tab, or one that was closed). Press Pull to open it here.`,
+      );
+    }
+  } catch {
+    // informational only
+  }
+}
+
+async function autoPullFromSearcher() {
+  if (!workspaceFree()) return;
+  if (readTab().pendingPullKey) {
+    await pullNext({ automatic: true }); // a lost reply: same key, same batch
+    return;
+  }
+  if (clips.length === 0) {
+    const own = readTab().pulledBatchId;
+    if (own && (await restoreOpenBatch(own))) return;
+    await noteOpenBatch();
+  }
+  if (!workspaceFree() || Date.now() < autoPullPausedUntil) return;
+  let waiting = [];
+  try {
+    const res = await fetch("api/searcher-inbox");
+    if (!res.ok) return;
+    waiting = (await res.json()).batches || [];
+  } catch {
+    return;
+  }
+  if (!waiting.length || !workspaceFree()) return;
+  await pullNext({ automatic: true });
+}
+
+setInterval(autoPullFromSearcher, AUTO_PULL_MS);
 
 // --- clear media cache ------------------------------------------------------
 

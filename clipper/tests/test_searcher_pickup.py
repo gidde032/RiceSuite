@@ -186,3 +186,154 @@ def test_inbox_default_is_ricesearcher_handoff(monkeypatch) -> None:
     root = searcher_pickup.inbox_root()
     assert root.name == "ricesearcher-handoff"
     assert "riceclipper-handoff" not in str(root)
+
+
+# --- RiceSuite automatic pull: the read-only inbox (ADR-001 Q12) -------------
+
+
+def _tree(root: Path) -> list[tuple[str, int]]:
+    return sorted(
+        (str(p.relative_to(root)), p.stat().st_mtime_ns) for p in root.rglob("*")
+    )
+
+
+def test_waiting_batches_lists_complete_unconsumed_batches_oldest_first(
+    env: Path,
+) -> None:
+    _write_batch(env, "batch_b", created_at="2026-09-05T00:00:00Z")
+    _write_batch(env, "batch_a", created_at="2026-09-04T00:00:00Z")
+    (env / "batch_c").mkdir()  # no manifest yet: still being written
+    (env / "batch_c" / "clip_1.mp4").write_bytes(b"x")
+    got = searcher_pickup.waiting_batches()
+    assert [b["batch_id"] for b in got] == ["batch_a", "batch_b"]
+    assert got[0]["clip_count"] == 1
+
+
+def test_waiting_batches_excludes_what_was_pulled(env: Path) -> None:
+    _write_batch(env, "batch_a", created_at="2026-09-04T00:00:00Z")
+    _write_batch(env, "batch_b", created_at="2026-09-05T00:00:00Z")
+    searcher_pickup.pull_next_batch()
+    assert [b["batch_id"] for b in searcher_pickup.waiting_batches()] == ["batch_b"]
+
+
+def test_waiting_batches_is_read_only(env: Path) -> None:
+    _write_batch(env, "batch_a")
+    before = _tree(env)
+    searcher_pickup.waiting_batches()
+    assert _tree(env) == before
+    assert not jobs._JOBS
+
+
+def test_inbox_endpoint(env: Path) -> None:
+    _write_batch(env, "batch_a")
+    client = TestClient(main.app)
+    r = client.get("/api/searcher-inbox")
+    assert r.status_code == 200
+    assert [b["batch_id"] for b in r.json()["batches"]] == ["batch_a"]
+    assert not jobs._JOBS
+
+
+def test_inbox_missing_dir_is_empty(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("RICECLIPPER_SEARCHER_INBOX", str(tmp_path / "absent"))
+    assert searcher_pickup.waiting_batches() == []
+
+
+# --- open batches: a lost pull reply or a page reload strands nothing -------
+# RiceSuite functional audit W1-02: the pull removes the Searcher batch, so the
+# page must be able to ask which pulled batch it has not sent or discarded.
+
+
+def test_a_pulled_batch_stays_open_for_the_page_to_restore(env: Path) -> None:
+    _write_batch(env, "b1")
+    client = TestClient(main.app)
+    pulled = client.post("/api/pull-from-searcher").json()
+    # The reply is lost, or the page reloads: the page asks what is open.
+    opened = client.get("/api/workspace").json()
+    assert opened["batch_id"] == "b1"
+    assert opened["clip_count"] == 1
+    assert [j["id"] for j in opened["jobs"]] == [j["id"] for j in pulled["jobs"]]
+    assert opened["jobs"][0]["title"] == "Ep One"
+
+
+def test_the_workspace_is_empty_when_nothing_is_open(env: Path) -> None:
+    empty = {"batch_id": None, "clip_count": 0, "jobs": []}
+    assert TestClient(main.app).get("/api/workspace").json() == empty
+
+
+def test_a_sent_batch_is_no_longer_open(env: Path, tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("RICECLIPPER_HANDOFF_DIR", str(tmp_path / "out"))
+    _write_batch(env, "b1")
+    client = TestClient(main.app)
+    job_id = client.post("/api/pull-from-searcher").json()["jobs"][0]["id"]
+    job = jobs.get_job(job_id)
+    job.output_path = job.dir / "output.mp4"
+    job.output_path.write_bytes(b"rendered")
+    sent = client.post(
+        "/api/handoff", json={"clips": [{"job_id": job_id, "position": 1}]}
+    )
+    assert sent.status_code == 200
+    assert client.get("/api/workspace").json()["batch_id"] is None
+
+
+def test_a_discarded_batch_is_no_longer_open(env: Path) -> None:
+    _write_batch(env, "b1")
+    client = TestClient(main.app)
+    client.post("/api/pull-from-searcher")
+    other = client.delete("/api/workspace", params={"batch_id": "b0"})
+    assert other.json() == {"discarded": False}
+    assert client.get("/api/workspace").json()["batch_id"] == "b1"
+    done = client.delete("/api/workspace", params={"batch_id": "b1"})
+    assert done.json() == {"discarded": True}
+    assert client.get("/api/workspace").json()["batch_id"] is None
+
+
+def test_open_batches_come_back_oldest_first(env: Path) -> None:
+    _write_batch(env, "b1", created_at="2026-09-04T00:00:00Z")
+    _write_batch(env, "b2", created_at="2026-09-05T00:00:00Z")
+    client = TestClient(main.app)
+    client.post("/api/pull-from-searcher")
+    client.post("/api/pull-from-searcher")
+    assert client.get("/api/workspace").json()["batch_id"] == "b1"
+    client.delete("/api/workspace", params={"batch_id": "b1"})
+    assert client.get("/api/workspace").json()["batch_id"] == "b2"
+
+
+def test_an_open_batch_whose_jobs_are_gone_is_dropped(env: Path) -> None:
+    import shutil
+
+    _write_batch(env, "b1")
+    client = TestClient(main.app)
+    for j in client.post("/api/pull-from-searcher").json()["jobs"]:
+        shutil.rmtree(jobs.WORK_ROOT / j["id"])
+    jobs._JOBS.clear()
+    assert client.get("/api/workspace").json()["batch_id"] is None
+
+
+def test_a_retried_pull_key_returns_the_batch_it_pulled(env: Path) -> None:
+    """Review S-1: a lost pull reply is retried with its key, and gets the same
+    batch back, never the next one."""
+    _write_batch(env, "b1", created_at="2026-09-04T00:00:00Z")
+    _write_batch(env, "b2", created_at="2026-09-05T00:00:00Z")
+    client = TestClient(main.app)
+    key = {"pull_key": "pull-0001-aaaa"}
+    first = client.post("/api/pull-from-searcher", params=key).json()
+    again = client.post("/api/pull-from-searcher", params=key).json()
+    assert first["batch_id"] == again["batch_id"] == "b1"
+    assert again["replayed"] is True
+    assert [j["id"] for j in again["jobs"]] == [j["id"] for j in first["jobs"]]
+    other = client.post(
+        "/api/pull-from-searcher", params={"pull_key": "pull-0002-bbbb"}
+    )
+    assert other.json()["batch_id"] == "b2"
+
+
+def test_the_workspace_answers_for_one_named_batch(env: Path) -> None:
+    _write_batch(env, "b1", created_at="2026-09-04T00:00:00Z")
+    _write_batch(env, "b2", created_at="2026-09-05T00:00:00Z")
+    client = TestClient(main.app)
+    client.post("/api/pull-from-searcher")
+    client.post("/api/pull-from-searcher")
+    named = client.get("/api/workspace", params={"batch_id": "b2"}).json()
+    assert named["batch_id"] == "b2"
+    gone = client.get("/api/workspace", params={"batch_id": "b9"}).json()
+    assert gone["batch_id"] is None

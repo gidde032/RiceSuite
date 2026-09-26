@@ -97,3 +97,6 @@ Thumbs.db
 
 # Local-only audit finding reports (directions, not tracked artifacts)
 tech-debt-audit.md
+
+# RiceSuite in-flight run marker (backend/inflight.py)
+.post-in-flight.json*

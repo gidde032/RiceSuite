@@ -32,7 +32,7 @@ from backend.captions import CaptionConfigError, generate_caption, load_styles, 
 from backend.poster import post_all as post_all_api
 from backend.poster_browser import post_all as post_all_browser
 from backend.notifier import get_notifier, send_safe
-from backend import handoff_pickup, run_guard
+from backend import handoff_pickup, inflight, run_guard
 from backend.logging_setup import get_logger
 
 _log = get_logger("main")
@@ -97,6 +97,9 @@ def _reconcile_media_at_startup():
 async def lifespan(app):
     for problem in check_startup_config():
         _log.warning(f"[config] WARNING: {problem}")
+    # Before the scheduler starts: a manual run cut off by a crash becomes
+    # unconfirmed history rows and is never retried.
+    inflight.recover(HISTORY_FILE)
     _reconcile_media_at_startup()
     task = None
     if SCHEDULER_ENABLED:
@@ -470,8 +473,15 @@ async def generate_caption_endpoint(data: Annotated[CaptionRequest, Form()]):
     return {"caption": caption}
 
 
+@app.get("/api/handoff/inbox")
+async def clipper_inbox():
+    """RiceClipper batches waiting to be pulled. Read-only: never stages,
+    posts or schedules anything."""
+    return handoff_pickup.waiting_batches()
+
+
 @app.post("/api/pull-from-clipper")
-async def pull_from_clipper():
+async def pull_from_clipper(replay: bool = True):
     """Stage the oldest RiceClipper handoff batch into a pending run.
 
     Copies the batch's media into MEDIA_DIR and returns per-slot assignments
@@ -487,7 +497,14 @@ async def pull_from_clipper():
             detail=f"Local account state is invalid; repair it before pulling: {state_error}",
         )
     try:
-        result = handoff_pickup.ingest_oldest(account_state.active_account_ids)
+        result = handoff_pickup.ingest_oldest(
+            account_state.active_account_ids, replay=replay
+        )
+    except handoff_pickup.AwaitingAcknowledgement as e:
+        return {
+            "pulled": False,
+            "reason": f"{e}; use Pull from Clipper to recover it.",
+        }
     except handoff_pickup.NoBatchAvailable:
         return {"pulled": False, "reason": "No handoff batches to pull."}
     except handoff_pickup.HandoffPickupError as e:
@@ -624,8 +641,9 @@ async def post_progress():
 # file before that redirect existed (tests/test_history_isolation.py).
 
 
-def _append_history(slots: list[dict], results, headless_used: bool):
-    """Record one line per slot-result. History must never break a run."""
+def _append_history(slots: list[dict], results, headless_used: bool) -> bool:
+    """Record one line per slot-result. History must never break a run, so a
+    failure is logged and returned as False, never raised."""
     try:
         run_id = uuid.uuid4().hex
         with open(HISTORY_FILE, "a") as f:
@@ -658,6 +676,8 @@ def _append_history(slots: list[dict], results, headless_used: bool):
                 }) + "\n")
     except Exception as e:
         _log.warning(f"[history] Warning: failed to record run history: {e}")
+        return False
+    return True
 
 
 @app.get("/api/history")
@@ -748,17 +768,43 @@ async def _run_post(request: PostRequest, effective_headless: bool) -> list[Post
                 "enabled_platforms": set(req_slot.enabled_platforms),
             })
 
-    if POST_MODE == "browser":
-        results = await post_all_browser(
-            slots,
-            headless=effective_headless,
-            progress_cb=_record_progress,
-            notifier=get_notifier(),
-        )
-    else:
-        results = await post_all_api(slots)
+    # An earlier run's marker that could not be recorded yet (History was not
+    # writable) is recorded now; if it still cannot be, refuse rather than
+    # overwrite the only evidence that posts may be live.
+    if inflight.MARKER.exists():
+        inflight.recover(HISTORY_FILE)
+        if inflight.MARKER.exists():
+            raise HTTPException(
+                status_code=409,
+                detail="An earlier Post All run was cut off and its outcome could "
+                "not be recorded yet (is the disk full?). Free space and try "
+                "again; it will be recorded as unconfirmed first.",
+            )
+    # Durable until the run ends in this process: a crash leaves it for the
+    # next startup to record as unconfirmed (RiceSuite ADR-001 Q17).
+    inflight.begin(slots, POST_MODE, effective_headless)
+    recorded = False
+    try:
+        if POST_MODE == "browser":
+            results = await post_all_browser(
+                slots,
+                headless=effective_headless,
+                progress_cb=_record_progress,
+                notifier=get_notifier(),
+            )
+        else:
+            results = await post_all_api(slots)
 
-    _append_history(slots, results, effective_headless)
+        recorded = _append_history(slots, results, effective_headless)
+    finally:
+        if recorded:
+            inflight.end()
+        else:
+            # Cut off in-process (an exception, or cancellation at shutdown)
+            # after posting may have started, or its results never reached
+            # History: unconfirmed, never retried. If History still cannot be
+            # written, the marker stays for the next start.
+            inflight.recover(HISTORY_FILE)
     return results
 
 

@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import logging
 import shutil
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import env
@@ -22,7 +23,14 @@ from app import env
 # Before the imports below: transcribe.whisper reads its settings at import.
 env.load_dotenv_file()
 
-from app import handoff, header_gen, jobs, probe, searcher_pickup  # noqa: E402
+from app import (  # noqa: E402
+    handoff,
+    header_gen,
+    jobs,
+    probe,
+    searcher_pickup,
+    send_keys,
+)
 from app.models import (  # noqa: E402
     HandoffRequest,
     HeaderRequest,
@@ -389,10 +397,57 @@ def handoff_batch(req: HandoffRequest) -> dict:
     and writes local files only — no posting, no network. The batch grouping and
     the reviewed transcript come from the client (the batch is client-driven);
     the server contributes the rendered mp4s and the manifest.
+
+    A retry that carries the ``send_key`` of a send that already wrote its
+    batch gets that batch back with ``replayed: true`` and writes nothing, so a
+    lost reply never hands RicePoster the same clips twice (W1-01). Clips that
+    already went under another key are refused with 409 and ``already_sent``
+    unless ``resend`` confirms a deliberate second send (review S-1).
     """
     if not req.clips:
         raise HTTPException(status_code=400, detail="no clips provided")
 
+    key = req.send_key or uuid.uuid4().hex
+    job_ids = [c.job_id for c in req.clips]
+    try:
+        done = send_keys.begin(key, job_ids, resend=req.resend)
+    except send_keys.SendInProgress as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="A send of these clips has not finished. Try again in a moment.",
+        ) from exc
+    except send_keys.KeyConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="This send key already sent other clips. Use a new key.",
+        ) from exc
+    except send_keys.AlreadySent as exc:
+        sent = exc.sent["batch_id"]
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": f"These clips already went to RicePoster as batch {sent}. "
+                "Send them again only if you mean to; that needs a confirmation.",
+                "already_sent": sent,
+            },
+        )
+    if done is not None:
+        searcher_pickup.close_open_batches(job_ids)
+        return {
+            "batch_id": done["batch_id"],
+            "clip_count": done["clip_count"],
+            "replayed": True,
+        }
+    try:
+        result = _write_handoff(req)
+        send_keys.record(key, result, job_ids)
+    finally:
+        send_keys.end(key)
+    searcher_pickup.close_open_batches(job_ids)
+    return result
+
+
+def _write_handoff(req: HandoffRequest) -> dict:
     entries: list[handoff.HandoffEntry] = []
     with jobs.job_operation_lock():
         for clip in req.clips:
@@ -424,8 +479,30 @@ def handoff_batch(req: HandoffRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get("/api/workspace")
+def open_workspace_batch(batch_id: str | None = None) -> dict:
+    """A pulled Searcher batch not yet sent or discarded, shaped like a pull:
+    ``batch_id``'s, or else the oldest. A reloaded tab restores its own batch
+    this way (W1-02). Consumes nothing."""
+    return searcher_pickup.open_batch(batch_id)
+
+
+@app.delete("/api/workspace")
+def discard_workspace_batch(batch_id: str) -> dict:
+    """The reviewer discarded this pulled batch (Start over): stop offering it."""
+    return {"discarded": searcher_pickup.discard_open_batch(batch_id)}
+
+
+@app.get("/api/searcher-inbox")
+def searcher_inbox() -> dict:
+    """Complete RiceSearcher batches waiting to be pulled (read-only)."""
+    return {"batches": searcher_pickup.waiting_batches()}
+
+
 @app.post("/api/pull-from-searcher")
-def pull_from_searcher() -> dict:
+def pull_from_searcher(
+    pull_key: str | None = Query(default=None, pattern=r"^[A-Za-z0-9_-]{8,64}$"),
+) -> dict:
     """Ingest the oldest RiceSearcher handoff batch as new review jobs.
 
     Reads local files from the searcher inbox (``~/ricesearcher-handoff``) and
@@ -434,7 +511,7 @@ def pull_from_searcher() -> dict:
     writes the separate ``~/riceclipper-handoff``).
     """
     try:
-        return searcher_pickup.pull_next_batch()
+        return searcher_pickup.pull_next_batch(pull_key)
     except searcher_pickup.PickupError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

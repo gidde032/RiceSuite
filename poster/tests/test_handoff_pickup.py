@@ -658,7 +658,7 @@ def test_pull_frontend_captures_frame_and_uses_media_route():
 def test_pull_frontend_preflights_before_mutation_and_acknowledges_after_apply():
     """Incident repair (CRITICAL): missing DOM cannot strand a consumed batch."""
     html = (PROJECT_ROOT / "frontend" / "index.html").read_text()
-    pull = html[html.index("async function pullFromClipper()") : html.index("function assertPulledTargets")]
+    pull = html[html.index("async function pullFromClipper(") : html.index("function assertPulledTargets")]
     assert pull.index("assertPulledTargets(data);") < pull.index("applyPulledSlot(entry)")
     assert pull.index("await generateAll();") < pull.index("/ack`")
     assert "Source remains archived" in pull
@@ -681,7 +681,7 @@ def test_consumed_cleanup_frontend_confirms_and_reports_safe_retention():
     assert "left untouched" in body
     assert "freed_bytes_complete === false" in body
     pull = html[
-        html.index("async function pullFromClipper()"):
+        html.index("async function pullFromClipper("):
         html.index("function assertPulledTargets")
     ]
     assert pull.index("await generateAll();") < pull.index("caption?.trim()")
@@ -694,3 +694,83 @@ def test_account_switch_removes_every_stale_slot_not_only_drafts():
     assert "for (const id of removed) {" in html
     assert "delete state.slots[id];" in html
     assert "for (const id of drafts) delete state.slots[id];" not in html
+
+
+# --- RiceSuite automatic ingest: the read-only inbox (ADR-001 Q12) -----------
+
+
+def _tree(root):
+    return sorted((str(p.relative_to(root)), p.stat().st_mtime_ns) for p in root.rglob("*"))
+
+
+def test_inbox_lists_ready_batches_oldest_first(tmp_handoff_paths):
+    handoff = tmp_handoff_paths["handoff"]
+    _write_batch(handoff, "batch_20260826_130000_bbbb", [(1, "clip_1.mp4", "t")])
+    _write_batch(handoff, "batch_20260826_120000_aaaa", [(1, "a.mp4", "t"), (2, "b.mp4", "t")])
+    (handoff / "batch_20260826_140000_cccc").mkdir()  # no manifest: mid-write
+    inbox = handoff_pickup.waiting_batches()
+    assert inbox["batches"] == [
+        {"batch_id": "batch_20260826_120000_aaaa", "clip_count": 2},
+        {"batch_id": "batch_20260826_130000_bbbb", "clip_count": 1},
+    ]
+    assert inbox["unacknowledged"] is None and inbox["error"] is None
+
+
+def test_inbox_is_read_only(tmp_handoff_paths):
+    handoff, media = tmp_handoff_paths["handoff"], tmp_handoff_paths["media"]
+    _write_batch(handoff, "batch_20260826_120000_aaaa", [(1, "clip_1.mp4", "t")])
+    before = (_tree(handoff), _tree(media))
+    handoff_pickup.waiting_batches()
+    assert (_tree(handoff), _tree(media)) == before
+
+
+def test_inbox_reports_a_staged_but_unacknowledged_batch(tmp_handoff_paths):
+    """Pull replays an unacknowledged batch first; the inbox says so."""
+    handoff = tmp_handoff_paths["handoff"]
+    _write_batch(handoff, "batch_20260826_120000_aaaa", [(1, "clip_1.mp4", "t")])
+    handoff_pickup.ingest_oldest(["creator-one"])  # staged, never acknowledged
+    inbox = handoff_pickup.waiting_batches()
+    assert inbox["unacknowledged"] == "batch_20260826_120000_aaaa"
+    assert inbox["batches"] == []
+
+
+def test_inbox_endpoint_never_stages_posts_or_schedules(client, tmp_handoff_paths, monkeypatch):
+    handoff, media = tmp_handoff_paths["handoff"], tmp_handoff_paths["media"]
+    _write_batch(handoff, "batch_20260826_120000_aaaa", [(1, "clip_1.mp4", "t")])
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("the inbox must not stage, post or schedule")
+
+    monkeypatch.setattr(handoff_pickup, "ingest_oldest", forbidden)
+    monkeypatch.setattr(main, "post_all_api", forbidden)
+    monkeypatch.setattr(main, "post_all_browser", forbidden)
+    monkeypatch.setattr(main, "add_batch", forbidden)
+    before = _tree(media)
+    r = client.get("/api/handoff/inbox")
+    assert r.status_code == 200
+    assert [b["batch_id"] for b in r.json()["batches"]] == ["batch_20260826_120000_aaaa"]
+    assert _tree(media) == before
+
+
+def test_automatic_pull_never_replays_an_unacknowledged_batch(tmp_handoff_paths):
+    """Replaying belongs to the maintainer's Pull: an automatic replay could
+    stage one batch into two open pages, or bring back a batch that was
+    posted but never acknowledged."""
+    handoff = tmp_handoff_paths["handoff"]
+    _write_batch(handoff, "batch_20260826_120000_aaaa", [(1, "clip_1.mp4", "t")])
+    _write_batch(handoff, "batch_20260826_130000_bbbb", [(1, "clip_1.mp4", "t")])
+    handoff_pickup.ingest_oldest(["creator-one"])  # staged, never acknowledged
+    with pytest.raises(handoff_pickup.AwaitingAcknowledgement):
+        handoff_pickup.ingest_oldest(["creator-one"], replay=False)
+    # The manual path still recovers it.
+    assert handoff_pickup.ingest_oldest(["creator-one"])["replayed"] is True
+
+
+def test_pull_endpoint_without_replay_reports_the_waiting_batch(client, tmp_handoff_paths):
+    handoff = tmp_handoff_paths["handoff"]
+    _write_batch(handoff, "batch_20260826_120000_aaaa", [(1, "clip_1.mp4", "t")])
+    first = client.post("/api/pull-from-clipper").json()
+    assert first["pulled"]
+    again = client.post("/api/pull-from-clipper?replay=0").json()
+    assert again["pulled"] is False
+    assert "acknowledg" in again["reason"]

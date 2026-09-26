@@ -36,8 +36,6 @@ from starlette.responses import (
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from ricesuite import env as suite_env
-from ricesuite import home
 from ricesuite.pillars import PILLARS
 from ricesuite.ports import GATEWAY_PORT, HOST, PILLAR_PORTS
 
@@ -149,16 +147,24 @@ async def _get_json(port: int, path: str):
 
 
 async def suite_home(request: Request) -> Response:
-    """Batches waiting at each stage. Every source is best-effort: a pillar
-    that is down reports null rather than failing the whole view."""
-    profiles, queue = await asyncio.gather(
+    """Batches waiting at each stage, as each consumer itself reports them
+    (Clipper's Searcher inbox, Poster's Clipper inbox), so the home view can
+    never disagree with what the next Pull would take. Every source is
+    best-effort: a pillar that is down reports null."""
+    profiles, clip_inbox, post_inbox, queue = await asyncio.gather(
         _get_json(PORTS["searcher"], "api/profiles"),
+        _get_json(PORTS["clipper"], "api/searcher-inbox"),
+        _get_json(PORTS["poster"], "api/handoff/inbox"),
         _get_json(PORTS["poster"], "api/queue"),
     )
-    try:
-        stages = home.handoff_stages(os.environ | suite_env.handoff_env(os.environ))
-    except (KeyError, suite_env.SuiteConfigError):
-        stages = {"to_clipper": None, "to_poster": None}
+    to_clipper = clip_inbox.get("batches") if isinstance(clip_inbox, dict) else None
+    to_poster = None
+    if isinstance(post_inbox, dict):
+        to_poster = list(post_inbox.get("batches") or [])
+        if post_inbox.get("unacknowledged"):
+            to_poster.insert(
+                0, {"batch_id": post_inbox["unacknowledged"], "clip_count": None}
+            )
     search = None
     if isinstance(profiles, list):
         search = {
@@ -178,8 +184,8 @@ async def suite_home(request: Request) -> Response:
     return JSONResponse(
         {
             "search": search,
-            "to_clipper": stages["to_clipper"],
-            "to_poster": stages["to_poster"],
+            "to_clipper": to_clipper,
+            "to_poster": to_poster,
             "scheduled": scheduled,
         }
     )

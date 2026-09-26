@@ -941,6 +941,7 @@
       </div>
 
       <div class="status-panel" id="statusPanel" aria-live="polite"></div>
+      <div class="status-panel" id="clipperInbox" aria-live="polite" hidden></div>
     </section>
 
     <!-- ---------- Accounts ---------- -->
@@ -1526,34 +1527,55 @@ function hydrateSlotCard(slot) {
 // caption AI will see (same as manual), then auto-generate captions through the
 // existing /api/generate-caption path. Never posts — the maintainer reviews the
 // captions and clicks Post All.
-async function pullFromClipper() {
+// Active-roster slots holding an unposted draft (caption/media live only in
+// the browser). A pull overwrites them positionally, so the manual pull asks
+// first and the automatic pull never runs while any exist.
+function draftsAtRisk() {
+  const activeIds = new Set(state.accounts.map(a => a.slot));
+  return Object.entries(state.slots).filter(
+    ([slot, s]) => activeIds.has(slot) && (s.file || s.filename || (s.caption && s.caption.trim())),
+  );
+}
+
+let pullInFlight = false;
+
+// Returns true when a batch was pulled, captioned and acknowledged.
+// `automatic` (RiceSuite's inbox poll) never replays an unacknowledged batch
+// and never overwrites a draft started while the request was in flight.
+async function pullFromClipper({ automatic = false } = {}) {
+  if (pullInFlight) return false;
   const btn = elOpt('btnPullClipper');
   // A pull overwrites active-roster slots positionally, discarding any unposted
   // draft they hold (caption/media live only in the browser). Confirm first when a
   // slot is at risk, mirroring the account-switch guard.
-  const activeIds = new Set(state.accounts.map(a => a.slot));
-  const atRisk = Object.entries(state.slots).filter(
-    ([slot, s]) => activeIds.has(slot) && (s.file || s.filename || (s.caption && s.caption.trim())),
-  );
+  const atRisk = draftsAtRisk();
   if (
     atRisk.length &&
     !confirm(
       `Pull a new batch? ${atRisk.length} slot(s) already hold an unposted draft that will be overwritten.`,
     )
   ) {
-    return;
+    return false;
   }
   let stagedBatchId = '';
   let reviewApplied = false;
+  pullInFlight = true;
   if (btn) btn.disabled = true;
   setPullStatus('Pulling the oldest batch from RiceClipper…');
   try {
-    const resp = await fetchWithTimeout('api/pull-from-clipper', { method: 'POST' });
+    const url = automatic ? 'api/pull-from-clipper?replay=0' : 'api/pull-from-clipper';
+    const resp = await fetchWithTimeout(url, { method: 'POST' });
     await handleFetchError(resp);
     const data = await resp.json();
     if (!data.pulled) {
       setPullStatus(data.reason || 'Nothing to pull.');
-      return;
+      return false;
+    }
+    if (automatic && draftsAtRisk().length) {
+      // A draft appeared while the request ran. Keep it: the batch stays
+      // staged, unacknowledged, for Pull from Clipper (which asks first).
+      setPullStatus(`Batch ${data.batch_id} from Clip is staged; your new draft was kept. Use Pull from Clipper when ready.`);
+      return false;
     }
     stagedBatchId = data.batch_id;
     assertPulledTargets(data);
@@ -1589,6 +1611,7 @@ async function pullFromClipper() {
 
     const verb = data.replayed ? 'Recovered' : 'Pulled';
     setPullStatus(`${verb} batch ${data.batch_id} into ${data.slots.length} account(s). Review captions, then Post All. Source archived locally.`);
+    return true;
   } catch (e) {
     if (stagedBatchId) {
       const phase = reviewApplied
@@ -1599,8 +1622,69 @@ async function pullFromClipper() {
       setPullStatus(`Pull did not finish in this browser: ${e.message || e}. Retry is safe; unacknowledged batches are archived and replayed.`, true);
     }
   } finally {
+    pullInFlight = false;
     if (btn) btn.disabled = false;
   }
+  return false;
+}
+
+// --- Automatic ingest from Clip (RiceSuite ADR-001 Q12). A complete batch is
+// pulled without a click only when no unposted draft is at risk; otherwise it
+// waits in the inbox shown under the actions, for Pull from Clipper (which asks
+// before overwriting). Captions generate on ingest as with a manual pull.
+// Posting and scheduling stay manual: this path ends where Pull ends.
+const INBOX_POLL_MS = 7000;
+const INBOX_RETRY_MS = 60000;
+let inboxRetryAt = 0;
+
+function renderClipperInbox(inbox) {
+  const panel = elOpt('clipperInbox');
+  if (!panel) return;
+  const waiting = (inbox.batches || []).length + (inbox.unacknowledged ? 1 : 0);
+  panel.hidden = waiting === 0 && !inbox.error;
+  if (inbox.error) {
+    panel.innerHTML = `
+    <div class="status-item status-error">
+      <span class="status-icon">✗</span>
+      <span>${esc(`Inbox from Clip needs attention: ${inbox.error}`)}</span>
+    </div>`;
+    return;
+  }
+  if (!waiting) return;
+  const ids = [
+    ...(inbox.unacknowledged ? [inbox.unacknowledged] : []),
+    ...(inbox.batches || []).map(b => b.batch_id),
+  ];
+  panel.innerHTML = `
+    <div class="status-item">
+      <span class="status-icon">⇣</span>
+      <span>${esc(`Inbox: ${waiting} batch${waiting === 1 ? '' : 'es'} from Clip waiting (${ids.join(', ')}). ` +
+        (inbox.unacknowledged
+          ? `${inbox.unacknowledged} was pulled but never acknowledged: recover it with Pull from Clipper.`
+          : draftsAtRisk().length
+            ? 'Post or clear the current drafts, or use Pull from Clipper.'
+            : 'Pulling automatically…'))}</span>
+    </div>`;
+}
+
+async function pollClipperInbox() {
+  let inbox;
+  try {
+    const resp = await fetchWithTimeout('api/handoff/inbox');
+    if (!resp.ok) return;
+    inbox = await resp.json();
+  } catch {
+    return;
+  }
+  renderClipperInbox(inbox);
+  // Only fresh batches move automatically. Recovering an unacknowledged one
+  // stays the maintainer's Pull: it may already be open in another page, or
+  // already posted.
+  if (inbox.unacknowledged || inbox.error || !(inbox.batches || []).length) return;
+  if (pullInFlight || Date.now() < inboxRetryAt) return;
+  if (draftsAtRisk().length) return;
+  const ok = await pullFromClipper({ automatic: true });
+  if (!ok) inboxRetryAt = Date.now() + INBOX_RETRY_MS;
 }
 
 function assertPulledTargets(data) {
@@ -1867,6 +1951,8 @@ async function generateAll() {
       );
       await handleFetchError(resp);
       const data = await resp.json();
+      // Never overwrite a caption typed while this one was generating.
+      if (s.caption.trim()) return;
       s.caption = data.caption;
       const ta = slotEl('caption', slot);
       ta.value = s.caption;
@@ -3070,6 +3156,7 @@ function renderSummary(p) {
 }
 
 init();
+setInterval(pollClipperInbox, INBOX_POLL_MS);
 </script>
 </body>
 </html>

@@ -97,8 +97,8 @@ Each requirement is written so a test can check it. "The launcher" means the
 - **FR-9** Poster's data root is configurable with `RICEPOSTER_DATA_DIR`
   (Q10). Unset, every Poster path is byte-identical to RicePoster's
   repository-relative layout. Set, it must be an existing absolute directory;
-  it moves `sessions/`, `debug/`, `media/`, `queue.jsonl`, `queue_media/` and
-  `history.jsonl`, and nothing else. It is never `.resolve()`d (session paths
+  it moves `sessions/`, `debug/`, `media/`, `queue.jsonl`, `queue_media/`,
+  `history.jsonl` and the in-flight run marker of FR-16, and nothing else. It is never `.resolve()`d (session paths
   reach Chrome as strings). It is ignored under pytest.
 
 ### Front door
@@ -123,12 +123,52 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
   ingested is never ingested twice.
 - **FR-13 Clipper → Poster.** Clipper sends a batch automatically only when
   every clip in it has rendered successfully. A failed render holds the whole
-  batch until the clip is fixed and re-rendered; then the batch sends.
+  batch until the clip is fixed and re-rendered; then the batch sends. A clip
+  edited after its render request (any card control, or a generated header)
+  counts as unrendered until it renders again, so the MP4 always matches the
+  header and transcript sent with it. The Send button follows the same rule:
+  it refuses while any clip is unrendered, failed, or edited since its render,
+  names those clips, and never sends part of a batch. Removing a clip from the
+  batch is the reviewer's way to send the rest.
 - **FR-14 Poster ingest.** A complete Clipper batch is ingested automatically
   only when Poster's draft workspace is empty. Otherwise it waits, visibly, in
   an inbox on the Post tab, and is never merged into or replaces existing
   drafts without the maintainer's action (preserves Poster's
   confirm-before-discard). Captions generate on ingest as today.
+- **How FR-12 – FR-14 are driven.** Clipper's batch and Poster's drafts live
+  in their pages (transcript edits, headers and captions are browser state),
+  so each consumer's page drives its own transport: it polls a read-only inbox
+  endpoint (`GET api/searcher-inbox` on Clipper, `GET api/handoff/inbox` on
+  Poster) and then performs exactly the pull or send its button performs.
+  Clipper pulls only when nothing unsent would be displaced: the workspace is
+  empty, or it holds exactly what was last sent (a later edit or re-render
+  holds it). The Pull button follows the same rule, and one pull runs at a
+  time, whether the button or the timer started it. One Searcher batch stays
+  one Clipper batch; a batch sends itself at most once, and sending it again
+  takes the reviewer's confirmation.
+  Clipper sends each clip to Poster once: a send that holds a clip already
+  sent gets 409 with `already_sent`, unless the reviewer confirmed a second
+  send (`resend: true`), so a second tab or a reload cannot send a batch
+  twice. Each send carries a key (`send_key` on `POST api/handoff`); a retry
+  of an unchanged batch after a lost reply reuses it and gets the batch that
+  key already wrote (`replayed: true`). A batch changed since is a new
+  send. A pull carries a key too (`pull_key`), so a retry after a lost reply
+  gets the same batch back, never the next one. A pulled Searcher batch stays
+  open in Clipper until it is sent or the reviewer discards it (Start over, or
+  removing every clip). Each tab
+  keeps its own pulled batch in `sessionStorage` and restores it after a
+  reload (`GET api/workspace?batch_id=`). An open batch the tab does not hold
+  (another tab's, or a closed tab's) is named on the page and opens there
+  only on a Pull click. Browser-only edits are still lost on a reload.
+  Poster pulls only when its manual Pull would not have to ask before
+  overwriting a draft, re-checks that after the request returns, and never
+  replays an unacknowledged batch (it calls `POST api/pull-from-clipper?replay=0`,
+  which answers `pulled: false` instead of replaying; the default, used by
+  the button, still replays); recovering one stays the maintainer's Pull. The shell loads
+  all three pages up front and keeps them alive, so transport runs whenever
+  RiceSuite is open (Q18: v1 runs while open). Limits of page-driven transport
+  (background-tab throttling, a sleeping laptop, a second open tab) are
+  tracked in #16; handoff folders are durable, so a delay loses nothing.
 - **FR-15 Never auto-post.** No transport step posts, schedules, or discards a
   draft. Post All and Schedule remain explicit human actions in Poster.
 
@@ -136,7 +176,14 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
 
 - **FR-16** A Poster post in flight when Poster's process dies is recorded as
   **unconfirmed** and is never retried automatically, whether it was a manual
-  Post All run or a scheduled batch.
+  Post All run or a scheduled batch. Manual runs: an in-flight marker in the
+  data root, turned into unconfirmed History rows at once when the run is cut
+  off in-process (an exception or a cancellation at shutdown) or its results
+  cannot be written to History, or on the next start after a process death.
+  While History cannot be written at all, the marker stays. Scheduled runs: RicePoster's existing running →
+  interrupted startup sweep. (A process killed in the instant between writing
+  a run's History rows and removing the marker can leave an extra unconfirmed
+  row for that run: accepted, it errs towards checking.)
 - **FR-17** `rice stop` refuses, exits non-zero and changes nothing, while a
   Poster posting run is active, unless `--force` is given. If the launcher
   cannot confirm Poster is idle, it treats the run as possibly active: an

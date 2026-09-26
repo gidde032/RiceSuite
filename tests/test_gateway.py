@@ -174,28 +174,52 @@ def test_cross_origin_reads_are_left_to_the_browser(upstream, client):
     assert r.status_code == 200
 
 
-def test_home_aggregates_and_tolerates_down_pillars(monkeypatch, tmp_path, client):
-    s2c, c2p = tmp_path / "s2c", tmp_path / "c2p"
-    b = c2p / "batch_1"
-    b.mkdir(parents=True)
-    (b / "manifest.json").write_text(json.dumps({"batch_id": "batch_1", "clips": [{}]}))
-    monkeypatch.setenv("RICESEARCHER_HANDOFF_DIR", str(s2c))
-    monkeypatch.setenv("RICECLIPPER_HANDOFF_DIR", str(c2p))
-    monkeypatch.delenv("RICECLIPPER_SEARCHER_INBOX", raising=False)
-    monkeypatch.delenv("HANDOFF_DIR", raising=False)
+def test_home_reports_what_each_consumer_would_pull_next(monkeypatch, client):
+    """The home view asks the consumers themselves, so it can never disagree
+    with the next Pull (Clipper's Searcher inbox, Poster's Clipper inbox)."""
 
     def handler(request):
-        if request.url.port == gateway.PORTS["searcher"]:
+        port, path = request.url.port, request.url.path
+        if port == gateway.PORTS["searcher"] and path == "/api/profiles":
             return httpx.Response(
                 200, json=[{"candidates": 4, "selected": 1}, {"candidates": 1}]
             )
-        raise httpx.ConnectError("down", request=request)
+        if port == gateway.PORTS["clipper"] and path == "/api/searcher-inbox":
+            return httpx.Response(
+                200, json={"batches": [{"batch_id": "s1", "clip_count": 2}]}
+            )
+        if port == gateway.PORTS["poster"] and path == "/api/handoff/inbox":
+            return httpx.Response(
+                200,
+                json={
+                    "batches": [{"batch_id": "c2", "clip_count": 3}],
+                    "unacknowledged": "c1",
+                    "error": None,
+                },
+            )
+        if port == gateway.PORTS["poster"] and path == "/api/queue":
+            return httpx.Response(200, json={"batches": []})
+        return httpx.Response(404)
 
     monkeypatch.setattr(gateway, "_client", mock_client(handler))
     data = client.get("/api/suite/home").json()
     assert data["search"] == {"candidates": 5, "selected": 1}
-    assert data["to_clipper"] == []
-    assert [x["batch_id"] for x in data["to_poster"]] == ["batch_1"]
+    assert data["to_clipper"] == [{"batch_id": "s1", "clip_count": 2}]
+    assert [b["batch_id"] for b in data["to_poster"]] == ["c1", "c2"]
+    assert data["scheduled"] == []
+
+
+def test_home_tolerates_down_pillars(monkeypatch, client):
+    def handler(request):
+        if request.url.port == gateway.PORTS["searcher"]:
+            return httpx.Response(200, json=[])
+        raise httpx.ConnectError("down", request=request)
+
+    monkeypatch.setattr(gateway, "_client", mock_client(handler))
+    data = client.get("/api/suite/home").json()
+    assert data["search"] == {"candidates": 0, "selected": 0}
+    assert data["to_clipper"] is None
+    assert data["to_poster"] is None
     assert data["scheduled"] is None
 
 

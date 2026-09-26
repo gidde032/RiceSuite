@@ -197,6 +197,25 @@ not delete the archive. A caption-generation failure leaves the receipt staged
 for a safe retry. You land at step 5 (review captions → Post All). Pull never
 posts or schedules on its own.
 
+**Automatic pull (RiceSuite).** While the page is open it polls
+`GET /api/handoff/inbox` (read-only). When a batch is waiting and no active
+account holds an unposted draft — exactly when **Pull from Clipper** would not
+need to ask — it runs the same pull automatically, captions included, and it
+keeps any draft you start while that request runs. Otherwise the batch waits
+in an inbox note under the actions until you post or clear the drafts, or pull
+by hand. A batch that was pulled but never acknowledged is shown there too,
+and is recovered only by your **Pull from Clipper**, never automatically. A
+caption you type while captions are generating is never overwritten.
+Posting and scheduling stay manual.
+
+**Interrupted runs.** A manual Post All run writes a small in-flight marker in
+the data root before touching any platform and removes it once the run's
+results are recorded. If the run is cut off — an error mid-run, a shutdown, or
+the server dying — every slot of that run is recorded in History as ⚠
+unconfirmed (immediately, or on the next start) and never retried: check the
+accounts before posting again. (Scheduled batches were already covered: a batch that was
+running at a crash is marked interrupted and never re-executed.)
+
 The Local Media view also provides **Clear consumed batches** for reclaiming
 space from acknowledged handoff archives. It deletes every validated `applied`
 receipt and reports the batches and bytes removed. Unacknowledged batches that
