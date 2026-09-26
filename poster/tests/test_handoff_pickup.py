@@ -694,3 +694,59 @@ def test_account_switch_removes_every_stale_slot_not_only_drafts():
     assert "for (const id of removed) {" in html
     assert "delete state.slots[id];" in html
     assert "for (const id of drafts) delete state.slots[id];" not in html
+
+
+# --- RiceSuite automatic ingest: the read-only inbox (ADR-001 Q12) -----------
+
+
+def _tree(root):
+    return sorted((str(p.relative_to(root)), p.stat().st_mtime_ns) for p in root.rglob("*"))
+
+
+def test_inbox_lists_ready_batches_oldest_first(tmp_handoff_paths):
+    handoff = tmp_handoff_paths["handoff"]
+    _write_batch(handoff, "batch_20260826_130000_bbbb", [(1, "clip_1.mp4", "t")])
+    _write_batch(handoff, "batch_20260826_120000_aaaa", [(1, "a.mp4", "t"), (2, "b.mp4", "t")])
+    (handoff / "batch_20260826_140000_cccc").mkdir()  # no manifest: mid-write
+    inbox = handoff_pickup.waiting_batches()
+    assert inbox["batches"] == [
+        {"batch_id": "batch_20260826_120000_aaaa", "clip_count": 2},
+        {"batch_id": "batch_20260826_130000_bbbb", "clip_count": 1},
+    ]
+    assert inbox["unacknowledged"] is None and inbox["error"] is None
+
+
+def test_inbox_is_read_only(tmp_handoff_paths):
+    handoff, media = tmp_handoff_paths["handoff"], tmp_handoff_paths["media"]
+    _write_batch(handoff, "batch_20260826_120000_aaaa", [(1, "clip_1.mp4", "t")])
+    before = (_tree(handoff), _tree(media))
+    handoff_pickup.waiting_batches()
+    assert (_tree(handoff), _tree(media)) == before
+
+
+def test_inbox_reports_a_staged_but_unacknowledged_batch(tmp_handoff_paths):
+    """Pull replays an unacknowledged batch first; the inbox says so."""
+    handoff = tmp_handoff_paths["handoff"]
+    _write_batch(handoff, "batch_20260826_120000_aaaa", [(1, "clip_1.mp4", "t")])
+    handoff_pickup.ingest_oldest(["creator-one"])  # staged, never acknowledged
+    inbox = handoff_pickup.waiting_batches()
+    assert inbox["unacknowledged"] == "batch_20260826_120000_aaaa"
+    assert inbox["batches"] == []
+
+
+def test_inbox_endpoint_never_stages_posts_or_schedules(client, tmp_handoff_paths, monkeypatch):
+    handoff, media = tmp_handoff_paths["handoff"], tmp_handoff_paths["media"]
+    _write_batch(handoff, "batch_20260826_120000_aaaa", [(1, "clip_1.mp4", "t")])
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("the inbox must not stage, post or schedule")
+
+    monkeypatch.setattr(handoff_pickup, "ingest_oldest", forbidden)
+    monkeypatch.setattr(main, "post_all_api", forbidden)
+    monkeypatch.setattr(main, "post_all_browser", forbidden)
+    monkeypatch.setattr(main, "add_batch", forbidden)
+    before = _tree(media)
+    r = client.get("/api/handoff/inbox")
+    assert r.status_code == 200
+    assert [b["batch_id"] for b in r.json()["batches"]] == ["batch_20260826_120000_aaaa"]
+    assert _tree(media) == before

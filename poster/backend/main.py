@@ -470,6 +470,13 @@ async def generate_caption_endpoint(data: Annotated[CaptionRequest, Form()]):
     return {"caption": caption}
 
 
+@app.get("/api/handoff/inbox")
+async def clipper_inbox():
+    """RiceClipper batches waiting to be pulled. Read-only: never stages,
+    posts or schedules anything."""
+    return handoff_pickup.waiting_batches()
+
+
 @app.post("/api/pull-from-clipper")
 async def pull_from_clipper():
     """Stage the oldest RiceClipper handoff batch into a pending run.

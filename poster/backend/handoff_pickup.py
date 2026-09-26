@@ -318,6 +318,32 @@ def _require_same_targets(receipt: dict, target_ids: list[str]) -> None:
         )
 
 
+def waiting_batches() -> dict:
+    """What Pull would take next, read-only (RiceSuite ADR-001 Q12).
+
+    The Post tab polls this to show an inbox and to ingest automatically when
+    no unposted draft is at risk. Lists complete batches oldest first, plus an
+    archived batch whose receipt was never acknowledged (Pull replays that one
+    first). Stages, moves and acknowledges nothing.
+    """
+    unacknowledged = None
+    error = None
+    try:
+        pending = _oldest_unacknowledged()
+    except HandoffPickupError as exc:
+        pending, error = None, str(exc)
+    if pending is not None:
+        unacknowledged = pending[0].name
+    batches = []
+    for batch_dir in _ready_batches(HANDOFF_DIR):
+        try:
+            clip_count = len(_read_manifest(batch_dir)["clips"])
+        except (HandoffPickupError, KeyError, TypeError):
+            clip_count = None
+        batches.append({"batch_id": batch_dir.name, "clip_count": clip_count})
+    return {"batches": batches, "unacknowledged": unacknowledged, "error": error}
+
+
 def ingest_oldest(target_ids: list[str]) -> dict:
     """Stage the oldest ready batch and return its slot assignments.
 
