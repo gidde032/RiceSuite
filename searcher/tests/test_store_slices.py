@@ -1,0 +1,205 @@
+"""Candidate-slice persistence + the incremental v1->v2 migration (D1)."""
+
+from __future__ import annotations
+
+import dataclasses
+import sqlite3
+from pathlib import Path
+
+import pytest
+
+from ricesearcher.library.store import MIGRATIONS, SCHEMA_VERSION, Library
+from ricesearcher.models import (
+    CandidateSlice,
+    SliceStatus,
+    Source,
+    SourceKind,
+    TranscriptWord,
+)
+
+
+def _source(sid: str = "src1") -> Source:
+    return Source(
+        id=sid,
+        kind=SourceKind.YOUTUBE,
+        ref="https://youtu.be/x",
+        media_path="/cache/x.mp4",
+        words=[TranscriptWord("hi", 0.0, 0.2)],
+    )
+
+
+def _slice(sid: str, source_id: str = "src1", score: float = 0.5) -> CandidateSlice:
+    return CandidateSlice(
+        id=sid,
+        source_id=source_id,
+        pad_in=8.0,
+        pad_out=42.0,
+        target_in=10.0,
+        target_out=40.0,
+        transcript_span="a clippable moment",
+        score=score,
+        rationale="funny + on-beat",
+        heuristic_score=0.7,
+        heuristic_features={"keyword": 1.0, "question": 0.0},
+        beat_profile_version="2026-09-03",
+        scorer_model="fake",
+        rights_risk="med",
+        status=SliceStatus.CANDIDATE,
+        created_at="2026-09-03T00:00:00Z",
+    )
+
+
+def test_fresh_db_is_at_current_version(tmp_path: Path) -> None:
+    with Library(tmp_path / "lib.sqlite3") as lib:
+        assert lib._stored_version() == SCHEMA_VERSION == 3
+
+
+def test_slice_roundtrip_and_features_json(tmp_path: Path) -> None:
+    with Library(tmp_path / "lib.sqlite3") as lib:
+        lib.upsert_source(_source())
+        lib.upsert_slices([_slice("sl1")])
+        got = lib.get_slice("sl1")
+    assert got is not None
+    assert got.target_in == 10.0 and got.pad_out == 42.0
+    assert got.heuristic_features == {"keyword": 1.0, "question": 0.0}
+    assert got.status is SliceStatus.CANDIDATE
+
+
+def test_list_slices_filters_and_orders(tmp_path: Path) -> None:
+    with Library(tmp_path / "lib.sqlite3") as lib:
+        lib.upsert_source(_source("src1"))
+        lib.upsert_source(_source("src2"))
+        lib.upsert_slices(
+            [
+                _slice("a", "src1", score=0.2),
+                _slice("b", "src1", score=0.9),
+                _slice("c", "src2", score=0.5),
+            ]
+        )
+        src1 = lib.list_slices(source_id="src1")
+        assert [s.id for s in src1] == ["b", "a"]  # score DESC
+        assert len(lib.list_slices()) == 3
+        assert [s.id for s in lib.list_slices(status=SliceStatus.SELECTED)] == []
+
+
+def test_upsert_replaces_existing_slice(tmp_path: Path) -> None:
+    with Library(tmp_path / "lib.sqlite3") as lib:
+        lib.upsert_source(_source())
+        lib.upsert_slices([_slice("sl1", score=0.1)])
+        lib.upsert_slices([_slice("sl1", score=0.8)])
+        got = lib.get_slice("sl1")
+        assert got is not None and got.score == 0.8
+        assert len(lib.list_slices()) == 1
+
+
+def test_profile_counts_candidates_counts_only_candidate_status(
+    tmp_path: Path,
+) -> None:
+    # FB-1: `candidates` is the count of rows awaiting review (status='candidate'),
+    # not COUNT(*) over every status.
+    statuses = [
+        SliceStatus.CANDIDATE,
+        SliceStatus.CANDIDATE,
+        SliceStatus.REVIEWED,
+        SliceStatus.SELECTED,
+        SliceStatus.HANDED_OFF,
+        SliceStatus.REJECTED,
+    ]
+    with Library(tmp_path / "lib.sqlite3") as lib:
+        lib.upsert_source(_source())
+        lib.upsert_slices(
+            [
+                dataclasses.replace(_slice(f"s{i}"), status=st, profile_id="p1")
+                for i, st in enumerate(statuses)
+            ]
+        )
+        counts = lib.profile_counts()["p1"]
+    assert counts["candidates"] == 2  # only the two status='candidate' rows
+    assert counts["selected"] == 1
+    assert counts["handed_off"] == 1
+
+
+def test_replace_candidate_slices_requires_profile_id(tmp_path: Path) -> None:
+    # FA-1: profile_id is a required keyword-only str. A call without it must
+    # raise, so a replace can never delete candidate rows across every profile.
+    with Library(tmp_path / "lib.sqlite3") as lib:
+        lib.upsert_source(_source())
+        with pytest.raises(TypeError):
+            lib.replace_candidate_slices("src1", [_slice("a")])
+
+
+def test_replace_candidate_slices_preserves_concurrent_human_status(
+    tmp_path: Path,
+) -> None:
+    existing = dataclasses.replace(
+        _slice("sl1"), profile_id="p1", status=SliceStatus.SELECTED
+    )
+    regenerated = dataclasses.replace(
+        _slice("sl1", score=0.9), profile_id="p1", status=SliceStatus.CANDIDATE
+    )
+    with Library(tmp_path / "lib.sqlite3") as lib:
+        lib.upsert_source(_source())
+        lib.upsert_slices([existing])
+
+        lib.replace_candidate_slices("src1", [regenerated], profile_id="p1")
+
+        got = lib.get_slice("sl1")
+        assert got is not None
+        assert got.status is SliceStatus.SELECTED
+        assert got.score == existing.score
+
+
+def test_review_updates_cannot_mutate_handed_off_slice(tmp_path: Path) -> None:
+    db = tmp_path / "lib.sqlite3"
+    with Library(db) as setup:
+        setup.upsert_source(_source())
+        setup.upsert_slices(
+            [
+                dataclasses.replace(
+                    _slice("sl1"), profile_id="p1", status=SliceStatus.SELECTED
+                )
+            ]
+        )
+
+    with Library(db) as stale, Library(db) as handoff:
+        assert stale.get_slice("sl1").status is SliceStatus.SELECTED
+        handoff.bulk_update_status(["sl1"], SliceStatus.HANDED_OFF)
+        assert stale.update_slice_status("sl1", SliceStatus.SELECTED) is False
+        assert stale.update_slice_window("sl1", 12.0, 30.0) is False
+
+    with Library(db) as check:
+        got = check.get_slice("sl1")
+        assert got is not None
+        assert got.status is SliceStatus.HANDED_OFF
+        assert (got.target_in, got.target_out) == (10.0, 40.0)
+
+
+def test_v1_database_upgrades_in_place_to_current(tmp_path: Path) -> None:
+    # Build a Phase-1 (v1) database by hand, with data, then open it with Library.
+    db = tmp_path / "old.sqlite3"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    conn.executescript(MIGRATIONS[1])
+    conn.execute("INSERT INTO meta(key, value) VALUES ('schema_version', '1')")
+    conn.execute(
+        "INSERT INTO sources (id, kind, ref, media_path) VALUES "
+        "('old1', 'youtube', 'r', '/m.mp4')"
+    )
+    conn.commit()
+    conn.close()
+
+    # candidate_slices should not exist yet.
+    conn = sqlite3.connect(db)
+    tables_before = {
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    }
+    conn.close()
+    assert "candidate_slices" not in tables_before
+
+    with Library(db) as lib:
+        assert lib._stored_version() == SCHEMA_VERSION
+        # Pre-existing data survived the upgrade.
+        assert lib.get_source("old1") is not None
+        # New table is usable.
+        lib.upsert_slices([_slice("sl1", "old1")])
+        assert len(lib.list_slices()) == 1

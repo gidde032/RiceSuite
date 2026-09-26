@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+*.egg-info/
+
+# Local session scratch (never a second backlog)
+TASKS.md
+docs/ricesearcher-cleanup.md
+
+# Secrets / config
+credentials.env
+*.env
+!*.env.example
+# Keys, certs, sessions, cookies, service accounts — never commit.
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.session
+*.netrc
+.netrc
+cookies.txt
+credentials*.json
+service-account*.json
+# Logs
+*.log
+
+# Local data — never commit source media, the library, or handoff batches.
+# Anchored to the repo root so they don't match source packages of the same name
+# (e.g. the `ricesearcher/handoff/` package).
+/media/
+/cache/
+*.sqlite
+*.sqlite3
+*.db
+/handoff/
+/ricesearcher-handoff/
+
+# OS
+.DS_Store
+
+# Committed schema fixtures (tests/test_store_migration.py)
+!tests/fixtures/library_v2.sqlite3
