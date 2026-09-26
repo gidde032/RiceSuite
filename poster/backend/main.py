@@ -32,7 +32,7 @@ from backend.captions import CaptionConfigError, generate_caption, load_styles, 
 from backend.poster import post_all as post_all_api
 from backend.poster_browser import post_all as post_all_browser
 from backend.notifier import get_notifier, send_safe
-from backend import handoff_pickup, run_guard
+from backend import handoff_pickup, inflight, run_guard
 from backend.logging_setup import get_logger
 
 _log = get_logger("main")
@@ -97,6 +97,9 @@ def _reconcile_media_at_startup():
 async def lifespan(app):
     for problem in check_startup_config():
         _log.warning(f"[config] WARNING: {problem}")
+    # Before the scheduler starts: a manual run cut off by a crash becomes
+    # unconfirmed history rows and is never retried.
+    inflight.recover(HISTORY_FILE)
     _reconcile_media_at_startup()
     task = None
     if SCHEDULER_ENABLED:
@@ -734,17 +737,23 @@ async def _run_post(request: PostRequest, effective_headless: bool) -> list[Post
                 "enabled_platforms": set(req_slot.enabled_platforms),
             })
 
-    if POST_MODE == "browser":
-        results = await post_all_browser(
-            slots,
-            headless=effective_headless,
-            progress_cb=_record_progress,
-            notifier=get_notifier(),
-        )
-    else:
-        results = await post_all_api(slots)
+    # Durable until the run ends in this process: a crash leaves it for the
+    # next startup to record as unconfirmed (RiceSuite ADR-001 Q17).
+    inflight.begin(slots, POST_MODE, effective_headless)
+    try:
+        if POST_MODE == "browser":
+            results = await post_all_browser(
+                slots,
+                headless=effective_headless,
+                progress_cb=_record_progress,
+                notifier=get_notifier(),
+            )
+        else:
+            results = await post_all_api(slots)
 
-    _append_history(slots, results, effective_headless)
+        _append_history(slots, results, effective_headless)
+    finally:
+        inflight.end()
     return results
 
 

@@ -277,6 +277,18 @@ def tmp_health_cache(monkeypatch, tmp_path):
 
 
 @pytest.fixture(autouse=True)
+def tmp_inflight_marker(monkeypatch, tmp_path):
+    """Redirect the in-flight run marker (RiceSuite ADR-001 Q17) to a temp
+    path. Every test that reaches `_run_post` writes and removes it; without
+    this it would land in the checkout (DATA_ROOT is the repo under pytest)."""
+    from backend import inflight
+
+    marker = tmp_path / ".post-in-flight.json"
+    monkeypatch.setattr(inflight, "MARKER", marker)
+    return marker
+
+
+@pytest.fixture(autouse=True)
 def tmp_history_file(monkeypatch, tmp_path):
     """Redirect the run-history file to a temp path.
 
