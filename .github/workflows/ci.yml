@@ -32,6 +32,10 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: requirements-dev.txt
+      # tests/test_page_js.py runs the pillar page-script tests in tests/js.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - name: Install
         run: |
           python -m pip install --upgrade pip

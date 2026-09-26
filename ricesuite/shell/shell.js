@@ -5,15 +5,20 @@
 const TABS = ["home", "search", "clip", "post"];
 const REFRESH_MS = 5000;
 
+// Every pillar page loads once, up front, and stays alive: batches move
+// between Clip and Post automatically only while their pages are open
+// (ADR-001 Q12), and switching tabs must never reload a page mid-task
+// (e.g. Post during a run).
+function loadPillarPages() {
+  for (const frame of document.querySelectorAll("iframe[data-src]")) {
+    if (!frame.getAttribute("src")) frame.setAttribute("src", frame.dataset.src);
+  }
+}
+
 function showTab(name) {
   if (!TABS.includes(name)) name = "home";
   for (const view of document.querySelectorAll(".view")) {
-    const active = view.dataset.view === name;
-    view.classList.toggle("active", active);
-    const frame = view.querySelector("iframe");
-    // Load a pillar page on first visit, then keep it alive: switching tabs
-    // must never reload a page mid-task (e.g. Post during a run).
-    if (active && frame && !frame.getAttribute("src")) frame.setAttribute("src", frame.dataset.src);
+    view.classList.toggle("active", view.dataset.view === name);
   }
   for (const link of document.querySelectorAll("[data-tab]")) {
     if (link.dataset.tab === name) link.setAttribute("aria-current", "page");
@@ -33,7 +38,8 @@ function setList(field, batches) {
   list.replaceChildren();
   for (const b of batches || []) {
     const item = document.createElement("li");
-    item.textContent = `${b.batch_id} · ${b.clips} clip${b.clips === 1 ? "" : "s"}`;
+    const n = b.clip_count;
+    item.textContent = n == null ? b.batch_id : `${b.batch_id} · ${n} clip${n === 1 ? "" : "s"}`;
     list.append(item);
   }
 }
@@ -54,9 +60,10 @@ async function refreshHome() {
   } else {
     setCount("search", "Search is not answering", true);
   }
+  const unavailable = { to_clipper: "Clip is not answering", to_poster: "Post is not answering" };
   for (const field of ["to_clipper", "to_poster"]) {
     if (Array.isArray(data[field])) setCount(field, plural(data[field].length, "batch").replace("batchs", "batches"));
-    else setCount(field, "handoff folder unavailable", true);
+    else setCount(field, unavailable[field], true);
     setList(field, data[field]);
   }
   if (Array.isArray(data.scheduled)) {
@@ -83,6 +90,7 @@ async function refreshStatus() {
 }
 
 window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
+loadPillarPages();
 showTab(location.hash.slice(1));
 refreshStatus();
 setInterval(() => {
