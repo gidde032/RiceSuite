@@ -29,21 +29,67 @@ PROJECT_ROOT = Path(__file__).parent.parent
 
 ENV_PATH = PROJECT_ROOT / "credentials.env"
 
+# Tests must never depend on or reach the maintainer's real files; see the
+# credentials.env rule under "Environment" below, which reuses this flag.
+UNDER_PYTEST = "pytest" in sys.modules
+
+
+def resolve_data_root(raw: str | None) -> Path:
+    """Parse RICEPOSTER_DATA_DIR into the root for everything the app writes.
+
+    Unset or blank yields PROJECT_ROOT itself, so every path below keeps its
+    exact historical value. A value is `~`-expanded but deliberately *not*
+    `.resolve()`d, for the same reason PROJECT_ROOT is not: session paths
+    reach Chrome as `str(path)`, and a different string is a different
+    profile. A relative value is refused, because it would silently move with
+    the working directory the server happened to start in, and so is a
+    directory that does not exist.
+    """
+    if raw is None or not raw.strip():
+        return PROJECT_ROOT
+    path = Path(raw.strip()).expanduser()
+    if not path.is_absolute():
+        raise ValueError(
+            f"RICEPOSTER_DATA_DIR must be an absolute path (or start with ~), "
+            f"got {raw!r}. Unset it to keep data in the checkout."
+        )
+    if not path.is_dir():
+        # Refuse rather than create: a typo'd root would otherwise start with
+        # no sessions/, and a missing user_data_dir makes Chrome open a fresh,
+        # logged-out profile against a live account.
+        raise ValueError(
+            f"RICEPOSTER_DATA_DIR={raw!r} is not an existing directory. "
+            f"Create it deliberately, or unset the variable."
+        )
+    return path
+
+
+# Data root (RiceSuite ADR-001 Q10). Browser sessions, debug screenshots,
+# uploaded media, the queue and the history all live under DATA_ROOT, so a
+# RiceSuite checkout can use an existing RicePoster data set in place. Code
+# and tracked assets (credentials.env, prompts/, frontend/) stay with the
+# checkout. Read from the process environment only: credentials.env is
+# loaded further down and itself lives at a fixed checkout path. Ignored
+# under pytest for the same reason credentials.env is.
+DATA_ROOT = (
+    PROJECT_ROOT if UNDER_PYTEST else resolve_data_root(os.getenv("RICEPOSTER_DATA_DIR"))
+)
+
 # Named SESSIONS_ROOT, not SESSIONS_DIR: both browser modules already export a
 # `SESSIONS_DIR` meaning their own platform subdirectory, and a future
 # `from backend.config import SESSIONS_DIR` in one of them would silently point
 # a persistent profile at the parent directory.
-SESSIONS_ROOT = PROJECT_ROOT / "sessions"
+SESSIONS_ROOT = DATA_ROOT / "sessions"
 IG_SESSIONS_DIR = SESSIONS_ROOT / "instagram"
 TT_SESSIONS_DIR = SESSIONS_ROOT / "tiktok"
 HEALTH_CACHE_FILE = SESSIONS_ROOT / ".health_cache.json"
 ACCOUNT_STATE_FILE = SESSIONS_ROOT / ".account-state.json"
 
-DEBUG_DIR = PROJECT_ROOT / "debug"
-MEDIA_DIR = PROJECT_ROOT / "media"
-QUEUE_FILE = PROJECT_ROOT / "queue.jsonl"
-QUEUE_MEDIA_DIR = PROJECT_ROOT / "queue_media"
-HISTORY_FILE = PROJECT_ROOT / "history.jsonl"
+DEBUG_DIR = DATA_ROOT / "debug"
+MEDIA_DIR = DATA_ROOT / "media"
+QUEUE_FILE = DATA_ROOT / "queue.jsonl"
+QUEUE_MEDIA_DIR = DATA_ROOT / "queue_media"
+HISTORY_FILE = DATA_ROOT / "history.jsonl"
 PROMPTS_DIR = PROJECT_ROOT / "prompts"
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
 
@@ -64,7 +110,6 @@ MEDIA_DIR.mkdir(exist_ok=True)
 # set of values again. A gate whose result depends on a gitignored file is not
 # a gate. Tests get the shipped defaults; a test that wants another value
 # monkeypatches the constant in the module that consumes it.
-UNDER_PYTEST = "pytest" in sys.modules
 if not UNDER_PYTEST:
     load_dotenv(ENV_PATH)
 
