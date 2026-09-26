@@ -61,11 +61,14 @@ carried for future use.
 The review page polls `GET /api/searcher-inbox` (read-only, no job lock).
 When a complete batch is waiting and nothing unsent would be displaced (the
 workspace is empty, or it holds a batch that was fully rendered and sent), the
-page performs the same pull as the button and starts transcribing. One
-Searcher batch is one Clipper batch. Once every clip in the batch has rendered
-successfully, the page sends it to RicePoster exactly as **Send to RicePoster**
-would; a failed or unrendered clip holds the batch until it is re-rendered or
-removed. Rendering itself stays a human action.
+page performs the same pull as the button and starts transcribing. "Nothing
+unsent" means the workspace holds exactly what was last sent; an edit or
+re-render after sending holds it. One Searcher batch is one Clipper batch.
+Once every clip in the batch has rendered successfully, the page sends it to
+RicePoster exactly as **Send to RicePoster** would, once; a failed or
+unrendered clip holds the batch until it is re-rendered or removed, and
+sending an already-sent batch again asks first. Rendering itself stays a human
+action.
 
 ## Idempotency note
 

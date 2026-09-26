@@ -97,8 +97,8 @@ Each requirement is written so a test can check it. "The launcher" means the
 - **FR-9** Poster's data root is configurable with `RICEPOSTER_DATA_DIR`
   (Q10). Unset, every Poster path is byte-identical to RicePoster's
   repository-relative layout. Set, it must be an existing absolute directory;
-  it moves `sessions/`, `debug/`, `media/`, `queue.jsonl`, `queue_media/` and
-  `history.jsonl`, and nothing else. It is never `.resolve()`d (session paths
+  it moves `sessions/`, `debug/`, `media/`, `queue.jsonl`, `queue_media/`,
+  `history.jsonl` and the in-flight run marker of FR-16, and nothing else. It is never `.resolve()`d (session paths
   reach Chrome as strings). It is ignored under pytest.
 
 ### Front door
@@ -134,11 +134,18 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
   so each consumer's page drives its own transport: it polls a read-only inbox
   endpoint (`GET api/searcher-inbox` on Clipper, `GET api/handoff/inbox` on
   Poster) and then performs exactly the pull or send its button performs.
-  Clipper pulls only when nothing unsent would be displaced (so one Searcher
-  batch stays one Clipper batch); Poster pulls only when its manual Pull would
-  not have to ask before overwriting a draft. The shell loads all three pages
-  up front and keeps them alive, so transport runs whenever RiceSuite is open
-  (Q18: v1 runs while open).
+  Clipper pulls only when nothing unsent would be displaced: the workspace is
+  empty, or it holds exactly what was last sent (a later edit or re-render
+  holds it). One Searcher batch stays one Clipper batch; a batch sends itself
+  at most once, and sending it again takes the reviewer's confirmation.
+  Poster pulls only when its manual Pull would not have to ask before
+  overwriting a draft, re-checks that after the request returns, and never
+  replays an unacknowledged batch (the server refuses a replay for the
+  automatic path); recovering one stays the maintainer's Pull. The shell loads
+  all three pages up front and keeps them alive, so transport runs whenever
+  RiceSuite is open (Q18: v1 runs while open). Limits of page-driven transport
+  (background-tab throttling, a sleeping laptop, a second open tab) are
+  tracked in #16; handoff folders are durable, so a delay loses nothing.
 - **FR-15 Never auto-post.** No transport step posts, schedules, or discards a
   draft. Post All and Schedule remain explicit human actions in Poster.
 
@@ -147,8 +154,12 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
 - **FR-16** A Poster post in flight when Poster's process dies is recorded as
   **unconfirmed** and is never retried automatically, whether it was a manual
   Post All run or a scheduled batch. Manual runs: an in-flight marker in the
-  data root, turned into unconfirmed History rows on the next start. Scheduled
-  runs: RicePoster's existing running → interrupted startup sweep.
+  data root, turned into unconfirmed History rows at once when the run is cut
+  off in-process (an exception or a cancellation at shutdown), or on the next
+  start after a process death. Scheduled runs: RicePoster's existing running →
+  interrupted startup sweep. (A process killed in the instant between writing
+  a run's History rows and removing the marker can leave an extra unconfirmed
+  row for that run: accepted, it errs towards checking.)
 - **FR-17** `rice stop` refuses, exits non-zero and changes nothing, while a
   Poster posting run is active, unless `--force` is given. If the launcher
   cannot confirm Poster is idle, it treats the run as possibly active. Pillars
