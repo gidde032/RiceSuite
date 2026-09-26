@@ -55,7 +55,7 @@ function row(p) {
   b.append(main);
   b.addEventListener("click", () => {
     localStorage.setItem(PROFILE_KEY, p.id);
-    window.location.assign("/");
+    window.location.assign("./");
   });
   return b;
 }

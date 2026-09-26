@@ -352,7 +352,7 @@ def test_profiles_and_review_scripts_share_the_storage_key(client: TestClient) -
     key = 'PROFILE_KEY = "ricesearcher.profile"'
     assert key in profiles_js and key in app_js
     assert profiles_js.index("localStorage.setItem(PROFILE_KEY") < profiles_js.index(
-        'window.location.assign("/")'
+        'window.location.assign("./")'
     )
 
 

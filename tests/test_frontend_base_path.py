@@ -30,12 +30,18 @@ FRONTENDS = {
 # literals like `/-/g` are not URLs this checks.
 ROOT_ABSOLUTE = re.compile(r"""["'`]/(?!/)[A-Za-z][A-Za-z0-9_.-]*[/"'`?]""")
 ROOT_PAGE = re.compile(r"""(?:href|src|action)=["']/[^"'/]*["']""")
+# Script navigation to a root-absolute target, including the bare site root:
+# inside the shell's iframe, "/" is the gateway root, i.e. the shell itself.
+ROOT_NAV = re.compile(
+    r"""(?:location\.(?:assign|replace)\(|location(?:\.href)?\s*=|window\.open\()"""
+    r"""\s*["'`]/(?!/)"""
+)
 
 
 def is_root_absolute(line: str) -> bool:
     """A match counts unless it is a suffix appended with ``+`` (e.g.
     ``"api/slices/" + id + "/window"``), which is not the start of a URL."""
-    if ROOT_PAGE.search(line):
+    if ROOT_PAGE.search(line) or ROOT_NAV.search(line):
         return True
     return any(
         not line[: m.start()].rstrip().endswith("+")
@@ -74,6 +80,10 @@ def test_detector_catches_each_spelling():
         '<link href="/static/a.css">',
         '<a href="/">Home</a>',
         '<a href="/media">Media</a>',
+        'window.location.assign("/")',
+        "location.href = '/media'",
+        "window.location = `/`",
+        'window.open("/api/x")',
     ):
         assert is_root_absolute(sample), sample
     for sample in (
@@ -82,6 +92,8 @@ def test_detector_catches_each_spelling():
         "s.replace(/a/g, '')",
         'src="//cdn/x"',
         'fetch("api/s/" + id + "/window")',
+        'window.location.assign("./")',
+        'window.open("https://example.org/")',
     ):
         assert not is_root_absolute(sample), sample
 
