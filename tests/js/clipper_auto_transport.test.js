@@ -581,3 +581,49 @@ test("S-1: a send refused as already sent holds the batch and names it", async (
   assert.equal(posts(calls, "api/handoff").length, 1);
   assert.equal(posts(calls, "api/pull-from-searcher").length, 0, "the workspace stays held");
 });
+
+// --- correctness review repairs ---------------------------------------------
+
+test("C-1: an edit after a lost send reply goes out as a new send, never a replay", async () => {
+  const bodies = [];
+  const { js } = boot({
+    "POST api/handoff": (call) => {
+      bodies.push(JSON.parse(call.body));
+      if (bodies.length === 1) throw new TypeError("network connection lost"); // written; reply lost
+      return [409, {
+        detail: "These clips already went to RicePoster as batch out1.",
+        already_sent: "out1",
+      }];
+    },
+  });
+  js(`clips.push(${sendable("j1", "done")})`);
+  js("collectWords = () => []; radioValue = () => 'x';");
+  await js("maybeAutoSend()");
+  // The reviewer fixes the header and renders the clip again.
+  js(`clips[0].headerEl.value = "fixed header"; clips[0].edits = 1;
+      clips[0].renderedEdits = 1; clips[0].renders = 1;`);
+  await js("sendBatch()");
+  assert.equal(bodies.length, 2);
+  assert.notEqual(bodies[1].send_key, bodies[0].send_key, "a changed batch is a new send");
+  assert.equal(js("sentBatchId"), "out1");
+  assert.equal(js("workspaceFree()"), false, "the fixed header is not claimed as sent");
+});
+
+test("C-3: a render found done by polling after an edit is not shown as current", async () => {
+  let js;
+  ({ js } = boot({
+    "POST api/jobs/jA/render": () => {
+      throw new TypeError("network connection lost");
+    },
+    "GET api/jobs/jA": () => {
+      js("clips[0].edits = 1"); // the reviewer edits while the page polls
+      return [200, { status: "done", has_output: true }];
+    },
+  }));
+  stubRender(js);
+  js("statuses = []; setClipStatus = (c, t) => statuses.push(t);");
+  js(`clips.push(${renderable("jA", 1)})`);
+  assert.equal(await js("renderClip(clips[0])"), true);
+  const shown = JSON.parse(js("JSON.stringify(statuses)"));
+  assert.match(shown[shown.length - 1], /Edited since/);
+});

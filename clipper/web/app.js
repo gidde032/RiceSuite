@@ -875,7 +875,7 @@ async function renderClip(clip) {
         clip.renders = (clip.renders || 0) + 1;
         clip.renderedEdits = editsAtRender;
         clip.status = "done";
-        setClipStatus(clip, "Rendered ✓");
+        setClipStatus(clip, clipCurrent(clip) ? "Rendered ✓" : "Edited since its render. Render it again before it is sent.");
         await showResult(clip);
         return true;
       }
@@ -988,9 +988,11 @@ async function sendBatch({ automatic = false } = {}) {
   const resend = batchSent; // the reviewer confirmed a second send above
   sendInFlight = true;
   const snapshot = batchSnapshot();
-  // One key per send (W1-01). A retry after a reply that never came reuses
-  // it, so Clipper returns the batch that attempt wrote instead of a second.
-  if (!sendKey) {
+  // One key per send (W1-01). A retry of the unchanged batch after a reply
+  // that never came reuses it, so Clipper returns the batch that attempt
+  // wrote. A batch changed since then is a new send (review C-1): if the
+  // first attempt did arrive, Clipper answers `already_sent` instead.
+  if (!sendKey || snapshot !== sendKeySnapshot) {
     sendKey = newSendKey();
     sendKeySnapshot = snapshot;
   }
