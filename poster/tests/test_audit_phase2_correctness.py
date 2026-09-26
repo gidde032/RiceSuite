@@ -410,3 +410,30 @@ def test_run_sh_does_not_enable_auto_reload():
             f"unattended scheduled post would restart the server mid-run: "
             f"{line.strip()!r}"
         )
+
+
+def test_run_sh_pins_the_asyncio_loop_and_h11_protocol():
+    """RiceSuite shares one environment across its pillars, and Clipper needs
+    uvicorn[standard], which installs uvloop and httptools. uvicorn's "auto"
+    loop and HTTP settings pick those up when present, so an unpinned run.sh
+    would silently move the scheduler and Playwright onto a different event
+    loop and HTTP parser than RicePoster has always run on. Pin the originals.
+    """
+    import shlex
+
+    run_sh = (PROJECT_ROOT / "run.sh").read_text()
+    uvicorn_lines = [
+        line for line in run_sh.splitlines()
+        if "uvicorn" in line and not line.lstrip().startswith("#")
+    ]
+    assert uvicorn_lines, "run.sh no longer starts uvicorn."
+    for line in uvicorn_lines:
+        args = shlex.split(line)
+        pinned = {
+            flag: args[args.index(flag) + 1]
+            for flag in ("--loop", "--http")
+            if flag in args[:-1]
+        }
+        assert pinned == {"--loop": "asyncio", "--http": "h11"}, (
+            f"run.sh must pin --loop asyncio --http h11: {line.strip()!r}"
+        )
