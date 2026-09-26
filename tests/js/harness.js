@@ -52,7 +52,8 @@ function response(status, body) {
 }
 
 // `routes` maps "METHOD path" (path without query) to a body or a function
-// (request) => [status, body]. Every request is recorded in `calls`.
+// (request) => [status, body], which may be async to hold a reply back. Every
+// request is recorded in `calls`.
 function scriptedFetch(routes) {
   const calls = [];
   async function fetch(url, options = {}) {
@@ -62,7 +63,7 @@ function scriptedFetch(routes) {
     calls.push(call);
     const route = routes[`${method} ${path}`];
     if (route === undefined) return response(404, { detail: `no route ${method} ${path}` });
-    if (typeof route === "function") return response(...route(call));
+    if (typeof route === "function") return response(...(await route(call)));
     return response(200, route);
   }
   return { fetch, calls };

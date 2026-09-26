@@ -123,7 +123,13 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
   ingested is never ingested twice.
 - **FR-13 Clipper → Poster.** Clipper sends a batch automatically only when
   every clip in it has rendered successfully. A failed render holds the whole
-  batch until the clip is fixed and re-rendered; then the batch sends.
+  batch until the clip is fixed and re-rendered; then the batch sends. A clip
+  edited after its render request (any card control, or a generated header)
+  counts as unrendered until it renders again, so the MP4 always matches the
+  header and transcript sent with it. The Send button follows the same rule:
+  it refuses while any clip is unrendered, failed, or edited since its render,
+  names those clips, and never sends part of a batch. Removing a clip from the
+  batch is the reviewer's way to send the rest.
 - **FR-14 Poster ingest.** A complete Clipper batch is ingested automatically
   only when Poster's draft workspace is empty. Otherwise it waits, visibly, in
   an inbox on the Post tab, and is never merged into or replaces existing
@@ -136,7 +142,8 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
   Poster) and then performs exactly the pull or send its button performs.
   Clipper pulls only when nothing unsent would be displaced: the workspace is
   empty, or it holds exactly what was last sent (a later edit or re-render
-  holds it). One Searcher batch stays one Clipper batch; a batch sends itself
+  holds it). The Pull button follows the same rule, and one pull runs at a
+  time, whether the button or the timer started it. One Searcher batch stays one Clipper batch; a batch sends itself
   at most once, and sending it again takes the reviewer's confirmation. Each
   send carries a key (`send_key` on `POST api/handoff`); a retry after a lost
   reply reuses it, and Clipper returns the batch that key already wrote

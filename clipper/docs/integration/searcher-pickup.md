@@ -64,11 +64,13 @@ workspace is empty, or it holds a batch that was fully rendered and sent), the
 page performs the same pull as the button and starts transcribing. "Nothing
 unsent" means the workspace holds exactly what was last sent; an edit or
 re-render after sending holds it. One Searcher batch is one Clipper batch.
+The **Pull** button follows the same rule, and only one pull runs at a time.
 Once every clip in the batch has rendered successfully, the page sends it to
 RicePoster exactly as **Send to RicePoster** would, once; a failed or
-unrendered clip holds the batch until it is re-rendered or removed, and
-sending an already-sent batch again asks first. Rendering itself stays a human
-action.
+unrendered clip, or one edited since its render, holds the batch until it is
+rendered again or removed, and sending an already-sent batch again asks first.
+The **Send** button refuses such a batch too and names the clips; it never
+sends part of a batch. Rendering itself stays a human action.
 
 A pull removes the Searcher batch, so Clipper records it as **open** in its
 work root until it is sent or discarded. `GET /api/workspace` returns the

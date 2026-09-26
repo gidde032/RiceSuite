@@ -156,6 +156,14 @@ function updateRenderAllButton() {
   // Handoff is offered once at least one clip has a rendered output.
   const anyDone = clips.some((c) => c.jobId && c.status === "done");
   $("send-handoff-btn").disabled = batchBusy || ingesting || !anyDone;
+  // One Searcher batch stays one Clipper batch (W2-01).
+  $("pull-searcher-btn").disabled = !workspaceFree();
+}
+
+// Rendered, and nothing in the card changed since its render request (W1-06):
+// the MP4 matches the header and transcript that would be sent with it.
+function clipCurrent(c) {
+  return Boolean(c.jobId) && c.status === "done" && (c.edits || 0) === (c.renderedEdits || 0);
 }
 
 function radioValue(group) {
@@ -183,6 +191,9 @@ function buildCard(clip) {
   // the batch differ from what was sent and holds the workspace.
   const markEdited = () => {
     clip.edits = (clip.edits || 0) + 1;
+    if (clip.status === "done") {
+      setClipStatus(clip, "Edited since its render. Render it again before it is sent.");
+    }
   };
   node.addEventListener("input", markEdited);
   node.addEventListener("change", markEdited);
@@ -502,7 +513,10 @@ async function requestHeader(clip, { feedback = "", avoid = "" } = {}) {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || "header generation failed");
-    if (data.header) clip.headerEl.value = data.header;
+    if (data.header) {
+      clip.headerEl.value = data.header;
+      clip.edits = (clip.edits || 0) + 1; // a new header needs a new render
+    }
     setHeaderGenStatus(clip, "");
   } catch (err) {
     setHeaderGenStatus(clip, err.message, true);
@@ -593,11 +607,31 @@ function addPulledJobs(pulled, batchId = "") {
   processIngestQueue();
 }
 
-$("pull-searcher-btn").addEventListener("click", async () => {
-  const btn = $("pull-searcher-btn");
-  btn.disabled = true;
+$("pull-searcher-btn").addEventListener("click", pullFromSearcherClick);
+
+// The Pull button follows the timer's rules (W2-01): one pull at a time, and
+// only when nothing unsent would be displaced. A batch pulled earlier and not
+// yet sent comes back first.
+async function pullFromSearcherClick() {
+  if (!workspaceFree()) {
+    setPullStatus(
+      pullInFlight
+        ? "A pull is already running."
+        : "Send this batch or start over first: one Searcher batch stays one Clipper batch.",
+      true,
+    );
+    return;
+  }
+  if (await restoreOpenBatch()) {
+    setPullStatus("Restored the batch pulled earlier.");
+    return;
+  }
+  if (!workspaceFree()) return;
+  pullInFlight = true;
+  updateRenderAllButton();
   setPullStatus("Pulling the next batch from RiceSearcher…");
   try {
+    if (clips.length) clearWorkspace(); // only a fully sent batch gets here
     const res = await fetch("api/pull-from-searcher", { method: "POST" });
     const data = await res.json();
     if (!res.ok) {
@@ -613,9 +647,10 @@ $("pull-searcher-btn").addEventListener("click", async () => {
   } catch (err) {
     setPullStatus("pull failed: " + err.message, true);
   } finally {
-    btn.disabled = false;
+    pullInFlight = false;
+    updateRenderAllButton();
   }
-});
+}
 
 async function processIngestQueue() {
   if (ingesting) return; // a running drain picks up newly-queued clips itself
@@ -762,6 +797,8 @@ async function renderClip(clip) {
     }
 
     setClipStatus(clip, "Rendering… (captions, header & audio)");
+    // Any edit after this point is not in the MP4 (W1-06).
+    const editsAtRender = clip.edits || 0;
     const payload = {
       words: collectWords(clip),
       header: clip.headerEl.value,
@@ -785,6 +822,7 @@ async function renderClip(clip) {
       // state; treat done+output as success, error as failure, timeout as drop.
       if (await pollRenderCompletion(clip)) {
         clip.renders = (clip.renders || 0) + 1;
+        clip.renderedEdits = editsAtRender;
         clip.status = "done";
         setClipStatus(clip, "Rendered ✓");
         await showResult(clip);
@@ -796,8 +834,9 @@ async function renderClip(clip) {
     if (!res.ok) throw new Error(data.detail || "render failed");
 
     clip.renders = (clip.renders || 0) + 1;
+    clip.renderedEdits = editsAtRender;
     clip.status = "done";
-    setClipStatus(clip, "Rendered ✓");
+    setClipStatus(clip, clipCurrent(clip) ? "Rendered ✓" : "Edited since its render. Render it again before it is sent.");
     await showResult(clip);
     return true;
   } catch (err) {
@@ -827,8 +866,9 @@ $("send-handoff-btn").addEventListener("click", () => sendBatch());
 
 // Automatic send (RiceSuite ADR-001 Q12): once every clip in the batch has
 // rendered successfully, send it exactly as the button would. A failed or
-// unrendered clip holds the whole batch until it is fixed and re-rendered (or
-// removed). Rendering itself stays a human action.
+// unrendered clip, or one edited since its render, holds the whole batch until
+// it is rendered again (or removed); the button refuses it too (W3-02).
+// Rendering itself stays a human action.
 // Everything that would reach RicePoster: comparing it with what was sent
 // tells "nothing unsent" apart from "rendered or edited again after sending".
 function batchSnapshot() {
@@ -853,8 +893,15 @@ function batchReadyToSend() {
     !batchBusy &&
     !ingesting &&
     clips.length > 0 &&
-    clips.every((c) => c.jobId && c.status === "done")
+    clips.every(clipCurrent)
   );
+}
+
+// Why a clip holds the batch, for the reviewer.
+function heldReason(c) {
+  if (c.status === "done") return `Clip ${c.ord} changed after its render`;
+  if (c.error) return `Clip ${c.ord} failed to render`;
+  return `Clip ${c.ord} is not rendered`;
 }
 
 async function maybeAutoSend() {
@@ -863,11 +910,21 @@ async function maybeAutoSend() {
 
 async function sendBatch({ automatic = false } = {}) {
   if (sendInFlight) return;
-  const done = clips.filter((c) => c.jobId && c.status === "done");
-  if (done.length === 0) {
+  if (!clips.some((c) => c.jobId && c.status === "done")) {
     setBatchStatus("Render clips before sending to RicePoster.", true);
     return;
   }
+  // The whole batch goes together: nothing is left out silently (W3-02).
+  const held = clips.filter((c) => !clipCurrent(c));
+  if (held.length) {
+    const them = held.length === 1 ? "it" : "them";
+    setBatchStatus(
+      `${held.map(heldReason).join("; ")}. Render ${them} or remove ${them} from the batch, then send.`,
+      true,
+    );
+    return;
+  }
+  const done = clips;
   if (
     !automatic &&
     batchSent &&
@@ -1009,11 +1066,11 @@ function clearWorkspace() {
 // is one Clipper batch ("Send selected" stays the boundary).
 const AUTO_PULL_MS = 5000;
 const AUTO_PULL_BACKOFF_MS = 60000;
-let autoPulling = false;
+let pullInFlight = false; // one pull at a time, from the button or the timer
 let autoPullPausedUntil = 0;
 
 function workspaceFree() {
-  if (ingesting || batchBusy || autoPulling || sendInFlight) return false;
+  if (ingesting || batchBusy || pullInFlight || sendInFlight) return false;
   return nothingUnsent();
 }
 
@@ -1030,7 +1087,7 @@ function nothingUnsent() {
 // A batch Clipper already pulled, whose reply was lost or which a reload
 // dropped, comes back before anything new is pulled (W1-02).
 async function restoreOpenBatch() {
-  autoPulling = true;
+  pullInFlight = true;
   try {
     const res = await fetch("api/workspace");
     if (!res.ok) return false;
@@ -1049,7 +1106,7 @@ async function restoreOpenBatch() {
   } catch {
     return false;
   } finally {
-    autoPulling = false;
+    pullInFlight = false;
   }
 }
 
@@ -1066,7 +1123,7 @@ async function autoPullFromSearcher() {
     return;
   }
   if (!waiting.length || !workspaceFree()) return;
-  autoPulling = true;
+  pullInFlight = true;
   try {
     if (clips.length) clearWorkspace(); // only a fully sent batch gets here
     const res = await fetch("api/pull-from-searcher", { method: "POST" });
@@ -1083,7 +1140,7 @@ async function autoPullFromSearcher() {
     autoPullPausedUntil = Date.now() + AUTO_PULL_BACKOFF_MS;
     setPullStatus("Automatic pull failed: " + err.message, true);
   } finally {
-    autoPulling = false;
+    pullInFlight = false;
   }
 }
 
