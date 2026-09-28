@@ -215,6 +215,7 @@ test("a caption typed while generation runs is never overwritten", async () => {
     fetchWithTimeout: fetch, handleFetchError: async () => {},
     el: () => element(), slotEl: () => element(), setCaptionError() {}, autoGrow() {},
     updateCharCount() {}, updateButtons() {}, CAPTION_TIMEOUT_MS: 1000,
+    draftWork: 0, // page global: in-flight draft writers (#19)
   });
   vm.runInContext(slice("async function generateAll()", "\n}\n") + "\n}\n", ctx);
   await vm.runInContext("generateAll()", ctx);

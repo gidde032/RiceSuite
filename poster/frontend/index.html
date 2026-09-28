@@ -336,9 +336,10 @@
     letter-spacing: 0.4px;
     color: var(--muted-grey);
   }
-  /* Decorative slot affordance (matches the reference glyph). Not interactive:
-     there is no per-slot menu behaviour, so it is aria-hidden and not focusable
-     rather than a control that does nothing. */
+  /* Slot menu glyph (matches the reference). When another account is free it
+     is a live control: a native select, invisible over the glyph, swaps the
+     slot's account and moves the draft with it (#19). With nowhere to swap to
+     it stays an aria-hidden glyph rather than a control that does nothing. */
   .slot-menu {
     flex: none;
     margin-left: auto;
@@ -347,6 +348,13 @@
     line-height: 1;
     padding: 6px 8px;
     letter-spacing: 1px;
+  }
+  label.slot-menu { position: relative; cursor: pointer; border-radius: 6px; }
+  label.slot-menu:hover, label.slot-menu:focus-within { color: var(--primary-text); background: var(--charcoal); }
+  label.slot-menu:focus-within { outline: 2px solid var(--rice-grey); outline-offset: 1px; }
+  .slot-swap {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    opacity: 0; cursor: pointer; font-size: 14px;
   }
 
   .drop-zone {
@@ -720,12 +728,14 @@
   .account-toolbar label { display:grid; gap:6px; color:var(--muted-grey); font-size:11px; }
   .account-toolbar input, .account-toolbar select { min-width:180px; }
   .account-list { display:grid; gap:10px; }
-  .account-row { display:grid; grid-template-columns:minmax(160px,1fr) auto auto minmax(150px,220px) auto; gap:14px; align-items:center; padding:14px; background:var(--interior); border:1px solid var(--hairline); border-radius:8px; }
+  .account-row { display:grid; grid-template-columns:minmax(160px,1fr) auto auto minmax(150px,220px) minmax(150px,220px) auto; gap:14px; align-items:center; padding:14px; background:var(--interior); border:1px solid var(--hairline); border-radius:8px; }
   .account-name { font-weight:650; overflow-wrap:anywhere; }
   .account-meta { display:flex; flex-wrap:wrap; gap:8px; color:var(--muted-grey); font-size:11px; }
   .account-active { min-height:44px; display:inline-flex; align-items:center; gap:7px; }
   .account-order { display:flex; gap:6px; }
   .account-order button { min-width:44px; min-height:44px; }
+  .account-status { min-height:1em; margin:0 0 12px; color:var(--muted-grey); font-size:12px; }
+  .account-status:empty { display:none; }
   .account-state-error { padding:12px; margin-bottom:14px; border:1px solid var(--fail); color:var(--primary-text); background:var(--interior); }
   .stats-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
   .stat-card { padding:16px; background:var(--interior); border:1px solid var(--hairline); border-radius:8px; }
@@ -962,6 +972,7 @@
         <button type="button" class="btn-secondary btn-small" onclick="renameRoster()">Rename</button>
         <button type="button" class="btn-clear btn-small" onclick="deleteRoster()">Delete</button>
       </div>
+      <p id="accountsStatus" class="account-status" aria-live="polite"></p>
       <div id="accountsList" class="account-list"></div>
     </section>
 
@@ -1355,6 +1366,9 @@ async function togglePlatform(slot, platform) {
 function renderSlots() {
   const container = el('slotsContainer');
   container.innerHTML = '';
+  // Inactive accounts a slot's draft can move to (#19).
+  const swapTargets = (state.availableAccounts || [])
+    .filter(account => !state.accounts.some(active => active.slot === account.slot));
 
   for (const account of state.accounts) {
     const slot = account.slot;
@@ -1401,7 +1415,14 @@ function renderSlots() {
         <span class="slot-account-id" title="${escAttr(account.name)}">[${esc(slot)}]</span>
         ${sessDots}
         <span id="mediaTypeBadge_${slot}" class="media-type-badge" style="display:none"></span>
-        <span class="slot-menu" aria-hidden="true">&#8943;</span>
+        ${swapTargets.length ? `<label class="slot-menu" title="Swap the account for this slot; the draft stays">
+          <span aria-hidden="true">&#8943;</span>
+          <select class="slot-swap" aria-label="${escAttr('Swap the account for slot ' + num + '; the draft moves to it')}"
+                  onchange="replaceAccount('${escAttr(slot)}', this.value)">
+            <option value="">Swap account…</option>${swapTargets.map(other =>
+              `<option value="${escAttr(other.slot)}">${esc(other.name)} [${esc(other.slot)}]</option>`).join('')}
+          </select></label>`
+          : '<span class="slot-menu" aria-hidden="true">&#8943;</span>'}
       </div>
 
       <div class="slot-media">
@@ -1538,6 +1559,20 @@ function draftsAtRisk() {
 }
 
 let pullInFlight = false;
+// Requests that write back into a draft by the account id they started under:
+// an upload, caption generation, or a posting or scheduling request. Drafts do
+// not move to another account while any is running (#19).
+let draftWork = 0;
+
+function hasDraft(s) {
+  return !!s && !!(s.file || s.filename || (s.caption && s.caption.trim()));
+}
+
+// An unacknowledged pull must also finish first: its replay is frozen to the
+// accounts it was staged for.
+function draftWorkBusy() {
+  return draftWork > 0 || pullInFlight;
+}
 
 // Returns true when a batch was pulled, captioned and acknowledged.
 // `automatic` (RiceSuite's inbox poll) never replays an unacknowledged batch
@@ -1865,6 +1900,7 @@ async function handleFile(slot, file) {
   prog.style.display = 'block';
   fill.style.width = '0%';
 
+  draftWork += 1;
   try {
     const data = await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -1900,6 +1936,7 @@ async function handleFile(slot, file) {
     dropText.style.display = '';
     dropText.textContent = `Upload failed: ${e.message} — click to retry`;
   } finally {
+    draftWork -= 1;
     prog.style.display = 'none';
   }
 
@@ -1935,6 +1972,7 @@ async function generateAll() {
 
   const slots = Object.entries(state.slots).filter(([_, s]) => s.filename && !s.caption.trim());
 
+  draftWork += 1;
   const promises = slots.map(async ([slot, s]) => {
     const formData = new FormData();
     formData.append('media_type', s.mediaType);
@@ -1965,7 +2003,11 @@ async function generateAll() {
     }
   });
 
-  await Promise.all(promises);
+  try {
+    await Promise.all(promises);
+  } finally {
+    draftWork -= 1;
+  }
 
   btn.textContent = 'Generate Captions';
   updateButtons();
@@ -1987,6 +2029,7 @@ async function regenerateCaption(slot) {
   formData.append('feedback', slotEl('feedback', slot).value);
   if (s.thumb) formData.append('thumbnail', s.thumb);
 
+  draftWork += 1;
   try {
     const resp = await fetchWithTimeout(
       'api/generate-caption',
@@ -2010,6 +2053,8 @@ async function regenerateCaption(slot) {
     setCaptionError(slot, `Regenerate failed: ${e.message}`);
     btn.textContent = 'Failed — retry';
     setTimeout(() => { btn.textContent = 'Regenerate'; }, 2500);
+  } finally {
+    draftWork -= 1;
   }
   btn.disabled = false;
   updateButtons();
@@ -2236,6 +2281,7 @@ function renderAccounts() {
       ? `Local account state needs repair: ${state.accountStateError}` : '';
   }
   const active = currentActiveIds();
+  const inactive = (state.availableAccounts || []).filter(account => !active.includes(account.slot));
   list.innerHTML = (state.availableAccounts || []).map(account => {
     const index = active.indexOf(account.slot);
     const sessions = account.sessions || {};
@@ -2261,6 +2307,11 @@ function renderAccounts() {
       <span>${index >= 0 ? `Order ${index + 1}` : 'Inactive'}</span>
       <label>Caption default<select aria-label="Caption default for ${escAttr(account.name)}"
         data-account-control="caption-default" onchange="setCaptionDefault('${escAttr(account.slot)}', this.value)">${options}</select></label>
+      ${index >= 0 && inactive.length ? `<label>Replace with<select aria-label="Replace ${escAttr(account.name)} with another account; its draft moves too"
+        data-account-control="replace" onchange="replaceAccount('${escAttr(account.slot)}', this.value)">
+        <option value="">Keep ${esc(account.name)}</option>${inactive.map(other =>
+          `<option value="${escAttr(other.slot)}">${esc(other.name)} [${esc(other.slot)}]</option>`).join('')}</select></label>`
+        : '<span class="account-replace-empty"></span>'}
       <div class="account-order">
         <button type="button" class="btn-secondary btn-small" data-account-control="earlier" aria-label="Move ${escAttr(account.name)} earlier" ${index <= 0 ? 'disabled' : ''} onclick="moveAccount('${escAttr(account.slot)}', -1)">↑</button>
         <button type="button" class="btn-secondary btn-small" data-account-control="later" aria-label="Move ${escAttr(account.name)} later" ${index < 0 || index === active.length - 1 ? 'disabled' : ''} onclick="moveAccount('${escAttr(account.slot)}', 1)">↓</button>
@@ -2299,6 +2350,41 @@ async function persistAccountState() {
   state.accountStateError = '';
 }
 
+// How drafts follow an account change (#19). An account in both lists keeps its
+// own draft. Each account leaving hands its draft to the account joining at the
+// same place in the joining order, so a,b,c → d,e,f moves a→d, b→e, c→f. Only a
+// draft left with no joining account is at risk.
+function planDraftTransfers(oldIds, newIds) {
+  const leaving = oldIds.filter(id => !newIds.includes(id));
+  const joining = newIds.filter(id => !oldIds.includes(id));
+  const moves = [], orphaned = [];
+  leaving.forEach((from, index) => {
+    if (!hasDraft(state.slots[from])) return;
+    if (index < joining.length) moves.push([from, joining[index]]);
+    else orphaned.push(from);
+  });
+  return { moves, orphaned };
+}
+
+// A declined or refused swap leaves the Review cards as they were; only the
+// slot menus return to their placeholder. (renderSlots would also drop typed
+// feedback, Undo, and an in-flight upload's progress bar.)
+function resetSlotMenus() {
+  document.querySelectorAll('select.slot-swap').forEach(menu => { menu.value = ''; });
+}
+
+function accountLabel(id) {
+  return state.availableAccounts.find(a => a.slot === id)?.name || id;
+}
+
+// Account changes report in both places they can start from: Review (the slot
+// menu) and Accounts (Replace, rosters).
+function setTransferStatus(message) {
+  setPullStatus(message);
+  const panel = elOpt('accountsStatus');
+  if (panel) panel.textContent = message;
+}
+
 async function applyActiveAccounts(ids) {
   const assignedProfiles = state.accountState.device_profiles || {};
   const newInstagramAccounts = ids.filter(id => {
@@ -2308,18 +2394,23 @@ async function applyActiveAccounts(ids) {
   if (Object.keys(assignedProfiles).length + newInstagramAccounts.length > state.deviceProfileCapacity) {
     alert(`Only ${state.deviceProfileCapacity} distinct Instagram device profiles are available. TikTok-only accounts do not use one.`);
     renderAccounts();
+    resetSlotMenus();
     return false;
   }
   const oldIds = currentActiveIds();
   const removed = oldIds.filter(id => !ids.includes(id));
-  const drafts = removed.filter(id => {
-    const draft = state.slots[id];
-    return draft && (draft.file || draft.filename || draft.caption.trim());
-  });
-  if (drafts.length) {
-    const names = drafts.map(id => `${state.availableAccounts.find(a => a.slot === id)?.name || id} [${id}]`);
+  const { moves, orphaned } = planDraftTransfers(oldIds, ids);
+  if (moves.length && draftWorkBusy()) {
+    alert('A draft is still uploading, writing its caption, being pulled from Clip, or posting. Let it finish, then switch accounts.');
+    renderAccounts();
+    resetSlotMenus();
+    return false;
+  }
+  if (orphaned.length) {
+    const names = orphaned.map(id => `${accountLabel(id)} [${id}]`);
     if (!confirm(`Switching accounts will discard the current browser draft for: ${names.join(', ')}. Continue?`)) {
       renderAccounts();
+      resetSlotMenus();
       return false;
     }
   }
@@ -2331,12 +2422,26 @@ async function applyActiveAccounts(ids) {
     state.accountState.active_account_ids = previous;
     alert(`Account update failed: ${error.message}`);
     renderAccounts();
+    resetSlotMenus();
     return false;
   }
+  // Move whole draft objects, so the preview, caption frame and server-staged
+  // media go with them. The staged filename keeps its old account prefix; the
+  // backend resolves media by filename only. The caption text is kept as
+  // written; its style becomes the receiving account's default, so the next
+  // Regenerate writes for that account (maintainer decision on #19).
+  const moved = moves.map(([from, to]) => {
+    const draft = state.slots[from];
+    delete state.slots[from];
+    clearSlotPreview(state.slots[to]);
+    draft.style = state.accountState.caption_defaults?.[to] || state.defaultCaptionStyle;
+    return [to, draft];
+  });
   for (const id of removed) {
     clearSlotPreview(state.slots[id]);
     delete state.slots[id];
   }
+  for (const [to, draft] of moved) state.slots[to] = draft;
   state.accounts = ids.map(id => {
     const account = state.availableAccounts.find(candidate => candidate.slot === id);
     return account && { slot: account.slot, account_id: account.account_id, name: account.name };
@@ -2354,7 +2459,26 @@ async function applyActiveAccounts(ids) {
   renderSessionStrip();
   renderAccounts();
   updateButtons();
+  if (moves.length) {
+    const pairs = moves.map(([from, to]) => `${accountLabel(from)} → ${accountLabel(to)}`);
+    setTransferStatus(`Moved ${moves.length} draft${moves.length === 1 ? '' : 's'}: ${pairs.join(', ')}. Captions are unchanged; Regenerate writes in the new account's default style.`);
+  }
   return true;
+}
+
+// Put an inactive account in another account's place, taking over its draft.
+// Offered from each active Accounts row and each Review card's slot menu.
+async function replaceAccount(fromId, toId) {
+  const ids = currentActiveIds();
+  const at = ids.indexOf(fromId);
+  if (at < 0 || !toId || ids.includes(toId)
+      || !state.availableAccounts.some(a => a.slot === toId)) {
+    resetSlotMenus();
+    renderAccounts();
+    return false;
+  }
+  ids[at] = toId;
+  return applyActiveAccounts(ids);
 }
 
 function toggleAccount(accountId, checked) {
@@ -2678,6 +2802,7 @@ async function postAll() {
 
   startProgressPolling();
 
+  draftWork += 1;
   try {
     // Intentionally a bare fetch: see the fetchWithTimeout note above. A live
     // posting run has no honest client-side ceiling, and aborting here would
@@ -2750,6 +2875,8 @@ async function postAll() {
         <span>Posting failed: ${esc(e.message)}</span>
       </div>
     `;
+  } finally {
+    draftWork -= 1;
   }
 
   btn.textContent = 'Post All';
@@ -2781,6 +2908,7 @@ async function scheduleAll() {
 
   const payload = { ...buildSlotsPayload(), fire_time: fireTime };
 
+  draftWork += 1;
   try {
     // Bare fetch, like /api/post: this write is what arms an unattended live
     // run, so the UI must never report a failure it cannot actually guarantee
@@ -2804,6 +2932,8 @@ async function scheduleAll() {
     refreshQueue();
   } catch (e) {
     alert(`Schedule failed: ${e.message}`);
+  } finally {
+    draftWork -= 1;
   }
 }
 
