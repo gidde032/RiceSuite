@@ -23,16 +23,11 @@ from backend.device_identity import (
     viewport_for_slot,
 )
 from tests.browser_trace import run_traced
-from tests.test_poster_internals import CAPTION, _ig_script, media  # noqa: F401
+from tests.test_poster_internals import CAPTION, _ig_script, _run_ig, media  # noqa: F401
 
 
 def _normal_run(monkeypatch, media):
-    return run_traced(
-        monkeypatch,
-        instagram_browser,
-        lambda: instagram_browser.post_media("A", media, CAPTION, "reel", headless=True),
-        _ig_script(),
-    )
+    return _run_ig(monkeypatch, media, _ig_script())
 
 
 # --- D2: identity by mode ---------------------------------------------------
@@ -67,16 +62,13 @@ def test_happy_path_runs_no_page_evaluate(monkeypatch, tmp_sessions, media, allo
     assert not [line for line in rec.lines if line.startswith("page.evaluate(")]
 
 
-def test_create_and_post_clicks_are_native_and_hovered(monkeypatch, tmp_sessions, media, allow_browser_post_media):
+def test_create_and_post_clicks_are_native_without_hover_gap(monkeypatch, tmp_sessions, media, allow_browser_post_media):
     rec = _normal_run(monkeypatch, media)
     create = [line for line in rec.lines if 'svg[aria-label="New post"]' in line]
-    assert any(line.endswith(".hover()") for line in create)
-    assert any(line.endswith(".click()") for line in create)
-    assert rec.lines.index(next(l for l in create if l.endswith(".hover()"))) < \
-        rec.lines.index(next(l for l in create if l.endswith(".click()")))
-    post = [line for line in rec.lines if "a[href=\"#\"]" in line and "Post" in line]
-    assert any(line.endswith(".hover()") for line in post)
-    assert any(line.endswith(".click()") for line in post)
+    assert any(".click(" in line for line in create)
+    post = [line for line in rec.lines if 'a[href="#"]' in line and "Post" in line]
+    assert any(".click(" in line for line in post)
+    assert not any(".hover(" in line for line in post)
 
 
 def test_non_anchor_post_menu_item_falls_back_to_exact_text(
@@ -88,18 +80,13 @@ def test_non_anchor_post_menu_item_falls_back_to_exact_text(
         'a[href="#"]': 0,
         "get_by_text('Post', exact=True)": 2,
     })
-    rec = run_traced(
-        monkeypatch,
-        instagram_browser,
-        lambda: instagram_browser.post_media("A", media, CAPTION, "reel", headless=True),
-        script,
-    )
+    rec = _run_ig(monkeypatch, media, script)
 
     assert rec.lines[-1] == "RETURN 'ig_post_ok_A'"
     fallback = [line for line in rec.lines if "get_by_text('Post', exact=True)" in line]
-    assert any("wait_for(state='visible', timeout=10000)" in line for line in fallback)
-    assert any(line.endswith(".hover()") for line in fallback)
-    assert any(line.endswith(".click()") for line in fallback)
+    assert any("filter(visible=True)" in line for line in fallback)
+    assert not any(".hover(" in line for line in fallback)
+    assert any(".click(" in line for line in fallback)
 
 
 def test_caption_commit_is_native_blur_then_focus(monkeypatch, tmp_sessions, media, allow_browser_post_media):
@@ -181,10 +168,10 @@ def test_feed_dwell_runs_between_popups_and_create(monkeypatch, tmp_sessions, me
     wheels = [i for i, line in enumerate(rec.lines) if line.startswith("mouse.wheel(")]
     assert wheels
     last_popup = max(i for i, line in enumerate(rec.lines) if "optional cookies" in line)
-    create_hover = next(i for i, line in enumerate(rec.lines)
-                        if 'svg[aria-label="New post"]' in line and line.endswith(".hover()"))
+    create_click = next(i for i, line in enumerate(rec.lines)
+                        if 'svg[aria-label="New post"]' in line and ".click(" in line)
     assert last_popup < wheels[0]
-    assert wheels[-1] < create_hover
+    assert wheels[-1] < create_click
     assert rec.lines[-1] == "RETURN 'ig_post_ok_A'"
 
 

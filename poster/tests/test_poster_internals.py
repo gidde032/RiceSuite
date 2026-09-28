@@ -23,7 +23,7 @@ import pytest
 
 from backend import instagram_browser, tiktok_browser
 from backend.browser_common import url_matches_login_markers
-from tests.browser_trace import RAISE, Script, run_traced
+from tests.browser_trace import RAISE, Script, run_traced, FakeLocator
 
 GOLDEN_DIR = Path(__file__).parent / "golden"
 REGEN = os.environ.get("RICEPOSTER_REGEN_TRACES") == "1"
@@ -117,6 +117,24 @@ def _ig_script(**overrides):
 
 
 def _run_ig(monkeypatch, media, script):
+    # Composer/menu state follows clicks, so traces exercise the actual
+    # transition rather than claiming all controls exist at once.
+    direct = script.visible.get("Select from computer", False)
+    script.visible["Select from computer"] = False
+    script.visible['a[href="#"]'] = False
+    script.visible["get_by_text('Post'"] = False
+    script.visible["could not be shared"] = False
+    original_click = FakeLocator.click
+
+    async def click(loc, **kwargs):
+        await original_click(loc, **kwargs)
+        if 'aria-label="New post"' in loc.desc:
+            script.visible["Select from computer"] = direct
+            script.visible['a[href="#"]'] = not direct and script.count_for('a[href="#"]') > 0
+            script.visible["get_by_text('Post'"] = not direct
+        elif 'a[href="#"]' in loc.desc or "get_by_text('Post'" in loc.desc:
+            script.visible["Select from computer"] = True
+    monkeypatch.setattr(FakeLocator, "click", click)
     return run_traced(
         monkeypatch,
         instagram_browser,
@@ -179,7 +197,10 @@ def test_ig_unconfirmed_post_transcript(monkeypatch, tmp_sessions, media, allow_
     """No success element ever appears. The post may or may not be live, so
     the result id must say `unconfirmed` rather than `ok`."""
     script = _ig_script()
-    script.wait_for_selector["Animated checkmark"] = RAISE
+    script.visible["Animated checkmark"] = False
+    # Full 450-second behavior is covered with the virtual clock in the
+    # hardening tests; keep this action transcript compact.
+    monkeypatch.setattr(instagram_browser, "IG_UPLOAD_TIMEOUT_S", 3)
     check_golden("ig_unconfirmed_post", _run_ig(monkeypatch, media, script))
 
 

@@ -93,10 +93,15 @@ def test_sleep_jittered_sleeps_for_the_duration_it_reports(monkeypatch):
 # --- Instagram flow uses it ----------------------------------------------
 
 
-def test_instagram_has_no_fixed_sleeps_left():
+def test_instagram_user_actions_have_no_fixed_sleeps_left():
     """Source-level: a single surviving asyncio.sleep(N) re-creates the
     machine-exact rhythm for that step."""
     src = inspect.getsource(instagram_browser)
+    # State observation is not a user action. These bounded polling loops
+    # deliberately avoid jitter so they cannot sleep beyond their deadlines.
+    for helper in (instagram_browser._wait_for_create_state,
+                   instagram_browser._await_post_confirmation):
+        src = src.replace(inspect.getsource(helper), "")
     assert "asyncio.sleep(" not in src, (
         "instagram_browser still contains a fixed asyncio.sleep — every wait "
         "in the posting flow should go through sleep_jittered."
@@ -152,7 +157,9 @@ def test_instagram_sleep_floors_are_unchanged():
     """The jitter conversion must not have retuned any wait downward. These
     are the exact bases present before F4."""
     src = inspect.getsource(instagram_browser)
-    for base in ("0.5", "1", "1.0", "1.5", "2", "3", "10"):
+    # #24 replaces the 3s composer delay with a state wait and removes
+    # the unchecked 10s post-confirmation grace period. Other floors remain.
+    for base in ("0.5", "1", "1.0", "1.5", "2"):
         assert f"sleep_jittered({base})" in src, (
             f"the {base}s wait disappeared or was retuned during the F4 "
             "conversion; floors must be preserved exactly"

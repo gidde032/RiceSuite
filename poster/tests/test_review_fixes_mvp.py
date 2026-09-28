@@ -266,7 +266,7 @@ def test_ig_post_media_checks_login_redirect():
     assert "session expired" in src.lower()
     # ...and that post_media still reaches it, first, before the composer.
     flow = real_source(instagram_browser, "post_media")
-    assert "_open_instagram(page, account_key)" in flow
+    assert 'step("open_instagram", _open_instagram, page, account_key)' in flow
     assert flow.index("_open_instagram") < flow.index("_upload_media_file")
 
 

@@ -439,6 +439,11 @@ INTER_SLOT_DELAY_MAX_S = _env_float("INTER_SLOT_DELAY_MAX_S", 180.0)
 FEED_DWELL_MIN_S = _env_float("FEED_DWELL_MIN_S", 30.0)
 FEED_DWELL_MAX_S = _env_float("FEED_DWELL_MAX_S", 60.0)
 
+# Full post-Share observation budget; no extra unchecked grace sleep.
+IG_UPLOAD_TIMEOUT_S = _env_int("IG_UPLOAD_TIMEOUT_S", 450)
+if IG_UPLOAD_TIMEOUT_S <= 0:
+    raise ValueError("IG_UPLOAD_TIMEOUT_S must be a positive whole number of seconds")
+
 # Console verbosity for the `riceposter` logger (#26). Left at INFO, browser
 # automation narrates every step exactly as it always has; raised to WARNING,
 # only degraded and failed states are printed.

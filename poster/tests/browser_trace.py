@@ -446,7 +446,19 @@ def run_traced(monkeypatch, module, coro_factory, script: Script, seed: int = 12
     # Record the floor of every wait and return immediately. jitter.py's
     # sleep_jittered routes through asyncio.sleep, so one patch covers both
     # the jittered waits and tiktok_browser's remaining fixed ones.
+    elapsed = [0.0]
+    if hasattr(module, "monotonic"):
+        monkeypatch.setattr(module, "monotonic", lambda: elapsed[0])
+    if hasattr(module, "datetime"):
+        from datetime import datetime, timezone
+        class FixedDatetime:
+            @staticmethod
+            def now(tz):
+                return datetime(2026, 9, 28, tzinfo=timezone.utc)
+        monkeypatch.setattr(module, "datetime", FixedDatetime)
+
     async def _record_sleep(duration):
+        elapsed[0] += duration
         rec.add(f"sleep {duration:.3f}")
 
     monkeypatch.setattr(asyncio, "sleep", _record_sleep)

@@ -49,6 +49,7 @@ See `credentials.env.example` for the full template. The essentials:
 | `ANTHROPIC_API_KEY` | For caption generation |
 | `IG_ACCOUNT_{ID}_NAME` | Optional compatibility display name; folder-discovered accounts default to their durable directory name |
 | `POST_MODE` | `mock` (fake everything), `browser` (Playwright — the real workflow), `api` (official APIs; incomplete, needs tokens/dev access) |
+| `IG_UPLOAD_TIMEOUT_S` | `450` seconds (7.5 minutes). Separate caps for media preparation and post-Share confirmation. Confirmation is observed throughout the window; an unknown outcome remains unconfirmed and is never automatically reposted. |
 | `HEADLESS` | `true` = browsers hidden, `false` = visible. **Not only a debugging switch — it is an Instagram detection setting.** Headless Chrome reports `HeadlessChrome/...` in its user agent while the client hints beside it say `Google Chrome`, and a browser contradicting itself about its own identity is a stronger signal than either value alone. It also reports `colorDepth` 24 instead of a real Mac's 30. Neither is fixable in code. Measure with `python tools/probe_fingerprint.py` |
 | `ACCOUNT_SLOTS` | Compatibility roster when folder discovery is not used (default `A,B,C`). Values remain durable account IDs; every active Instagram account needs a distinct entry in `device_identity.DISPLAYS` |
 | `LOG_LEVEL` | Console verbosity (default `INFO`). `INFO` keeps the full browser-automation narration; `WARNING` keeps only degraded and failed states, which suits unattended scheduled batches. An unrecognised value is reported at startup and falls back to `INFO`. Note that `session_manager`'s status and health-check reports are plain CLI output and are never suppressed by this setting |
@@ -378,3 +379,21 @@ and this README are meant to stand alone.
 ## License
 
 RicePoster is available under the [MIT License](LICENSE).
+
+### Instagram slow-network diagnostics
+
+Create waits for either the Post dropdown or the upload dialog, and retries a
+lost menu up to three times. These retries only open the composer; Share is
+never automatically retried. After Share, success or an explicit sharing error
+ends the wait; otherwise confirmation is observed for up to `IG_UPLOAD_TIMEOUT_S`
+seconds. A spinner alone does not prove progress, so the full budget is allowed
+without requiring a numeric progress indicator. The cap is never extended.
+
+Failures and unconfirmed results save timestamped `debug_ig_post_<slot>_*`
+PNG screenshots and JSON metadata under the configured Poster data root's
+`debug/` directory. JSON includes the stage, stage durations, outcome, timeout
+cap and exception type, without caption text or raw page content. Screenshots
+can contain account/page content; keep them local. Browser closure may prevent
+a screenshot, in which case JSON still records the capture failure. Stage
+starts/durations and periodic confirmation updates also appear in the console.
+Check Instagram before retrying an unconfirmed post to avoid duplicates.
