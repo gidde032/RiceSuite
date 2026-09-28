@@ -124,6 +124,10 @@ use the Cookie-Editor extension in a logged-in real browser, export JSON, and
 save it as `sessions/tiktok/{ACCOUNT_ID}/cookies.json`. Exported cookies last roughly
 30–60 days; when TikTok posts start failing with "session expired," re-export.
 
+Automated agents must not run these commands, or anything else that opens a
+real Instagram profile, without the maintainer's sign-off for that occasion
+(RiceSuite `CLAUDE.md` rule 7).
+
 ## Running
 
 ```bash
