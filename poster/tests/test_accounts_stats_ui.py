@@ -34,7 +34,10 @@ def test_roster_switch_warns_with_affected_draft_account_names():
 def test_removed_pending_upload_cannot_resume_into_destroyed_account_card():
     body = _function_body("handleFile")
     assert body.count("state.slots[slot] !== s") >= 2
-    assert "state.slots[slot] === s && s.file === file" in body
+    # The caption frame follows its draft to whichever account now holds it
+    # (RiceSuite #19); a discarded draft has no owner, so nothing is written.
+    assert "const owner = slotOf(s);" in body
+    assert "if (owner && s.file === file)" in body
 
 
 def test_payload_contains_only_active_immutable_account_ids():

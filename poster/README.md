@@ -240,6 +240,13 @@ the roster. Instagram device-profile capacity applies only to accounts with an
 Instagram profile directory; TikTok-only accounts remain selectable and do not
 consume one of those persistent browser identities.
 
+Swapping accounts keeps the drafts already in Review. An account leaving hands
+its draft to the account joining in its place (roster a, b, c → d, e, f moves
+a→d, b→e, c→f); only a draft left with no joining account prompts before it is
+discarded. **Replace** on an active Accounts row, or the ⋯ menu on a Review
+card, swaps one account. The caption text is kept and its style becomes the
+new account's default for the next Regenerate.
+
 **Stats** is read-only and database-free. It aggregates local history and the
 current media footprint while keeping confirmed, unconfirmed, failed, and
 skipped outcomes separate. Platforms you disabled are not counted. Cumulative media bytes are explicitly labeled

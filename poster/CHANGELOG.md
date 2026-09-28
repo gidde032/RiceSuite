@@ -7,6 +7,21 @@ published as a tagged release or GitHub Release.
 
 ### Added
 
+- **Swapping accounts keeps the drafts in their slots.** An account leaving
+  Review now hands its unposted draft (media, caption, topic, caption frame) to
+  the account joining in its place instead of discarding it: switching the
+  roster a, b, c → d, e, f moves a→d, b→e, c→f, and accounts in both rosters
+  keep their own drafts. A draft with no positional partner goes to a joining
+  account that received nothing. The discard prompt now appears only for a
+  draft left with no joining account. Swap one account from **Replace** on its
+  Accounts row, or from the ⋯ menu on its Review card. The caption text moves
+  unchanged; its style becomes the new account's caption default. Drafts do
+  not move while an upload, caption, pull, post or schedule request is running.
+  Uploads no longer overwrite an existing media file: a repeated name gets a
+  `__2`-style suffix, so a moved draft's media cannot be replaced by a later
+  upload to its old account. (RiceSuite
+  [#19](https://github.com/gidde032/RiceSuite/issues/19))
+
 - **Per-slot platform toggles.** Each slot's Instagram and TikTok trackers are
   now switches. Turning one off shows an amber **Disabled** state,
   leaves that platform out of the slot's manual and scheduled posts without

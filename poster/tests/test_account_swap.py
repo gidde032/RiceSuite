@@ -28,7 +28,7 @@ _FUNCTIONS = (
     "emptySlot", "currentActiveIds", "hasDraft", "planDraftTransfers",
     "draftWorkBusy", "applyActiveAccounts", "toggleAccount", "moveAccount",
     "replaceAccount", "selectRoster", "clearSlotPreview", "accountLabel",
-    "isPlatformEnabled", "enabledPlatforms", "buildSlotsPayload",
+    "isPlatformEnabled", "enabledPlatforms", "buildSlotsPayload", "slotOf",
 )
 
 _PRELUDE = """
@@ -39,7 +39,12 @@ globalThis.confirm = msg => { log.confirms.push(msg); return confirmAnswer; };
 globalThis.alert = msg => { log.alerts.push(msg); };
 let draftWork = 0;
 let pullInFlight = false;
-async function persistAccountState() { log.persisted += 1; }
+let persistDelay = 0;
+let accountChangeInFlight = false;
+async function persistAccountState() {
+  log.persisted += 1;
+  if (persistDelay) await new Promise(r => setTimeout(r, persistDelay));
+}
 function renderSlots() {}
 function renderSessionStrip() {}
 function renderAccounts() {}
@@ -270,6 +275,76 @@ await replaceAccount('A', 'B');
     assert out["log"]["persisted"] == 0
 
 
+def test_a_draft_goes_to_a_free_joining_account_before_anything_is_discarded():
+    """Review repair R4: leaving accounts with no draft must not use up the
+    joining accounts. Only C holds a draft; D is free, so nothing is lost."""
+    out = _node("""
+activate(['A', 'B', 'C']);
+draft('C');
+state.accountState.rosters.solo = ['D'];
+await selectRoster('solo');
+""")
+    assert out["log"]["confirms"] == []
+    assert out["active"] == ["D"]
+    assert out["slots"]["D"]["filename"] == "C_clip.mp4"
+
+
+def test_positional_pairs_win_before_leftovers_fill_free_accounts():
+    out = _node("""
+activate(['A', 'B', 'C']);
+draft('A'); draft('C');
+state.accountState.rosters.pair = ['D', 'E'];
+await selectRoster('pair');
+""")
+    # A pairs with D by position; B (empty) leaves E free for C's draft.
+    assert out["slots"]["D"]["filename"] == "A_clip.mp4"
+    assert out["slots"]["E"]["filename"] == "C_clip.mp4"
+    assert out["log"]["confirms"] == []
+
+
+def test_a_second_account_change_waits_for_the_first_to_save():
+    """Review repair R2: two swaps planned from the same state while the first
+    is still saving used to drop a draft without a prompt."""
+    out = _node("""
+activate(['A', 'B', 'C']);
+draft('A'); draft('B');
+persistDelay = 30;
+const first = replaceAccount('A', 'D');
+const second = replaceAccount('B', 'D');
+await Promise.all([first, second]);
+""")
+    assert out["active"] == ["D", "B", "C"]
+    assert out["slots"]["D"]["filename"] == "A_clip.mp4"
+    assert out["slots"]["B"]["filename"] == "B_clip.mp4"
+    assert out["log"]["persisted"] == 1
+
+
+def test_the_moved_line_is_cleared_by_the_next_account_change():
+    """Review repair R7: the status must not describe a state that is gone."""
+    out = _node("""
+activate(['A', 'B']);
+draft('A');
+await replaceAccount('A', 'D');
+toggleAccount('C', true);
+await new Promise(r => setTimeout(r, 0));
+""")
+    assert out["log"]["status"][0].startswith("Moved 1 draft")
+    assert out["log"]["status"][-1] == ""
+
+
+def test_upload_never_overwrites_media_another_draft_may_hold(client, tmp_media):
+    """Review repair R1: after A→D, D's draft still names `A_clip.mp4`. A new
+    upload with the same name to A used to overwrite it, so Post All would have
+    sent A's new clip to D."""
+    first = client.post("/api/upload/A", files={"file": ("clip.mp4", b"original", "video/mp4")}).json()
+    second = client.post("/api/upload/A", files={"file": ("clip.mp4", b"replacement", "video/mp4")}).json()
+    assert first["filename"] == "A_clip.mp4"
+    assert second["filename"] != first["filename"]
+    assert second["filename"].startswith("A_") and second["filename"].endswith(".mp4")
+    assert (tmp_media / first["filename"]).read_bytes() == b"original"
+    assert (tmp_media / second["filename"]).read_bytes() == b"replacement"
+
+
 # --- source contracts --------------------------------------------------------
 
 
@@ -280,6 +355,30 @@ def test_every_in_flight_draft_writer_counts_as_busy():
         body = _function_body(name)
         assert "draftWork += 1" in body and "draftWork -= 1" in body, name
     assert "pullInFlight" in _function_body("draftWorkBusy")
+
+
+def test_draft_writers_do_not_start_while_an_account_change_is_saving():
+    for name in ("handleFile", "generateAll", "regenerateCaption"):
+        assert "if (accountChangeInFlight)" in _function_body(name), name
+    assert "accountChangeInFlight = true" in _function_body("applyActiveAccounts")
+
+
+def test_upload_cannot_hang_the_busy_counter():
+    body = _function_body("handleFile")
+    assert "xhr.onabort" in body and "xhr.ontimeout" in body
+
+
+def test_caption_frame_follows_the_draft_to_its_current_account():
+    """Review repair R5: a frame captured after a move used to be dropped."""
+    out = _node("""
+activate(['A', 'B']);
+const d = draft('A');
+await replaceAccount('A', 'D');
+log.owner = [slotOf(d), slotOf({})];
+""")
+    assert out["log"]["owner"] == ["D", None]
+    body = _function_body("handleFile")
+    assert "slotOf(s)" in body
 
 
 def test_accounts_page_offers_replace_only_on_active_rows():
@@ -320,7 +419,8 @@ def _fake_api(route):
     return route.fulfill(body=_html(), content_type="text/html")
 
 
-def test_review_card_menu_swaps_the_account_and_keeps_the_caption():
+def _with_page(drive):
+    """Run `drive(page)` against the real page in Chrome with /api faked."""
     playwright_api = pytest.importorskip("playwright.sync_api")
     with playwright_api.sync_playwright() as p:
         try:
@@ -335,19 +435,71 @@ def test_review_card_menu_swaps_the_account_and_keeps_the_caption():
           Object.assign(state.slots.B, {filename: 'B_clip.mp4', mediaType: 'video', caption: 'kept'});
           hydrateSlotCard('B');
         }""")
-        menu = page.locator('.slot-card[data-account-id="B"] select.slot-swap')
-        options = menu.locator("option").all_text_contents()
-        menu.select_option("D", timeout=2000)
+        try:
+            return drive(page)
+        finally:
+            browser.close()
+
+
+_CARDS = "() => [...document.querySelectorAll('.slot-card')].map(c => c.dataset.accountId)"
+
+
+def test_review_card_menu_swaps_the_account_and_keeps_the_caption():
+    def drive(page):
+        card = page.locator('.slot-card[data-account-id="B"]')
+        card.locator(".slot-menu summary").click()
+        options = card.locator(".swap-menu button").all_text_contents()
+        card.locator(".swap-menu button", has_text="Delta").click()
         page.wait_for_selector('.slot-card[data-account-id="D"]', timeout=2000)
-        result = page.evaluate("""() => ({
+        return options, page.evaluate("""() => ({
           cards: [...document.querySelectorAll('.slot-card')].map(c => c.dataset.accountId),
           caption: document.getElementById('caption_D').value,
           status: document.getElementById('statusPanel').textContent,
         })""")
-        browser.close()
+
+    options, result = _with_page(drive)
     # Only the inactive account is offered.
     assert any("Delta" in o for o in options)
     assert not any(n in o for o in options for n in ("Alpha", "Beta", "Gamma"))
     assert result["cards"] == ["A", "D", "C"]
     assert result["caption"] == "kept"
     assert "Beta → Delta" in result["status"]
+
+
+def test_a_stray_keystroke_on_the_slot_menu_moves_nothing():
+    """Review repair R3: a native select commits on type-ahead, so focusing the
+    slot menu and pressing "d" used to swap Beta for Delta with no prompt."""
+    def drive(page):
+        control = page.locator(
+            '.slot-card[data-account-id="B"] .slot-menu select, '
+            '.slot-card[data-account-id="B"] .slot-menu summary').first
+        control.focus()
+        page.keyboard.press("d")
+        page.keyboard.press("ArrowDown")
+        page.wait_for_timeout(200)
+        return page.evaluate(_CARDS)
+
+    assert _with_page(drive) == ["A", "B", "C"]
+
+
+def test_accounts_page_replace_is_offered_on_active_rows_and_needs_a_click():
+    """Review repair R8: the Accounts-page offer itself, not just the handler."""
+    def drive(page):
+        page.evaluate("navTo('accounts')")
+        rows = page.evaluate("""() => [...document.querySelectorAll('.account-row')].map(r => ({
+          id: r.dataset.accountId,
+          options: [...r.querySelectorAll('[data-account-control="replace"] option')].map(o => o.value),
+        }))""")
+        page.select_option('.account-row[data-account-id="B"] [data-account-control="replace"]', "D")
+        before = page.evaluate(_CARDS)
+        page.click('.account-row[data-account-id="B"] [data-account-control="replace-apply"]')
+        # Review is hidden while Accounts is shown, so wait for the card to exist.
+        page.wait_for_selector('.slot-card[data-account-id="D"]', state="attached", timeout=2000)
+        return rows, before, page.evaluate(_CARDS), page.evaluate("document.getElementById('caption_D').value")
+
+    rows, before, after, caption = _with_page(drive)
+    offered = {r["id"]: [o for o in r["options"] if o] for r in rows}
+    assert offered == {"A": ["D"], "B": ["D"], "C": ["D"], "D": []}
+    assert before == ["A", "B", "C"]  # choosing alone changes nothing
+    assert after == ["A", "D", "C"]
+    assert caption == "kept"
