@@ -9,6 +9,7 @@ import asyncio
 import json
 import random
 import re
+from contextlib import AsyncExitStack
 from datetime import datetime, timezone
 from pathlib import Path
 from time import monotonic
@@ -620,6 +621,8 @@ async def _save_post_diagnostics(page, account_key, outcome, stage, started, tim
         "error_type": type(error).__name__ if error else None,
     }
     try:
+        if page is None:
+            raise RuntimeError("Browser page unavailable")
         await page.screenshot(path=str(stem.with_suffix(".png")), timeout=5000)
     except Exception as exc:
         metadata["screenshot_error_type"] = type(exc).__name__
@@ -642,12 +645,11 @@ async def post_media(
     sequence, failure diagnostics and cleanup. Everything the flow does to
     the page lives in one of the helpers.
     """
-    async with async_playwright() as pw:
-        context = await _get_context(pw, account_key, headless=headless)
-        page = context.pages[0] if context.pages else await context.new_page()
-
+    async with AsyncExitStack() as stack:
+        context = None
+        page = None
         started = monotonic()
-        stage = "open_instagram"
+        stage = "browser_start"
         timings = {}
         share_attempted = False
 
@@ -663,6 +665,10 @@ async def post_media(
                 _log.info(f"[Instagram] {account_key}: {name} elapsed {timings[name]}s.")
 
         try:
+            pw = await step("browser_start", stack.enter_async_context, async_playwright())
+            context = await step("browser_context", _get_context, pw, account_key, headless)
+            stage = "browser_page"
+            page = context.pages[0] if context.pages else await step("browser_page", context.new_page)
             await step("open_instagram", _open_instagram, page, account_key)
             await step("dismiss_popups", _dismiss_popups, page)
             await step("browse_feed", _browse_feed, page)
@@ -695,7 +701,8 @@ async def post_media(
             raise Exception(f"Instagram post failed for {account_key}: {e}") from e
         finally:
             try:
-                await context.close()
+                if context is not None:
+                    await context.close()
             except Exception as close_err:
                 # A failed close must not mask the real posting error
                 _log.warning(f"[Instagram] Warning: browser cleanup failed: {close_err}")

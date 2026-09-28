@@ -235,3 +235,31 @@ def test_screenshot_failure_still_saves_metadata(monkeypatch, tmp_path, clock):
     asyncio.run(ig._save_post_diagnostics(page, 'A', 'unconfirmed', 'confirmation', 0, {}))
     data = json.loads(next(tmp_path.glob('*.json')).read_text())
     assert data['screenshot_error_type'] == 'RuntimeError'
+
+
+@pytest.mark.parametrize('failed_stage', ['browser_start', 'browser_context', 'browser_page'])
+def test_browser_startup_failure_saves_metadata(monkeypatch, tmp_path, allow_browser_post_media, failed_stage):
+    import json
+    context = SimpleNamespace(pages=[], new_page=AsyncMock(side_effect=RuntimeError('page failed')),
+                              close=AsyncMock())
+    class PW:
+        async def __aenter__(self):
+            if failed_stage == 'browser_start':
+                raise RuntimeError('driver failed')
+            return self
+        async def __aexit__(self, *args): pass
+    monkeypatch.setattr(ig, 'async_playwright', PW)
+    monkeypatch.setattr(ig, 'DEBUG_DIR', tmp_path)
+    monkeypatch.setattr(ig, '_get_context', AsyncMock(
+        return_value=context,
+        side_effect=RuntimeError('launch failed') if failed_stage == 'browser_context' else None,
+    ))
+    with pytest.raises(Exception):
+        asyncio.run(ig.post_media('A', tmp_path / 'video.mp4', 'caption', 'reel'))
+    data = json.loads(next(tmp_path.glob('*.json')).read_text())
+    assert data['stage'] == failed_stage
+    assert data['outcome'] == 'failed'
+    assert data['error_type'] == 'RuntimeError'
+    assert 'screenshot_error_type' in data
+    assert failed_stage in data['stage_timings_s']
+    assert context.close.await_count == (1 if failed_stage == 'browser_page' else 0)
