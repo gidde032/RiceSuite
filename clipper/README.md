@@ -163,7 +163,7 @@ after you change them.
 ## First run
 
 ```bash
-source .venv/bin/activate
+source ../.venv/bin/activate
 uvicorn app.main:app --reload            # loads .env from the repo root
 ```
 

@@ -25,8 +25,6 @@ pip install -r requirements-dev.txt
 pip install -e . -e searcher    # shared suite package for captions and runtime
 cd poster
 playwright install chrome          # the `chrome` channel, NOT `chromium`
-pre-commit install                 # wire up the commit/push quality gates
-pre-commit install --hook-type pre-push
 cp credentials.env.example credentials.env   # then edit it
 ```
 
@@ -43,9 +41,12 @@ tools. `pip install -e .` makes the neutral client module available when Poster
 runs from its own directory. The repository-wide CI runs Poster's existing
 test and coverage gates; see the suite root README for all commands.
 
-The two `pre-commit install` lines make the local quality gates real. Until you
-run them, local commits and pushes enforce nothing; pull requests still run the
-clean-environment GitHub Actions gate described under **Tests**.
+The `poster/.pre-commit-config.yaml` hooks assume Poster itself is the Git root,
+so do not install them from this monorepo. The suite CI runs Poster's required
+tests and 43% coverage floor; the root README lists the local gate command.
+For the original standalone RicePoster checkout only, run `pre-commit install`
+and `pre-commit install --hook-type pre-push` from its root to enable those
+local commit and push gates.
 
 ## Configuration (`credentials.env`)
 

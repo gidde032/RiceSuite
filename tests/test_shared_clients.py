@@ -102,3 +102,13 @@ def test_cleanup_helpers_do_not_expose_errors(caplog):
     asyncio.run(anthropic_client.close_async_client(SimpleNamespace()))
     assert caplog.text.count("RuntimeError") == 2
     assert "private cleanup detail" not in caplog.text
+
+
+def test_cleanup_property_failure_does_not_replace_primary_result():
+    class BrokenCloseProperty:
+        @property
+        def close(self):
+            raise RuntimeError("property failed")
+
+    anthropic_client.close_client(BrokenCloseProperty())
+    asyncio.run(anthropic_client.close_async_client(BrokenCloseProperty()))

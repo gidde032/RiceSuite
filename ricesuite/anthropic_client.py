@@ -35,19 +35,19 @@ def create_client(
 
 def close_client(client: Any) -> None:
     """Attempt cleanup without changing a completed result or domain error."""
-    close = getattr(client, "close", None)
-    if close is not None:
-        try:
+    try:
+        close = getattr(client, "close", None)
+        if close is not None:
             close()
-        except Exception as exc:
-            _log.warning("Anthropic client cleanup failed (%s)", type(exc).__name__)
+    except Exception as exc:
+        _log.warning("Anthropic client cleanup failed (%s)", type(exc).__name__)
 
 
 async def close_async_client(client: Any) -> None:
     """Async counterpart for Poster's request path."""
-    close = getattr(client, "close", None)
-    if close is not None:
-        try:
+    try:
+        close = getattr(client, "close", None)
+        if close is not None:
             await close()
-        except Exception as exc:
-            _log.warning("Anthropic client cleanup failed (%s)", type(exc).__name__)
+    except Exception as exc:
+        _log.warning("Anthropic client cleanup failed (%s)", type(exc).__name__)
