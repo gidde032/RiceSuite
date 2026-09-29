@@ -84,6 +84,14 @@ Each requirement is written so a test can check it. "The launcher" means the
     guard, `rice status` and curl keep working. A refused WebSocket
     handshake (foreign Host or Origin) is closed before it is accepted, which
     the server answers with 403.
+  - Every response says only the listener's own origin may frame it
+    (`X-Frame-Options: SAMEORIGIN`, CSP `frame-ancestors 'self'`), so another
+    site cannot frame a page and trick the maintainer into clicking it; the
+    shell frames each pillar page from the gateway's own origin (#38).
+  - Files a user or a download supplied (Poster `/api/media/`, Clipper
+    `/api/jobs/…/source` and `/output`, Searcher `/cache/`) are served with
+    `X-Content-Type-Options: nosniff` and CSP `default-src 'none'; sandbox`,
+    so such a file opened directly runs no script as a suite origin (#38).
 - **FR-4** The launcher refuses to start, and exits non-zero naming the port,
   if anything is accepting connections on 8765, 8000 or 1738 (an old app may be
   running; only one side runs at a time, Q10). It also refuses if a suite port

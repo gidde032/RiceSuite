@@ -24,7 +24,11 @@ def client(request, tmp_path, monkeypatch):
     root = tmp_path / ".riceclipper_work"
     root.mkdir()
     monkeypatch.setattr(jobs, "WORK_ROOT", root)
-    return TestClient(main.app, base_url=f"http://127.0.0.1:{request.param}")
+    previous_jobs = jobs._JOBS.copy()
+    jobs._JOBS.clear()
+    yield TestClient(main.app, base_url=f"http://127.0.0.1:{request.param}")
+    jobs._JOBS.clear()
+    jobs._JOBS.update(previous_jobs)
 
 
 @pytest.mark.parametrize("origin", [EVIL, "null", "http://127.0.0.1:8791"])
@@ -64,3 +68,29 @@ def test_own_origin_gateway_origin_and_no_origin_are_admitted(client):
 
 def test_cross_origin_reads_are_left_to_the_browser(client):
     assert client.get("/api/media-info", headers={"origin": EVIL}).status_code == 200
+
+
+FRAMING = "frame-ancestors 'self'"
+
+
+def test_pages_refuse_to_be_framed_by_another_site(client):
+    for path in ("/", "/app.js", "/api/media-info"):
+        r = client.get(path)
+        assert r.headers["x-frame-options"] == "SAMEORIGIN", path
+        assert r.headers["content-security-policy"] == FRAMING, path
+
+
+@pytest.mark.parametrize("which", ["source", "output"])
+def test_job_media_is_served_sandboxed(client, which):
+    """An uploaded file keeps its own extension; opened directly, it must not
+    run script as a suite origin (RiceSuite #38)."""
+    job = jobs.create_job()
+    media = job.dir / "upload.svg"
+    media.write_text("<svg><script>1</script></svg>")
+    job.source_path = job.output_path = media
+    r = client.get(f"/api/jobs/{job.id}/{which}")
+    assert r.status_code == 200
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert r.headers["content-security-policy"] == (
+        f"default-src 'none'; sandbox; {FRAMING}"
+    )

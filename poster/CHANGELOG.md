@@ -273,6 +273,13 @@ published as a tagged release or GitHub Release.
   (`http://127.0.0.1:8790` or `http://localhost:8790`) gets 403, as does
   `Origin: null`. Requests without an Origin (curl, the launcher, the stop
   guard) are unaffected. Tests address the app as `http://127.0.0.1:1738`.
+- **Poster can't be framed by another site, and staged media runs no script**
+  (RiceSuite [#38](https://github.com/gidde032/RiceSuite/issues/38)). Every
+  response carries `X-Frame-Options: SAMEORIGIN` and CSP
+  `frame-ancestors 'self'`, so another site cannot frame Post All behind decoy
+  UI. `/api/media/…` is served with `X-Content-Type-Options: nosniff` and CSP
+  `default-src 'none'; sandbox`, so a staged SVG or HTML file opened directly
+  cannot act as Poster's or the gateway's origin.
 
 ## [0.4.0] — 2026-07-31
 

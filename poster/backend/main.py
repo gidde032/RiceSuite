@@ -120,8 +120,12 @@ app = FastAPI(title="RicePoster", lifespan=lifespan)
 # This API is unauthenticated and can post to real accounts, and a browser page
 # can reach Poster's own loopback port without passing the RiceSuite gateway.
 # So Poster refuses foreign Hosts and cross-origin state changes itself (suite
-# SPEC FR-3, suite #14), on whatever port it is bound to.
-app.add_middleware(LocalGuard, trusted_origins=gateway_origins())
+# SPEC FR-3, suite #14), on whatever port it is bound to. It also refuses to be
+# framed by another site, and serves staged media so it can run no script
+# (suite #38).
+app.add_middleware(
+    LocalGuard, trusted_origins=gateway_origins(), sandboxed_paths=("/api/media/",)
+)
 
 
 @app.exception_handler(RequestValidationError)

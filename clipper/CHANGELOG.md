@@ -47,6 +47,12 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   the gateway's (`http://127.0.0.1:8790` or `http://localhost:8790`) gets
   403, as does `Origin: null`. Requests without an Origin (curl, scripts) are
   unaffected. Tests address the app as `http://127.0.0.1:8000`.
+- **Pages can't be framed by another site, and job media runs no script**
+  (RiceSuite [#38](https://github.com/gidde032/RiceSuite/issues/38)). Every
+  response carries `X-Frame-Options: SAMEORIGIN` and CSP
+  `frame-ancestors 'self'`. Responses under `/api/jobs/` (including an
+  upload's source and the rendered output) are served with
+  `X-Content-Type-Options: nosniff` and CSP `default-src 'none'; sandbox`.
 
 ## [1.0.0] - 2026-09-20
 

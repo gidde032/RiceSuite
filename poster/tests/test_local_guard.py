@@ -60,3 +60,25 @@ def test_suite_and_own_pages_are_admitted(guarded, origin):
     assert taken.status_code == 200 and taken.json()["held"] is True
     released = guarded.delete("/api/stop-hold", headers=headers)
     assert released.status_code == 200 and not run_guard.is_held()
+
+
+FRAMING = "frame-ancestors 'self'"
+
+
+def test_pages_refuse_to_be_framed_by_another_site(guarded):
+    for path in ("/", "/static/slate.css", "/api/queue"):
+        r = guarded.get(path)
+        assert r.headers["x-frame-options"] == "SAMEORIGIN", path
+        assert r.headers["content-security-policy"] == FRAMING, path
+
+
+def test_staged_media_is_served_sandboxed(guarded, tmp_media):
+    """A staged upload keeps its own extension; opened directly, it must not
+    run script as a suite origin (RiceSuite #38)."""
+    (tmp_media / "A_logo.svg").write_text("<svg><script>1</script></svg>")
+    r = guarded.get("/api/media/A_logo.svg")
+    assert r.status_code == 200
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert r.headers["content-security-policy"] == (
+        f"default-src 'none'; sandbox; {FRAMING}"
+    )

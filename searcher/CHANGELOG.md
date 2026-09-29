@@ -53,6 +53,11 @@ All notable changes to RiceSearcher are documented here. This project adheres to
   an Origin (curl, scripts) are unaffected. Tests address the app as
   `http://127.0.0.1:8765`. `ricesearcher review --host` now accepts only
   `127.0.0.1` or `localhost`, the names the guard answers.
+- **Pages can't be framed by another site, and cached media runs no script**
+  (RiceSuite [#38](https://github.com/gidde032/RiceSuite/issues/38)). Every
+  response carries `X-Frame-Options: SAMEORIGIN` and CSP
+  `frame-ancestors 'self'`. `/cache/…` is served with
+  `X-Content-Type-Options: nosniff` and CSP `default-src 'none'; sandbox`.
 
 ## [1.0.0] — 2026-09-21
 

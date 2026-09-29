@@ -192,6 +192,14 @@ def test_rice_runs_the_whole_suite_behind_one_port(suite):
             assert refused.status_code == 403, name
             rebound = httpx.get(direct + "/", headers={"host": "evil.example"})
             assert rebound.status_code == 421, name
+        # No other site may frame the shell or a pillar page (#38); the shell
+        # frames each pillar page from the gateway's own origin.
+        for path in ("/", "/search/", "/clip/", "/post/"):
+            framed = httpx.get(suite.gateway + path)
+            assert framed.headers["x-frame-options"] == "SAMEORIGIN", path
+            assert framed.headers.get_list("content-security-policy") == [
+                "frame-ancestors 'self'"
+            ], path
         # A page served through the gateway still changes state: Poster admits
         # the gateway's origin on the port the launcher actually used.
         for origin_host in ("127.0.0.1", "localhost"):

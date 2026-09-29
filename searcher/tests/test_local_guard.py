@@ -68,3 +68,28 @@ def test_own_origin_gateway_origin_and_no_origin_are_admitted(
 
 def test_cross_origin_reads_are_left_to_the_browser(client: TestClient) -> None:
     assert client.get("/api/profiles", headers={"origin": EVIL}).status_code == 200
+
+
+FRAMING = "frame-ancestors 'self'"
+
+
+def test_pages_refuse_to_be_framed_by_another_site(client: TestClient) -> None:
+    for path in ("/", "/media", "/api/profiles"):
+        r = client.get(path)
+        assert r.headers["x-frame-options"] == "SAMEORIGIN", path
+        assert r.headers["content-security-policy"] == FRAMING, path
+
+
+def test_cached_media_is_served_sandboxed(tmp_path: Path) -> None:
+    """Cached source media came from outside; opened directly, it must not
+    run script as a suite origin (RiceSuite #38)."""
+    cfg = Config(data_dir=tmp_path / "data", handoff_dir=tmp_path / "handoff")
+    client = TestClient(create_app(cfg), base_url="http://127.0.0.1:8765")
+    (cfg.cache_dir / "ab").mkdir(parents=True, exist_ok=True)
+    (cfg.cache_dir / "ab" / "x.svg").write_text("<svg><script>1</script></svg>")
+    r = client.get("/cache/ab/x.svg")
+    assert r.status_code == 200
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert r.headers["content-security-policy"] == (
+        f"default-src 'none'; sandbox; {FRAMING}"
+    )

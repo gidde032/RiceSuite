@@ -4,7 +4,7 @@ checks it on Poster's real listener."""
 
 import pytest
 from starlette.applications import Starlette
-from starlette.responses import PlainTextResponse
+from starlette.responses import PlainTextResponse, Response
 from starlette.routing import Route, WebSocketRoute
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
@@ -25,10 +25,24 @@ async def _ws(websocket):
     await websocket.close()
 
 
+async def _svg(request):
+    return Response(b"<svg><script>alert(1)</script></svg>", 200, media_type=SVG)
+
+
+async def _own_csp(request):
+    return PlainTextResponse("x", headers={"content-security-policy": "img-src *"})
+
+
+SVG = "image/svg+xml"
+
+
 def _guarded(**kwargs):
     inner = Starlette(
         routes=[
             Route("/", _ok, methods=["GET", "HEAD", "OPTIONS", "POST", "DELETE"]),
+            Route("/media/{name}", _svg),
+            Route("/mediafile", _svg),
+            Route("/csp", _own_csp),
             WebSocketRoute("/ws", _ws),
         ]
     )
@@ -233,3 +247,73 @@ async def test_lifespan_passes_through():
 
     await localguard.LocalGuard(inner)({"type": "lifespan"}, None, None)
     assert seen == ["lifespan"]
+
+
+# --- framing and user media (#38) --------------------------------------------
+
+FRAMING = "frame-ancestors 'self'"
+
+
+@pytest.mark.parametrize(
+    ("method", "headers", "status"),
+    [
+        ("GET", {}, 200),
+        ("POST", {"origin": EVIL}, 403),
+        ("GET", {"host": "evil.example"}, 421),
+    ],
+)
+def test_every_response_refuses_to_be_framed_by_another_site(
+    listener, method, headers, status
+):
+    """A page on another site could frame a pillar and trick the maintainer
+    into clicking its buttons; only the listener's own origin (the gateway
+    shell frames pillar pages from its own origin) may frame a response."""
+    r = listener.request(method, "/", headers=headers)
+    assert r.status_code == status
+    assert r.headers["x-frame-options"] == "SAMEORIGIN"
+    assert r.headers["content-security-policy"] == FRAMING
+
+
+def test_an_app_policy_is_kept_and_framing_is_still_refused(listener):
+    r = listener.get("/csp")
+    assert r.headers["x-frame-options"] == "SAMEORIGIN"
+    assert r.headers.get_list("content-security-policy") == ["img-src *", FRAMING]
+
+
+def test_a_policy_that_already_limits_framing_is_not_repeated():
+    """Through the gateway, the pillar's policy arrives first; the gateway's
+    guard adds no second copy."""
+
+    async def upstream(scope, receive, send):
+        await Response(
+            "x", headers={"content-security-policy": FRAMING, "x-frame-options": "DENY"}
+        )(scope, receive, send)
+
+    guarded = localguard.LocalGuard(upstream, port=8790)
+    r = TestClient(guarded, base_url="http://127.0.0.1:8790").get("/")
+    assert r.headers.get_list("content-security-policy") == [FRAMING]
+    assert r.headers.get_list("x-frame-options") == ["DENY"]
+
+
+def test_user_media_cannot_run_script_as_a_suite_origin():
+    """An uploaded SVG or HTML file, opened directly, would otherwise run its
+    script as a trusted origin and could post through every pillar."""
+    client = TestClient(
+        _guarded(sandboxed_paths=("/media/",)), base_url="http://127.0.0.1:8793"
+    )
+    r = client.get("/media/logo.svg")
+    assert r.status_code == 200
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert r.headers.get_list("content-security-policy") == [
+        f"default-src 'none'; sandbox; {FRAMING}"
+    ]
+
+
+def test_only_the_named_paths_are_sandboxed():
+    client = TestClient(
+        _guarded(sandboxed_paths=("/media/",)), base_url="http://127.0.0.1:8793"
+    )
+    for path in ("/", "/mediafile"):
+        r = client.get(path)
+        assert "x-content-type-options" not in r.headers, path
+        assert r.headers["content-security-policy"] == FRAMING, path

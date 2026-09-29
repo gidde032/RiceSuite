@@ -130,8 +130,12 @@ def create_app(config: Config | None = None) -> FastAPI:
     app = FastAPI(title="RiceSearcher Review")
     # A browser page can reach this port without passing the RiceSuite gateway,
     # so the app refuses foreign Hosts and cross-origin state changes itself
-    # (suite SPEC FR-3, suite #14), on whatever port it is bound to.
-    app.add_middleware(LocalGuard, trusted_origins=gateway_origins())
+    # (suite SPEC FR-3, suite #14), on whatever port it is bound to. It also
+    # refuses to be framed by another site, and serves cached source media so
+    # it can run no script (suite #38).
+    app.add_middleware(
+        LocalGuard, trusted_origins=gateway_origins(), sandboxed_paths=("/cache/",)
+    )
 
     @app.get("/static/slate.css", include_in_schema=False)
     def slate_css() -> FileResponse:

@@ -14,6 +14,14 @@ pillar apps wrap themselves in :class:`LocalGuard`, which refuses:
 A refused WebSocket handshake, for either reason, is closed before it is
 accepted, which the server answers with 403.
 
+Every HTTP response, refusals included, also says that only the listener's own
+origin may frame it (``X-Frame-Options: SAMEORIGIN`` and CSP
+``frame-ancestors 'self'``), so a page on another site cannot frame a pillar
+and trick the maintainer into clicking it (#38); the gateway shell frames each
+pillar page from its own origin. Responses under ``sandboxed_paths`` (files a
+user or a download supplied) are served ``nosniff`` with a policy that runs no
+script, so such a file opened directly cannot act as a suite origin.
+
 ``<port>`` is the port the listener is bound to, so a pillar run standalone on
 its old port is guarded too. A request with no Origin is allowed: the
 launcher, the stop guard, ``rice status`` and curl send none, and browsers
@@ -25,14 +33,16 @@ from __future__ import annotations
 import os
 from collections.abc import Iterable
 
-from starlette.datastructures import Headers
+from starlette.datastructures import Headers, MutableHeaders
 from starlette.responses import JSONResponse
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from starlette.websockets import WebSocketClose
 
 from ricesuite.ports import GATEWAY_PORT
 
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+FRAMING_POLICY = "frame-ancestors 'self'"
+SANDBOX_POLICY = f"default-src 'none'; sandbox; {FRAMING_POLICY}"
 
 
 def allowed_hosts(port: int) -> set[str]:
@@ -60,6 +70,21 @@ def _bound_port(scope: Scope) -> int | None:
     return server[1] if server else None
 
 
+def _harden(message: Message, sandboxed: bool) -> None:
+    headers = MutableHeaders(scope=message)
+    if sandboxed:
+        headers["x-content-type-options"] = "nosniff"
+        headers["content-security-policy"] = SANDBOX_POLICY
+    elif not any(
+        "frame-ancestors" in policy
+        for policy in headers.getlist("content-security-policy")
+    ):
+        # Appended, so a policy the app set itself still applies.
+        headers.append("content-security-policy", FRAMING_POLICY)
+    if "x-frame-options" not in headers:
+        headers["x-frame-options"] = "SAMEORIGIN"
+
+
 class LocalGuard:
     """ASGI middleware refusing foreign Hosts and cross-origin state changes.
 
@@ -67,6 +92,7 @@ class LocalGuard:
     configured port); by default it is the listener's bound port, and a
     listener without one (a Unix socket) refuses everything.
     ``trusted_origins`` are admitted besides the listener's own.
+    ``sandboxed_paths`` are path prefixes that serve user-supplied files.
     """
 
     def __init__(
@@ -74,10 +100,12 @@ class LocalGuard:
         app: ASGIApp,
         port: int | None = None,
         trusted_origins: Iterable[str] = (),
+        sandboxed_paths: Iterable[str] = (),
     ) -> None:
         self.app = app
         self.port = port
         self.trusted_origins = frozenset(trusted_origins)
+        self.sandboxed_paths = tuple(sandboxed_paths)
 
     def _refusal(self, scope: Scope) -> tuple[int, str] | None:
         port = self.port if self.port is not None else _bound_port(scope)
@@ -93,6 +121,15 @@ class LocalGuard:
         return None
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            sandboxed = scope["path"].startswith(self.sandboxed_paths)
+            inner_send = send
+
+            async def send(message: Message) -> None:
+                if message["type"] == "http.response.start":
+                    _harden(message, sandboxed)
+                await inner_send(message)
+
         if scope["type"] in ("http", "websocket"):
             refusal = self._refusal(scope)
             if refusal is not None:
