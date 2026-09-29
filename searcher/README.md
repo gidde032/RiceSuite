@@ -225,7 +225,9 @@ interval within the source, preview that exact selection, and Select / Reject.
 page shows each profile's counts. The **Media** page deletes one source (with its
 cached media and slices) or clears the whole cache, and asks you to confirm twice.
 The UI reads and annotates the local library only. It never posts, publishes, or
-uploads. Keep it on `127.0.0.1`.
+uploads. Keep it on `127.0.0.1`. It answers only requests addressed to
+`127.0.0.1` or `localhost` on its own port, and refuses changes sent from another
+site's page (RiceSuite SPEC FR-3).
 
 ## Output: the RiceClipper handoff
 

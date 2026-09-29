@@ -40,6 +40,19 @@ All notable changes to RiceSearcher are documented here. This project adheres to
   `RICESEARCHER_BEAT_PROFILE`, documents `RICESEARCHER_EMBED_MODEL`, and ships
   the API key commented out, so an unedited copy doesn't send the placeholder.
 
+### Security
+
+- **The review app refuses cross-site requests** (RiceSuite
+  [#14](https://github.com/gidde032/RiceSuite/issues/14)). It now runs the
+  RiceSuite gateway's Host/Origin guard itself (`ricesuite.localguard`), on
+  the port it is bound to (`8791` in RiceSuite, `8765` standalone): a request
+  not addressed to `127.0.0.1:<port>` or `localhost:<port>` gets 421, and a
+  POST, PATCH or DELETE whose `Origin` is neither the app's own loopback
+  origin nor the gateway's (`http://127.0.0.1:8790` or
+  `http://localhost:8790`) gets 403, as does `Origin: null`. Requests without
+  an Origin (curl, scripts) are unaffected. Tests address the app as
+  `http://127.0.0.1:8765`.
+
 ## [1.0.0] — 2026-09-21
 
 First public release: the complete RiceSearcher-side v1 flow — acquire/transcribe

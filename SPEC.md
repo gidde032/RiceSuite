@@ -66,12 +66,22 @@ Each requirement is written so a test can check it. "The launcher" means the
   gateway and each pillar, whether it is running, its port, and its restart
   count.
 - **FR-3** Every listener binds to 127.0.0.1 only. No option binds to another
-  interface. The gateway answers only requests addressed to
-  `127.0.0.1:<port>` or `localhost:<port>` (DNS-rebinding guard) and refuses
-  state-changing requests carrying another origin, because Poster's API is
-  unauthenticated. This covers traffic through the gateway only: each pillar
-  still listens on its own loopback port, exactly as the old apps did
-  (hardening tracked in #14).
+  interface. Every listener, the gateway and each pillar alike, runs the same
+  guard (`ricesuite/localguard.py`), because Poster's API is unauthenticated
+  and a browser page can reach a pillar's own loopback port without passing
+  the gateway (#14):
+  - It answers only requests addressed to `127.0.0.1:<port>` or
+    `localhost:<port>`, where `<port>` is the port the listener is bound to
+    (the gateway's is its configured port). Anything else gets 421
+    (DNS-rebinding guard). A pillar run standalone on its old port is
+    therefore guarded too.
+  - It refuses with 403 any state-changing request (not GET, HEAD or OPTIONS),
+    and any WebSocket handshake, whose `Origin` is not the listener's own
+    loopback origin or, for a pillar, the gateway's
+    (`http://127.0.0.1:8790`, `http://localhost:8790`; the launcher passes the
+    gateway port it uses in `RICESUITE_GATEWAY_PORT`). `Origin: null` is
+    refused. A request without an Origin is allowed, so the launcher, the stop
+    guard, `rice status` and curl keep working.
 - **FR-4** The launcher refuses to start, and exits non-zero naming the port,
   if anything is accepting connections on 8765, 8000 or 1738 (an old app may be
   running; only one side runs at a time, Q10). It also refuses if a suite port

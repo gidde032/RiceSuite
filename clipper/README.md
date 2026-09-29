@@ -168,8 +168,10 @@ uvicorn app.main:app --reload            # loads .env from the repo root
 ```
 
 Open <http://localhost:8000>. uvicorn uses port 8000 by default; pass
-`--port 8765` to change it. At startup the server logs a warning if ffmpeg or
-libass is missing. You can also check at any time:
+`--port 8765` to change it. The server answers only requests addressed to
+`localhost` or `127.0.0.1` on its own port, and refuses changes sent from another
+site's page (RiceSuite SPEC FR-3). At startup the server logs a warning if ffmpeg
+or libass is missing. You can also check at any time:
 
 ```bash
 curl -s localhost:8000/api/health        # {"ffmpeg":true,"libass":true}
