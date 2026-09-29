@@ -5,28 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>RicePoster</title>
   <link rel="icon" href="static/logo-ratified.png" type="image/png">
+  <link rel="stylesheet" href="static/slate.css">
 <style>
-  /* ---- RiceClipper Slate tokens (exact values, ratified contract) ---- */
-  :root {
-    --backdrop:     #04060A; /* page, header, sidebar, logo background */
-    --midground:    #0C1116; /* workspace, recessed regions, slot surfaces */
-    --interior:     #14191E; /* cards, inputs, menus, panels */
-    --hairline:     #2B3136; /* quiet borders and dividers */
-    --control-line: #626A70; /* inactive control boundaries */
-    --rice-grey:    #AEB3B6; /* ready, selected, progress, neutral emphasis */
-    --muted-grey:   #80878C; /* secondary / inactive text */
-    --charcoal:     #3B4044; /* strong controls and logo object */
-    --primary-text: #E5E8EA; /* readable labels and content */
-    --focus:        #D5D9DB; /* keyboard focus ring */
+  /* Operational status hues and page layout stay with Poster. */
+  :root { --ok: #5FA97C; --warn: #C79A4B; --fail: #C56B6B; }
 
-    /* Operational status hues — permitted ONLY for genuine ready / warn /
-       fail states, never for chrome. Text always carries the meaning too. */
-    --ok:    #5FA97C;
-    --warn:  #C79A4B;
-    --fail:  #C56B6B;
-  }
-
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  * { margin: 0; padding: 0; }
 
   html { color-scheme: dark; }
 
@@ -137,8 +121,6 @@
     justify-content: space-between;
     gap: 16px;
     padding: 16px 28px;
-    background: var(--backdrop);
-    border-bottom: 1px solid var(--hairline);
     position: sticky;
     top: 0;
     z-index: 5;

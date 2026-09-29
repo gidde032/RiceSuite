@@ -25,7 +25,7 @@ import threading
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -127,6 +127,13 @@ def create_app(config: Config | None = None) -> FastAPI:
     # ``example-beat``) always have a matching profile in the UI (ADR-002 seed).
     ensure_seed(cfg.profiles_dir)
     app = FastAPI(title="RiceSearcher Review")
+
+    @app.get("/static/slate.css", include_in_schema=False)
+    def slate_css() -> FileResponse:
+        return FileResponse(
+            Path(__file__).resolve().parents[3] / "ricesuite/shell/slate.css",
+            media_type="text/css",
+        )
 
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
     # Range-served local media (StaticFiles handles Range requests for <video>).

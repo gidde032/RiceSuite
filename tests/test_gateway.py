@@ -142,6 +142,10 @@ def test_shell_is_served_at_the_root(client):
     for label in ("Search", "Clip", "Post", 'data-src="search/"', "shell/shell.js"):
         assert label in r.text
     assert client.get("/shell/shell.css").status_code == 200
+    slate = client.get("/shell/slate.css")
+    assert slate.status_code == 200
+    assert slate.headers["content-type"].startswith("text/css")
+    assert "--backdrop: #04060A" in slate.text
 
 
 def test_foreign_host_header_is_refused(upstream, client):
