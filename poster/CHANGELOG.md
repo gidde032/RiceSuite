@@ -124,6 +124,21 @@ published as a tagged release or GitHub Release.
 
 ### Fixed
 
+- TikTok posting on slow networks (RiceSuite
+  [#28](https://github.com/gidde032/RiceSuite/issues/28)). The flow slept a
+  fixed 5 s after sending the video and then clicked Post, which TikTok keeps
+  disabled until the upload finishes, so uploads longer than about 45 s failed
+  with Post greyed out. It now waits for Post to become enabled, up to
+  `TT_UPLOAD_TIMEOUT_S` (default 450 s), re-checks the caption, and fails
+  before anything is submitted if the upload never finishes. Confirmation is
+  observed through the same cap instead of fixed 45/15/10 s windows; a bare
+  "uploaded" text match (present on the upload page before Post) no longer
+  counts as success, and a login bounce is not a redirect to success. The
+  confirmation-modal step no longer falls back to re-clicking the main Post
+  button. An error after Post is unconfirmed, except a click TikTok blocked
+  before it was sent, which fails and quotes the blocking dialog. Failed and
+  unconfirmed attempts save timestamped screenshots and stage-timing JSON.
+
 - Instagram posting on slow networks (RiceSuite
   [#24](https://github.com/gidde032/RiceSuite/issues/24)). After Share,
   confirmation is observed for up to `IG_UPLOAD_TIMEOUT_S` (default 450 s)
