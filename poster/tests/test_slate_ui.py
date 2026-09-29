@@ -112,15 +112,18 @@ def test_runtime_logo_is_the_approved_bytes():
     """The served logo must be byte-identical to the approved reference, pinned
     against a literal SHA-256.
 
-    The logo is a local-only asset (gitignored, like the design authority and
-    internal docs) because the project forbids ANY tracked PNG (#60), so this
-    skips on a clean clone where the file is absent. On the maintainer's machine
-    it is a hard identity check that catches any recreation or re-export."""
-    if not RUNTIME_LOGO.exists():
-        pytest.skip("runtime logo is a local-only asset; absent on a clean clone")
+    This must run on a clean clone too, so it catches a missing asset as well as
+    a recreation or re-export."""
+    assert RUNTIME_LOGO.is_file(), "approved runtime logo must ship with Poster"
     assert _sha256(RUNTIME_LOGO) == APPROVED_LOGO_SHA256, (
         "frontend/logo-ratified.png is not the approved logo bytes"
     )
+
+
+def test_runtime_logo_is_served(client):
+    response = client.get("/static/logo-ratified.png")
+    assert response.status_code == 200
+    assert hashlib.sha256(response.content).hexdigest() == APPROVED_LOGO_SHA256
 
 
 def test_runtime_logo_matches_design_authority_when_present():
