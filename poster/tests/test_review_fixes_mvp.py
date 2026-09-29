@@ -494,7 +494,10 @@ def test_tiktok_failure_diagnostics():
     TikTok failures now capture a debug/ screenshot like IG does, and a
     blocking TUXModal's text is embedded in the raised error."""
     src = real_source(tiktok_browser, "post_media")
-    assert "debug_tt_post_" in src
+    # RiceSuite #28 moved the screenshot into _save_post_diagnostics, which
+    # post_media calls on every failed or unconfirmed attempt.
+    assert "_save_post_diagnostics(" in src
+    assert "debug_tt_post_" in real_source(tiktok_browser, "_save_post_diagnostics")
     assert "blocked by a TikTok dialog" in src
     assert "DEBUG_DIR" in inspect.getsource(tiktok_browser)
     # Batch 6 (#28) moved the overlay probe into _describe_blocking_modal.

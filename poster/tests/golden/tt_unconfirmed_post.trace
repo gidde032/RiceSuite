@@ -24,18 +24,30 @@ sleep 0.500
 page.evaluate(js#4880da5c '() => { const selectors = [ \'div[contenteditable="true"]\', \'')
 sleep 1.500
 locator("div[contenteditable='true']").first.inner_text() -> 'sunset over the harbour #latergram #goldenhour @studio'
+locator("button:has-text('Post')").filter(has_not=locator("button:has-text('Cancel'), button:has-text('Save')")).last.is_enabled(timeout=1000) -> True
+locator("div[contenteditable='true']").first.inner_text() -> 'sunset over the harbour #latergram #goldenhour @studio'
 locator("button:has-text('Post')").filter(has_not=locator("button:has-text('Cancel'), button:has-text('Save')")).last.count() -> 1
 locator("button:has-text('Post')").filter(has_not=locator("button:has-text('Cancel'), button:has-text('Save')")).last.scroll_into_view_if_needed()
 locator("button:has-text('Post')").filter(has_not=locator("button:has-text('Cancel'), button:has-text('Save')")).last.click()
 sleep 1.500
-locator("div[class*='modal'] button:has-text('Post'), [class*='dialog'] button:has-text('Post')").first.count() -> 1
-locator("div[class*='modal'] button:has-text('Post'), [class*='dialog'] button:has-text('Post')").first.count() -> 1
-locator("div[class*='modal'] button:has-text('Post'), [class*='dialog'] button:has-text('Post')").first.click()
-page.wait_for_selector("input[placeholder*='Search for post description'], span:has-text('Posts (Created on)'), div:has-text('Post successfully uploaded')", timeout=45000)
-sleep 2.000
-page.wait_for_selector("div:has-text('uploaded'), div:has-text('are being uploaded'), div:has-text('Your video has been uploaded')", timeout=15000)
+locator("div[class*='modal'] button:has-text('Post'), div[class*='TUXModal'] button:has-text('Post'), [class*='dialog'] button:has-text('Post')").first.count() -> 1
+locator("div[class*='modal'] button:has-text('Post'), div[class*='TUXModal'] button:has-text('Post'), [class*='dialog'] button:has-text('Post')").first.click()
+locator("input[placeholder*='Search for post description'], span:has-text('Posts (Created on)'), div:has-text('Post successfully uploaded')").first.is_visible() -> False
+locator("div:has-text('are being uploaded'), div:has-text('Your video has been uploaded')").first.is_visible() -> False
 page.url -> 'https://www.tiktok.com/upload'
-sleep 10.000
+sleep 1.000
+locator("input[placeholder*='Search for post description'], span:has-text('Posts (Created on)'), div:has-text('Post successfully uploaded')").first.is_visible() -> False
+locator("div:has-text('are being uploaded'), div:has-text('Your video has been uploaded')").first.is_visible() -> False
+page.url -> 'https://www.tiktok.com/upload'
+sleep 1.000
+locator("input[placeholder*='Search for post description'], span:has-text('Posts (Created on)'), div:has-text('Post successfully uploaded')").first.is_visible() -> False
+locator("div:has-text('are being uploaded'), div:has-text('Your video has been uploaded')").first.is_visible() -> False
+page.url -> 'https://www.tiktok.com/upload'
+sleep 1.000
+locator("input[placeholder*='Search for post description'], span:has-text('Posts (Created on)'), div:has-text('Post successfully uploaded')").first.is_visible() -> False
+locator("div:has-text('are being uploaded'), div:has-text('Your video has been uploaded')").first.is_visible() -> False
+page.url -> 'https://www.tiktok.com/upload'
+page.screenshot(path='debug_tt_post_A_20260928T000000000000Z_unconfirmed.png', timeout=5000)
 context.cookies()
 context.close()
 browser.close()

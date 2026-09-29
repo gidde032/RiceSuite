@@ -140,6 +140,7 @@ class Script:
         locator_wait=None,
         inner_text="",
         cookies=None,
+        enabled=None,
     ):
         self.url = url
         self.counts = counts or {}
@@ -151,6 +152,9 @@ class Script:
         self.locator_wait = locator_wait or {}
         self.inner_text = inner_text
         self.cookies = cookies or []
+        # Values: True/False, or a float virtual time at which the element
+        # becomes enabled (a TikTok upload that is still in progress).
+        self.enabled = enabled or {}
 
     @staticmethod
     def _lookup(table, key, default):
@@ -174,6 +178,9 @@ class Script:
     def locator_wait_result(self, desc):
         return self._lookup(self.locator_wait, desc, None)
 
+    def enabled_for(self, desc):
+        return self._lookup(self.enabled, desc, True)
+
     def inner_text_for(self, desc):
         if isinstance(self.inner_text, dict):
             return self._lookup(self.inner_text, desc, "")
@@ -186,6 +193,9 @@ class Recorder:
     def __init__(self, script: Script):
         self.script = script
         self.lines: list[str] = []
+        # Virtual clock: advanced by recorded sleeps and by simulated
+        # Playwright actionability waits, read through `monotonic`.
+        self.now = 0.0
 
     def add(self, line: str, result=None):
         if result is not None:
@@ -194,6 +204,13 @@ class Recorder:
 
     def text(self) -> str:
         return "\n".join(self.lines) + "\n"
+
+
+def _at(rec, value):
+    """Resolve a scripted state that may switch on at a virtual time."""
+    if type(value) is float:
+        return rec.now >= value
+    return value
 
 
 class FakeElement:
@@ -258,17 +275,44 @@ class FakeLocator:
 
     async def is_visible(self):
         value = self.rec.script.visible_for(self.desc)
+        if value is RAISE:
+            self.rec.add(f"{self.desc}.is_visible()", "RAISE")
+            raise RuntimeError(f"fake: {self.desc} target closed")
+        value = _at(self.rec, value)
         self.rec.add(f"{self.desc}.is_visible()", value)
+        return value
+
+    async def is_enabled(self, **kw):
+        value = _at(self.rec, self.rec.script.enabled_for(self.desc))
+        self.rec.add(_call(f"{self.desc}.is_enabled", **kw), value)
         return value
 
     async def inner_text(self):
         text = self.rec.script.inner_text_for(self.desc)
+        if callable(text):
+            text = text(self.rec.now)
         self.rec.add(f"{self.desc}.inner_text()", text)
         return text
 
     # --- actions ----------------------------------------------------------
 
     async def click(self, **kw):
+        # Playwright waits for a disabled target to become enabled, up to the
+        # action timeout (30s by default), then raises.
+        state = self.rec.script.enabled_for(self.desc)
+        if state is not True:
+            budget = kw.get("timeout", 30000) / 1000
+            if type(state) is float and state - self.rec.now <= budget:
+                waited = max(0.0, state - self.rec.now)
+                self.rec.now += waited
+                self.rec.add(f"{_call(f'{self.desc}.click', **kw)} [waited {waited:.3f}s for enabled]")
+                return
+            self.rec.now += budget
+            self.rec.add(f"{_call(f'{self.desc}.click', **kw)} -> TIMEOUT (not enabled)")
+            from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+            raise PlaywrightTimeoutError(
+                f"Locator.click: Timeout {int(budget * 1000)}ms exceeded. element is not enabled"
+            )
         self.rec.add(_call(f"{self.desc}.click", **kw))
 
     async def focus(self, **kw):
@@ -446,9 +490,8 @@ def run_traced(monkeypatch, module, coro_factory, script: Script, seed: int = 12
     # Record the floor of every wait and return immediately. jitter.py's
     # sleep_jittered routes through asyncio.sleep, so one patch covers both
     # the jittered waits and tiktok_browser's remaining fixed ones.
-    elapsed = [0.0]
     if hasattr(module, "monotonic"):
-        monkeypatch.setattr(module, "monotonic", lambda: elapsed[0])
+        monkeypatch.setattr(module, "monotonic", lambda: rec.now)
     if hasattr(module, "datetime"):
         from datetime import datetime, timezone
         class FixedDatetime:
@@ -458,7 +501,7 @@ def run_traced(monkeypatch, module, coro_factory, script: Script, seed: int = 12
         monkeypatch.setattr(module, "datetime", FixedDatetime)
 
     async def _record_sleep(duration):
-        elapsed[0] += duration
+        rec.now += duration
         rec.add(f"sleep {duration:.3f}")
 
     monkeypatch.setattr(asyncio, "sleep", _record_sleep)

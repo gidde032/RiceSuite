@@ -444,6 +444,13 @@ IG_UPLOAD_TIMEOUT_S = _env_int("IG_UPLOAD_TIMEOUT_S", 450)
 if IG_UPLOAD_TIMEOUT_S <= 0:
     raise ValueError("IG_UPLOAD_TIMEOUT_S must be a positive whole number of seconds")
 
+# TikTok upload budget (#28): how long to wait for Post to become enabled
+# (TikTok keeps it disabled until the upload finishes), and separately how
+# long to observe for confirmation after Post.
+TT_UPLOAD_TIMEOUT_S = _env_int("TT_UPLOAD_TIMEOUT_S", 450)
+if TT_UPLOAD_TIMEOUT_S <= 0:
+    raise ValueError("TT_UPLOAD_TIMEOUT_S must be a positive whole number of seconds")
+
 # Console verbosity for the `riceposter` logger (#26). Left at INFO, browser
 # automation narrates every step exactly as it always has; raised to WARNING,
 # only degraded and failed states are printed.

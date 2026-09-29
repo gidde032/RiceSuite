@@ -290,8 +290,11 @@ def test_tt_unconfirmed_post_transcript(monkeypatch, tt_cookie_session, media, a
     The result must be `unconfirmed`, and the cookie write-back must still
     run — the post did not raise."""
     script = _tt_script()
-    script.wait_for_selector["Search for post description"] = RAISE
-    script.wait_for_selector["div:has-text('uploaded')"] = RAISE
+    script.visible["Search for post description"] = False
+    script.visible["are being uploaded"] = False
+    # The full 450-second observation is covered with the virtual clock in
+    # test_tiktok_hardening.py; keep this action transcript compact.
+    monkeypatch.setattr(tiktok_browser, "TT_UPLOAD_TIMEOUT_S", 3)
     check_golden("tt_unconfirmed_post", _run_tt(monkeypatch, media, script))
 
 
@@ -327,24 +330,22 @@ def test_ig_session_expiry_detected_by_password_field(monkeypatch, tmp_sessions,
 
 
 def test_tt_second_confirmation_is_skipped_once_confirmed(monkeypatch, tt_cookie_session, media, allow_browser_post_media):
-    """Issue #29: the second confirmation block is dead cost on a post the
-    first block already confirmed — it can only re-set `confirmed` True,
-    never clear it — so it must not run.
-
-    Asserted against the transcripts rather than the source: the confirmed
-    run must contain exactly one confirmation wait, and the unconfirmed run
-    must still contain both plus the 10s still-on-/upload fallback. That
-    second half is the part worth guarding; narrowing it would turn "we did
-    not see it succeed" into a silently confirmed post.
+    """Issue #29, restated for the RiceSuite #28 observation loop: once a
+    signal confirms, nothing further is checked and nothing waits. An
+    unconfirmed run must keep checking both signals every round; narrowing
+    that would turn "we did not see it succeed" into a silently confirmed
+    post.
     """
     confirmed = (GOLDEN_DIR / "tt_normal_post.trace").read_text()
     unconfirmed = (GOLDEN_DIR / "tt_unconfirmed_post.trace").read_text()
 
-    second_wait = "div:has-text('are being uploaded')"
-    assert second_wait not in confirmed
-    assert second_wait in unconfirmed
-    assert "sleep 10.000" not in confirmed
-    assert "sleep 10.000" in unconfirmed
+    banner = "div:has-text('are being uploaded')"
+    tail = confirmed.split("Search for post description", 1)[1]
+    assert banner not in confirmed
+    assert "sleep" not in tail
+    rounds = unconfirmed.count("Search for post description")
+    assert rounds >= 2
+    assert unconfirmed.count(banner) == rounds
     assert "RETURN 'tt_post_ok_A'" in confirmed
     assert "RETURN 'tt_post_unconfirmed_A'" in unconfirmed
 

@@ -8,8 +8,11 @@ Requires saved browser sessions (login state) per account.
 import asyncio
 import os
 import shutil
+from contextlib import AsyncExitStack
+from datetime import datetime, timezone
 from pathlib import Path
-from playwright.async_api import async_playwright, Page, BrowserContext
+from time import monotonic
+from playwright.async_api import async_playwright, Page, BrowserContext, TimeoutError as PlaywrightTimeoutError
 
 import json
 
@@ -17,7 +20,7 @@ import json
 # platforms (tech-debt audit BE-3, 2026-07-29). _captions_match and
 # EDITOR_MARKER joined them in Batch 6, when Instagram gained the same caption
 # read-back check.
-from backend.config import DEBUG_DIR, TT_SESSIONS_DIR
+from backend.config import DEBUG_DIR, TT_SESSIONS_DIR, TT_UPLOAD_TIMEOUT_S
 from backend.jitter import type_with_jitter
 from backend.logging_setup import get_logger
 from backend.browser_common import (
@@ -446,10 +449,9 @@ async def login(account_key: str):
 # ---------------------------------------------------------------------------
 # The posting flow, in named steps
 #
-# These helpers are a decomposition of one 235-line function (tech-debt audit
-# BE-4, issue #28) and nothing more. The sequence of Playwright calls, the
-# selector chains, the sleep floors and the ordering are unchanged;
-# tests/golden/tt_*.trace holds the recorded transcript that proves it.
+# Originally decomposed in BE-4 (#28 in the RicePoster repo); the upload
+# wait, confirmation observation and diagnostics were added in RiceSuite #28.
+# tests/golden/tt_*.trace records the intended current flow.
 #
 # CLAUDE.md § Intentional design protects the long sleeps, the generous
 # timeouts and the fallback selector chains. Note also that TikTok's one-time
@@ -497,10 +499,12 @@ async def _upload_media_file(target, upload_path: Path):
         timeout=15000
     )
     await file_input.set_input_files(str(upload_path))
-    _log.info("[TikTok] Media file sent to picker layer. Monitoring upload progress...")
+    _log.info("[TikTok] Media file sent to picker layer. Upload continues in the background.")
     await asyncio.sleep(5)
 
-    _log.info("[TikTok] Video processing complete. Target fields ready.")
+    # Not proof the upload finished: _await_upload_ready waits for that
+    # before Post is clicked.
+    _log.info("[TikTok] Editor fields ready; entering the caption while the upload runs.")
 
 
 async def _dismiss_one_time_overlay(page: Page):
@@ -614,6 +618,51 @@ async def _enter_and_verify_caption(page: Page, caption_field, caption: str, acc
     )
 
 
+def _base_post_button(page: Page):
+    return page.locator("button:has-text('Post')").filter(
+        has_not=page.locator("button:has-text('Cancel'), button:has-text('Save')")
+    ).last
+
+
+async def _await_upload_ready(page: Page, account_key: str):
+    """Wait until Post is enabled: TikTok keeps it disabled until the upload
+    finishes. Before #28 the flow slept 5s and clicked, so any upload that
+    outlasted Playwright's 30s click timeout failed.
+
+    A timeout here fails the post before Post is ever clicked, so a retry
+    cannot duplicate it.
+    """
+    post_btn = _base_post_button(page)
+    deadline = monotonic() + TT_UPLOAD_TIMEOUT_S
+    next_log = monotonic() + 30
+    while True:
+        try:
+            if await post_btn.is_enabled(timeout=1000):
+                _log.info(f"[TikTok] {account_key}: upload finished; Post is enabled.")
+                return
+        except PlaywrightTimeoutError:
+            pass  # Post not rendered yet; keep observing.
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise Exception(
+                f"TikTok video did not finish uploading within {TT_UPLOAD_TIMEOUT_S}s "
+                f"(Post stayed disabled); nothing was posted"
+            )
+        if monotonic() >= next_log:
+            _log.info(f"[TikTok] {account_key}: upload still in progress ({int(remaining)}s remaining).")
+            next_log = monotonic() + 30
+        await asyncio.sleep(min(1.0, remaining))
+
+
+async def _recheck_caption(page: Page, caption_field, caption: str, account_key: str):
+    """The caption went in while the upload ran; make sure the editor still
+    holds it now that the upload is done. Re-enter once, or refuse to post."""
+    if _captions_match(caption, await caption_field.inner_text()):
+        return
+    _log.warning("[TikTok] Caption changed while the upload finished; entering it again...")
+    await _enter_and_verify_caption(page, caption_field, caption, account_key)
+
+
 async def _click_post_button(page: Page):
     """Click the base "Post" button at the bottom of the editing panel.
 
@@ -623,9 +672,7 @@ async def _click_post_button(page: Page):
     """
     _log.info("[TikTok] Caption finalized. Locating the base Publish/Post button...")
 
-    post_btn = page.locator("button:has-text('Post')").filter(
-        has_not=page.locator("button:has-text('Cancel'), button:has-text('Save')")
-    ).last
+    post_btn = _base_post_button(page)
 
     if await post_btn.count() == 0:
         post_btn = page.locator("[class*='button']").aria_role("button", name="Post").first
@@ -636,16 +683,24 @@ async def _click_post_button(page: Page):
     await asyncio.sleep(1.5)
 
 
-async def _confirm_post_modal(page: Page):
-    """Handle the secondary confirmation modal if it slides up."""
-    try:
-        # TikTok Studio embeds the final submission button inside a specific
-        # modal-content layer
-        confirm_modal_btn = page.locator("div[class*='modal'] button:has-text('Post'), [class*='dialog'] button:has-text('Post')").first
+TT_CONFIRM_MODAL_POST = (
+    "div[class*='modal'] button:has-text('Post'), "
+    "div[class*='TUXModal'] button:has-text('Post'), "
+    "[class*='dialog'] button:has-text('Post')"
+)
 
-        if await confirm_modal_btn.count() == 0:
-            # Fallback: the last active visible Post button on the page layer
-            confirm_modal_btn = page.locator("button:has-text('Post')").last
+
+async def _confirm_post_modal(page: Page):
+    """Handle the secondary confirmation modal if it slides up.
+
+    Only a Post button inside a modal or dialog counts. The page-wide
+    fallback this replaced (#28) re-clicked the last Post button on the
+    page, which with no modal open is the base Post button itself.
+    TUXModal is TikTok's modal class; `[class*='modal']` is case-sensitive
+    and misses it.
+    """
+    try:
+        confirm_modal_btn = page.locator(TT_CONFIRM_MODAL_POST).first
 
         if await confirm_modal_btn.count() > 0:
             _log.info("[TikTok] Final confirmation modal detected. Clicking final 'Post' switch...")
@@ -655,57 +710,70 @@ async def _confirm_post_modal(page: Page):
         _log.warning(f"[TikTok] Confirmation modal bypass step notice: {e}")
 
 
-async def _await_upload_confirmation(page: Page, target) -> bool:
+# Studio dashboard after the redirect; checked on the page, because a
+# redirect leaves any upload iframe behind.
+TT_DASHBOARD = (
+    "input[placeholder*='Search for post description'], "
+    "span:has-text('Posts (Created on)'), "
+    "div:has-text('Post successfully uploaded')"
+)
+# In-page success banners, checked on the upload target. Specific phrases
+# only: before Post, the upload page itself says "Checks can only start
+# after the file is uploaded", which the old bare 'uploaded' match counted
+# as success (#28).
+TT_UPLOAD_BANNER_TEXTS = ("are being uploaded", "Your video has been uploaded")
+TT_UPLOAD_BANNER = ", ".join(f"div:has-text('{text}')" for text in TT_UPLOAD_BANNER_TEXTS)
+
+
+async def _await_upload_confirmation(page: Page, target, account_key: str) -> bool:
     """True only when a success signal was actually observed.
 
-    Two independent signals, because TikTok shows different ones depending
-    on whether it redirects to the Studio dashboard or stays on the upload
-    page. Note the asymmetry: the dashboard check is against the page (a
-    redirect leaves any iframe behind) while the in-page banner check is
-    against the upload target.
+    Observes the dashboard, the in-page banner and a redirect away from
+    /upload throughout TT_UPLOAD_TIMEOUT_S, instead of the old fixed 45s,
+    15s and 10s windows. Unknown at the cap means unconfirmed, never
+    success and never a retry.
     """
     _log.info("[TikTok] Holding execution. Waiting for upload confirmation or dashboard redirect...")
-    confirmed = False
+    deadline = monotonic() + TT_UPLOAD_TIMEOUT_S
+    next_log = monotonic() + 30
+    while True:
+        if await page.locator(TT_DASHBOARD).first.is_visible():
+            _log.info("[TikTok] Server confirmation packet and dashboard redirect validated successfully!")
+            return True
+        if await target.locator(TT_UPLOAD_BANNER).first.is_visible():
+            return True
+        # Redirected away from upload after Post: it likely succeeded.
+        if "/upload" not in page.url:
+            return True
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            return False
+        if monotonic() >= next_log:
+            _log.info(f"[TikTok] {account_key}: still awaiting post confirmation ({int(remaining)}s remaining).")
+            next_log = monotonic() + 30
+        await asyncio.sleep(min(1.0, remaining))
+
+
+async def _save_post_diagnostics(page, account_key, outcome, stage, started, timings, error=None):
+    """Local screenshot and bounded metadata; never persist captions or DOM."""
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    stem = DEBUG_DIR / f"debug_tt_post_{account_key}_{stamp}_{outcome}"
+    metadata = {
+        "timestamp_utc": stamp, "slot": account_key, "outcome": outcome,
+        "stage": stage, "elapsed_s": round(monotonic() - started, 3),
+        "stage_timings_s": timings, "upload_cap_s": TT_UPLOAD_TIMEOUT_S,
+        "error_type": type(error).__name__ if error else None,
+    }
     try:
-        # Selectors matching unique elements of the post-success dashboard
-        await page.wait_for_selector(
-            "input[placeholder*='Search for post description'], "
-            "span:has-text('Posts (Created on)'), "
-            "div:has-text('Post successfully uploaded')",
-            timeout=45000  # Stays high to ensure the upload stream completely finishes
-        )
-        _log.info("[TikTok] Server confirmation packet and dashboard redirect validated successfully!")
-        confirmed = True
-    except Exception:
-        _log.warning("[TikTok] Warning: Expected confirmation element not found. Proceeding with safety fallback.")
-        await asyncio.sleep(2.0)
-
-    # Second signal, only when the first did not already confirm (issue #29).
-    #
-    # This block used to run unconditionally. It can only ever *set* confirmed
-    # True, never clear it, so on an already-confirmed post it was pure cost:
-    # a 15s selector wait plus, when the page is still on /upload, a further
-    # 10s sleep — up to ~25s of dead wait on the critical path of every
-    # successful TikTok post. Skipping it when confirmed is already True
-    # changes no outcome; the unconfirmed path below is untouched, and
-    # tests/golden/tt_unconfirmed_post.trace pins that.
-    if not confirmed:
-        # TikTok usually shows a success message or redirects
-        try:
-            await target.wait_for_selector(
-                "div:has-text('uploaded'), div:has-text('are being uploaded'), "
-                "div:has-text('Your video has been uploaded')",
-                timeout=15000,
-            )
-            confirmed = True
-        except Exception:
-            # If we got redirected away from upload, it likely succeeded
-            if "/upload" not in page.url:
-                confirmed = True
-            else:
-                await asyncio.sleep(10)
-
-    return confirmed
+        if page is None:
+            raise RuntimeError("Browser page unavailable")
+        await page.screenshot(path=str(stem.with_suffix(".png")), timeout=5000)
+    except Exception as exc:
+        metadata["screenshot_error_type"] = type(exc).__name__
+    try:
+        stem.with_suffix(".json").write_text(json.dumps(metadata, indent=2) + "\n")
+    except Exception as exc:
+        _log.warning(f"[TikTok] Could not save diagnostics for {account_key}: {type(exc).__name__}")
 
 
 async def _describe_blocking_modal(page: Page) -> str:
@@ -738,41 +806,65 @@ async def post_media(
     short-named upload copy, the step sequence, cookie write-back, failure
     diagnostics and cleanup.
     """
-    async with async_playwright() as pw:
+    # TikTok pre-fills the caption field with the uploaded file's name,
+    # so upload a short-named copy — long descriptive filenames must
+    # never be able to bleed into the caption
+    upload_path = media_path.with_name(f"tt_upload_{account_key}{media_path.suffix or '.mp4'}")
+    shutil.copyfile(media_path, upload_path)
+
+    async with AsyncExitStack() as stack:
+        context = None
         browser = None
-        if has_cookie_session(account_key):
-            context, browser = await _get_context_from_cookies(pw, account_key, headless=headless)
-            used_cookie_session = True
-        else:
-            context, browser = await _get_context(pw, account_key, headless=headless)
-            used_cookie_session = False
+        page = None
+        started = monotonic()
+        stage = "browser_start"
+        timings = {}
+        post_attempted = False
 
-        page = context.pages[0] if context.pages else await context.new_page()
-
-        # TikTok pre-fills the caption field with the uploaded file's name,
-        # so upload a short-named copy — long descriptive filenames must
-        # never be able to bleed into the caption
-        upload_path = media_path.with_name(f"tt_upload_{account_key}{media_path.suffix or '.mp4'}")
-        shutil.copyfile(media_path, upload_path)
+        async def step(name, fn, *args):
+            nonlocal stage
+            stage = name
+            began = monotonic()
+            _log.info(f"[TikTok] {account_key}: starting {name}.")
+            try:
+                return await fn(*args)
+            finally:
+                timings[name] = round(monotonic() - began, 3)
+                _log.info(f"[TikTok] {account_key}: {name} elapsed {timings[name]}s.")
 
         try:
-            await _open_upload_page(page, account_key)
-            target = await _resolve_upload_target(page)
-            await _upload_media_file(target, upload_path)
-            await _dismiss_one_time_overlay(page)
+            pw = await step("browser_start", stack.enter_async_context, async_playwright())
+            used_cookie_session = has_cookie_session(account_key)
+            if used_cookie_session:
+                context, browser = await step("browser_context", _get_context_from_cookies, pw, account_key, headless)
+            else:
+                context, browser = await step("browser_context", _get_context, pw, account_key, headless)
+            stage = "browser_page"
+            page = context.pages[0] if context.pages else await step("browser_page", context.new_page)
 
-            caption_field = await _find_caption_field(page)
-            await _enter_and_verify_caption(page, caption_field, caption, account_key)
+            await step("open_upload_page", _open_upload_page, page, account_key)
+            target = await step("resolve_target", _resolve_upload_target, page)
+            await step("send_media", _upload_media_file, target, upload_path)
+            await step("dismiss_overlay", _dismiss_one_time_overlay, page)
 
-            await _click_post_button(page)
-            await _confirm_post_modal(page)
+            caption_field = await step("find_caption", _find_caption_field, page)
+            await step("enter_caption", _enter_and_verify_caption, page, caption_field, caption, account_key)
+            await step("await_upload", _await_upload_ready, page, account_key)
+            await step("recheck_caption", _recheck_caption, page, caption_field, caption, account_key)
 
-            confirmed = await _await_upload_confirmation(page, target)
+            # Set before dispatch: a click can reach TikTok and then raise.
+            # After this boundary an error must never invite a retry.
+            post_attempted = True
+            await step("post", _click_post_button, page)
+            await step("confirm_modal", _confirm_post_modal, page)
+
+            confirmed = await step("confirmation", _await_upload_confirmation, page, target, account_key)
 
             if not confirmed:
                 # Do NOT report success we didn't observe — the post may or
                 # may not be live; the caller/UI shows this as unconfirmed
-                _log.warning(f"[TikTok] Warning: no post confirmation seen for {account_key} — result unconfirmed.")
+                _log.warning(f"[TikTok] Warning: no post confirmation seen for {account_key} within {TT_UPLOAD_TIMEOUT_S}s — result unconfirmed.")
+                await _save_post_diagnostics(page, account_key, "unconfirmed", stage, started, timings)
 
             # Write refreshed cookies back so the session self-sustains
             # (DESIGN-scheduling.md §3a). Only reached when the post did not
@@ -785,31 +877,37 @@ async def post_media(
             return _post_id("tt_post", account_key, confirmed)
 
         except Exception as e:
-            # Screenshot the failure state (parity with instagram_browser)
-            try:
-                await page.screenshot(path=str(DEBUG_DIR / f"debug_tt_post_{account_key}.png"))
-            except Exception:
-                pass
+            await _save_post_diagnostics(
+                page, account_key, "unconfirmed" if post_attempted else "failed",
+                stage, started, timings, e,
+            )
+            modal_text = await _describe_blocking_modal(page) if page is not None else ""
 
-            modal_text = await _describe_blocking_modal(page)
+            if post_attempted:
+                _log.warning(
+                    f"[TikTok] {account_key}: interrupted during {stage}; result unconfirmed "
+                    f"({type(e).__name__}){f'; dialog open: {modal_text!r}' if modal_text else ''}."
+                )
+                return _post_id("tt_post", account_key, False)
 
             if modal_text:
                 raise Exception(
                     f"TikTok post failed for {account_key}: blocked by a TikTok dialog: "
                     f"\"{modal_text}\" — log into this account in a normal browser, dismiss "
                     f"the dialog once, then retry. Original error: {e}"
-                )
-            raise Exception(f"TikTok post failed for {account_key}: {e}")
+                ) from e
+            raise Exception(f"TikTok post failed for {account_key}: {e}") from e
         finally:
             try:
                 upload_path.unlink(missing_ok=True)
             except Exception:
                 pass
             # A failed close must not mask the real posting error
-            try:
-                await context.close()
-            except Exception as close_err:
-                _log.warning(f"[TikTok] Warning: context cleanup failed: {close_err}")
+            if context is not None:
+                try:
+                    await context.close()
+                except Exception as close_err:
+                    _log.warning(f"[TikTok] Warning: context cleanup failed: {close_err}")
             if browser:
                 try:
                     await browser.close()
