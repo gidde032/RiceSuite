@@ -19,6 +19,7 @@ playwright_api = pytest.importorskip("playwright.sync_api")
 
 HTML_PATH = Path(__file__).resolve().parent.parent / "frontend" / "index.html"
 HTML = HTML_PATH.read_text()
+SLATE_CSS = (HTML_PATH.parents[2] / "ricesuite/shell/slate.css").read_text()
 
 ACCOUNTS = [{"slot": s, "account_id": s, "name": f"Account {s}"} for s in "ABC"]
 # An inactive account makes each slot's menu the live swap control (#19), so
@@ -41,6 +42,10 @@ WIDTHS = [WIDE, 1700, 1400, 1250, TIGHT, 1000, 700, 390]
 
 def _fake_api(route):
     url = route.request.url
+    # Serve shared CSS as the pillar does; otherwise the rendered page loses
+    # box-sizing and its page padding causes horizontal overflow.
+    if url.endswith("/static/slate.css"):
+        return route.fulfill(body=SLATE_CSS, content_type="text/css")
     if "/api/accounts/state" in url:
         return route.fulfill(json={"status": "saved", "account_state": STATE})
     if "/api/accounts" in url:

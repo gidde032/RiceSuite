@@ -144,6 +144,11 @@ async def validation_error_handler(request, exc: RequestValidationError):
 
 
 # Serve frontend
+@app.get("/static/slate.css", include_in_schema=False)
+def slate_css():
+    return FileResponse(Path(__file__).resolve().parents[2] / "ricesuite/shell/slate.css", media_type="text/css")
+
+
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
 

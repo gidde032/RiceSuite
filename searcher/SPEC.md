@@ -271,7 +271,9 @@ gate when the consumer is built.
 ## 8. Design / module boundaries
 
 - `acquire/` — yt-dlp adapter + watch-folder ingest → normalized source record.
-- `transcribe/` — faster-whisper wrapper (pattern reused from RiceClipper).
+- `transcribe/` — Searcher's faster-whisper adapter over RiceSuite's shared
+  model construction and word-level inference; Searcher retains its own output
+  and error contract (ADR-001 post-burn-in amendment, RiceSuite #5).
 - `extract/` — heuristic prefilter → candidate windows.
 - `score/` — beat-profile loader + LLM scorer.
 - `library/` — SQLite store + content-addressed media cache + dedup.

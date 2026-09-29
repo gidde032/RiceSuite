@@ -5,6 +5,11 @@ from pydantic import BaseModel
 
 from backend.config import ANTHROPIC_API_KEY, PROMPTS_DIR
 from backend.logging_setup import get_logger
+from ricesuite.anthropic_client import (
+    TIMEOUT_SECONDS,
+    close_async_client,
+    create_client,
+)
 
 _log = get_logger("captions")
 
@@ -20,7 +25,7 @@ DEFAULT_STYLE = "generic"
 # read timeout is 600s, and this call sits on the posting critical path, where a
 # ten-minute stall is indistinguishable from a hang. Bounded for the same reason
 # notifier.send is.
-CAPTION_API_TIMEOUT_S = 60.0
+CAPTION_API_TIMEOUT_S = TIMEOUT_SECONDS
 
 
 class CaptionStyle(BaseModel):
@@ -124,15 +129,14 @@ async def generate_caption(
             f"Unknown caption style '{style}'. Available: {', '.join(sorted(styles)) or 'none'}"
         )
 
-    client = anthropic.AsyncAnthropic(
+    client = create_client(
         api_key=ANTHROPIC_API_KEY.get_secret_value(),
-        timeout=CAPTION_API_TIMEOUT_S,
+        asynchronous=True,
     )
-    user_prompt = _build_user_prompt(
-        media_type, topic, selected.no_topic_fallback, avoid_caption, feedback
-    )
-
     try:
+        user_prompt = _build_user_prompt(
+            media_type, topic, selected.no_topic_fallback, avoid_caption, feedback
+        )
         response = await client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=500,
@@ -145,4 +149,6 @@ async def generate_caption(
             f"({type(e).__name__}). Set a valid key in credentials.env and "
             "restart the server."
         ) from e
+    finally:
+        await close_async_client(client)
     return response.content[0].text.strip()

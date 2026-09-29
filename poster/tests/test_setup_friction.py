@@ -61,6 +61,23 @@ def test_missing_api_key_is_a_readable_400(client, monkeypatch):
     assert "ANTHROPIC_API_KEY is not set" in resp.json()["detail"]
 
 
+def test_rejected_key_stays_readable_when_client_cleanup_fails(client, monkeypatch):
+    _use_real_caption_path(monkeypatch)
+    rejecting = _rejecting_client(anthropic.AuthenticationError, 401)
+
+    class BadCleanup(rejecting):
+        async def close(self):
+            raise RuntimeError("cleanup failed")
+
+    monkeypatch.setattr(captions.anthropic, "AsyncAnthropic", BadCleanup)
+    monkeypatch.setattr(captions, "ANTHROPIC_API_KEY", SecretStr("placeholder"))
+    response = client.post(
+        "/api/generate-caption", data={"media_type": "video", "topic": "t"}
+    )
+    assert response.status_code == 400
+    assert "ANTHROPIC_API_KEY" in response.json()["detail"]
+
+
 def test_other_api_failures_are_not_reported_as_key_problems(monkeypatch):
     """Only a rejected key is a setup error; anything else keeps propagating."""
     monkeypatch.setattr(captions.anthropic, "AsyncAnthropic",

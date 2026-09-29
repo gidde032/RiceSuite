@@ -22,8 +22,8 @@ from tests.paths import PROJECT_ROOT
 
 # The smoke-tier execution budget, asserted for real in test_gates.py. Every
 # document that quotes a number must quote this one. Sourced from the enforced
-# constant rather than restated, so #65's move from a 2s wall-clock budget to a
-# 1.5s *execution* budget flows here automatically instead of drifting again.
+# constant rather than restated, so an approved execution-budget change flows
+# here automatically instead of drifting again.
 from tests.test_gates import SMOKE_EXECUTION_BUDGET_S as SMOKE_BUDGET_S
 
 # Docs that are deliberately gitignored (local-only maintainer notes). A clone
@@ -209,16 +209,16 @@ def test_smoke_budget_is_consistent_across_documents():
     """Every document quoting the smoke budget must quote the enforced one.
 
     The enforced budget is the smoke tier's *execution* ceiling,
-    SMOKE_EXECUTION_BUDGET_S in test_gates.py (1.5s as of #65, which replaced
-    the old 2s wall-clock budget). test_gates.py cross-checks only the
-    *coverage* number, so the smoke budget can still drift in the docs it does
+    SMOKE_EXECUTION_BUDGET_S in test_gates.py (2s, measured from JUnit XML;
+    distinct from the old 2s wall-clock budget). test_gates.py cross-checks only
+    the *coverage* number, so the smoke budget can still drift in the docs it does
     not read while the suite stays fully green — which is exactly what happened
-    here: pyproject's marker still quoted the retired "< 2s".
+    here: pyproject's marker once quoted the retired "< 2s" wall-clock metric.
 
     SPEC.md and CLAUDE.md are gitignored, so they are checked when present
     rather than required — the same pattern test_gates.py already uses.
     """
-    # :g renders 1.5 as "1.5" (and a whole number without a trailing .0), so the
+    # :g renders a whole number without a trailing .0, so the
     # asserted string tracks the enforced value exactly rather than rounding.
     budget = f"< {SMOKE_BUDGET_S:g}s"
 
@@ -309,4 +309,3 @@ def test_roadmap_does_not_list_stories_as_a_daily_activity():
         "ROADMAP.md still describes stories as a daily activity. They were "
         "permanently removed on 2026-07-18."
     )
-

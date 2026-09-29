@@ -18,13 +18,13 @@ house style. Runs entirely on your machine — nothing is deployed.
 ## Installation
 
 ```bash
-git clone https://github.com/gidde032/RicePoster.git
-cd RicePoster
+git clone https://github.com/gidde032/RiceSuite.git
+cd RiceSuite
 python3 -m venv .venv && source .venv/bin/activate   # python3 = 3.12–3.14
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
+pip install -e . -e searcher    # shared suite package for captions and runtime
+cd poster
 playwright install chrome          # the `chrome` channel, NOT `chromium`
-pre-commit install                 # wire up the commit/push quality gates
-pre-commit install --hook-type pre-push
 cp credentials.env.example credentials.env   # then edit it
 ```
 
@@ -36,9 +36,17 @@ have Google Chrome installed system-wide, you can skip that line.
 Keep the virtual environment activated whenever you run RicePoster:
 `run.sh` and every command below call plain `python`.
 
-The two `pre-commit install` lines make the local quality gates real. Until you
-run them, local commits and pushes enforce nothing; pull requests still run the
-clean-environment GitHub Actions gate described under **Tests**.
+The suite root's `requirements-dev.txt` supplies the shared runtime and test
+tools. `pip install -e .` makes the neutral client module available when Poster
+runs from its own directory. The repository-wide CI runs Poster's existing
+test and coverage gates; see the suite root README for all commands.
+
+The `poster/.pre-commit-config.yaml` hooks assume Poster itself is the Git root,
+so do not install them from this monorepo. The suite CI runs Poster's required
+tests and 43% coverage floor; the root README lists the local gate command.
+For the original standalone RicePoster checkout only, run `pre-commit install`
+and `pre-commit install --hook-type pre-push` from its root to enable those
+local commit and push gates.
 
 ## Configuration (`credentials.env`)
 
@@ -344,6 +352,9 @@ python -m pytest tests/ --cov=backend --cov-fail-under=43     # coverage floor
 
 The suite is fully mocked — it never launches a browser, posts anywhere, or
 calls the Anthropic API, and a conftest tripwire fails any test that tries.
+The six-test smoke tier has a 2-second execution budget, measured from pytest's
+JUnit report so interpreter startup and test collection do not count. A
+separate 10-second wall-clock ceiling catches hangs.
 
 `pytest`, `pytest-cov` and `pre-commit` are in `requirements.txt`. Two hooks
 enforce the gates, but **only after you run the two `pre-commit install`

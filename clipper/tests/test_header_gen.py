@@ -125,3 +125,41 @@ def test_load_styles_includes_the_neutral_seed():
     styles = header_gen.load_styles()
     assert "generic-header" in styles
     assert styles["generic-header"].system_prompt
+
+
+def test_owned_client_closes_on_success_and_failure(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-key")
+    closed = []
+
+    class Owned(FakeClient):
+        def close(self):
+            closed.append(True)
+
+    monkeypatch.setattr(header_gen, "_create_client", lambda key: Owned())
+    assert header_gen.generate_header("hello") == "Header from model 🎉"
+    assert closed == [True]
+
+    class Failing:
+        class messages:
+            @staticmethod
+            def create(**kwargs):
+                raise RuntimeError("unavailable")
+
+        def close(self):
+            closed.append(True)
+
+    monkeypatch.setattr(header_gen, "_create_client", lambda key: Failing())
+    with pytest.raises(header_gen.HeaderGenerationError):
+        header_gen.generate_header("hello")
+    assert closed == [True, True]
+
+
+def test_cleanup_failure_does_not_discard_header(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-key")
+
+    class BadClose(FakeClient):
+        def close(self):
+            raise RuntimeError("cleanup failed")
+
+    monkeypatch.setattr(header_gen, "_create_client", lambda key: BadClose())
+    assert header_gen.generate_header("hello") == "Header from model 🎉"

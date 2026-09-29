@@ -1,21 +1,5 @@
-/* RiceSearcher Review — Slate theme.
-   Tokens mirror RiceClipper's ratified Slate palette (dark carbon/grey/rice-grey;
-   no blue/amber/gold/cyan/purple; red reserved for destructive/error). */
-:root {
-  --backdrop: #04060a;
-  --midground: #0c1116;
-  --interior: #14191e;
-  --hairline: #2b3136;
-  --control-line: #626a70;
-  --rice: #aeb3b6;
-  --muted: #80878c;
-  --charcoal: #3b4044;
-  --text: #e5e8ea;
-  --danger: #d9605a; /* accessible red, destructive/error only */
-  --radius: 8px;
-}
-
-* { box-sizing: border-box; }
+/* Searcher layout and states; common Slate tokens live in the shared sheet. */
+:root { --danger: #d9605a; --radius: 8px; }
 
 body {
   margin: 0;
@@ -30,8 +14,6 @@ body {
   align-items: center;
   gap: 14px;
   padding: 12px 20px;
-  background: var(--backdrop);
-  border-bottom: 1px solid var(--hairline);
   position: sticky;
   top: 0;
   z-index: 10;

@@ -12,6 +12,8 @@ import gc
 import os
 import threading
 
+from ricesuite.whisper import create_model, transcribe_words
+
 # Prevent the HuggingFace tokenizers Rust threadpool from spawning semaphores
 # that leak across a fork (uvicorn --reload). Must be set before
 # faster-whisper/tokenizers is imported.
@@ -51,18 +53,15 @@ def _default_cpu_threads() -> int:
 def _create_model():
     # Imported lazily so the module (and the rest of the app) load without the
     # heavy dependency present until transcription is actually invoked.
-    from faster_whisper import WhisperModel
-
     # faster-whisper constructs tqdm even when log_progress=False. tqdm's
     # default lock includes multiprocessing.RLock, which is unnecessary for
     # RiceClipper and can be reported as leaked during reload shutdown.
-    _configure_progress_lock()
-
-    return WhisperModel(
+    return create_model(
         _MODEL_SIZE,
         device=_DEVICE,
         compute_type=_COMPUTE_TYPE,
         cpu_threads=_default_cpu_threads(),
+        before_create=_configure_progress_lock,
     )
 
 
@@ -90,13 +89,10 @@ def transcribe(path: str) -> list[Word]:
     # faster-whisper returns a lazy segment iterator. Keep the lifecycle lock
     # through iteration so dispose() cannot clear the model mid-inference.
     with _model_lifecycle_lock:
-        segments, _info = _model().transcribe(path, word_timestamps=True)
-
         words: list[Word] = []
-        for segment in segments:
-            for w in segment.words or []:
-                text = (w.word or "").strip()
-                if not text:
-                    continue
-                words.append(Word(text=text, start=float(w.start), end=float(w.end)))
+        for w in transcribe_words(_model(), path):
+            text = (w.word or "").strip()
+            if not text:
+                continue
+            words.append(Word(text=text, start=float(w.start), end=float(w.end)))
         return words

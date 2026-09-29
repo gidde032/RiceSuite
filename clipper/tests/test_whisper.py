@@ -166,3 +166,40 @@ def test_transcribe_preserves_word_timestamps_and_skips_blanks(monkeypatch):
     assert whisper.transcribe("clip.mp4") == [
         whisper.Word(text="hello", start=0.0, end=0.4)
     ]
+
+
+def test_dispose_waits_until_lazy_iteration_finishes(monkeypatch):
+    entered = threading.Event()
+    release = threading.Event()
+    disposed = threading.Event()
+
+    class FakeWhisperModel:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def transcribe(self, path, *, word_timestamps):
+            def segments():
+                entered.set()
+                assert release.wait(2)
+                yield SimpleNamespace(
+                    words=[SimpleNamespace(word=" hi ", start=0, end=1)]
+                )
+
+            return segments(), None
+
+    _fake_backend(monkeypatch, FakeWhisperModel)
+    transcript = []
+    worker = threading.Thread(
+        target=lambda: transcript.extend(whisper.transcribe("clip.mp4"))
+    )
+    worker.start()
+    assert entered.wait(2)
+    disposer = threading.Thread(target=lambda: (whisper.dispose(), disposed.set()))
+    disposer.start()
+    assert not disposed.wait(0.05)
+    release.set()
+    worker.join(timeout=2)
+    disposer.join(timeout=2)
+    assert not worker.is_alive() and not disposer.is_alive()
+    assert disposed.is_set()
+    assert transcript == [whisper.Word(text="hi", start=0.0, end=1.0)]

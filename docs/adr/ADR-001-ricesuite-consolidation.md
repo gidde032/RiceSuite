@@ -160,3 +160,13 @@ does not require another approval round. Marking ready, merging, releases,
 deployment, visibility changes, live migration, and real-profile access remain
 outside that authority. The planning session writes the handoff prompts only;
 it does not implement these changes.
+
+## Quality-gate adjustment — 2026-09-29
+
+The maintainer explicitly raised Poster's six-test smoke-tier execution ceiling
+from 1.5 to 2 seconds after the RiceSuite #33 CI runner measured 1.568 seconds
+on one run and passed on rerun. The gate continues to read pytest's JUnit
+execution time, excluding interpreter startup and collection. Its exact test
+inventory, separate 10-second wall-clock hang detector, and Poster 43% coverage
+floor remain in force. This is a narrow, approved adjustment to Q16's initial
+gate-preservation decision; future gate changes still need maintainer sign-off.
