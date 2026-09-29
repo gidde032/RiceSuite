@@ -132,7 +132,7 @@ def _sources(config: dict[str, str]) -> dict[str, Path]:
 
 
 def _entries(sources: dict[str, Path]) -> list[tuple[Path, Path]]:
-    result = []
+    result: list[tuple[Path, Path]] = []
     for relative, source in sources.items():
         if relative == "poster":
             candidates = {source / name for name in POSTER_ENTRIES}
@@ -305,7 +305,7 @@ def _rewrite_references(root: Path, final_root: Path, sources: dict[str, Path]) 
 
 def _digest(root: Path) -> str:
     manifest = _manifest(root)
-    for name in (MARKER, RECEIPT, ".pre-migration-env"):
+    for name in (MARKER, f"{MARKER}.tmp", RECEIPT, ".pre-migration-env"):
         manifest.pop(name, None)
     return hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()
 
@@ -313,6 +313,15 @@ def _digest(root: Path) -> str:
 def _source_digest(entries: list[tuple[Path, Path]]) -> str:
     snapshots = {str(relative): _manifest(source) for source, relative in entries}
     return hashlib.sha256(json.dumps(snapshots, sort_keys=True).encode()).hexdigest()
+
+
+def _verify_originals(receipt: dict) -> None:
+    sources = {key: Path(value) for key, value in receipt["sources"].items()}
+    entries = _entries(sources)
+    if [[str(source), str(relative)] for source, relative in entries] != receipt[
+        "entries"
+    ] or _source_digest(entries) != receipt["source_digest"]:
+        raise MigrationError("original data changed after copy; plan and copy again")
 
 
 def copy(root: Path, config: dict[str, str]) -> dict:
@@ -331,6 +340,9 @@ def copy(root: Path, config: dict[str, str]) -> dict:
             str(relative): _manifest(source)
             for source, relative in [(Path(a), Path(b)) for a, b in report["entries"]]
         }
+        original_digest = hashlib.sha256(
+            json.dumps(originals, sort_keys=True).encode()
+        ).hexdigest()
         for source, relative in [(Path(a), Path(b)) for a, b in report["entries"]]:
             _copy(source, stage / relative)
         for source, relative in [(Path(a), Path(b)) for a, b in report["entries"]]:
@@ -342,13 +354,17 @@ def copy(root: Path, config: dict[str, str]) -> dict:
                     f"copy verification failed or source changed: {source}"
                 )
         _rewrite_references(stage, root, sources)
+        if (
+            _entries(sources) != [(Path(a), Path(b)) for a, b in report["entries"]]
+            or _source_digest([(Path(a), Path(b)) for a, b in report["entries"]])
+            != original_digest
+        ):
+            raise MigrationError("source changed during copy; plan and copy again")
         receipt = {
             "version": 1,
             "sources": report["sources"],
             "entries": report["entries"],
-            "source_digest": _source_digest(
-                [(Path(a), Path(b)) for a, b in report["entries"]]
-            ),
+            "source_digest": original_digest,
             "digest": _digest(stage),
         }
         (stage / RECEIPT).write_text(json.dumps(receipt, indent=2), encoding="utf-8")
@@ -372,11 +388,7 @@ def _read_receipt(root: Path) -> dict:
 def cutover(root: Path, config_file: Path, shell: dict[str, str]) -> None:
     root = _absolute(root)
     receipt = _read_receipt(root)
-    if (root / MARKER).exists():
-        raise MigrationError("already cut over")
-    entries = [(Path(a), Path(b)) for a, b in receipt["entries"]]
-    if _source_digest(entries) != receipt["source_digest"]:
-        raise MigrationError("original data changed after copy; plan and copy again")
+    _verify_originals(receipt)
     active = [k for k in PATH_VARIABLES if shell.get(k)]
     if active:
         raise MigrationError(
@@ -384,12 +396,21 @@ def cutover(root: Path, config_file: Path, shell: dict[str, str]) -> None:
         )
     if config_file.is_symlink():
         raise MigrationError("config file is a symlink")
-    old = config_file.read_bytes() if config_file.exists() else None
-    values = env.read_env_file(config_file)
-    if _sources(values) != {k: Path(v) for k, v in receipt["sources"].items()}:
-        raise MigrationError(
-            "source configuration changed after copy; plan and copy again"
-        )
+    current = config_file.read_bytes() if config_file.exists() else None
+    marker = root / MARKER
+    marker_temp = root / f"{MARKER}.tmp"
+    backup = root / ".pre-migration-env"
+    state = None
+    if marker.exists():
+        try:
+            state = json.loads(marker.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise MigrationError(f"invalid cutover marker: {exc}") from exc
+        if state.get("phase") != "pending":
+            raise MigrationError("already cut over")
+        old = backup.read_bytes() if state.get("had_config") else None
+    else:
+        old = current
     remove = set(PATH_VARIABLES) | {"RICESUITE_DATA_DIR"}
     kept = [
         line
@@ -400,27 +421,59 @@ def cutover(root: Path, config_file: Path, shell: dict[str, str]) -> None:
     if "searcher-profiles" in receipt["sources"]:
         additions.append(f"RICESEARCHER_PROFILES_DIR={root / 'searcher-profiles'}")
     updated = ("\n".join(kept + additions) + "\n").encode("utf-8")
-    backup = root / ".pre-migration-env"
+    temporary = config_file.with_name(config_file.name + ".migration-tmp")
+    old_digest = hashlib.sha256(old if old is not None else b"").hexdigest()
+    new_digest = hashlib.sha256(updated).hexdigest()
+    current_digest = hashlib.sha256(current if current is not None else b"").hexdigest()
+    if state is not None:
+        if (
+            state.get("digest") != receipt["digest"]
+            or state.get("old_config_digest") != old_digest
+            or state.get("config_digest") != new_digest
+            or current_digest not in {old_digest, new_digest}
+        ):
+            raise MigrationError("interrupted cutover state does not match config")
+        if current_digest == old_digest:
+            if _sources(env.read_env_file(config_file)) != {
+                k: Path(v) for k, v in receipt["sources"].items()
+            }:
+                raise MigrationError("source configuration changed after copy")
+            temporary.write_bytes(updated)
+            temporary.chmod(0o600)
+            os.replace(temporary, config_file)
+        state["phase"] = "complete"
+        marker_temp.write_text(json.dumps(state), encoding="utf-8")
+        os.replace(marker_temp, marker)
+        return
+    if _sources(env.read_env_file(config_file)) != {
+        k: Path(v) for k, v in receipt["sources"].items()
+    }:
+        raise MigrationError(
+            "source configuration changed after copy; plan and copy again"
+        )
     backup.write_bytes(old if old is not None else b"")
     backup.chmod(0o600)
-    marker = root / MARKER
-    marker_temp = root / f"{MARKER}.tmp"
-    temporary = config_file.with_name(config_file.name + ".migration-tmp")
     try:
         temporary.write_bytes(updated)
         temporary.chmod(0o600)
-        os.replace(temporary, config_file)
         marker_temp.write_text(
             json.dumps(
                 {
                     "version": 1,
+                    "phase": "pending",
                     "digest": receipt["digest"],
                     "had_config": old is not None,
-                    "config_digest": hashlib.sha256(updated).hexdigest(),
+                    "old_config_digest": old_digest,
+                    "config_digest": new_digest,
                 }
             ),
             encoding="utf-8",
         )
+        os.replace(marker_temp, marker)
+        os.replace(temporary, config_file)
+        state = json.loads(marker.read_text(encoding="utf-8"))
+        state["phase"] = "complete"
+        marker_temp.write_text(json.dumps(state), encoding="utf-8")
         os.replace(marker_temp, marker)
     except Exception:
         temporary.unlink(missing_ok=True)
@@ -445,6 +498,7 @@ def rollback(root: Path, config_file: Path, shell: dict[str, str]) -> None:
             "data changed after cutover; rollback would lose or duplicate work. "
             "Reconcile manually"
         )
+    _verify_originals(_read_receipt(root))
     if not config_file.is_file() or hashlib.sha256(
         config_file.read_bytes()
     ).hexdigest() != state.get("config_digest"):

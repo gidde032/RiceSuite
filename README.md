@@ -47,6 +47,7 @@ To try it without touching real data, point every data root at a temp dir:
 T=$(mktemp -d); mkdir -p $T/poster
 cat > $T/ricesuite.env <<EOT
 RICESEARCHER_DATA_DIR=$T/searcher
+RICECLIPPER_WORK_DIR=$T/clipper
 RICESEARCHER_HANDOFF_DIR=$T/h1
 RICECLIPPER_HANDOFF_DIR=$T/h2
 RICEPOSTER_DATA_DIR=$T/poster

@@ -123,6 +123,41 @@ def test_source_change_blocks_cutover(tmp_path):
     assert not (root / migration.MARKER).exists()
 
 
+def test_new_poster_entry_after_copy_blocks_cutover(tmp_path):
+    paths, config, root = fixture(tmp_path)
+    (paths["RICEPOSTER_DATA_DIR"] / "queue.jsonl").unlink()
+    migration.copy(root, env.read_env_file(config))
+    (paths["RICEPOSTER_DATA_DIR"] / "queue.jsonl").write_text('{"id":"new"}\n')
+    with pytest.raises(migration.MigrationError, match="original data changed"):
+        migration.cutover(root, config, {})
+    assert not (root / migration.MARKER).exists()
+
+
+def test_source_change_during_rewrite_blocks_copy(tmp_path, monkeypatch):
+    paths, config, root = fixture(tmp_path)
+    rewrite = migration._rewrite_references
+
+    def change_source(*args):
+        rewrite(*args)
+        (paths["RICEPOSTER_DATA_DIR"] / "history.jsonl").write_text("new work\n")
+
+    monkeypatch.setattr(migration, "_rewrite_references", change_source)
+    with pytest.raises(migration.MigrationError, match="source changed"):
+        migration.copy(root, env.read_env_file(config))
+    assert not root.exists()
+
+
+def test_old_data_activity_blocks_rollback(tmp_path):
+    paths, config, root = fixture(tmp_path)
+    migration.copy(root, env.read_env_file(config))
+    migration.cutover(root, config, {})
+    with (paths["RICEPOSTER_DATA_DIR"] / "history.jsonl").open("a") as stream:
+        stream.write('{"id":"old-worker"}\n')
+    with pytest.raises(migration.MigrationError, match="original data changed"):
+        migration.rollback(root, config, {})
+    assert (root / migration.MARKER).exists()
+
+
 def test_collision_symlink_and_partial_stage_are_refused(tmp_path):
     paths, config, root = fixture(tmp_path)
     values = env.read_env_file(config)
@@ -237,6 +272,55 @@ def test_config_switch_failure_restores_old_configuration(tmp_path, monkeypatch)
         migration.cutover(root, config, {})
     assert config.read_bytes() == before
     assert not (root / migration.MARKER).exists()
+
+
+def test_interrupted_config_switch_can_resume(tmp_path, monkeypatch):
+    _, config, root = fixture(tmp_path)
+    migration.copy(root, env.read_env_file(config))
+    before = config.read_bytes()
+    real_replace = migration.os.replace
+
+    def interrupt_config_replace(source, destination):
+        if Path(destination) == config:
+            raise KeyboardInterrupt("synthetic process interruption")
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(migration.os, "replace", interrupt_config_replace)
+    with pytest.raises(KeyboardInterrupt):
+        migration.cutover(root, config, {})
+    assert config.read_bytes() == before
+    assert (root / migration.MARKER).is_file()
+    with pytest.raises(env.SuiteConfigError, match="interrupted"):
+        env.data_env({"RICESUITE_DATA_DIR": str(root)})
+    monkeypatch.setattr(migration.os, "replace", real_replace)
+    migration.cutover(root, config, {})
+    assert env.read_env_file(config)["RICESUITE_DATA_DIR"] == str(root)
+
+
+def test_interrupted_marker_completion_can_resume(tmp_path, monkeypatch):
+    _, config, root = fixture(tmp_path)
+    migration.copy(root, env.read_env_file(config))
+    real_replace = migration.os.replace
+    marker = root / migration.MARKER
+    marker_updates = 0
+
+    def interrupt_final_marker(source, destination):
+        nonlocal marker_updates
+        if Path(destination) == marker:
+            marker_updates += 1
+            if marker_updates == 2:
+                raise KeyboardInterrupt("synthetic process interruption")
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(migration.os, "replace", interrupt_final_marker)
+    with pytest.raises(KeyboardInterrupt):
+        migration.cutover(root, config, {})
+    assert env.read_env_file(config)["RICESUITE_DATA_DIR"] == str(root)
+    with pytest.raises(env.SuiteConfigError, match="interrupted"):
+        env.data_env({"RICESUITE_DATA_DIR": str(root)})
+    monkeypatch.setattr(migration.os, "replace", real_replace)
+    migration.cutover(root, config, {})
+    assert json.loads(marker.read_text())["phase"] == "complete"
 
 
 def test_rollback_refuses_config_edited_after_cutover(tmp_path):

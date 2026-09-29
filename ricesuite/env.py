@@ -262,6 +262,11 @@ def data_env(env: Mapping[str, str], *, legacy_present: bool = False) -> dict[st
             raise SuiteConfigError(f"invalid cutover marker: {marker}") from exc
         if state.get("version") != 1 or not isinstance(state.get("digest"), str):
             raise SuiteConfigError(f"invalid cutover marker: {marker}")
+        if state.get("phase") == "pending":
+            raise SuiteConfigError(
+                "data cutover was interrupted; stop the suite and rerun "
+                "`rice data cutover`"
+            )
         unified = True
     else:
         unified = not legacy_present

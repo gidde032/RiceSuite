@@ -80,6 +80,14 @@ def test_example_parses_to_nothing_but_comments():
     assert env.read_env_file(EXAMPLE) == {}
 
 
+def test_readme_mock_recipe_sets_every_mutable_data_root():
+    readme = (SUITE_ROOT / "README.md").read_text(encoding="utf-8")
+    recipe = readme.split("To try it without touching real data", 1)[1].split("```", 2)[
+        1
+    ]
+    assert all(f"{name}=$T/" in recipe for name in env.DATA_PATHS)
+
+
 def test_missing_file_is_an_empty_config(tmp_path):
     assert env.read_env_file(tmp_path / "absent.env") == {}
 
