@@ -1,5 +1,5 @@
-"""The review app refuses foreign Hosts and cross-origin state changes (suite
-#14, SPEC FR-3).
+"""The review app refuses foreign Hosts and cross-origin state changes
+(RiceSuite #14, suite SPEC FR-3).
 
 A page in the maintainer's browser can reach this app's loopback port
 directly, bypassing the RiceSuite gateway, so the app enforces the same guard

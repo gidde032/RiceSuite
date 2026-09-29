@@ -183,7 +183,7 @@ ricesearcher score <id-or-prefix> --profile ID --model claude-sonnet-4-6  # pric
 ricesearcher score <id-or-prefix> --profile ID --offline  # heuristic-only; no API key or network
 ricesearcher slices --profile ID [--source ID]    # list scored candidate slices in a profile
 ricesearcher dedup --profile ID [--threshold 0.65]  # advisory possible-duplicate flags
-ricesearcher review [--host 127.0.0.1] [--port 8765]  # Slate web UI: the select-and-approve gate
+ricesearcher review [--host 127.0.0.1|localhost] [--port 8765]  # Slate web UI: the select-and-approve gate
 ricesearcher handoff --profile ID                 # write a profile's selected slices as a batch
 ```
 

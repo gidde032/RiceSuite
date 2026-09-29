@@ -76,12 +76,14 @@ Each requirement is written so a test can check it. "The launcher" means the
     (DNS-rebinding guard). A pillar run standalone on its old port is
     therefore guarded too.
   - It refuses with 403 any state-changing request (not GET, HEAD or OPTIONS),
-    and any WebSocket handshake, whose `Origin` is not the listener's own
+    and closes any WebSocket handshake, whose `Origin` is not the listener's own
     loopback origin or, for a pillar, the gateway's
     (`http://127.0.0.1:8790`, `http://localhost:8790`; the launcher passes the
     gateway port it uses in `RICESUITE_GATEWAY_PORT`). `Origin: null` is
     refused. A request without an Origin is allowed, so the launcher, the stop
-    guard, `rice status` and curl keep working.
+    guard, `rice status` and curl keep working. A refused WebSocket
+    handshake (foreign Host or Origin) is closed before it is accepted, which
+    the server answers with 403.
 - **FR-4** The launcher refuses to start, and exits non-zero naming the port,
   if anything is accepting connections on 8765, 8000 or 1738 (an old app may be
   running; only one side runs at a time, Q10). It also refuses if a suite port

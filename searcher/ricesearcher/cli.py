@@ -342,7 +342,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_review = sub.add_parser(
         "review", help="launch the local Slate review UI (select-and-approve gate)"
     )
-    p_review.add_argument("--host", default="127.0.0.1")
+    # The app answers only these Host names (suite SPEC FR-3); any other bind
+    # would serve nothing but 421s.
+    p_review.add_argument(
+        "--host", default="127.0.0.1", choices=("127.0.0.1", "localhost")
+    )
     p_review.add_argument("--port", type=int, default=8765)
     p_review.set_defaults(func=_cmd_review)
 

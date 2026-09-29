@@ -312,13 +312,16 @@ def _start(lock) -> int:
     except suite_env.SuiteConfigError as exc:
         print(f"rice: configuration error: {exc}", file=sys.stderr)
         return 2
-    unknown = suite_env.unknown_keys(
-        suite_env.read_env_file(
-            Path(os.environ.get("RICESUITE_ENV") or suite_env.DEFAULT_ENV_FILE)
-        )
+    file_values = suite_env.read_env_file(
+        Path(os.environ.get("RICESUITE_ENV") or suite_env.DEFAULT_ENV_FILE)
     )
-    for key in unknown:
+    for key in suite_env.unknown_keys(file_values):
         print(f"rice: warning: ricesuite.env sets {key}, which no pillar reads")
+    for key in suite_env.launcher_keys(file_values):
+        print(
+            f"rice: warning: ricesuite.env sets {key}, which the launcher sets "
+            "itself; the file's value is ignored"
+        )
     root = suite_env.data_root(environ)
     if Path(environ["RICEPOSTER_DATA_DIR"]) == root / "poster":
         if root.is_symlink() or (root / "poster").is_symlink():

@@ -51,7 +51,8 @@ All notable changes to RiceSearcher are documented here. This project adheres to
   origin nor the gateway's (`http://127.0.0.1:8790` or
   `http://localhost:8790`) gets 403, as does `Origin: null`. Requests without
   an Origin (curl, scripts) are unaffected. Tests address the app as
-  `http://127.0.0.1:8765`.
+  `http://127.0.0.1:8765`. `ricesearcher review --host` now accepts only
+  `127.0.0.1` or `localhost`, the names the guard answers.
 
 ## [1.0.0] — 2026-09-21
 

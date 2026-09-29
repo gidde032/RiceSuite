@@ -11,6 +11,9 @@ pillar apps wrap themselves in :class:`LocalGuard`, which refuses:
   the listener's own loopback origin or a trusted one, with 403 (a page on
   another site can send a form POST or a no-preflight fetch).
 
+A refused WebSocket handshake, for either reason, is closed before it is
+accepted, which the server answers with 403.
+
 ``<port>`` is the port the listener is bound to, so a pillar run standalone on
 its old port is guarded too. A request with no Origin is allowed: the
 launcher, the stop guard, ``rice status`` and curl send none, and browsers
