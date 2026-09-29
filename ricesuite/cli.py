@@ -317,6 +317,12 @@ def _start(lock) -> int:
     )
     for key in unknown:
         print(f"rice: warning: ricesuite.env sets {key}, which no pillar reads")
+    root = suite_env.data_root(environ)
+    if Path(environ["RICEPOSTER_DATA_DIR"]) == root / "poster":
+        if root.is_symlink() or (root / "poster").is_symlink():
+            print("rice: refusing a symlinked unified data root", file=sys.stderr)
+            return 2
+        (root / "poster").mkdir(parents=True, exist_ok=True, mode=0o700)
     problems = ports.startup_conflicts()
     if problems:
         for problem in problems:
@@ -439,6 +445,109 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_data(args: argparse.Namespace) -> int:
+    from ricesuite import migration
+
+    config_file = Path(
+        os.environ.get("RICESUITE_ENV") or suite_env.DEFAULT_ENV_FILE
+    ).expanduser()
+    if args.data_command == "location":
+        try:
+            configured = suite_env.load()
+        except suite_env.SuiteConfigError as exc:
+            print(f"rice: configuration error: {exc}", file=sys.stderr)
+            return 2
+        print(f"Unified data root: {suite_env.data_root(configured)}")
+        for key in suite_env.DATA_PATHS:
+            print(f"  {key}={configured[key]}")
+        return 0
+    if args.data_command is None:
+        print(
+            "rice: choose plan, copy, cutover, rollback, or location", file=sys.stderr
+        )
+        return 2
+    root = Path(args.root or os.environ.get("RICESUITE_DATA_DIR") or "~/.ricesuite")
+    lock = acquire_launcher_lock()
+    if lock is None:
+        print("rice: migration requires RiceSuite to be stopped", file=sys.stderr)
+        return 1
+    try:
+        found = leftovers(read_state())
+        conflicts = ports.startup_conflicts()
+        if found or conflicts:
+            raise migration.MigrationError(
+                "stop RiceSuite, old apps and workers first: "
+                + "; ".join(([_describe(found)] if found else []) + conflicts)
+            )
+        shell_paths = [key for key in migration.PATH_VARIABLES if os.environ.get(key)]
+        if shell_paths:
+            raise migration.MigrationError(
+                "unset shell path overrides before migration: " + ", ".join(shell_paths)
+            )
+        sources = migration._sources(suite_env.read_env_file(config_file))
+        # Browser parents advertise their profile path in --user-data-dir.
+        # Never open a profile to test whether it is live.
+        process_list = subprocess.run(
+            ["ps", "-axww", "-o", "command="],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        session_paths = [
+            str(sources["poster"] / "sessions"),
+            str(root.expanduser() / "poster/sessions"),
+        ]
+        if any(
+            "--user-data-dir" in line and any(path in line for path in session_paths)
+            for line in process_list.splitlines()
+        ):
+            raise migration.MigrationError(
+                "a browser is using a source or destination profile; "
+                "close it before migration"
+            )
+        source_paths = [str(path) for path in sources.values()]
+        if any(
+            any(path in line for path in source_paths)
+            and any(
+                name in line
+                for name in (
+                    "ffmpeg",
+                    "uvicorn",
+                    "ricesearcher",
+                    "riceclipper",
+                    "riceposter",
+                )
+            )
+            for line in process_list.splitlines()
+        ):
+            raise migration.MigrationError(
+                "a worker references an old data path; stop it before migration"
+            )
+        if args.data_command in {"plan", "copy"}:
+            config = suite_env.read_env_file(config_file)
+            report = (
+                migration.plan(root, config)
+                if args.data_command == "plan"
+                else migration.copy(root, config)
+            )
+            print(json.dumps(report, indent=2))
+        elif args.data_command == "cutover":
+            migration.cutover(root, config_file, dict(os.environ))
+            print(
+                "Cutover complete. Originals retained. "
+                f"New data root: {root.expanduser()}"
+            )
+        else:
+            migration.rollback(root, config_file, dict(os.environ))
+            print("Configuration restored to the original paths; copied data retained.")
+        return 0
+    except (migration.MigrationError, OSError, ValueError) as exc:
+        print(f"rice: migration refused: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        lock.close()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="rice", description="Run RiceSuite: Search, Clip and Post behind one tab."
@@ -450,13 +559,26 @@ def build_parser() -> argparse.ArgumentParser:
         "--force", action="store_true", help="stop even while a Poster run is active"
     )
     sub.add_parser("status", help="show what is running")
+    p_data = sub.add_parser(
+        "data", help="inspect or explicitly migrate application data"
+    )
+    data_commands = p_data.add_subparsers(dest="data_command")
+    data_commands.add_parser("location", help="show effective configured data paths")
+    for action in ("plan", "copy", "cutover", "rollback"):
+        p_action = data_commands.add_parser(action)
+        p_action.add_argument("--root", help="destination root (default ~/.ricesuite)")
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     command = args.command or "start"
-    handlers = {"start": cmd_start, "stop": cmd_stop, "status": cmd_status}
+    handlers = {
+        "start": cmd_start,
+        "stop": cmd_stop,
+        "status": cmd_status,
+        "data": cmd_data,
+    }
     return handlers[command](args)
 
 

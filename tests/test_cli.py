@@ -72,6 +72,40 @@ def test_default_command_is_start():
     assert cli.build_parser().parse_args(["stop", "--force"]).force
 
 
+def test_data_plan_refuses_running_old_app(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(ports, "startup_conflicts", lambda: ["old app on 1738"])
+    assert cli.main(["data", "plan", "--root", str(tmp_path / "new")]) == 1
+    assert "old app on 1738" in capsys.readouterr().err
+
+
+def test_data_plan_refuses_browser_using_source_profile(tmp_path, monkeypatch, capsys):
+    class Reply:
+        stdout = (
+            f"chrome --user-data-dir={tmp_path / 'poster-data/sessions/instagram/A'}"
+        )
+
+    monkeypatch.setattr(cli.subprocess, "run", lambda *args, **kwargs: Reply())
+    assert cli.main(["data", "plan", "--root", str(tmp_path / "new")]) == 1
+    assert "browser is using" in capsys.readouterr().err
+
+
+def test_data_cli_copy_cutover_and_rollback_on_empty_fixture(
+    tmp_path, monkeypatch, capsys
+):
+    class Reply:
+        stdout = ""
+
+    monkeypatch.setattr(cli.subprocess, "run", lambda *args, **kwargs: Reply())
+    root = tmp_path / "new"
+    for command in ("plan", "copy", "cutover"):
+        assert cli.main(["data", command, "--root", str(root)]) == 0
+    assert (root / ".cutover.json").is_file()
+    assert cli.main(["data", "location"]) == 0
+    assert str(root) in capsys.readouterr().out
+    assert cli.main(["data", "rollback", "--root", str(root)]) == 0
+    assert not (root / ".cutover.json").exists()
+
+
 def test_status_when_not_running(capsys):
     assert cli.main(["status"]) == 3
     assert "not running" in capsys.readouterr().out

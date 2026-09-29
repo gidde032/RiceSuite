@@ -267,3 +267,17 @@ unified data directory (#10). Hosted or LAN deployment is excluded outright
 The 2026-09-29 post-burn-in amendment to ADR-001 authorizes #5, #6, #7, and
 #10 as follow-ups. Their implementation and delivery state belongs to their
 Issues and draft PRs; this original phase outline remains the v0.1 contract.
+
+## 8. Post-burn-in data amendment (#10)
+
+The 2026-09-29 amendment to ADR-001 supersedes the legacy defaults in FR-8 and
+FR-9 after an explicit migration. Fresh installations default to
+`~/.ricesuite/{searcher,clipper,poster,handoff/searcher-to-clipper,handoff/clipper-to-poster}`.
+`RICESUITE_DATA_DIR` selects another absolute root. Existing installations
+keep their old effective paths until `rice data cutover` completes; an
+ordinary start never migrates data. Explicit per-pillar overrides remain
+effective, and contradictory handoff ends or overlapping roots are refused.
+The offline `rice data plan`, `copy`, `cutover` and `rollback` commands and their
+preconditions are documented in [the migration guide](docs/data-migration.md).
+Originals remain in place. Rollback after new activity is refused without
+manual reconciliation. No transport or human gate changes under #10.

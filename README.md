@@ -35,12 +35,19 @@ answers on the old apps' ports (8765 / 8000 / 1738): RiceSuite and the old apps
 share live data, so only one side runs at a time. Ctrl-C runs the same safety
 check as `rice stop`; press it twice to force. See [SPEC.md](SPEC.md) §2–3.
 
+Fresh installations keep application data under `~/.ricesuite` by default.
+Existing installations retain their legacy locations until an explicit
+maintainer migration. Run `rice data location` to see effective paths; see
+[Data location and migration](docs/data-migration.md) for the offline
+plan, copy, cutover and rollback commands and Finder/File Explorer directions.
+
 To try it without touching real data, point every data root at a temp dir:
 
 ```bash
 T=$(mktemp -d); mkdir -p $T/poster
 cat > $T/ricesuite.env <<EOT
 RICESEARCHER_DATA_DIR=$T/searcher
+RICECLIPPER_WORK_DIR=$T/clipper
 RICESEARCHER_HANDOFF_DIR=$T/h1
 RICECLIPPER_HANDOFF_DIR=$T/h2
 RICEPOSTER_DATA_DIR=$T/poster
