@@ -255,8 +255,9 @@ def test_tt_normal_post_transcript(monkeypatch, tt_cookie_session, media, allow_
 
 
 def test_tt_iframe_layout_transcript(monkeypatch, tt_cookie_session, media, allow_browser_post_media):
-    """When the upload panel is inside an iframe, the file input and the
-    second confirmation wait must be addressed to the frame, not the page."""
+    """When the upload panel is inside an iframe, the file input must be
+    addressed to the frame, not the page. Frame-addressed banner probes and
+    frame detachment are covered in test_tiktok_hardening.py (RiceSuite #28)."""
     script = _tt_script(wait_for_selector={})
     check_golden("tt_iframe_layout", _run_tt(monkeypatch, media, script))
 

@@ -30,23 +30,23 @@ locator("button:has-text('Post')").filter(has_not=locator("button:has-text('Canc
 locator("button:has-text('Post')").filter(has_not=locator("button:has-text('Cancel'), button:has-text('Save')")).last.scroll_into_view_if_needed()
 locator("button:has-text('Post')").filter(has_not=locator("button:has-text('Cancel'), button:has-text('Save')")).last.click()
 sleep 1.500
-locator("div[class*='modal'] button:has-text('Post'), div[class*='TUXModal'] button:has-text('Post'), [class*='dialog'] button:has-text('Post')").first.count() -> 1
-locator("div[class*='modal'] button:has-text('Post'), div[class*='TUXModal'] button:has-text('Post'), [class*='dialog'] button:has-text('Post')").first.click()
+locator("div[class*='modal'] button:has-text('Post'), div[class*='TUXModal'] button:has-text('Post'), [class*='dialog'] button:has-text('Post'), [role='dialog'] button:has-text('Post')").first.count() -> 1
+locator("div[class*='modal'] button:has-text('Post'), div[class*='TUXModal'] button:has-text('Post'), [class*='dialog'] button:has-text('Post'), [role='dialog'] button:has-text('Post')").first.click()
 locator("input[placeholder*='Search for post description'], span:has-text('Posts (Created on)'), div:has-text('Post successfully uploaded')").first.is_visible() -> False
-locator("div:has-text('are being uploaded'), div:has-text('Your video has been uploaded')").first.is_visible() -> False
 page.url -> 'https://www.tiktok.com/upload'
+locator("div:has-text('is being uploaded'), div:has-text('are being uploaded'), div:has-text('Your video has been uploaded')").first.is_visible() -> False
 sleep 1.000
 locator("input[placeholder*='Search for post description'], span:has-text('Posts (Created on)'), div:has-text('Post successfully uploaded')").first.is_visible() -> False
-locator("div:has-text('are being uploaded'), div:has-text('Your video has been uploaded')").first.is_visible() -> False
 page.url -> 'https://www.tiktok.com/upload'
+locator("div:has-text('is being uploaded'), div:has-text('are being uploaded'), div:has-text('Your video has been uploaded')").first.is_visible() -> False
 sleep 1.000
 locator("input[placeholder*='Search for post description'], span:has-text('Posts (Created on)'), div:has-text('Post successfully uploaded')").first.is_visible() -> False
-locator("div:has-text('are being uploaded'), div:has-text('Your video has been uploaded')").first.is_visible() -> False
 page.url -> 'https://www.tiktok.com/upload'
+locator("div:has-text('is being uploaded'), div:has-text('are being uploaded'), div:has-text('Your video has been uploaded')").first.is_visible() -> False
 sleep 1.000
 locator("input[placeholder*='Search for post description'], span:has-text('Posts (Created on)'), div:has-text('Post successfully uploaded')").first.is_visible() -> False
-locator("div:has-text('are being uploaded'), div:has-text('Your video has been uploaded')").first.is_visible() -> False
 page.url -> 'https://www.tiktok.com/upload'
+locator("div:has-text('is being uploaded'), div:has-text('are being uploaded'), div:has-text('Your video has been uploaded')").first.is_visible() -> False
 page.screenshot(path='debug_tt_post_A_20260928T000000000000Z_unconfirmed.png', timeout=5000)
 context.cookies()
 context.close()

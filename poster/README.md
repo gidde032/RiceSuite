@@ -411,9 +411,12 @@ at `TT_UPLOAD_TIMEOUT_S` seconds, and a timeout fails the post before anything
 is submitted. If the editor lost the caption meanwhile, it is entered again or
 the post is refused. The confirmation modal step only clicks a Post button
 inside a modal or dialog, never the main Post button a second time. After Post,
-the Studio dashboard, an upload banner or a redirect away from `/upload` is
-observed for up to `TT_UPLOAD_TIMEOUT_S` seconds; otherwise the result is
-unconfirmed. An error after Post is also unconfirmed, never failed.
+the Studio dashboard, an upload banner or a redirect away from `/upload` (not
+to a login page) is observed for up to `TT_UPLOAD_TIMEOUT_S` seconds;
+otherwise the result is unconfirmed. An error after Post is also unconfirmed,
+except a Post click that never went through because something covered the
+button (such as a one-time TikTok dialog), which fails and quotes the dialog.
+A Post button that never appears fails after 30 seconds.
 
 Failures and unconfirmed results save timestamped `debug_tt_post_<slot>_*`
 PNG screenshots and JSON metadata in `debug/`, with the same contents and

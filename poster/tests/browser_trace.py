@@ -141,6 +141,7 @@ class Script:
         inner_text="",
         cookies=None,
         enabled=None,
+        click_raises=None,
     ):
         self.url = url
         self.counts = counts or {}
@@ -155,6 +156,9 @@ class Script:
         # Values: True/False, or a float virtual time at which the element
         # becomes enabled (a TikTok upload that is still in progress).
         self.enabled = enabled or {}
+        # Substrings whose click fails Playwright's pre-dispatch checks for
+        # a reason other than enabled state (an overlay intercepting it).
+        self.click_raises = click_raises or {}
 
     @staticmethod
     def _lookup(table, key, default):
@@ -283,7 +287,14 @@ class FakeLocator:
         return value
 
     async def is_enabled(self, **kw):
-        value = _at(self.rec, self.rec.script.enabled_for(self.desc))
+        value = self.rec.script.enabled_for(self.desc)
+        if value is RAISE:
+            # Playwright waits up to `timeout` for the element to exist.
+            self.rec.now += kw.get("timeout", 30000) / 1000
+            self.rec.add(_call(f"{self.desc}.is_enabled", **kw), "TIMEOUT (no element)")
+            from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+            raise PlaywrightTimeoutError(f"fake: {self.desc} not found")
+        value = _at(self.rec, value)
         self.rec.add(_call(f"{self.desc}.is_enabled", **kw), value)
         return value
 
@@ -299,6 +310,15 @@ class FakeLocator:
     async def click(self, **kw):
         # Playwright waits for a disabled target to become enabled, up to the
         # action timeout (30s by default), then raises.
+        if self.rec.script._lookup(self.rec.script.click_raises, self.desc, False):
+            budget = kw.get("timeout", 30000) / 1000
+            self.rec.now += budget
+            self.rec.add(f"{_call(f'{self.desc}.click', **kw)} -> TIMEOUT (intercepted)")
+            from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+            raise PlaywrightTimeoutError(
+                f"Locator.click: Timeout {int(budget * 1000)}ms exceeded. "
+                "<div class=TUXModal-overlay> intercepts pointer events"
+            )
         state = self.rec.script.enabled_for(self.desc)
         if state is not True:
             budget = kw.get("timeout", 30000) / 1000
@@ -371,11 +391,17 @@ class FakeFrame:
             raise TimeoutError(f"fake: no element for {selector!r}")
         return FakeElement(self.rec, f"element({selector!r})")
 
+    def _prefix(self):
+        # Calls addressed to an iframe are labelled, so a transcript shows
+        # whether a lookup went to the frame or the page. Page calls stay
+        # unprefixed, as every golden was captured.
+        return "" if self.name == "page" else f"{self.name}."
+
     def locator(self, selector, **kw):
-        return FakeLocator(self.rec, _call("locator", selector, **kw))
+        return FakeLocator(self.rec, self._prefix() + _call("locator", selector, **kw))
 
     def get_by_text(self, text, **kw):
-        return FakeLocator(self.rec, _call("get_by_text", text, **kw))
+        return FakeLocator(self.rec, self._prefix() + _call("get_by_text", text, **kw))
 
 
 class FakePage(FakeFrame):
@@ -389,6 +415,8 @@ class FakePage(FakeFrame):
         # Reads of page.url drive the session-expired and still-on-upload
         # branches, so each read is recorded with what it returned.
         value = self.rec.script.url
+        if callable(value):
+            value = value(self.rec.now)
         self.rec.add("page.url", value)
         return value
 
