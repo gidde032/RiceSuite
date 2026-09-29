@@ -79,8 +79,9 @@ published as a tagged release or GitHub Release.
     the per-slot synthetic identity from F3. Switching modes changes the
     device an account presents; do it once, at a login.
   - *Native input on the Create, Post, and caption-commit steps.* The sidebar
-    Create control and the Post menu item are found by locator, hovered, and
-    clicked through Playwright. The caption commit is a native blur and
+    Create control and the Post menu item are found by locator and clicked
+    through Playwright (the earlier hover before each click was removed in
+    RiceSuite #24). The caption commit is a native blur and
     focus. All three replaced `page.evaluate` calls whose JavaScript clicks
     and dispatched events arrived with `isTrusted: false`. The happy path now
     runs no script at all; the password probe on the not-found path remains.
@@ -122,6 +123,17 @@ published as a tagged release or GitHub Release.
   [#68](https://github.com/gidde032/RicePoster/issues/68))
 
 ### Fixed
+
+- Instagram posting on slow networks (RiceSuite
+  [#24](https://github.com/gidde032/RiceSuite/issues/24)). After Share,
+  confirmation is observed for up to `IG_UPLOAD_TIMEOUT_S` (default 450 s)
+  instead of 180 s followed by an unchecked 10 s sleep and closing Chrome
+  mid-upload; an explicit "could not be shared" error ends the wait, and an
+  unknown outcome stays unconfirmed and is never reposted. Opening the
+  composer waits for either the Post menu or the upload dialog, clicks the
+  visible Post item without a hover pause, and recovers a vanished menu up to
+  three times; Share itself is never retried. Failed and unconfirmed attempts
+  save timestamped screenshots and stage-timing JSON under `debug/`.
 
 - Caption generation with a missing or rejected `ANTHROPIC_API_KEY` now
   answers 400 with a message naming the key and `credentials.env`, instead

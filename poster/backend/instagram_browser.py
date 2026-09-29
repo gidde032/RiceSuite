@@ -236,7 +236,7 @@ async def _open_create_post(page: Page):
     and recover transient menu loss before any media or Share action.
     """
 
-    # Step 1: hover, then click the Create control.
+    # Step 1: find the Create control; the recovery loop below clicks it.
     create = await _find_create_button(page)
 
     if create is None:
