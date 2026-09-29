@@ -16,8 +16,10 @@ and consumer of a stage cannot point at different directories.
 
 from __future__ import annotations
 
+import json
 import os
 import re
+import sys
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -73,7 +75,12 @@ POSTER_VARIABLES = (
 )
 SHARED_VARIABLES = ("ANTHROPIC_API_KEY",)
 # Read by RiceSuite itself, never by a pillar.
-SUITE_VARIABLES = ("RICESUITE_ENV", "RICESUITE_RUN_DIR")
+SUITE_VARIABLES = (
+    "RICESUITE_ENV",
+    "RICESUITE_RUN_DIR",
+    "RICESUITE_DATA_DIR",
+    "RICECLIPPER_WORK_DIR",
+)
 
 KNOWN_VARIABLES = frozenset(
     SUITE_VARIABLES
@@ -174,9 +181,112 @@ def load(
     ``path`` defaults to ``$RICESUITE_ENV`` or ``<suite root>/ricesuite.env``;
     ``base`` defaults to ``os.environ``.
     """
+    live_environment = base is None
     base = os.environ if base is None else base
     if path is None:
         path = Path(base.get("RICESUITE_ENV") or DEFAULT_ENV_FILE).expanduser()
     env = merge(read_env_file(path), base)
+    env.update(
+        data_env(env, legacy_present=_legacy_present() if live_environment else False)
+    )
     env.update(handoff_env(env))
     return env
+
+
+DATA_PATHS = {
+    "RICESEARCHER_DATA_DIR": ("searcher", "~/.ricesearcher"),
+    "RICECLIPPER_WORK_DIR": ("clipper", str(SUITE_ROOT / "clipper/.riceclipper_work")),
+    "RICEPOSTER_DATA_DIR": ("poster", str(SUITE_ROOT / "poster")),
+    "RICESEARCHER_HANDOFF_DIR": (
+        "handoff/searcher-to-clipper",
+        "~/ricesearcher-handoff",
+    ),
+    "RICECLIPPER_HANDOFF_DIR": ("handoff/clipper-to-poster", "~/riceclipper-handoff"),
+}
+
+
+def data_root(env: Mapping[str, str]) -> Path:
+    raw = env.get("RICESUITE_DATA_DIR") or "~/.ricesuite"
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        raise SuiteConfigError(
+            "RICESUITE_DATA_DIR must be an absolute path or start with ~"
+        )
+    return path
+
+
+def _legacy_present(
+    suite_root: Path = SUITE_ROOT, *, under_pytest: bool | None = None
+) -> bool:
+    """Detect old installs without creating or opening any data files."""
+    if under_pytest is None:
+        under_pytest = "pytest" in sys.modules
+    home = Path.home()
+    paths = [
+        home / ".ricesearcher",
+        home / "ricesearcher-handoff",
+        home / "riceclipper-handoff",
+    ]
+    if not under_pytest:
+        paths.extend(
+            [
+                suite_root / "clipper/.riceclipper_work",
+                suite_root / "poster/queue.jsonl",
+                suite_root / "poster/history.jsonl",
+                suite_root / "poster/sessions",
+                suite_root / "poster/queue_media",
+                suite_root / "poster/debug",
+                suite_root / "poster/.post-in-flight.json",
+            ]
+        )
+        media = suite_root / "poster/media"
+        if media.is_dir() and any(p.name != ".gitkeep" for p in media.iterdir()):
+            return True
+    return any(path.exists() for path in paths)
+
+
+def data_env(env: Mapping[str, str], *, legacy_present: bool = False) -> dict[str, str]:
+    """Use unified defaults for fresh installs and completed cutovers.
+
+    An existing installation keeps all legacy defaults until an explicit
+    migration writes the cutover marker. Explicit pillar paths always win.
+    """
+    root = data_root(env)
+    marker = root / ".cutover.json"
+    if marker.exists() or marker.is_symlink():
+        if marker.is_symlink():
+            raise SuiteConfigError(f"cutover marker is a symlink: {marker}")
+        try:
+            state = json.loads(marker.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise SuiteConfigError(f"invalid cutover marker: {marker}") from exc
+        if state.get("version") != 1 or not isinstance(state.get("digest"), str):
+            raise SuiteConfigError(f"invalid cutover marker: {marker}")
+        unified = True
+    else:
+        unified = not legacy_present
+    paths: dict[str, str] = {}
+    for variable, (suffix, legacy) in DATA_PATHS.items():
+        consumer = {
+            "RICESEARCHER_HANDOFF_DIR": "RICECLIPPER_SEARCHER_INBOX",
+            "RICECLIPPER_HANDOFF_DIR": "HANDOFF_DIR",
+        }.get(variable)
+        paths[variable] = (
+            env.get(variable)
+            or (env.get(consumer) if consumer else None)
+            or str(root / suffix if unified else Path(legacy).expanduser())
+        )
+    if not unified and env.get("RICESUITE_DATA_DIR"):
+        # An explicit root is a selection, not an implicit migration.
+        raise SuiteConfigError(
+            "legacy data exists; run `rice data plan` and migrate before selecting "
+            "RICESUITE_DATA_DIR"
+        )
+    selected = [
+        Path(value).expanduser().resolve(strict=False) for value in paths.values()
+    ]
+    for i, left in enumerate(selected):
+        for right in selected[i + 1 :]:
+            if left == right or left in right.parents or right in left.parents:
+                raise SuiteConfigError(f"data paths overlap: {left} and {right}")
+    return paths

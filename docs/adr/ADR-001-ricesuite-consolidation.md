@@ -110,3 +110,53 @@ burn-in, critical fixes land twice.
 3. Each pillar's own `SPEC.md` / ADRs for pillar-internal behavior, unchanged
    except where this ADR explicitly overrides (Q12 transport, Q14 config,
    Q10 Poster data root).
+
+## Post-burn-in amendment — 2026-09-29
+
+**Status: ratified; implementation pending.** This amendment releases the Q10
+and Q13 follow-ups in RiceSuite Issues [#5](https://github.com/gidde032/RiceSuite/issues/5),
+[#6](https://github.com/gidde032/RiceSuite/issues/6),
+[#7](https://github.com/gidde032/RiceSuite/issues/7), and
+[#10](https://github.com/gidde032/RiceSuite/issues/10).
+
+The maintainer reports several days of successful real use and explicitly
+accepts that trial as satisfying the burn-in prerequisite **for these four
+changes**. This is maintainer acceptance, not an independently audited claim
+that every numerical Q9 criterion was measured. It does not authorize original
+repository archival, publication, or other release actions.
+
+The final decision challenge settled these choices in one round (two
+questions):
+
+- Deliver #5 and #7 together as shared Python infrastructure, #6 separately
+  as shared Slate styling, and #10 separately as data migration. Preserve
+  transcript contracts, prompts, model selections, and each page's appearance.
+  Separate pillar processes and all three human gates remain unchanged.
+- Unify the existing application data covered by Q10, **including browser
+  profiles**, under `~/.ricesuite` by default, with a configurable alternative.
+  The maintainer selected complete migration over leaving profiles behind,
+  and hidden application storage over a visible `~/RiceSuiteData` folder.
+- Migration is explicitly maintainer-run: copy and verify before switching,
+  retain the originals, and provide a rollback procedure. No automatic move on
+  ordinary startup. Existing installations must not silently appear empty
+  because a default changed. A retained pre-migration copy alone does not
+  guarantee lossless rollback after new activity; the implementation must
+  explain and enforce that distinction.
+- User documentation must explain how to find the data in macOS Finder and
+  Windows File Explorer, including hidden-folder access and custom locations.
+  Windows browsing instructions do not expand the existing macOS/Linux
+  application-support contract.
+
+The material assumption exposed was that unifying paths includes changing
+Chrome's profile location. Fixture verification cannot establish real-account
+session continuity. Implementers must document that remaining maintainer-only
+validation; agents may neither inspect live data nor open real profiles under
+this approval. No research prerequisite remains for preparing the work.
+
+The maintainer authorizes the implementation sessions to implement, verify,
+run independent subagent reviews, repair validated in-scope findings, and
+create/update draft PRs through the agentic workflow. Routine in-scope repair
+does not require another approval round. Marking ready, merging, releases,
+deployment, visibility changes, live migration, and real-profile access remain
+outside that authority. The planning session writes the handoff prompts only;
+it does not implement these changes.

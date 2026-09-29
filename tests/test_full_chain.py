@@ -14,7 +14,10 @@ import os
 import subprocess
 import sys
 
+import pytest
+
 from ricesuite import SUITE_ROOT
+from ricesuite import env as suite_env
 
 GUARD = r"""
 import socket
@@ -94,7 +97,7 @@ from app import jobs, main, probe
 from app.models import Word
 from app.probe import MediaInfo
 
-jobs.WORK_ROOT = Path(sys.argv[1])
+assert jobs.WORK_ROOT == Path(sys.argv[1])
 jobs.WORK_ROOT.mkdir(parents=True, exist_ok=True)
 probe.probe = lambda _p: MediaInfo(
     width=1080, height=1920, duration=30.0, has_audio=True)
@@ -173,18 +176,31 @@ def _run(pillar, script, env, *args):
     return json.loads(result.stdout.strip().splitlines()[-1])
 
 
-def test_local_file_to_poster_draft_in_mock_mode(tmp_path):
+@pytest.mark.parametrize("unified", [False, True])
+def test_local_file_to_poster_draft_in_mock_mode(tmp_path, unified):
     home = tmp_path / "home"
-    poster_data = tmp_path / "poster-data"
+    data_root = home / ".ricesuite"
+    poster_data = data_root / "poster" if unified else tmp_path / "poster-data"
     for d in (home, poster_data):
-        d.mkdir()
+        d.mkdir(parents=True, exist_ok=True)
     local_file = tmp_path / "interview.mp4"
     local_file.write_bytes(b"not really a video, the toolchain is faked")
-    s2c, c2p = tmp_path / "searcher-handoff", tmp_path / "clipper-handoff"
+    s2c = (
+        data_root / "handoff/searcher-to-clipper"
+        if unified
+        else tmp_path / "searcher-handoff"
+    )
+    c2p = (
+        data_root / "handoff/clipper-to-poster"
+        if unified
+        else tmp_path / "clipper-handoff"
+    )
+    clipper_work = data_root / "clipper" if unified else tmp_path / "clipper-work"
     env = {
         "PATH": os.environ["PATH"],
         "HOME": str(home),
         "RICESEARCHER_DATA_DIR": str(tmp_path / "searcher-data"),
+        "RICECLIPPER_WORK_DIR": str(clipper_work),
         "RICESEARCHER_HANDOFF_DIR": str(s2c),
         "RICECLIPPER_SEARCHER_INBOX": str(s2c),
         "RICECLIPPER_HANDOFF_DIR": str(c2p),
@@ -194,13 +210,26 @@ def test_local_file_to_poster_draft_in_mock_mode(tmp_path):
         "SCHEDULER_ENABLED": "false",
         "ANTHROPIC_API_KEY": "",
     }
+    if unified:
+        configured = suite_env.load(
+            tmp_path / "missing.env",
+            base={
+                "HOME": str(home),
+                "RICESUITE_DATA_DIR": str(data_root),
+                "PATH": os.environ["PATH"],
+                "POST_MODE": "mock",
+                "SCHEDULER_ENABLED": "false",
+                "ANTHROPIC_API_KEY": "",
+            },
+        )
+        env = configured
 
     searcher = _run("searcher", SEARCHER, env, str(local_file))
     assert searcher["source_kind"] == "local"
     assert searcher["clip_count"] == 1
     assert (s2c / searcher["batch_id"] / "manifest.json").is_file()
 
-    clipper = _run("clipper", CLIPPER, env, str(tmp_path / "clipper-work"))
+    clipper = _run("clipper", CLIPPER, env, str(clipper_work))
     assert clipper["searcher_batch"] == searcher["batch_id"]
     assert clipper["clip_count"] == 1
     assert (c2p / clipper["batch_id"] / "manifest.json").is_file()

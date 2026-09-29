@@ -20,7 +20,10 @@ from pathlib import Path
 from app.models import CropPlan, JobState, Word
 from app.probe import MediaInfo
 
-WORK_ROOT = Path(__file__).resolve().parent.parent / ".riceclipper_work"
+WORK_ROOT = Path(
+    os.getenv("RICECLIPPER_WORK_DIR")
+    or Path(__file__).resolve().parent.parent / ".riceclipper_work"
+).expanduser()
 JOB_METADATA_FILENAME = "job.json"
 RENDERED_OUTPUT_FILENAME = "output.mp4"
 _JOB_METADATA_SCHEMA = 1

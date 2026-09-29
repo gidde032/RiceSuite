@@ -195,3 +195,52 @@ def test_load_refuses_a_shell_export_that_contradicts_the_file(tmp_path):
     f.write_text(f"RICECLIPPER_HANDOFF_DIR={tmp_path / 'b'}\n")
     with pytest.raises(env.SuiteConfigError):
         env.load(f, base={"HANDOFF_DIR": str(tmp_path / "elsewhere")})
+
+
+def test_fresh_install_uses_unified_paths(tmp_path):
+    loaded = env.load(
+        tmp_path / "missing.env", base={"RICESUITE_DATA_DIR": str(tmp_path / "suite")}
+    )
+    assert loaded["RICESEARCHER_DATA_DIR"] == str(tmp_path / "suite/searcher")
+    assert loaded["RICECLIPPER_WORK_DIR"] == str(tmp_path / "suite/clipper")
+    assert loaded["RICEPOSTER_DATA_DIR"] == str(tmp_path / "suite/poster")
+    assert loaded["HANDOFF_DIR"] == str(tmp_path / "suite/handoff/clipper-to-poster")
+
+
+def test_legacy_install_keeps_old_paths_until_cutover(tmp_path):
+    legacy = env.data_env({}, legacy_present=True)
+    assert legacy["RICESEARCHER_DATA_DIR"] == str(Path("~/.ricesearcher").expanduser())
+    assert legacy["RICEPOSTER_DATA_DIR"] == str(env.SUITE_ROOT / "poster")
+    with pytest.raises(env.SuiteConfigError, match="legacy data"):
+        env.data_env({"RICESUITE_DATA_DIR": str(tmp_path / "new")}, legacy_present=True)
+    root = tmp_path / "new"
+    root.mkdir()
+    (root / ".cutover.json").write_text('{"version":1,"digest":"fixture"}')
+    unified = env.data_env({"RICESUITE_DATA_DIR": str(root)}, legacy_present=True)
+    assert unified["RICEPOSTER_DATA_DIR"] == str(root / "poster")
+
+
+def test_poster_media_alone_marks_an_existing_install(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    media = tmp_path / "checkout/poster/media"
+    media.mkdir(parents=True)
+    (media / ".gitkeep").touch()
+    assert not env._legacy_present(tmp_path / "checkout", under_pytest=False)
+    (media / "draft.mp4").write_bytes(b"draft")
+    assert env._legacy_present(tmp_path / "checkout", under_pytest=False)
+
+
+def test_explicit_consumer_override_drives_producer(tmp_path):
+    paths = env.data_env({"HANDOFF_DIR": str(tmp_path / "custom")})
+    derived = env.handoff_env(paths | {"HANDOFF_DIR": str(tmp_path / "custom")})
+    assert derived["RICECLIPPER_HANDOFF_DIR"] == str(tmp_path / "custom")
+
+
+def test_overlapping_data_roots_are_refused(tmp_path):
+    with pytest.raises(env.SuiteConfigError, match="overlap"):
+        env.data_env(
+            {
+                "RICESUITE_DATA_DIR": str(tmp_path),
+                "RICESEARCHER_DATA_DIR": str(tmp_path / "poster"),
+            }
+        )
