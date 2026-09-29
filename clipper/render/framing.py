@@ -14,6 +14,7 @@ See ``docs/design/subject-crop-spec.md`` (Framing policy).
 from __future__ import annotations
 
 from app.models import Content, CropPlan, CropReason, CropSample, TrackSample
+from render.ass import StyleConfig
 
 # Sampling and motion policy (source_w-relative unless noted).
 SAMPLE_FPS = 5
@@ -28,7 +29,11 @@ SCENE_MIN_SPEECH = 0.3
 SCENE_MIN_MUSIC = 0.2
 FACE_RATE_MIN = 0.80
 SAFE_RATE_MIN = 0.95
-HEADER_ZONE_PX = 450
+# The header zone runs from the frame top to the bottom of the tallest 2-line
+# header with its plate: the emoji PNG path at 42 px ends 155 px below
+# ``header_margin_v`` (libass ends 100 px below). It moves with the header.
+HEADER_BLOCK_MAX_PX = 160
+HEADER_ZONE_PX = StyleConfig().header_margin_v + HEADER_BLOCK_MAX_PX
 CAPTION_ZONE_PX = 540
 WARN_FRACTION = 0.20
 

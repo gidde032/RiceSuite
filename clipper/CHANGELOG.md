@@ -14,6 +14,13 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   environment take precedence. `python-dotenv` is now pinned directly
   (1.2.3) instead of arriving through `uvicorn[standard]`. Tests redirect the
   path so they never read a developer's real `.env`.
+- **The header sits higher** (RiceSuite
+  [#20](https://github.com/gidde032/RiceSuite/issues/20)). `header_margin_v`
+  moves from 450 px (~23% of the 1920 px frame) to 210 px (~11%), on both the
+  libass and the emoji-PNG header paths. The subject-crop "face near header"
+  warning zone now follows the header: it covers the frame top down to the
+  bottom of a 2-line header with its plate (`header_margin_v` + 160 = 370 px,
+  was a fixed 450 px), so a face just below the raised header no longer warns.
 
 ### Added
 - **First-time-user README.** Requirements table (Python 3.11–3.14, ffmpeg with

@@ -237,6 +237,11 @@ model earns its keep. Revisit at build if desired.
   while ffmpeg runs (Issue #30). This is still a review/UX affordance, not a
   throughput feature. The prior "single-clip, no batch" default is superseded;
   the per-clip human-in-the-loop gate is unchanged.
+- Header position: top-center, 210 px down from the top of the 1080×1920 frame
+  (~11%; `StyleConfig.header_margin_v`, was 450 px until RiceSuite #20). The
+  libass and emoji-PNG header paths both read it. The subject-crop "face near
+  header" warning zone is derived from it: the frame top down to the bottom of a
+  2-line header with its plate (`header_margin_v` + 160 px).
 - Future-header snapshot taken from an early frame (~1s in, or first non-black
   frame).
 - Tuned for sub-minute clips; no hard length cap enforced in v1.
