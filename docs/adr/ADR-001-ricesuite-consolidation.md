@@ -113,7 +113,10 @@ burn-in, critical fixes land twice.
 
 ## Post-burn-in amendment — 2026-09-29
 
-**Status: ratified; implementation pending.** This amendment releases the Q10
+**Status: ratified; implemented.** #6, #5/#7 and #10 merged on 2026-09-29
+(PRs #31, #33, #32). The maintainer ran the live migration to `~/.ricesuite`
+the same day, confirmed real sessions from the new location, and approved
+removal of the verified originals. This amendment releases the Q10
 and Q13 follow-ups in RiceSuite Issues [#5](https://github.com/gidde032/RiceSuite/issues/5),
 [#6](https://github.com/gidde032/RiceSuite/issues/6),
 [#7](https://github.com/gidde032/RiceSuite/issues/7), and

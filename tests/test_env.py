@@ -9,6 +9,14 @@ from ricesuite import SUITE_ROOT, env
 
 EXAMPLE = SUITE_ROOT / "ricesuite.env.example"
 
+
+@pytest.fixture(autouse=True)
+def _isolated_home(tmp_path, monkeypatch):
+    """The default data root is ``~/.ricesuite``. Without this, a machine that
+    has completed a real cutover leaks its live marker into these tests."""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+
+
 # How each pillar spells an environment read. Literal names only; Poster's
 # per-slot names are f-strings and are covered by KNOWN_PATTERNS.
 _READ_PATTERNS = (
