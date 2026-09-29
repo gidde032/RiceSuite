@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
+from ricesuite.anthropic_client import close_client, create_client
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 
@@ -33,7 +34,6 @@ _API_KEY_ENV = "ANTHROPIC_API_KEY"
 
 # The header sits on the request path of an interactive review UI; a ten-minute
 # SDK default read timeout would be indistinguishable from a hang.
-_API_TIMEOUT_S = 60.0
 _MAX_TOKENS = 200
 
 
@@ -124,9 +124,7 @@ def _build_content(user_prompt: str, thumbnail_b64: str = "") -> Any:
 def _create_client(api_key: str) -> Any:
     """Build a real Anthropic client. Imported lazily so the module loads (and
     tests that inject a fake client run) without the SDK installed."""
-    import anthropic
-
-    return anthropic.Anthropic(api_key=api_key, timeout=_API_TIMEOUT_S)
+    return create_client(api_key=api_key)
 
 
 def generate_headers(
@@ -159,16 +157,16 @@ def generate_headers(
             f"Available: {', '.join(sorted(styles)) or 'none'}"
         )
 
-    if client is None:
+    owns_client = client is None
+    if owns_client:
         client = _create_client(api_key)
-
-    user_prompt = _build_user_prompt(
-        transcript, selected.no_topic_fallback, note, feedback, avoid
-    )
-    content = _build_content(user_prompt, thumbnail_b64)
 
     headers: list[str] = []
     try:
+        user_prompt = _build_user_prompt(
+            transcript, selected.no_topic_fallback, note, feedback, avoid
+        )
+        content = _build_content(user_prompt, thumbnail_b64)
         for _ in range(max(1, n)):
             response = client.messages.create(
                 model=_model(),
@@ -181,6 +179,9 @@ def generate_headers(
         raise
     except Exception as exc:
         raise HeaderGenerationError("header generation failed") from exc
+    finally:
+        if owns_client:
+            close_client(client)
 
     if not any(headers):
         raise HeaderGenerationError("model returned an empty header")

@@ -226,7 +226,7 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
 | Python | ≥ 3.12, one venv, required CI on 3.12, informative job on 3.14 | Q6, fact 1 |
 | Searcher gates | ruff format + lint, mypy, JS syntax + tests, pytest ≥ 90% | Q16 |
 | Clipper gates | ruff lint + format, pytest ≥ 85% | Q16 |
-| Poster gates | pytest ≥ 43% | Q16 |
+| Poster gates | pytest ≥ 43%; exactly six smoke tests, JUnit execution time < 2s, wall-clock hang detector < 10s | Q16; maintainer-approved smoke budget adjustment (2026-09-29) |
 | Suite gates | ruff lint + format on `ricesuite/` and `tests/`, pytest ≥ 90% on `ricesuite` | Q16 |
 | Floors | Per pillar, never averaged, never lowered without maintainer sign-off | Q16 |
 | Network | Suite tests make no network calls; the Anthropic call-site tests use a loopback stub behind a socket guard | Q16 |
@@ -263,3 +263,7 @@ Background login service (#4, Q18); deduplicating transcription (#5), Slate CSS
 (#6) and Anthropic clients (#7); model upgrades (#8); desktop wrapper (#9);
 unified data directory (#10). Hosted or LAN deployment is excluded outright
 (fact 3).
+
+The 2026-09-29 post-burn-in amendment to ADR-001 authorizes #5, #6, #7, and
+#10 as follow-ups. Their implementation and delivery state belongs to their
+Issues and draft PRs; this original phase outline remains the v0.1 contract.

@@ -81,21 +81,22 @@ its own scored slices, dedup flags, review state, and handoffs. That is why
 ## Install
 
 ```bash
-git clone https://github.com/gidde032/RiceSearcher.git
-cd RiceSearcher
-python3 -m venv .venv            # any Python >= 3.11; e.g. python3.12 -m venv .venv
+git clone https://github.com/gidde032/RiceSuite.git
+cd RiceSuite
+python3 -m venv .venv            # Python >= 3.12
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 python -m pip install --upgrade pip
-pip install -e .                    # installs the `ricesearcher` command
-pip install -r requirements.txt     # yt-dlp, faster-whisper, anthropic, FastAPI, sentence-transformers
+pip install -r requirements.txt     # full runtime, including optional heavy adapters
 pip install -r requirements-dev.txt # ruff, mypy, pytest (for the gates)
+pip install -e . -e searcher        # suite modules + `ricesearcher` command
+cd searcher
 ricesearcher --help
 ```
 
-The core package and test suite import the heavy adapters (yt-dlp,
-faster-whisper, sentence-transformers) lazily. With only
-`requirements-dev.txt` installed you can run the gates, but not `pull` or
-`dedup`.
+The shared `ricesuite` package must be installed even when running Searcher
+alone from this monorepo. The core package imports heavy adapters (yt-dlp,
+faster-whisper, sentence-transformers) lazily; the gates need only
+`requirements-dev.txt`, while `pull` and `dedup` need the full runtime.
 
 ## Configure
 

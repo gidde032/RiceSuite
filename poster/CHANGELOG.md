@@ -78,6 +78,13 @@ published as a tagged release or GitHub Release.
 
 ### Changed
 
+- **Smoke-tier execution budget raised to 2 seconds.** RiceSuite CI measured
+  1.568 seconds against the previous 1.5-second JUnit execution ceiling, then
+  passed on one rerun. The maintainer approved more headroom for runner
+  variation. The six-test inventory, JUnit measurement, 10-second wall-clock
+  hang detector, and coverage floor remain unchanged. (RiceSuite
+  [#33](https://github.com/gidde032/RiceSuite/pull/33))
+
 - **Dependency pins updated for Python 3.12–3.14.** The old pins
   (`pydantic-core`, `greenlet`) had no wheels for Python 3.13+, so
   `pip install -r requirements.txt` failed on a machine without 3.12.

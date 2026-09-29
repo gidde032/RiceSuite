@@ -37,6 +37,7 @@ known-first-party = ["ricesearcher"]
 [tool.mypy]
 packages = ["ricesearcher"]
 python_version = "3.12"
+mypy_path = ".."
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
