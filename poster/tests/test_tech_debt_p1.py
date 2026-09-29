@@ -252,8 +252,10 @@ def test_caption_client_has_an_explicit_bounded_timeout():
         "timeout should be bounded well under the SDK's 600s default but long "
         "enough for a vision request"
     )
-    src = (BACKEND / "captions.py").read_text()
-    assert "timeout=CAPTION_API_TIMEOUT_S" in src
+    from ricesuite.anthropic_client import MAX_RETRIES, TIMEOUT_SECONDS
+
+    assert captions.CAPTION_API_TIMEOUT_S == TIMEOUT_SECONDS == 60.0
+    assert MAX_RETRIES == 2
 
 
 def test_sdk_still_provides_the_retries_we_rely_on():

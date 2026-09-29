@@ -52,3 +52,31 @@ def test_generate_caption_returns_stripped_text(fake_anthropic, monkeypatch):
     monkeypatch.setattr(captions, "ANTHROPIC_API_KEY", SecretStr("test-key"))
     result = asyncio.run(captions.generate_caption("video", "topic"))
     assert result == "a fine caption"
+
+
+def test_owned_async_client_closes_on_success_and_failure(monkeypatch):
+    monkeypatch.setattr(captions, "ANTHROPIC_API_KEY", SecretStr("fake-key"))
+    closed = []
+
+    class Client:
+        def __init__(self, *, api_key=None, **kwargs):
+            self.messages = self
+
+        async def create(self, **kwargs):
+            return SimpleNamespace(content=[SimpleNamespace(text="caption")])
+
+        async def close(self):
+            closed.append(True)
+
+    monkeypatch.setattr(captions.anthropic, "AsyncAnthropic", Client)
+    assert asyncio.run(captions.generate_caption("video", "topic")) == "caption"
+    assert closed == [True]
+
+    class Failing(Client):
+        async def create(self, **kwargs):
+            raise RuntimeError("service unavailable")
+
+    monkeypatch.setattr(captions.anthropic, "AsyncAnthropic", Failing)
+    with pytest.raises(RuntimeError, match="service unavailable"):
+        asyncio.run(captions.generate_caption("video", "topic"))
+    assert closed == [True, True]

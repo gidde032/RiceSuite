@@ -261,3 +261,7 @@ Background login service (#4, Q18); deduplicating transcription (#5), Slate CSS
 (#6) and Anthropic clients (#7); model upgrades (#8); desktop wrapper (#9);
 unified data directory (#10). Hosted or LAN deployment is excluded outright
 (fact 3).
+
+The 2026-09-29 post-burn-in amendment to ADR-001 authorizes #5, #6, #7, and
+#10 as follow-ups. Their implementation and delivery state belongs to their
+Issues and draft PRs; this original phase outline remains the v0.1 contract.

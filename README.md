@@ -66,6 +66,15 @@ cp ricesuite.env.example ricesuite.env # optional; every variable is optional
 `requirements.txt` is the single authority for shared pins; each pillar's own
 requirements file must accept them (`tests/test_pins.py`).
 
+The shared Python modules under `ricesuite/` are installed with `pip install -e .`
+and imported by the pillars from their own working directories. Each pillar
+keeps its own transcription output rules and Anthropic prompt/model/payload.
+Anthropic clients use a 60-second SDK timeout **per attempt** and two SDK
+retries with backoff, so one request can take longer than 60 seconds. The
+clients are opened on demand and closed after the request. Searcher also
+accepts `ANTHROPIC_AUTH_TOKEN` when `ANTHROPIC_API_KEY` is absent; Clipper and
+Poster require the API key.
+
 ## Gates
 
 One CI workflow (`.github/workflows/ci.yml`) runs every pillar's own gates at

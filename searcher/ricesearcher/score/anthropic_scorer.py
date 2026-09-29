@@ -11,6 +11,8 @@ import json
 import math
 import os
 
+from ricesuite.anthropic_client import create_client
+
 from ricesearcher.beat.profile import BeatProfile
 from ricesearcher.models import CandidateWindow
 from ricesearcher.score.base import ScoredResult
@@ -180,13 +182,17 @@ class AnthropicScorer:
         if not windows:
             return []
         require_credentials()
-        import anthropic
-
-        client = anthropic.Anthropic()
-        message = client.messages.create(
-            model=self.model,
-            max_tokens=2048,
-            messages=[{"role": "user", "content": build_prompt(windows, profile)}],
+        client = create_client(
+            api_key=os.getenv("ANTHROPIC_API_KEY") or None,
+            auth_token=os.getenv("ANTHROPIC_AUTH_TOKEN") or None,
         )
+        try:
+            message = client.messages.create(
+                model=self.model,
+                max_tokens=2048,
+                messages=[{"role": "user", "content": build_prompt(windows, profile)}],
+            )
+        finally:
+            client.close()
         text = "".join(block.text for block in message.content if block.type == "text")
         return parse_response(text, len(windows))
