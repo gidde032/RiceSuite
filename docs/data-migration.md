@@ -35,3 +35,14 @@ Before **any post-cutover activity**, with all apps and relevant browsers stoppe
 - Inspect the copied stores and reported location before starting the app. Keep originals and the config backup.
 - On the real machine, verify browser-profile continuity **only with separate explicit authorization for that occasion**. Fixture tests cannot establish authenticated session portability. Do not repeatedly launch profiles for probing.
 - Inspect the pending queue before the first restart, then verify library, open Clipper work, handoff dedupe, history and drafts in normal use. Perform any live posting through the usual human gates.
+
+### Removing the originals
+
+`rice` never deletes the originals. Remove them by hand, only after the checks above pass and a real session from the new location has worked. Removal ends the rollback boundary: `rice data rollback` needs the originals unchanged, so it refuses once any are gone.
+
+Before deleting each original, with RiceSuite and the browsers stopped:
+
+- Confirm nothing in it is newer than `<root>/.migration.json` (for example `find <original> -newer <root>/.migration.json` prints nothing). A newer file means something still wrote to the old path after the copy; reconcile it first.
+- Compare it against its copy. Every original file should exist in the copy with the same hash. The exceptions are the rewrites described above (Searcher's `library.sqlite3`) and files that changed through normal use after cutover: Poster's history only gains appended lines, handoff dedupe lists only gain entries, and browser profiles refresh cookies and caches.
+
+Keep `.migration.json`, `.cutover.json` and `.pre-migration-env` in the new root. The marker selects the unified paths at startup, and the config backup is the only record of the old settings. It is private (mode 600) and may contain credentials.
