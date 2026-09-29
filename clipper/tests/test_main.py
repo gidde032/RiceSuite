@@ -69,7 +69,7 @@ def test_media_routes_work_over_http(isolated_jobs):
     job.status = "ready"
     (job.dir / "source.mp4").write_bytes(b"source")
 
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://127.0.0.1:8000") as client:
         info = client.get("/api/media-info")
         cleared = client.post("/api/media/clear")
 
@@ -80,7 +80,7 @@ def test_media_routes_work_over_http(isolated_jobs):
 
 
 def test_review_assets_are_not_cached_across_local_code_changes():
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://127.0.0.1:8000") as client:
         for path in ("/", "/index.html", "/app.js", "/style.css"):
             response = client.get(path)
             assert response.status_code == 200

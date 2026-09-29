@@ -177,6 +177,15 @@ def test_build_children_sets_env_ports_and_gateway_config(tmp_path):
     assert "RICESUITE_GATEWAY_CONFIG" not in children["poster"].env
 
 
+def test_pillars_are_told_which_gateway_origin_to_trust(tmp_path, monkeypatch):
+    """Each pillar's guard admits state changes from the gateway's origin, so
+    it must know the gateway port actually in use (#14, SPEC FR-3)."""
+    monkeypatch.setattr(ports, "GATEWAY_PORT", 9123)
+    children = {c.name: c for c in cli.build_children({}, tmp_path / "state.json")}
+    for name in ("searcher", "clipper", "poster"):
+        assert children[name].env["RICESUITE_GATEWAY_PORT"] == "9123"
+
+
 def test_start_runs_supervises_and_cleans_up(monkeypatch, capsys):
     """The foreground loop: start children, write state, stop on interrupt,
     stop children and remove the state file."""

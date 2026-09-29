@@ -168,7 +168,7 @@ def test_ingest_failure_rolls_back(env: Path, monkeypatch) -> None:
 
 def test_endpoint_pulls_over_http(env: Path) -> None:
     _write_batch(env, "batch_http")
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://127.0.0.1:8000") as client:
         r = client.post("/api/pull-from-searcher")
     assert r.status_code == 200
     assert r.json()["batch_id"] == "batch_http"
@@ -176,7 +176,7 @@ def test_endpoint_pulls_over_http(env: Path) -> None:
 
 def test_endpoint_malformed_is_400(env: Path) -> None:
     _write_batch(env, "batch_e", producer="nope")
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://127.0.0.1:8000") as client:
         r = client.post("/api/pull-from-searcher")
     assert r.status_code == 400
 
@@ -226,7 +226,7 @@ def test_waiting_batches_is_read_only(env: Path) -> None:
 
 def test_inbox_endpoint(env: Path) -> None:
     _write_batch(env, "batch_a")
-    client = TestClient(main.app)
+    client = TestClient(main.app, base_url="http://127.0.0.1:8000")
     r = client.get("/api/searcher-inbox")
     assert r.status_code == 200
     assert [b["batch_id"] for b in r.json()["batches"]] == ["batch_a"]
@@ -245,7 +245,7 @@ def test_inbox_missing_dir_is_empty(tmp_path, monkeypatch) -> None:
 
 def test_a_pulled_batch_stays_open_for_the_page_to_restore(env: Path) -> None:
     _write_batch(env, "b1")
-    client = TestClient(main.app)
+    client = TestClient(main.app, base_url="http://127.0.0.1:8000")
     pulled = client.post("/api/pull-from-searcher").json()
     # The reply is lost, or the page reloads: the page asks what is open.
     opened = client.get("/api/workspace").json()
@@ -257,13 +257,18 @@ def test_a_pulled_batch_stays_open_for_the_page_to_restore(env: Path) -> None:
 
 def test_the_workspace_is_empty_when_nothing_is_open(env: Path) -> None:
     empty = {"batch_id": None, "clip_count": 0, "jobs": []}
-    assert TestClient(main.app).get("/api/workspace").json() == empty
+    assert (
+        TestClient(main.app, base_url="http://127.0.0.1:8000")
+        .get("/api/workspace")
+        .json()
+        == empty
+    )
 
 
 def test_a_sent_batch_is_no_longer_open(env: Path, tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("RICECLIPPER_HANDOFF_DIR", str(tmp_path / "out"))
     _write_batch(env, "b1")
-    client = TestClient(main.app)
+    client = TestClient(main.app, base_url="http://127.0.0.1:8000")
     job_id = client.post("/api/pull-from-searcher").json()["jobs"][0]["id"]
     job = jobs.get_job(job_id)
     job.output_path = job.dir / "output.mp4"
@@ -277,7 +282,7 @@ def test_a_sent_batch_is_no_longer_open(env: Path, tmp_path, monkeypatch) -> Non
 
 def test_a_discarded_batch_is_no_longer_open(env: Path) -> None:
     _write_batch(env, "b1")
-    client = TestClient(main.app)
+    client = TestClient(main.app, base_url="http://127.0.0.1:8000")
     client.post("/api/pull-from-searcher")
     other = client.delete("/api/workspace", params={"batch_id": "b0"})
     assert other.json() == {"discarded": False}
@@ -290,7 +295,7 @@ def test_a_discarded_batch_is_no_longer_open(env: Path) -> None:
 def test_open_batches_come_back_oldest_first(env: Path) -> None:
     _write_batch(env, "b1", created_at="2026-09-04T00:00:00Z")
     _write_batch(env, "b2", created_at="2026-09-05T00:00:00Z")
-    client = TestClient(main.app)
+    client = TestClient(main.app, base_url="http://127.0.0.1:8000")
     client.post("/api/pull-from-searcher")
     client.post("/api/pull-from-searcher")
     assert client.get("/api/workspace").json()["batch_id"] == "b1"
@@ -302,7 +307,7 @@ def test_an_open_batch_whose_jobs_are_gone_is_dropped(env: Path) -> None:
     import shutil
 
     _write_batch(env, "b1")
-    client = TestClient(main.app)
+    client = TestClient(main.app, base_url="http://127.0.0.1:8000")
     for j in client.post("/api/pull-from-searcher").json()["jobs"]:
         shutil.rmtree(jobs.WORK_ROOT / j["id"])
     jobs._JOBS.clear()
@@ -314,7 +319,7 @@ def test_a_retried_pull_key_returns_the_batch_it_pulled(env: Path) -> None:
     batch back, never the next one."""
     _write_batch(env, "b1", created_at="2026-09-04T00:00:00Z")
     _write_batch(env, "b2", created_at="2026-09-05T00:00:00Z")
-    client = TestClient(main.app)
+    client = TestClient(main.app, base_url="http://127.0.0.1:8000")
     key = {"pull_key": "pull-0001-aaaa"}
     first = client.post("/api/pull-from-searcher", params=key).json()
     again = client.post("/api/pull-from-searcher", params=key).json()
@@ -330,7 +335,7 @@ def test_a_retried_pull_key_returns_the_batch_it_pulled(env: Path) -> None:
 def test_the_workspace_answers_for_one_named_batch(env: Path) -> None:
     _write_batch(env, "b1", created_at="2026-09-04T00:00:00Z")
     _write_batch(env, "b2", created_at="2026-09-05T00:00:00Z")
-    client = TestClient(main.app)
+    client = TestClient(main.app, base_url="http://127.0.0.1:8000")
     client.post("/api/pull-from-searcher")
     client.post("/api/pull-from-searcher")
     named = client.get("/api/workspace", params={"batch_id": "b2"}).json()

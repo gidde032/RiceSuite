@@ -191,6 +191,8 @@ def _pid_alive(pid: int) -> bool:
 def build_children(environ: dict[str, str], state_file: Path) -> list[Child]:
     base = dict(environ)
     base["PYTHONUNBUFFERED"] = "1"
+    # Each pillar's guard trusts the gateway's origin (SPEC FR-3).
+    base["RICESUITE_GATEWAY_PORT"] = str(ports.GATEWAY_PORT)
     gateway_env = dict(base)
     gateway_env["RICESUITE_GATEWAY_CONFIG"] = json.dumps(
         {

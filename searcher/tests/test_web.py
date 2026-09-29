@@ -72,7 +72,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     # The fixture uses fake media bytes, so supply the source duration that a
     # real ffprobe would return for the window-validation tests.
     monkeypatch.setattr(web_app, "ffprobe_duration", lambda _path: 100.0)
-    return TestClient(create_app(cfg))
+    return TestClient(create_app(cfg), base_url="http://127.0.0.1:8765")
 
 
 def test_index_serves_html(client: TestClient) -> None:
@@ -140,7 +140,9 @@ def test_slice_fresh_when_version_matches_file(tmp_path: Path) -> None:
     # A slice stamped with the current file version is not stale.
     cfg = Config(data_dir=tmp_path / "data", handoff_dir=tmp_path / "handoff")
     cfg.ensure_dirs()
-    client = TestClient(create_app(cfg))  # seeds example-beat.json
+    client = TestClient(
+        create_app(cfg), base_url="http://127.0.0.1:8765"
+    )  # seeds example-beat.json
     file_version = client.get("/api/profiles").json()[0]["version"]
     with Library(cfg.db_path) as lib:
         lib.upsert_source(
@@ -243,7 +245,7 @@ def test_handed_off_slice_is_terminal_in_review_api(tmp_path: Path) -> None:
             ]
         )
 
-    client = TestClient(create_app(cfg))
+    client = TestClient(create_app(cfg), base_url="http://127.0.0.1:8765")
     response = client.post(
         "/api/slices/sl1/status", json={"status": SliceStatus.SELECTED.value}
     )
@@ -437,7 +439,7 @@ def test_delete_keeps_media_file_shared_by_another_source(tmp_path: Path) -> Non
                     media_path=str(media),
                 )
             )
-    client = TestClient(create_app(cfg))
+    client = TestClient(create_app(cfg), base_url="http://127.0.0.1:8765")
 
     first = client.post("/api/sources/srcA/delete").json()
     assert first["media_removed"] is False  # srcB still references it
@@ -476,7 +478,7 @@ def test_delete_keeps_media_file_shared_by_equivalent_paths(tmp_path: Path) -> N
         )
         lib._conn.commit()
 
-    client = TestClient(create_app(cfg))
+    client = TestClient(create_app(cfg), base_url="http://127.0.0.1:8765")
     first_deleted = client.post("/api/sources/srcA/delete").json()
 
     assert first_deleted["media_removed"] is False
