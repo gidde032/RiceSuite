@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ricesuite.whisper import create_model, transcribe_words
+
 from ricesearcher.models import TranscriptWord
 
 
@@ -20,9 +22,7 @@ class WhisperTranscriber:
 
     def _load(self):  # pragma: no cover
         if self._model is None:
-            from faster_whisper import WhisperModel
-
-            self._model = WhisperModel(self.model_size, compute_type="int8")
+            self._model = create_model(self.model_size, compute_type="int8")
         return self._model
 
     def transcribe(self, media_path: Path) -> list[TranscriptWord]:  # pragma: no cover
@@ -35,14 +35,10 @@ class WhisperTranscriber:
         """
         try:
             model = self._load()
-            segments, _info = model.transcribe(str(media_path), word_timestamps=True)
-            words: list[TranscriptWord] = []
-            for seg in segments:
-                for w in seg.words or []:
-                    words.append(
-                        TranscriptWord(text=w.word.strip(), start=w.start, end=w.end)
-                    )
-            return words
+            return [
+                TranscriptWord(text=w.word.strip(), start=w.start, end=w.end)
+                for w in transcribe_words(model, str(media_path))
+            ]
         except IndexError as exc:
             # faster-whisper's PyAV demux raises a bare IndexError when the file
             # has no decodable audio stream. Surface a clear, actionable error.
