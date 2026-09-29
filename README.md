@@ -88,6 +88,12 @@ python -m pytest -q                                          # suite (ricesuite/
 (cd poster && python -m pytest tests/ -q --cov=backend --cov-fail-under=43)
 ```
 
+## Slate styling
+
+The common Slate palette and base rules are in `ricesuite/shell/slate.css`.
+Each page loads that asset before its own stylesheet; see
+[Slate ownership](docs/design/slate-ownership.md) for routes and overrides.
+
 ## History
 
 Each pillar's full public history was imported from its repository's GitHub

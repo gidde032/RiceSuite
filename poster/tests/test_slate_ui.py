@@ -30,6 +30,7 @@ from tests.paths import PROJECT_ROOT
 from tests.test_frontend_robustness import _function_body, _html, _script
 
 INDEX_HTML = PROJECT_ROOT / "frontend" / "index.html"
+SLATE_CSS = PROJECT_ROOT.parent / "ricesuite" / "shell" / "slate.css"
 RUNTIME_LOGO = PROJECT_ROOT / "frontend" / "logo-ratified.png"
 DESIGN_LOGO = PROJECT_ROOT / "design" / "references" / "logo-ratified.png"
 
@@ -66,8 +67,8 @@ SLATE_TOKENS = {
 def test_exact_slate_tokens_are_defined(token, value):
     """Every ratified Slate token must be present with its exact value. Case is
     part of the contract — the spec lists them uppercase."""
-    html = _html()
-    assert re.search(rf"{re.escape(token)}\s*:\s*{re.escape(value)}\b", html), (
+    css = SLATE_CSS.read_text(encoding="utf-8")
+    assert re.search(rf"{re.escape(token)}\s*:\s*{re.escape(value)}\b", css), (
         f"Slate token {token} must be defined as {value}"
     )
 

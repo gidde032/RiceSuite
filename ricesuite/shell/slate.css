@@ -1,0 +1,23 @@
+/* Canonical Slate foundation. Page-specific typography, layout and semantic
+   colors remain with the owning page. Load this before each local stylesheet. */
+:root {
+  --backdrop: #04060A;
+  --midground: #0C1116;
+  --interior: #14191E;
+  --hairline: #2B3136;
+  --control-line: #626A70;
+  --rice-grey: #AEB3B6;
+  --muted-grey: #80878C;
+  --charcoal: #3B4044;
+  --primary-text: #E5E8EA;
+  --focus: #D5D9DB;
+  /* The Searcher and Clipper spellings remain stable for their local rules. */
+  --rice: var(--rice-grey);
+  --muted: var(--muted-grey);
+  --text: var(--primary-text);
+}
+
+* { box-sizing: border-box; }
+
+/* Every page has its own top-bar geometry, but shares the Slate surface. */
+.topbar { background: var(--backdrop); border-bottom: 1px solid var(--hairline); }
