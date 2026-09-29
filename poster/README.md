@@ -217,23 +217,30 @@ ADR-001 amendment of 2026-09-29). While the page is open it polls
 `GET /api/handoff/inbox` (read-only) to show waiting batches in an inbox note
 under the actions, and the button shows how many are waiting
 (**Pull from Clipper · 2**). A batch that was pulled but never acknowledged is
-shown there too; Pull recovers it before taking a new one. A caption you type
+shown there too; Pull recovers it before taking a new one. A Post page
+loaded before this change is refused with a request to reload it, so it
+cannot keep pulling on its own. A caption you type
 while captions are generating is never overwritten. Posting and scheduling
 stay manual.
 
 **Restore last batch.** New Run, **Pull from Clipper** and Restore itself save
 the drafts they replace (media, caption, transcript, style and media type for
 each account) in this browser's local storage, so they survive a reload and a
-restart. **Restore last batch** on Review puts them back into the active
-accounts by roster position: a caption moved to a different account keeps its
-text and takes that account's caption style. It checks that each staged file
+restart. **Restore last batch** on Review makes Review that batch again, by
+roster position: a caption moved to a different account keeps its text and
+takes that account's caption style, and an account the batch had no draft for
+is cleared. It checks that each staged file
 in `media/` is still the same file (size and modified time), because upload
 names are reused after **Clear media**. Drafts whose media is gone or
 replaced, or that fall beyond the active roster, are named and left out, and
-Restore asks before a partial restore or before overwriting unposted drafts.
-The drafts it replaces become the new last batch, so pressing it again undoes
-it. Restore only fills drafts; it never posts, schedules, or acknowledges a
-pull. Drafts lost to a reload are not saved
+Restore asks before a partial restore or before overwriting or clearing
+unposted drafts. The drafts it replaces become the new last batch, so pressing
+it again undoes it; retrying a Pull that replays the batch already in Review
+keeps the saved batch. Restore only fills drafts; it never posts, schedules,
+or acknowledges a pull. The saved batch is per browser origin, so every open
+Post tab shares one (the last New Run, Pull or Restore in any of them wins),
+and Poster opened directly on its own port keeps a separate one. Drafts lost
+to a reload are not saved
 ([RiceSuite #35](https://github.com/gidde032/RiceSuite/issues/35)).
 
 **Interrupted runs.** A manual Post All run writes a small in-flight marker in

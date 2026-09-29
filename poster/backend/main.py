@@ -11,7 +11,7 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -441,7 +441,11 @@ async def media_stat(name: Annotated[list[str], Query()] = []):
         ):
             files[requested] = None
             continue
-        st = path.stat()
+        try:
+            st = path.stat()
+        except OSError:  # removed since the check above (e.g. Clear media)
+            files[requested] = None
+            continue
         files[requested] = {"size": st.st_size, "mtime_ns": st.st_mtime_ns}
     return {"files": files}
 
@@ -533,7 +537,7 @@ async def clipper_inbox():
 
 
 @app.post("/api/pull-from-clipper")
-async def pull_from_clipper():
+async def pull_from_clipper(request: Request):
     """Stage the oldest RiceClipper handoff batch into a pending run.
 
     Copies the batch's media into MEDIA_DIR and returns per-slot assignments
@@ -544,6 +548,14 @@ async def pull_from_clipper():
     maintainer's Pull from Clipper click calls it (RiceSuite ADR-001 Q12,
     amended 2026-09-29).
     """
+    if "replay" in request.query_params:
+        # Only a Post page loaded before manual-only Pull sends `replay`: its
+        # inbox poll would still pull without a click. Fail closed.
+        raise HTTPException(
+            status_code=409,
+            detail="This Post page is out of date and may pull on its own. "
+            "Reload the Post tab, then use Pull from Clipper.",
+        )
     _discovered, account_state, state_error, _store = _account_context()
     if state_error:
         raise HTTPException(

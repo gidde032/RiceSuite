@@ -53,3 +53,16 @@ def test_is_read_only(client, tmp_media):
 def test_caps_the_number_of_names(client, tmp_media):
     r = client.get("/api/media-stat", params=[("name", f"f{i}.mp4") for i in range(101)])
     assert r.status_code == 400
+
+
+def test_a_file_removed_mid_check_reports_null_not_an_error(client, tmp_media, monkeypatch):
+    """Clear media can delete a file between the existence check and stat()."""
+    from pathlib import Path
+
+    real_is_file = Path.is_file
+    monkeypatch.setattr(
+        Path, "is_file", lambda self: self.name == "racing.mp4" or real_is_file(self)
+    )
+    r = client.get("/api/media-stat", params={"name": "racing.mp4"})
+    assert r.status_code == 200
+    assert r.json()["files"]["racing.mp4"] is None

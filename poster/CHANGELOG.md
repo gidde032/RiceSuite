@@ -13,7 +13,9 @@ published as a tagged release or GitHub Release.
   unacknowledged and errored batches and now points to the button, which
   shows the waiting count (**Pull from Clipper · 2**). The automatic path's
   no-replay request (`POST /api/pull-from-clipper?replay=0`) is removed; every
-  pull recovers an unacknowledged batch first. (RiceSuite
+  pull recovers an unacknowledged batch first, and a request that still sends
+  `replay` (a Post page loaded before the upgrade) is refused with 409 and a
+  request to reload. (RiceSuite
   [#30](https://github.com/gidde032/RiceSuite/issues/30), ADR-001 amendment
   of 2026-09-29)
 
@@ -22,13 +24,14 @@ published as a tagged release or GitHub Release.
 - **Restore last batch.** A new Review action brings back the drafts that the
   last New Run, Pull from Clipper, or Restore replaced: media, caption,
   transcript, style and media type, saved in the browser so they survive a
-  reload. They return by roster position; a caption landing on a different
+  reload. Review becomes that batch again, by roster position (an account it
+  had no draft for is cleared); a caption landing on a different
   account keeps its text and takes that account's caption style. Restore
   checks each staged file's size and modified time through a new read-only
   `GET /api/media-stat`, so an old caption is never paired with a new upload
   that reused the name. Missing media or drafts beyond the roster are named
-  and left out after a confirm, and it asks before overwriting unposted
-  drafts. Pressing it again undoes it. It never posts or schedules. (RiceSuite
+  and left out after a confirm, and it asks before overwriting or clearing
+  unposted drafts. Pressing it again undoes it. It never posts or schedules. (RiceSuite
   [#30](https://github.com/gidde032/RiceSuite/issues/30))
 
 - **Swapping accounts keeps the drafts in their slots.** An account leaving

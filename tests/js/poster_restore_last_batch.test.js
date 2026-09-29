@@ -50,9 +50,14 @@ const draft = (fields = {}) => ({
 });
 
 // `disk` maps a staged filename to its identity; a name absent from it is gone.
-function boot({ accounts = ["A", "B"], slots, disk = {}, stored, confirmAnswer = true, defaults = {} } = {}) {
+function boot({
+  accounts = ["A", "B"], slots, disk = {}, stored, confirmAnswer = true, defaults = {},
+  onStat, thumb = async () => "data:thumb",
+} = {}) {
+  let js;
   const { fetch, calls } = scriptedFetch({
-    "GET api/media-stat": (call) => {
+    "GET api/media-stat": async (call) => {
+      if (onStat) await onStat(js);
       const names = new URL(`http://x/${call.url}`).searchParams.getAll("name");
       return [200, { files: Object.fromEntries(names.map((n) => [n, disk[n] || null])) }];
     },
@@ -80,12 +85,12 @@ function boot({ accounts = ["A", "B"], slots, disk = {}, stored, confirmAnswer =
     confirm: (m) => { asked.push(m); return confirmAnswer; },
     clearSlotPreview() {}, setCaptionError() {}, updateThumbChip() {},
     renderSlots() {}, renderSummary() {}, updateButtons() {},
-    captureThumbnailFromUrl: async () => "data:thumb",
+    captureThumbnailFromUrl: thumb,
     postAll: forbidden("postAll"), scheduleAll: forbidden("scheduleAll"),
     pullFromClipper: forbidden("pullFromClipper"),
   });
   vm.runInContext(SOURCE, ctx);
-  const js = (expr) => vm.runInContext(expr, ctx);
+  js = (expr) => vm.runInContext(expr, ctx);
   const saved = () => (storage.data[KEY] ? JSON.parse(storage.data[KEY]) : null);
   return { js, ctx, calls, statuses, asked, button, storage, saved };
 }
@@ -300,4 +305,130 @@ test("the page has the button next to Pull and keeps its state current", () => {
   assert.match(HTML, /setInterval\(refreshRestoreButton, INBOX_POLL_MS\)/);
   const callers = HTML.match(/restoreLastBatch\(/g) || [];
   assert.equal(callers.length, 2, "only the button starts a Restore");
+});
+
+// --- review repairs (PR #36) ------------------------------------------------
+
+test("an upload or caption request started while Restore checks media aborts the Restore", async () => {
+  const stored = savedBatch([savedDraft(0, "A", "A_old.mp4")]);
+  const { js, ctx, statuses } = boot({
+    stored, disk: { "A_old.mp4": ID(0) },
+    onStat: (page) => { page("draftWork = 1"); },
+  });
+  assert.equal(await js("restoreLastBatch()"), false);
+  assert.equal(ctx.state.slots.A.filename, "", "nothing applied under a running upload");
+  assert.equal(statuses.at(-1).isError, true);
+  assert.equal(js("restoreInFlight"), false);
+});
+
+test("New Run waits while a Restore is running", async () => {
+  const stored = savedBatch([savedDraft(0, "A", "A_old.mp4")]);
+  const slots = { A: draft({ caption: "mine" }), B: draft() };
+  let during;
+  const { js, asked } = boot({
+    slots, stored, disk: { "A_old.mp4": ID(0) }, confirmAnswer: false,
+    onStat: (page) => { if (during === undefined) during = page("newRun()"); },
+  });
+  await js("restoreLastBatch()");
+  assert.equal(during, false);
+  assert.equal(slots.A.caption, "mine");
+  assert.equal(asked.filter((m) => /Start a new run/.test(m)).length, 0);
+});
+
+test("Restore makes Review the saved batch: a slot with no saved draft is cleared, so Restore again is a true undo", async () => {
+  const stored = savedBatch([savedDraft(0, "A", "A_old.mp4"), savedDraft(1, "B", "B_old.mp4")]);
+  const slots = { A: draft({ filename: "A_now.mp4", mediaType: "video", caption: "a2" }), B: draft() };
+  const disk = { "A_old.mp4": ID(0), "B_old.mp4": ID(1), "A_now.mp4": ID(7) };
+  const { js, ctx, asked } = boot({ slots, stored, disk });
+  assert.equal(await js("restoreLastBatch()"), true);
+  assert.deepEqual([ctx.state.slots.A.caption, ctx.state.slots.B.caption], ["caption 0", "caption 1"]);
+  assert.equal(await js("restoreLastBatch()"), true);
+  assert.deepEqual(
+    [ctx.state.slots.A.filename, ctx.state.slots.A.caption, ctx.state.slots.B.filename, ctx.state.slots.B.caption],
+    ["A_now.mp4", "a2", "", ""],
+  );
+  assert.match(asked.at(-1), /Cleared.*account 2/);
+});
+
+test("a slot beyond the saved batch's drafts is cleared after the confirm names it, never left mixed in", async () => {
+  const stored = savedBatch([savedDraft(0, "A", "A_old.mp4")]);
+  const slots = { A: draft(), B: draft({ filename: "B_new.mp4", caption: "new b" }) };
+  const { js, ctx, asked } = boot({ slots, stored, disk: { "A_old.mp4": ID(0) } });
+  assert.equal(await js("restoreLastBatch()"), true);
+  assert.equal(asked.length, 1);
+  assert.match(asked[0], /account 2/);
+  assert.equal(ctx.state.slots.B.filename, "");
+  assert.equal(ctx.state.slots.B.caption, "");
+});
+
+test("the confirmation names the account slot beside each file it cannot bring back", async () => {
+  const stored = savedBatch([savedDraft(0, "A", "A_gone.mp4"), savedDraft(1, "B", "B_ok.mp4")]);
+  const { js, asked } = boot({ stored, disk: { "B_ok.mp4": ID(1) } });
+  await js("restoreLastBatch()");
+  assert.match(asked[0], /account 1 \(A_gone\.mp4\)/);
+});
+
+test("media that could not be checked when saved is reported as unchecked, not as deleted", async () => {
+  const stored = savedBatch([savedDraft(0, "A", "A_clip.mp4", { media: null })]);
+  const { js, statuses } = boot({ stored, disk: { "A_clip.mp4": ID(0) } });
+  assert.equal(await js("restoreLastBatch()"), false);
+  assert.match(statuses.at(-1).m, /could not be checked/);
+  assert.doesNotMatch(statuses.at(-1).m, /deleted/);
+});
+
+test("a slow caption frame never keeps Restore busy", async () => {
+  const stored = savedBatch([savedDraft(0, "A", "A_clip.mp4")]);
+  const { js } = boot({ stored, disk: { "A_clip.mp4": ID(0) }, thumb: () => new Promise(() => {}) });
+  const done = await Promise.race([
+    js("restoreLastBatch()"),
+    new Promise((resolve) => setTimeout(() => resolve("hung"), 50)),
+  ]);
+  assert.equal(done, true);
+  assert.equal(js("draftWorkBusy()"), false);
+});
+
+test("a button refresh that finishes during a Restore leaves the button alone", async () => {
+  const stored = savedBatch([savedDraft(0, "A", "A_clip.mp4")]);
+  const { js, button } = boot({
+    stored, disk: { "A_clip.mp4": ID(0) },
+    onStat: (page) => { page("restoreInFlight = true"); },
+  });
+  button.disabled = true;
+  button.title = "busy";
+  await js("refreshRestoreButton()");
+  assert.equal(button.disabled, true);
+  assert.equal(button.title, "busy");
+});
+
+test("an older button refresh finishing last never overwrites a newer one", async () => {
+  const stored = savedBatch([savedDraft(0, "A", "A_clip.mp4")]);
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let first = true;
+  const { js, button, storage } = boot({
+    stored, disk: { "A_clip.mp4": ID(0) },
+    onStat: async () => { if (first) { first = false; await gate; } },
+  });
+  const older = js("refreshRestoreButton()");
+  delete storage.data[KEY];
+  await js("refreshRestoreButton()");
+  assert.equal(button.disabled, true);
+  release();
+  await older;
+  assert.equal(button.disabled, true, "the stale result for the old snapshot was dropped");
+  assert.match(button.title, /Nothing saved/);
+});
+
+test("a restored image draft gets its caption frame from an image, not a video", async () => {
+  const made = [];
+  const ctx = vm.createContext({
+    console,
+    document: { createElement: (tag) => { made.push(tag); return element(); } },
+    Image: class { set src(v) { this._src = v; setImmediate(() => this.onload()); } },
+    drawThumb: () => "data:image-frame",
+  });
+  vm.runInContext(slice("function captureThumbnailFromUrl(", "function setPullStatus("), ctx);
+  const frame = await vm.runInContext("captureThumbnailFromUrl('api/media/A.jpg', 'image')", ctx);
+  assert.equal(frame, "data:image-frame");
+  assert.deepEqual(made, []);
 });

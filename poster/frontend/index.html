@@ -1591,7 +1591,11 @@ function draftWorkBusy() {
 // Pull from Clipper button calls this (RiceSuite ADR-001 Q12, amended
 // 2026-09-29): nothing pulls a batch without the maintainer's click.
 async function pullFromClipper() {
-  if (pullInFlight || restoreInFlight) return false;
+  if (pullInFlight) return false;
+  if (restoreInFlight) {
+    setPullStatus('Pull waits until Restore last batch finishes.', true);
+    return false;
+  }
   const btn = elOpt('btnPullClipper');
   // A pull overwrites active-roster slots positionally, discarding any unposted
   // draft they hold (caption/media live only in the browser). Confirm first when a
@@ -1621,8 +1625,13 @@ async function pullFromClipper() {
     stagedBatchId = data.batch_id;
     assertPulledTargets(data);
 
-    // The drafts this batch replaces become the last batch for Restore.
-    saveLastBatch(captureDrafts(), 'pull');
+    // The drafts this batch replaces become the last batch for Restore, unless
+    // this is a retry that replays the batch Review already holds.
+    const replaced = captureDrafts();
+    const incoming = new Set(data.slots.map(entry => entry.filename));
+    const retry = data.replayed && replaced.length
+      && replaced.every(d => d.filename && incoming.has(d.filename));
+    if (!retry) saveLastBatch(replaced, 'pull');
     const pulled = [];
     for (const entry of data.slots) {
       const mediaUrl = applyPulledSlot(entry);
@@ -1667,6 +1676,7 @@ async function pullFromClipper() {
   } finally {
     pullInFlight = false;
     if (btn) btn.disabled = false;
+    pollClipperInbox();
   }
   return false;
 }
@@ -1680,7 +1690,10 @@ const PULL_LABEL = 'Pull from Clipper';
 
 function renderClipperInbox(inbox) {
   const panel = elOpt('clipperInbox');
-  const waiting = (inbox.batches || []).length + (inbox.unacknowledged ? 1 : 0);
+  // While this page's own Pull runs, the batch it is staging shows as
+  // unacknowledged until its captions finish: it is not waiting.
+  const unacknowledged = pullInFlight ? null : inbox.unacknowledged;
+  const waiting = (inbox.batches || []).length + (unacknowledged ? 1 : 0);
   // An unreadable inbox is not an empty one: keep the last count.
   const btn = elOpt('btnPullClipper');
   if (btn && !inbox.error) btn.textContent = waiting ? `${PULL_LABEL} · ${waiting}` : PULL_LABEL;
@@ -1696,15 +1709,15 @@ function renderClipperInbox(inbox) {
   }
   if (!waiting) return;
   const ids = [
-    ...(inbox.unacknowledged ? [inbox.unacknowledged] : []),
+    ...(unacknowledged ? [unacknowledged] : []),
     ...(inbox.batches || []).map(b => b.batch_id),
   ];
   panel.innerHTML = `
     <div class="status-item">
       <span class="status-icon">⇣</span>
       <span>${esc(`Inbox: ${waiting} batch${waiting === 1 ? '' : 'es'} from Clip waiting (${ids.join(', ')}). ` +
-        (inbox.unacknowledged
-          ? `${inbox.unacknowledged} was pulled but never acknowledged: recover it with Pull from Clipper.`
+        (unacknowledged
+          ? `${unacknowledged} was pulled but never acknowledged: recover it with Pull from Clipper.`
           : 'Use Pull from Clipper when you are ready for the oldest one.'))}</span>
     </div>`;
 }
@@ -1855,12 +1868,13 @@ function loadLastBatch() {
 // Which saved drafts can come back, and why the others cannot.
 async function planRestore(batch) {
   const ids = await mediaIdentities([...new Set(batch.drafts.map(d => d.filename).filter(Boolean))]);
-  const plan = { restore: [], missing: [], outside: [] };
+  const plan = { restore: [], missing: [], unchecked: [], outside: [] };
   for (const d of batch.drafts) {
     const account = state.accounts[d.position];
     const now = d.filename ? ids[d.filename] : null;
     if (!account) plan.outside.push(d);
-    else if (d.filename && !(now && d.media && now.size === d.media.size && now.mtime_ns === d.media.mtime_ns)) {
+    else if (d.filename && !d.media) plan.unchecked.push(d);
+    else if (d.filename && !(now && now.size === d.media.size && now.mtime_ns === d.media.mtime_ns)) {
       plan.missing.push(d);
     } else plan.restore.push({ draft: d, slot: account.slot });
   }
@@ -1868,10 +1882,13 @@ async function planRestore(batch) {
 }
 
 function describeUnrestorable(plan) {
-  const name = d => d.filename || `caption for account ${d.position + 1}`;
+  const name = d => `account ${d.position + 1} (${d.filename || 'caption only'})`;
   const parts = [];
   if (plan.missing.length) {
     parts.push(`Media no longer available (deleted, or replaced by a new upload with the same name): ${plan.missing.map(name).join(', ')}.`);
+  }
+  if (plan.unchecked.length) {
+    parts.push(`Media could not be checked when this batch was saved, so it cannot be matched to its caption: ${plan.unchecked.map(name).join(', ')}.`);
   }
   if (plan.outside.length) {
     parts.push(`Beyond the ${state.accounts.length} active account(s): ${plan.outside.map(name).join(', ')}.`);
@@ -1897,14 +1914,33 @@ function applyRestoredDraft(slot, d) {
   setCaptionError(slot, '');
 }
 
+function clearRestoredSlot(slot) {
+  const s = state.slots[slot];
+  clearSlotPreview(s);
+  s.file = null;
+  s.filename = '';
+  s.mediaType = '';
+  s.topic = '';
+  s.caption = '';
+  s.prevCaption = '';
+  s.thumb = '';
+  setCaptionError(slot, '');
+}
+
+// Review becomes the saved batch: each active account gets the saved draft for
+// its position, or is cleared when the batch had none there. An account whose
+// saved draft cannot come back (media gone, or unchecked) is left as it is.
 async function restoreLastBatch() {
-  if (restoreInFlight || draftWorkBusy() || accountChangeInFlight) {
-    setPullStatus('Restore waits until the current upload, caption, pull, post or account change finishes.', true);
+  const busy = () => draftWork > 0 || pullInFlight || accountChangeInFlight;
+  const busyMessage = 'Restore waits until the current upload, caption, pull, post or account change finishes.';
+  if (restoreInFlight || busy()) {
+    setPullStatus(busyMessage, true);
     return false;
   }
   restoreInFlight = true;
   const btn = elOpt('btnRestore');
   if (btn) btn.disabled = true;
+  let restored = [];
   try {
     await lastBatchSave;
     const batch = loadLastBatch();
@@ -1919,23 +1955,40 @@ async function restoreLastBatch() {
       setPullStatus(`Could not check the last batch's media: ${e.message || e}. Nothing was restored.`, true);
       return false;
     }
+    // An upload or caption request started while the media was checked would
+    // write into a draft this is about to replace.
+    if (busy()) {
+      setPullStatus(busyMessage, true);
+      return false;
+    }
     if (!plan.restore.length) {
       setPullStatus(`Nothing to restore. ${describeUnrestorable(plan)}`, true);
       return false;
     }
+    const targets = new Set(plan.restore.map(r => r.slot));
+    const kept = new Set([...plan.missing, ...plan.unchecked].map(d => state.accounts[d.position]?.slot));
+    const cleared = state.accounts.map(a => a.slot).filter(slot => !targets.has(slot) && !kept.has(slot));
+    const label = slot => `account ${state.accounts.findIndex(a => a.slot === slot) + 1}`;
     const notes = [];
-    if (plan.missing.length || plan.outside.length) {
+    if (plan.missing.length || plan.unchecked.length || plan.outside.length) {
       notes.push(`Only ${plan.restore.length} of ${batch.drafts.length} draft(s) can be restored. ${describeUnrestorable(plan)}`);
     }
-    const targets = new Set(plan.restore.map(r => r.slot));
-    const atRisk = draftsAtRisk().filter(([slot]) => targets.has(slot));
-    if (atRisk.length) {
-      notes.push(`${atRisk.length} slot(s) already hold an unposted draft that will be overwritten. Restore saves them as the last batch, so Restore again brings them back.`);
+    const overwritten = draftsAtRisk().filter(([slot]) => targets.has(slot)).map(([slot]) => slot);
+    const emptied = draftsAtRisk().filter(([slot]) => cleared.includes(slot)).map(([slot]) => slot);
+    if (overwritten.length) {
+      notes.push(`Overwritten, because they hold an unposted draft: ${overwritten.map(label).join(', ')}.`);
+    }
+    if (emptied.length) {
+      notes.push(`Cleared, because the last batch had no draft there: ${emptied.map(label).join(', ')}.`);
+    }
+    if (overwritten.length || emptied.length) {
+      notes.push('Restore saves the current drafts as the last batch, so Restore again brings them back.');
     }
     if (notes.length && !confirm(`Restore the last batch?\n\n${notes.join('\n\n')}`)) return false;
 
     const replaced = captureDrafts();
     for (const { slot, draft } of plan.restore) applyRestoredDraft(slot, draft);
+    for (const slot of cleared) clearRestoredSlot(slot);
     renderSlots();
     updateButtons();
     saveLastBatch(replaced, 'restore');
@@ -1945,37 +1998,47 @@ async function restoreLastBatch() {
       + (skipped ? ` ${describeUnrestorable(plan)}` : '')
       + ' Review the captions, then Post All.',
     );
-    // The caption frame is captured again from the staged media, and lands
-    // wherever the draft is by then.
-    await Promise.all(plan.restore.filter(({ draft }) => draft.filename).map(async ({ slot }) => {
-      const s = state.slots[slot];
-      const filename = s.filename;
-      const thumb = await captureThumbnailFromUrl(`api/media/${encodeURIComponent(filename)}`, s.mediaType);
-      if (s.filename !== filename) return;
-      s.thumb = thumb;
-      const at = slotOf(s);
-      if (at) updateThumbChip(at);
-    }));
+    restored = plan.restore.filter(({ draft }) => draft.filename).map(({ slot }) => state.slots[slot]);
     return true;
   } finally {
     restoreInFlight = false;
     refreshRestoreButton();
+    // The caption frame is captured again from the staged media after Restore
+    // has finished, so a slow frame never holds Pull or account changes, and it
+    // lands wherever the draft is by then.
+    for (const s of restored) {
+      const filename = s.filename;
+      captureThumbnailFromUrl(`api/media/${encodeURIComponent(filename)}`, s.mediaType).then(thumb => {
+        if (s.filename !== filename) return;
+        s.thumb = thumb;
+        const at = slotOf(s);
+        if (at) updateThumbChip(at);
+      });
+    }
   }
 }
 
+// Refreshes run on a timer and after saves, so an older one can finish last:
+// only the newest may set the button, and never while a Restore is running.
+let restoreRefreshSeq = 0;
 async function refreshRestoreButton() {
   const btn = elOpt('btnRestore');
   if (!btn || restoreInFlight) return;
+  const seq = ++restoreRefreshSeq;
   const batch = loadLastBatch();
   if (!batch) {
     btn.disabled = true;
     btn.title = 'Nothing saved yet: New Run, Pull from Clipper and Restore save the drafts they replace.';
     return;
   }
-  let plan;
+  let plan = null;
   try {
     plan = await planRestore(batch);
   } catch {
+    // Unknown: leave it clickable, and the click explains.
+  }
+  if (seq !== restoreRefreshSeq || restoreInFlight) return;
+  if (!plan) {
     btn.disabled = false;
     btn.title = 'Restore the drafts saved before the last New Run, Pull or Restore.';
     return;
@@ -2402,6 +2465,10 @@ function autoGrow(el) {
 // mirroring the account-switch (applyActiveAccounts) and clear-media guards. Called
 // only from the button; clearMedia() runs resetRun() directly after its own confirm.
 function newRun() {
+  if (restoreInFlight || pullInFlight) {
+    setPullStatus('New Run waits until the current Restore or Pull finishes.', true);
+    return false;
+  }
   const drafts = Object.values(state.slots).filter(
     s => s.file || s.filename || (s.caption && s.caption.trim()),
   );

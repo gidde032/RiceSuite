@@ -175,6 +175,7 @@ function bootPull({ slots, confirmAnswer = true, onPull }) {
     updateButtons() {}, updateThumbChip() {}, setCaptionError() {}, autoGrow() {}, updateCharCount() {},
     captureThumbnailFromUrl: async () => "",
     CAPTION_TIMEOUT_MS: 1000,
+    pollClipperInbox() {},
     // Restore last batch (#30): Pull saves the drafts it replaces.
     captureDrafts: () => Object.entries(slots).map(([slot, s]) => ({ slot, caption: s.caption, filename: s.filename })),
     saveLastBatch: (drafts, reason) => { saves.push({ drafts, reason, appliedSoFar: applied.length }); },
@@ -221,7 +222,7 @@ test("a Pull that finds nothing saves nothing", async () => {
   const ctx = vm.createContext({
     Date, console, state: { accounts: [{ slot: "A" }], slots },
     fetchWithTimeout: fetch, handleFetchError: async () => {},
-    elOpt: () => element(), setPullStatus() {}, confirm: () => true,
+    elOpt: () => element(), setPullStatus() {}, confirm: () => true, pollClipperInbox() {},
     captureDrafts: () => [], saveLastBatch: (d) => saves.push(d),
   });
   vm.runInContext(PULL_SOURCE, ctx);
@@ -257,4 +258,88 @@ test("a caption typed while generation runs is never overwritten", async () => {
   vm.runInContext(slice("async function generateAll()", "\n}\n") + "\n}\n", ctx);
   await vm.runInContext("generateAll()", ctx);
   assert.equal(slots.A.caption, "typed by hand");
+});
+
+// --- review repairs (PR #36) ------------------------------------------------
+
+test("while your own Pull runs, its staged batch is not reported as never acknowledged", async () => {
+  const inbox = { batches: [], unacknowledged: "batch_1" };
+  const { js, panel, button } = boot({ inbox });
+  js("pullInFlight = true");
+  await js("pollClipperInbox()");
+  assert.doesNotMatch(panel.innerHTML, /never acknowledged/);
+  assert.equal(button.textContent, "Pull from Clipper");
+});
+
+test("the inbox refreshes as soon as a Pull ends", async () => {
+  const slots = { A: { file: null, filename: "", caption: "" } };
+  const { js, calls } = bootPull({ slots });
+  js("generateAll = async () => { state.slots.A.caption = 'generated'; }");
+  js("var inboxPolls = 0; pollClipperInbox = () => { inboxPolls += 1; };");
+  await js("pullFromClipper()");
+  assert.equal(js("inboxPolls"), 1);
+  assert.ok(calls.length > 0);
+});
+
+test("a Pull clicked while Restore runs says why nothing happened", async () => {
+  const slots = { A: { file: null, filename: "", caption: "" } };
+  const { js, statuses } = bootPull({ slots });
+  js("restoreInFlight = true");
+  assert.equal(await js("pullFromClipper()"), false);
+  assert.match(statuses.at(-1) || "", /Restore/);
+});
+
+// The real save path: Pull -> captureDrafts -> saveLastBatch -> media-stat -> storage.
+function bootRealPull({ slots, pullReply, disk = {} }) {
+  const data = {};
+  const { fetch, calls } = scriptedFetch({
+    "POST api/pull-from-clipper": pullReply,
+    "POST api/pull-from-clipper/batch_1/ack": { status: "applied" },
+    "GET api/media-stat": (call) => {
+      const names = new URL(`http://x/${call.url}`).searchParams.getAll("name");
+      return [200, { files: Object.fromEntries(names.map((n) => [n, disk[n] || null])) }];
+    },
+  });
+  const ctx = vm.createContext({
+    Date, URL, console, Promise, JSON, Set, Object, setImmediate,
+    state: { accounts: [{ slot: "A" }], slots, defaultCaptionStyle: "generic", accountState: {} },
+    localStorage: { getItem: (k) => data[k] ?? null, setItem: (k, v) => { data[k] = v; } },
+    fetchWithTimeout: fetch,
+    handleFetchError: async (resp) => { if (!resp.ok) throw new Error(`HTTP ${resp.status}`); },
+    elOpt: () => element(), el: () => element(), slotEl: () => element(),
+    setPullStatus() {}, confirm: () => true, assertPulledTargets() {},
+    applyPulledSlot: (entry) => { slots[entry.slot].filename = entry.filename; slots[entry.slot].caption = ""; return "api/media/x"; },
+    updateButtons() {}, updateThumbChip() {}, setCaptionError() {}, autoGrow() {}, updateCharCount() {},
+    captureThumbnailFromUrl: async () => "", pollClipperInbox() {},
+    CAPTION_TIMEOUT_MS: 1000,
+  });
+  vm.runInContext(PULL_SOURCE + "\n" + slice("// --- Restore last batch", "// Capture a frame from a staged"), ctx);
+  vm.runInContext("generateAll = async () => { state.slots.A.caption = 'generated'; }", ctx);
+  const saved = () => (data["riceposter.lastBatch.v1"] ? JSON.parse(data["riceposter.lastBatch.v1"]) : null);
+  return { js: (e) => vm.runInContext(e, ctx), calls, saved };
+}
+
+test("a real Pull saves the drafts it replaces, with their media identity", async () => {
+  const slots = { A: { file: null, filename: "A_old.mp4", mediaType: "video", topic: "t", caption: "old", style: "hype" } };
+  const { js, saved } = bootRealPull({
+    slots, disk: { "A_old.mp4": { size: 3, mtime_ns: 9 } },
+    pullReply: { pulled: true, batch_id: "batch_1", replayed: false, slots: [{ slot: "A", filename: "A_batch_1_clip.mp4" }] },
+  });
+  assert.equal(await js("pullFromClipper()"), true);
+  await js("lastBatchSave");
+  const batch = saved();
+  assert.equal(batch.reason, "pull");
+  assert.deepEqual(batch.drafts.map((d) => [d.account, d.filename, d.caption, d.media]),
+    [["A", "A_old.mp4", "old", { size: 3, mtime_ns: 9 }]]);
+});
+
+test("retrying a Pull that replays the batch already in Review keeps the saved batch", async () => {
+  const slots = { A: { file: null, filename: "A_batch_1_clip.mp4", mediaType: "video", topic: "t", caption: "", style: "" } };
+  const { js, saved } = bootRealPull({
+    slots,
+    pullReply: { pulled: true, batch_id: "batch_1", replayed: true, slots: [{ slot: "A", filename: "A_batch_1_clip.mp4" }] },
+  });
+  assert.equal(await js("pullFromClipper()"), true);
+  await js("lastBatchSave");
+  assert.equal(saved(), null, "the retry did not replace what Restore would bring back");
 });
