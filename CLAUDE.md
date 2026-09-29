@@ -25,8 +25,13 @@ RiceSuite is one local app built from three pillars: `searcher/` (RiceSearcher),
    either handoff directory, Poster `sessions/`, queue, history, media, or
    credentials, or Clipper's work directory. Run Poster with `POST_MODE=mock`
    in any agent session.
-6. **Never weaken a gate.** Each pillar keeps its own gates and coverage floor
-   (Searcher 90, Clipper 85, Poster 43). There is no averaged floor.
+6. **Keep gates unless the maintainer explicitly approves a documented change.**
+   Each pillar keeps its own gates and coverage floor (Searcher 90, Clipper 85,
+   Poster 43). There is no averaged floor. A numeric-budget change needs the
+   maintainer's sign-off, rationale beside the enforced value, and matching
+   contract/docs updates. Poster's JUnit-measured smoke execution ceiling is
+   2 seconds by explicit maintainer direction on 2026-09-29; its 10-second
+   wall-clock hang detector and all coverage floors remain unchanged.
 7. **Real Instagram profiles are a limited resource.** Opening any real
    Instagram profile (a Chrome profile under Poster `sessions/instagram/`)
    requires the maintainer's explicit sign-off, even when nothing will be

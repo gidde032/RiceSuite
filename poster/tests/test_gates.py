@@ -37,9 +37,12 @@ COVERAGE_FLOOR = 43
 SMOKE_TEST_COUNT = 6
 
 # The smoke tier's execution budget, excluding interpreter startup, plugin
-# loading and collection. Baseline is ~0.3s (2026-08-02), so this leaves ~4x
-# headroom for a loaded machine while still catching a real regression.
-SMOKE_EXECUTION_BUDGET_S = 1.5
+# loading and collection. Baseline was ~0.3s (2026-08-02), but RiceSuite CI
+# measured 1.568s on 2026-09-29 and then passed on rerun. The maintainer raised
+# the ceiling to 2s to absorb runner variation while still rejecting sustained
+# slowdowns. Keep the JUnit execution-time measurement and the separate 10s
+# hang detector unchanged.
+SMOKE_EXECUTION_BUDGET_S = 2.0
 
 # Wall-clock ceiling for the whole subprocess. A hang detector, not a budget:
 # the tier executes in ~0.3s, so anything approaching this is an environment
@@ -168,8 +171,8 @@ def test_smoke_tier_runs_under_budget(tmp_path):
 
     - `SMOKE_EXECUTION_BUDGET_S` is the real gate. It covers test execution
       only, so it catches a genuine regression in the tier and is largely
-      immune to machine load. Baseline is ~0.3s, so the budget leaves roughly
-      4x headroom.
+      immune to machine load. Baseline is ~0.3s; the 2s budget leaves room for
+      runner variation.
     - `SMOKE_WALL_CLOCK_CEILING_S` is deliberately loose and only catches a
       hang or a pathological environment. It is not a performance budget;
       do not tighten it to make it "meaningful". Its looseness is the point —

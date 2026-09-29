@@ -352,6 +352,9 @@ python -m pytest tests/ --cov=backend --cov-fail-under=43     # coverage floor
 
 The suite is fully mocked — it never launches a browser, posts anywhere, or
 calls the Anthropic API, and a conftest tripwire fails any test that tries.
+The six-test smoke tier has a 2-second execution budget, measured from pytest's
+JUnit report so interpreter startup and test collection do not count. A
+separate 10-second wall-clock ceiling catches hangs.
 
 `pytest`, `pytest-cov` and `pre-commit` are in `requirements.txt`. Two hooks
 enforce the gates, but **only after you run the two `pre-commit install`
