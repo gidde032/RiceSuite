@@ -150,7 +150,9 @@ def test_upload_copy_describes_landscape_subject_crop():
 
 def test_slate_identity_and_theme_contract_are_present():
     html = _html()
-    stylesheet = (ROOT / "web/style.css").read_text(encoding="utf-8")
+    stylesheet = (
+        (ROOT.parent / "ricesuite/shell/slate.css").read_text(encoding="utf-8").lower()
+    )
     approved_logo = (ROOT / "docs/design/assets/slate-logo-selected.png").read_bytes()
     runtime_logo = (ROOT / "web/slate-logo.png").read_bytes()
 

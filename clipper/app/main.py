@@ -83,7 +83,7 @@ app = FastAPI(title="RiceClipper", version="0.1.0", lifespan=lifespan)
 async def no_store_review_assets(request: Request, call_next):
     """A long-lived local tab must reload current HTML, CSS, and JavaScript."""
     response = await call_next(request)
-    if request.url.path in {"/", "/index.html", "/app.js", "/style.css"}:
+    if request.url.path in {"/", "/index.html", "/app.js", "/style.css", "/slate.css"}:
         response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -527,4 +527,12 @@ def get_output(job_id: str) -> FileResponse:
 
 
 # Static review UI mounted last so /api/* routes take precedence.
+@app.get("/slate.css", include_in_schema=False)
+def slate_css() -> FileResponse:
+    return FileResponse(
+        Path(__file__).resolve().parents[2] / "ricesuite/shell/slate.css",
+        media_type="text/css",
+    )
+
+
 app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")

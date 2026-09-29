@@ -162,6 +162,18 @@ def test_rice_runs_the_whole_suite_behind_one_port(suite):
         assert httpx.get(suite.gateway + "/clip/").status_code == 200
         assert httpx.get(suite.gateway + "/post/").status_code == 200
         assert httpx.get(suite.gateway + "/post/api/queue").json() == {"batches": []}
+        # Each document loads one canonical Slate file through its own prefix.
+        canonical = (SUITE_ROOT / "ricesuite/shell/slate.css").read_bytes()
+        for path in (
+            "/shell/slate.css",
+            "/search/static/slate.css",
+            "/clip/slate.css",
+            "/post/static/slate.css",
+        ):
+            asset = httpx.get(suite.gateway + path)
+            assert asset.status_code == 200, path
+            assert asset.headers["content-type"].startswith("text/css"), path
+            assert asset.content == canonical, path
         home = httpx.get(suite.gateway + "/api/suite/home").json()
         assert home["to_clipper"] == [] and home["to_poster"] == []
         assert home["scheduled"] == []

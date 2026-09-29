@@ -107,6 +107,8 @@ Each requirement is written so a test can check it. "The launcher" means the
   existing page under its own prefix. A pillar page's API calls reach only its
   own pillar. Each pillar frontend gets only the minimal base-path change
   needed for that (Q11: no rebuilt UI).
+  The common Slate palette and base surface rules live in one packaged suite
+  stylesheet; each document loads it before its own layout and state rules.
 - **FR-11** The home view shows, per stage, the batches waiting: Searcher
   batches not yet ingested by Clipper, Clipper batches not yet sent or held by
   a failed render, and batches waiting in Poster's inbox.

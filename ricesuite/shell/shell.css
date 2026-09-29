@@ -1,22 +1,8 @@
-/* RiceSuite shell — Slate tokens, as in the pillars' own pages. */
-:root {
-  --backdrop: #04060A;
-  --midground: #0C1116;
-  --interior: #14191E;
-  --hairline: #2B3136;
-  --control-line: #626A70;
-  --rice-grey: #AEB3B6;
-  --muted-grey: #80878C;
-  --charcoal: #3B4044;
-  --primary-text: #E5E8EA;
-  --focus: #D5D9DB;
-  --danger: #FF7979;
-  --topbar-h: 54px;
-}
-* { box-sizing: border-box; }
+/* RiceSuite shell layout and navigation. Shared Slate rules live in slate.css. */
+:root { --topbar-h: 54px; --danger: #FF7979; }
 html, body { height: 100%; margin: 0; background: var(--backdrop); color: var(--primary-text); }
 body { font: 15px/1.45 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-.topbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 24px; height: var(--topbar-h); padding: 0 clamp(16px, 2.2vw, 34px); border-bottom: 1px solid var(--hairline); background: var(--backdrop); }
+.topbar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 24px; height: var(--topbar-h); padding: 0 clamp(16px, 2.2vw, 34px); }
 .wordmark { color: var(--primary-text); font-weight: 650; letter-spacing: 0.02em; text-decoration: none; }
 .tabs { display: flex; gap: 4px; }
 .tab { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border: 1px solid transparent; border-radius: 8px; color: var(--muted-grey); text-decoration: none; }
