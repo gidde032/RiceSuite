@@ -1548,8 +1548,7 @@ function hydrateSlotCard(slot) {
 // existing /api/generate-caption path. Never posts — the maintainer reviews the
 // captions and clicks Post All.
 // Active-roster slots holding an unposted draft (caption/media live only in
-// the browser). A pull overwrites them positionally, so the manual pull asks
-// first and the automatic pull never runs while any exist.
+// the browser). A pull overwrites them positionally, so Pull asks first.
 function draftsAtRisk() {
   const activeIds = new Set(state.accounts.map(a => a.slot));
   return Object.entries(state.slots).filter(
@@ -1583,10 +1582,10 @@ function draftWorkBusy() {
   return draftWork > 0 || pullInFlight;
 }
 
-// Returns true when a batch was pulled, captioned and acknowledged.
-// `automatic` (RiceSuite's inbox poll) never replays an unacknowledged batch
-// and never overwrites a draft started while the request was in flight.
-async function pullFromClipper({ automatic = false } = {}) {
+// Returns true when a batch was pulled, captioned and acknowledged. Only the
+// Pull from Clipper button calls this (RiceSuite ADR-001 Q12, amended
+// 2026-09-29): nothing pulls a batch without the maintainer's click.
+async function pullFromClipper() {
   if (pullInFlight) return false;
   const btn = elOpt('btnPullClipper');
   // A pull overwrites active-roster slots positionally, discarding any unposted
@@ -1607,18 +1606,11 @@ async function pullFromClipper({ automatic = false } = {}) {
   if (btn) btn.disabled = true;
   setPullStatus('Pulling the oldest batch from RiceClipper…');
   try {
-    const url = automatic ? 'api/pull-from-clipper?replay=0' : 'api/pull-from-clipper';
-    const resp = await fetchWithTimeout(url, { method: 'POST' });
+    const resp = await fetchWithTimeout('api/pull-from-clipper', { method: 'POST' });
     await handleFetchError(resp);
     const data = await resp.json();
     if (!data.pulled) {
       setPullStatus(data.reason || 'Nothing to pull.');
-      return false;
-    }
-    if (automatic && draftsAtRisk().length) {
-      // A draft appeared while the request ran. Keep it: the batch stays
-      // staged, unacknowledged, for Pull from Clipper (which asks first).
-      setPullStatus(`Batch ${data.batch_id} from Clip is staged; your new draft was kept. Use Pull from Clipper when ready.`);
       return false;
     }
     stagedBatchId = data.batch_id;
@@ -1672,19 +1664,20 @@ async function pullFromClipper({ automatic = false } = {}) {
   return false;
 }
 
-// --- Automatic ingest from Clip (RiceSuite ADR-001 Q12). A complete batch is
-// pulled without a click only when no unposted draft is at risk; otherwise it
-// waits in the inbox shown under the actions, for Pull from Clipper (which asks
-// before overwriting). Captions generate on ingest as with a manual pull.
-// Posting and scheduling stay manual: this path ends where Pull ends.
+// --- Clipper inbox (RiceSuite ADR-001 Q12, amended 2026-09-29). The page polls
+// the read-only inbox and reports waiting batches under the actions and as a
+// count on the Pull from Clipper button. It never pulls: only that button
+// does, and it asks before overwriting a draft.
 const INBOX_POLL_MS = 7000;
-const INBOX_RETRY_MS = 60000;
-let inboxRetryAt = 0;
+const PULL_LABEL = 'Pull from Clipper';
 
 function renderClipperInbox(inbox) {
   const panel = elOpt('clipperInbox');
-  if (!panel) return;
   const waiting = (inbox.batches || []).length + (inbox.unacknowledged ? 1 : 0);
+  // An unreadable inbox is not an empty one: keep the last count.
+  const btn = elOpt('btnPullClipper');
+  if (btn && !inbox.error) btn.textContent = waiting ? `${PULL_LABEL} · ${waiting}` : PULL_LABEL;
+  if (!panel) return;
   panel.hidden = waiting === 0 && !inbox.error;
   if (inbox.error) {
     panel.innerHTML = `
@@ -1705,9 +1698,7 @@ function renderClipperInbox(inbox) {
       <span>${esc(`Inbox: ${waiting} batch${waiting === 1 ? '' : 'es'} from Clip waiting (${ids.join(', ')}). ` +
         (inbox.unacknowledged
           ? `${inbox.unacknowledged} was pulled but never acknowledged: recover it with Pull from Clipper.`
-          : draftsAtRisk().length
-            ? 'Post or clear the current drafts, or use Pull from Clipper.'
-            : 'Pulling automatically…'))}</span>
+          : 'Use Pull from Clipper when you are ready for the oldest one.'))}</span>
     </div>`;
 }
 
@@ -1721,14 +1712,6 @@ async function pollClipperInbox() {
     return;
   }
   renderClipperInbox(inbox);
-  // Only fresh batches move automatically. Recovering an unacknowledged one
-  // stays the maintainer's Pull: it may already be open in another page, or
-  // already posted.
-  if (inbox.unacknowledged || inbox.error || !(inbox.batches || []).length) return;
-  if (pullInFlight || Date.now() < inboxRetryAt) return;
-  if (draftsAtRisk().length) return;
-  const ok = await pullFromClipper({ automatic: true });
-  if (!ok) inboxRetryAt = Date.now() + INBOX_RETRY_MS;
 }
 
 function assertPulledTargets(data) {

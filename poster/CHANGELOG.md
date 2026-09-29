@@ -5,6 +5,18 @@
 This section contains changes merged into `main` that have not yet been
 published as a tagged release or GitHub Release.
 
+### Changed
+
+- **Pull from Clipper is manual only.** The Post page no longer pulls a
+  waiting Clip batch on its own, not even into an empty Review: only your
+  **Pull from Clipper** click pulls. The inbox note still lists waiting,
+  unacknowledged and errored batches and now points to the button, which
+  shows the waiting count (**Pull from Clipper · 2**). The automatic path's
+  no-replay request (`POST /api/pull-from-clipper?replay=0`) is removed; every
+  pull recovers an unacknowledged batch first. (RiceSuite
+  [#30](https://github.com/gidde032/RiceSuite/issues/30), ADR-001 amendment
+  of 2026-09-29)
+
 ### Added
 
 - **Swapping accounts keeps the drafts in their slots.** An account leaving

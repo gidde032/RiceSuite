@@ -502,14 +502,16 @@ async def clipper_inbox():
 
 
 @app.post("/api/pull-from-clipper")
-async def pull_from_clipper(replay: bool = True):
+async def pull_from_clipper():
     """Stage the oldest RiceClipper handoff batch into a pending run.
 
     Copies the batch's media into MEDIA_DIR and returns per-slot assignments
     (filename + transcript topic + default style). Captioning happens in the
     browser afterward via /api/generate-caption, so a pulled clip is captioned
     on a real frame just like manual. This endpoint NEVER posts and NEVER
-    schedules (CLAUDE.md safety rule) — it only stages files.
+    schedules (CLAUDE.md safety rule) — it only stages files. Only the
+    maintainer's Pull from Clipper click calls it (RiceSuite ADR-001 Q12,
+    amended 2026-09-29).
     """
     _discovered, account_state, state_error, _store = _account_context()
     if state_error:
@@ -518,14 +520,7 @@ async def pull_from_clipper(replay: bool = True):
             detail=f"Local account state is invalid; repair it before pulling: {state_error}",
         )
     try:
-        result = handoff_pickup.ingest_oldest(
-            account_state.active_account_ids, replay=replay
-        )
-    except handoff_pickup.AwaitingAcknowledgement as e:
-        return {
-            "pulled": False,
-            "reason": f"{e}; use Pull from Clipper to recover it.",
-        }
+        result = handoff_pickup.ingest_oldest(account_state.active_account_ids)
     except handoff_pickup.NoBatchAvailable:
         return {"pulled": False, "reason": "No handoff batches to pull."}
     except handoff_pickup.HandoffPickupError as e:

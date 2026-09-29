@@ -211,16 +211,15 @@ not delete the archive. A caption-generation failure leaves the receipt staged
 for a safe retry. You land at step 5 (review captions → Post All). Pull never
 posts or schedules on its own.
 
-**Automatic pull (RiceSuite).** While the page is open it polls
-`GET /api/handoff/inbox` (read-only). When a batch is waiting and no active
-account holds an unposted draft — exactly when **Pull from Clipper** would not
-need to ask — it runs the same pull automatically, captions included, and it
-keeps any draft you start while that request runs. Otherwise the batch waits
-in an inbox note under the actions until you post or clear the drafts, or pull
-by hand. A batch that was pulled but never acknowledged is shown there too,
-and is recovered only by your **Pull from Clipper**, never automatically. A
-caption you type while captions are generating is never overwritten.
-Posting and scheduling stay manual.
+**Clipper inbox (RiceSuite).** Pulling is manual only: nothing pulls a batch
+without your **Pull from Clipper** click, even when Review is empty (RiceSuite
+ADR-001 amendment of 2026-09-29). While the page is open it polls
+`GET /api/handoff/inbox` (read-only) to show waiting batches in an inbox note
+under the actions, and the button shows how many are waiting
+(**Pull from Clipper · 2**). A batch that was pulled but never acknowledged is
+shown there too; Pull recovers it before taking a new one. A caption you type
+while captions are generating is never overwritten. Posting and scheduling
+stay manual.
 
 **Interrupted runs.** A manual Post All run writes a small in-flight marker in
 the data root before touching any platform and removes it once the run's

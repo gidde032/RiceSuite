@@ -1,7 +1,8 @@
 """Run the page-script behaviour tests in tests/js with node's test runner.
 
-These drive Clipper's and Poster's own automatic-transport code (ADR-001
-Q12). Node is required, not optional: a missing node fails here rather than
+These drive Clipper's automatic-transport code (ADR-001 Q12) and Poster's
+inbox and draft code, which never pulls without a click (Q12 as amended
+2026-09-29). Node is required, not optional: a missing node fails here rather than
 skipping the only behavioural check on those rules.
 """
 

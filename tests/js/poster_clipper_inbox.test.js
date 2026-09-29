@@ -1,8 +1,8 @@
-// Poster's automatic ingest (RiceSuite ADR-001 Q12), run against the real
-// functions in poster/frontend/index.html: a waiting Clip batch is pulled
-// without a click only when no unposted draft is at risk; otherwise it waits in
-// the visible inbox. The automatic path ends where Pull ends — it never posts,
-// schedules, or confirms away drafts.
+// Poster's Clipper inbox (RiceSuite ADR-001 Q12 as amended 2026-09-29), run
+// against the real functions in poster/frontend/index.html: a waiting Clip
+// batch is only ever pulled by the maintainer's Pull from Clipper click. The
+// inbox poll reports waiting batches and never pulls, posts, schedules, or
+// confirms away drafts.
 "use strict";
 
 const test = require("node:test");
@@ -25,15 +25,17 @@ function slice(from, to) {
 }
 
 // Verbatim page code: the at-risk predicate shared with manual Pull, and the
-// whole automatic-ingest block.
+// whole Clipper inbox block.
 const SOURCE = [
   slice("function draftsAtRisk()", "// Returns true when a batch was pulled"),
-  slice("// --- Automatic ingest from Clip", "function assertPulledTargets"),
+  slice("// --- Clipper inbox", "function assertPulledTargets"),
 ].join("\n");
 
 function boot({ inbox, slots = {}, pullResult = true }) {
   const { fetch, calls } = scriptedFetch({ "GET api/handoff/inbox": inbox });
   const panel = element();
+  const button = element();
+  button.textContent = "Pull from Clipper";
   const pulls = [];
   const forbidden = (name) => () => {
     throw new Error(`${name} must never run from the automatic path`);
@@ -42,7 +44,7 @@ function boot({ inbox, slots = {}, pullResult = true }) {
     Date,
     state: { accounts: [{ slot: "A" }, { slot: "B" }], slots },
     fetchWithTimeout: fetch,
-    elOpt: (id) => (id === "clipperInbox" ? panel : null),
+    elOpt: (id) => ({ clipperInbox: panel, btnPullClipper: button })[id] || null,
     esc: (s) => String(s),
     pullFromClipper: async () => {
       pulls.push(1);
@@ -54,18 +56,26 @@ function boot({ inbox, slots = {}, pullResult = true }) {
   });
   vm.runInContext(SOURCE, ctx);
   const js = (expr) => vm.runInContext(expr, ctx);
-  return { js, calls, pulls, panel };
+  return { js, calls, pulls, panel, button };
 }
 
 const emptySlot = () => ({ file: null, filename: "", caption: "" });
 const ready = { batches: [{ batch_id: "batch_1", clip_count: 2 }], unacknowledged: null };
 
-test("an empty draft workspace pulls a waiting batch automatically", async () => {
-  const { js, pulls, panel } = boot({ inbox: ready, slots: { A: emptySlot(), B: emptySlot() } });
+const onlyInboxReads = (calls) =>
+  assert.deepEqual(calls.map((c) => `${c.method} ${c.path}`), ["GET api/handoff/inbox"]);
+
+test("a waiting batch is never pulled without a click, even with no drafts", async () => {
+  const { js, pulls, calls, panel } = boot({ inbox: ready, slots: { A: emptySlot(), B: emptySlot() } });
   await js("pollClipperInbox()");
-  assert.equal(pulls.length, 1);
+  await js("pollClipperInbox()");
+  assert.equal(pulls.length, 0);
+  assert.equal(calls.length, 2);
+  onlyInboxReads(calls.slice(0, 1));
   assert.equal(panel.hidden, false);
   assert.match(panel.innerHTML, /batch_1/);
+  assert.match(panel.innerHTML, /Pull from Clipper/);
+  assert.doesNotMatch(panel.innerHTML, /automatically/i);
 });
 
 for (const [label, draft] of [
@@ -73,7 +83,7 @@ for (const [label, draft] of [
   ["an uploaded file", { file: {}, filename: "", caption: "" }],
   ["a caption", { file: null, filename: "", caption: "written by hand" }],
 ]) {
-  test(`a draft holding ${label} is never overwritten: the batch waits in the inbox`, async () => {
+  test(`a draft holding ${label} is untouched: the batch waits in the inbox`, async () => {
     const { js, pulls, panel } = boot({ inbox: ready, slots: { A: draft, B: emptySlot() } });
     await js("pollClipperInbox()");
     assert.equal(pulls.length, 0);
@@ -82,11 +92,20 @@ for (const [label, draft] of [
   });
 }
 
-test("a draft on an inactive account slot does not block", async () => {
-  const draft = { file: null, filename: "old.mp4", caption: "x" };
-  const { js, pulls } = boot({ inbox: ready, slots: { A: emptySlot(), Z: draft } });
+test("the Pull button shows how many batches wait, and plain text when none do", async () => {
+  const inbox = { batches: [{ batch_id: "batch_1" }, { batch_id: "batch_2" }], unacknowledged: "batch_0" };
+  const { js, button } = boot({ inbox });
   await js("pollClipperInbox()");
-  assert.equal(pulls.length, 1);
+  assert.equal(button.textContent, "Pull from Clipper · 3");
+  js("renderClipperInbox({ batches: [], unacknowledged: null })");
+  assert.equal(button.textContent, "Pull from Clipper");
+});
+
+test("an inbox error leaves the button count alone rather than claiming zero", async () => {
+  const { js, button } = boot({ inbox: ready });
+  await js("pollClipperInbox()");
+  js("renderClipperInbox({ batches: [], unacknowledged: null, error: 'unreadable receipt' })");
+  assert.equal(button.textContent, "Pull from Clipper · 1");
 });
 
 test("an empty inbox pulls nothing and hides the panel", async () => {
@@ -96,7 +115,7 @@ test("an empty inbox pulls nothing and hides the panel", async () => {
   assert.equal(panel.hidden, true);
 });
 
-test("an unacknowledged batch is shown but never replayed automatically", async () => {
+test("an unacknowledged batch is shown and left for Pull from Clipper", async () => {
   const inbox = { batches: [{ batch_id: "batch_1", clip_count: 1 }], unacknowledged: "batch_0" };
   const { js, pulls, panel } = boot({ inbox, slots: { A: emptySlot() } });
   await js("pollClipperInbox()");
@@ -115,28 +134,18 @@ test("an inbox error is shown, not hidden", async () => {
   assert.match(panel.innerHTML, /archive root/);
 });
 
-test("no second pull starts while one is in flight", async () => {
-  const { js, pulls } = boot({ inbox: ready });
-  js("pullInFlight = true");
-  await js("pollClipperInbox()");
-  assert.equal(pulls.length, 0);
-});
-
-test("a failed pull backs off instead of retrying every poll", async () => {
-  const { js, pulls } = boot({ inbox: ready, pullResult: false });
-  await js("pollClipperInbox()");
-  await js("pollClipperInbox()");
-  assert.equal(pulls.length, 1);
-});
-
-test("the page polls the inbox on a timer", () => {
+test("the page polls the inbox on a timer, and nothing else starts a pull", () => {
   assert.match(HTML, /setInterval\(pollClipperInbox, INBOX_POLL_MS\)/);
+  const callers = HTML.match(/pullFromClipper\(/g) || [];
+  // The definition and the button's onclick, nothing more.
+  assert.equal(callers.length, 2, "only the Pull from Clipper button may start a pull");
+  assert.match(HTML, /onclick="pullFromClipper\(\)"/);
 });
 
 // --- the real pullFromClipper and generateAll ---------------------------------
 
 const PULL_SOURCE = [
-  slice("function draftsAtRisk()", "// --- Automatic ingest from Clip"),
+  slice("function draftsAtRisk()", "// --- Clipper inbox"),
   slice("async function generateAll()", "\n}\n") + "\n}\n",
 ].join("\n");
 
@@ -179,26 +188,14 @@ test("manual Pull asks before overwriting a draft, and Cancel pulls nothing", as
   assert.equal(slots.A.caption, "my caption");
 });
 
-test("the automatic pull never asks for replay", async () => {
+test("Pull from Clipper always asks the default pull, which recovers an unacknowledged batch", async () => {
   const slots = { A: { file: null, filename: "", caption: "" } };
   const { js, calls } = bootPull({ slots });
   js("generateAll = async () => { state.slots.A.caption = 'generated'; }");
-  await js("pullFromClipper({ automatic: true })");
+  assert.equal(await js("pullFromClipper()"), true);
   const pull = calls.find((c) => c.method === "POST" && c.path === "api/pull-from-clipper");
   assert.ok(pull, "no pull request");
-  assert.equal(pull.url, "api/pull-from-clipper?replay=0");
-});
-
-test("a draft started while an automatic pull is in flight is kept", async () => {
-  const slots = { A: { file: null, filename: "", caption: "" } };
-  const { js, applied, asked } = bootPull({
-    slots,
-    onPull: () => { slots.A.caption = "typed during the pull"; },
-  });
-  assert.equal(await js("pullFromClipper({ automatic: true })"), false);
-  assert.deepEqual(applied, []);
-  assert.equal(asked.length, 0);
-  assert.equal(slots.A.caption, "typed during the pull");
+  assert.equal(pull.url, "api/pull-from-clipper");
 });
 
 test("a caption typed while generation runs is never overwritten", async () => {
