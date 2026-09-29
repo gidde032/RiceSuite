@@ -477,3 +477,10 @@ def capturing_anthropic(monkeypatch):
     monkeypatch.setattr(captions.anthropic, "AsyncAnthropic", CapturingAnthropic)
     monkeypatch.setattr(captions, "ANTHROPIC_API_KEY", SecretStr("test-key"))
     return CapturingAnthropic
+
+
+@pytest.fixture(autouse=True)
+def tmp_browser_debug(monkeypatch, tmp_path):
+    """Failure diagnostics must never write into the live debug directory."""
+    for module in (_instagram_browser, _tiktok_browser):
+        monkeypatch.setattr(module, "DEBUG_DIR", tmp_path)

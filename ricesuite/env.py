@@ -68,6 +68,8 @@ POSTER_VARIABLES = (
     "INTER_SLOT_DELAY_MAX_S",
     "FEED_DWELL_MIN_S",
     "FEED_DWELL_MAX_S",
+    "IG_UPLOAD_TIMEOUT_S",
+    "TT_UPLOAD_TIMEOUT_S",
 )
 SHARED_VARIABLES = ("ANTHROPIC_API_KEY",)
 # Read by RiceSuite itself, never by a pillar.

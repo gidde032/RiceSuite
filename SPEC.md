@@ -229,6 +229,7 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
 | Floors | Per pillar, never averaged, never lowered without maintainer sign-off | Q16 |
 | Network | Suite tests make no network calls; the Anthropic call-site tests use a loopback stub behind a socket guard | Q16 |
 | Data | Tests and agent smoke runs use temp dirs only | Q10 |
+| Real accounts | Agents open a real Instagram profile (login, status/health check, probe, layout check, or debugging, not only posting) only with the maintainer's explicit sign-off for that occasion; one open per task, never looped, polled, or repeatedly opened and closed; offline verification uses fakes and temporary profiles | Q15, root `CLAUDE.md` rule 7 |
 
 Dependency alignment (fact 1) is the only dependency change: newest
 compatible FastAPI / uvicorn / python-multipart / python-dotenv, one

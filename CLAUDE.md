@@ -27,6 +27,17 @@ RiceSuite is one local app built from three pillars: `searcher/` (RiceSearcher),
    in any agent session.
 6. **Never weaken a gate.** Each pillar keeps its own gates and coverage floor
    (Searcher 90, Clipper 85, Poster 43). There is no averaged floor.
+7. **Real Instagram profiles are a limited resource.** Opening any real
+   Instagram profile (a Chrome profile under Poster `sessions/instagram/`)
+   requires the maintainer's explicit sign-off, even when nothing will be
+   posted: a login, session status or health check, fingerprint probe, layout
+   check, or debugging run all count. Sign-off covers the one occasion it was
+   given for and does not carry over. Once opened, a profile does its task and
+   closes. Never loop, poll, retry-launch, or repeatedly open and close a
+   profile with no activity, because that pattern gets accounts flagged and is
+   never acceptable. Verify with fakes, fixtures, and throwaway temporary
+   profiles instead; if a task seems to need a real profile, stop and ask.
+   Rule 5 still keeps agents out of `sessions/` by default.
 
 ## Source-of-truth order
 

@@ -6,10 +6,14 @@ Requires saved browser sessions (login state) per account.
 """
 
 import asyncio
+import json
 import random
 import re
+from contextlib import AsyncExitStack
+from datetime import datetime, timezone
 from pathlib import Path
-from playwright.async_api import async_playwright, Page, BrowserContext
+from time import monotonic
+from playwright.async_api import async_playwright, Page, BrowserContext, TimeoutError as PlaywrightTimeoutError
 
 # _post_id / _resolve_login_outcome are shared with tiktok_browser and must
 # behave identically on both platforms (tech-debt audit BE-3, 2026-07-29).
@@ -18,6 +22,7 @@ from backend.config import (
     FEED_DWELL_MAX_S,
     FEED_DWELL_MIN_S,
     IG_SESSIONS_DIR,
+    IG_UPLOAD_TIMEOUT_S,
 )
 from backend.browser_common import (
     EDITOR_MARKER,
@@ -176,7 +181,9 @@ CREATE_BUTTON_SELECTORS = (
 # The "Post" item in Create's dropdown. Exact text: the same menu holds "Live
 # video", and the sidebar holds "New post" and "Create".
 POST_MENU_ITEM_RE = re.compile(r"^\s*Post\s*$")
-POST_MENU_ITEM_WAIT_MS = 10000
+CREATE_STATE_WAIT_S = 15.0
+CREATE_ATTEMPTS = 3
+UPLOAD_DIALOG = "div[role='dialog'] button:has-text('Select from computer')"
 
 
 async def _find_create_button(page: Page):
@@ -196,52 +203,40 @@ async def _find_create_button(page: Page):
 
 
 async def _find_post_menu_item(page: Page):
-    """Resolve the desktop Create-menu Post item across Instagram layouts.
+    """Resolve only visible Post targets; the caller owns waiting/recovery."""
+    for loc in (
+        page.locator('a[href="#"]', has_text=POST_MENU_ITEM_RE),
+        page.get_by_text("Post", exact=True),
+    ):
+        visible = loc.filter(visible=True).first
+        if await visible.is_visible():
+            return visible
+    return None
 
-    The established layout uses an ``a[href="#"]``. Some accounts receive a
-    menu whose visible row is nested entirely in spans and divs instead. Keep
-    the narrow anchor first, then wait for exact visible text so a slow render
-    and the non-anchor layout share the same fallback without using script.
-    """
-    attempts: list[tuple[str, int | None]] = []
 
-    anchor = page.locator('a[href="#"]', has_text=POST_MENU_ITEM_RE)
-    try:
-        count = await anchor.count()
-        attempts.append(('a[href="#"] text=Post', count))
-        if count > 0:
-            return anchor.first
-    except Exception:
-        attempts.append(('a[href="#"] text=Post', None))
-
-    exact_text = page.get_by_text("Post", exact=True)
-    try:
-        await exact_text.first.wait_for(state="visible", timeout=POST_MENU_ITEM_WAIT_MS)
-        count = await exact_text.count()
-        attempts.append(('exact visible text=Post', count))
-        if count > 0:
-            return exact_text.first
-    except Exception:
-        try:
-            count = await exact_text.count()
-        except Exception:
-            count = None
-        attempts.append(('exact visible text=Post', count))
-
-    raise Exception(_selector_chain_error("Post in the Create dropdown", attempts))
+async def _wait_for_create_state(page: Page):
+    """Wait for either the direct composer or the desktop dropdown."""
+    deadline = monotonic() + CREATE_STATE_WAIT_S
+    while True:
+        if await page.locator(UPLOAD_DIALOG).is_visible():
+            return None  # Composer already open: never toggle Create again.
+        post = await _find_post_menu_item(page)
+        if post is not None:
+            return post
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise PlaywrightTimeoutError("Neither Post menu nor upload dialog appeared")
+        await asyncio.sleep(min(0.25, remaining))
 
 
 async def _open_create_post(page: Page):
     """Click Create in the sidebar, then Post in its dropdown.
 
-    Native Playwright actions only (D4, 2026-09-13). The earlier version
-    clicked through `page.evaluate` and JavaScript `.click()`, which fires
-    events with `isTrusted: false`; a page can log that. Playwright's own
-    hover and click go through the browser's input pipeline, the same path a
-    mouse takes, and arrive trusted. The narrow-layout branch is unchanged.
+    Native Playwright actions only. Observe both supported layout outcomes
+    and recover transient menu loss before any media or Share action.
     """
 
-    # Step 1: hover, then click the Create control.
+    # Step 1: find the Create control; the recovery loop below clicks it.
     create = await _find_create_button(page)
 
     if create is None:
@@ -265,37 +260,39 @@ async def _open_create_post(page: Page):
             )
         raise Exception("Could not find Create button SVG")
 
-    await create.hover()
-    await sleep_jittered(0.5)
-    await create.click()
-    await sleep_jittered(2)
-
-    # === INSERTED FIX: CHECK IF MODAL OPENED DIRECTLY ===
-    # If the layout is narrow, clicking 'Create' opens the upload dialog instantly.
-    # We check if the 'Select from computer' button is already visible.
-    is_modal_open = await page.locator("button:has-text('Select from computer')").is_visible()
-    if is_modal_open:
-        _log.info("[Instagram] Narrow layout detected: Upload modal opened directly. Skipping Step 2.")
+    last_error = None
+    for attempt in range(CREATE_ATTEMPTS):
+        try:
+            if await page.locator(UPLOAD_DIALOG).is_visible():
+                return 'opened_directly'
+            post_item = await _find_post_menu_item(page)
+            if post_item is None:
+                await create.click(timeout=5000)
+                post_item = await _wait_for_create_state(page)
+            if post_item is None:
+                return 'opened_directly'
+            # Native click performs its own actionability checks. A separate
+            # hover and sleep gave this transient menu time to disappear.
+            await post_item.click(timeout=3000)
+            await page.locator(UPLOAD_DIALOG).wait_for(
+                state="visible", timeout=int(CREATE_STATE_WAIT_S * 1000)
+            )
+            return
+        except PlaywrightTimeoutError as exc:
+            last_error = exc
+            _log.warning(f"[Instagram] Create transition timed out (attempt {attempt + 1}/{CREATE_ATTEMPTS}); checking composer before retry.")
+    # The final click may have opened the composer just as its wait expired.
+    if await page.locator(UPLOAD_DIALOG).is_visible():
         return 'opened_directly'
-    # ===================================================
-
-    # Step 2: hover, then click "Post" in the dropdown. Desktop layout only.
-    post_item = await _find_post_menu_item(page)
-
-    await post_item.hover()
-    await sleep_jittered(0.5)
-    await post_item.click()
-    await sleep_jittered(3)
+    raise Exception(f"Could not open Instagram upload dialog after {CREATE_ATTEMPTS} attempts: {last_error}")
 
 
 
 # ---------------------------------------------------------------------------
 # The posting flow, in named steps
 #
-# These helpers are a decomposition of one 185-line function (tech-debt audit
-# BE-4, issue #28) and nothing more. The sequence of Playwright calls, the
-# selector chains, the sleep floors and the ordering are unchanged;
-# tests/golden/ig_*.trace holds the recorded transcript that proves it.
+# Originally decomposed in BE-4 (#28); slow-network recovery was added in
+# RiceSuite #24. tests/golden/ig_*.trace records the intended current flow.
 #
 # CLAUDE.md § Intentional design protects the long sleeps, the generous
 # timeouts and the fallback selector chains: they are features, not bugs.
@@ -396,12 +393,12 @@ async def _upload_media_file(page: Page, media_path: Path):
     _log.info("[Instagram] Video stream successfully transferred to creator panel!")
     await sleep_jittered(2)
 
-    # Upload is complete when the "Next" button appears. The handle is not
-    # needed — this call is the wait, and the Next clicks happen later in
+    # The editor is ready when Next appears; this does not prove the remote
+    # upload is complete. The Next clicks happen later in
     # _advance_past_edit_screens.
     await page.wait_for_selector(
         "div[role='button']:has-text('Next'), button:has-text('Next')",
-        timeout=120000,
+        timeout=IG_UPLOAD_TIMEOUT_S * 1000,
     )
     await sleep_jittered(1)
 
@@ -572,22 +569,67 @@ async def _share_post(page: Page):
     await share_btn.click()
 
 
-async def _await_post_confirmation(page: Page, account_key: str) -> bool:
-    """True only when the success element was actually observed.
+POST_SUCCESS = (
+    "div[role='dialog'] img[alt='Animated checkmark'], "
+    "div[role='dialog'] span:has-text('Your post has been shared'), "
+    "div[role='dialog'] span:has-text('Your reel has been shared'), "
+    "div[role='dialog'] span:text-is('Post shared'), "
+    "div[role='dialog'] span:text-is('Reel shared')"
+)
+POST_FAILURE = (
+    "div[role='dialog'] :text-is('Your post could not be shared. Please try again.'), "
+    "div[role='dialog'] :text-is('Your reel could not be shared. Please try again.')"
+)
 
-    Do NOT report success we didn't observe — the post may or may not be
-    live; the caller/UI shows an unconfirmed result differently.
+
+class InstagramShareRejected(Exception):
+    """Instagram explicitly rejected sharing, rather than merely timing out."""
+
+
+async def _await_post_confirmation(page: Page, account_key: str) -> bool:
+    """Observe the entire budget, never close on an unchecked grace sleep.
+
+    A spinner alone cannot prove forward progress, so allow the full budget
+    even when no numeric progress is exposed. No extension exceeds this cap.
+    Feed text outside the composer is never evidence of publication.
     """
+    deadline = monotonic() + IG_UPLOAD_TIMEOUT_S
+    next_log = monotonic() + 30
+    while True:
+        if await page.locator(POST_SUCCESS).filter(visible=True).first.is_visible():
+            return True
+        if await page.locator(POST_FAILURE).filter(visible=True).first.is_visible():
+            raise InstagramShareRejected("Instagram reported that the post could not be shared")
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            _log.warning(f"[Instagram] Warning: no post confirmation seen for {account_key} within {IG_UPLOAD_TIMEOUT_S}s — result unconfirmed.")
+            return False
+        if monotonic() >= next_log:
+            _log.info(f"[Instagram] {account_key}: still awaiting share confirmation ({int(remaining)}s remaining).")
+            next_log = monotonic() + 30
+        await asyncio.sleep(min(1.0, remaining))
+
+
+async def _save_post_diagnostics(page, account_key, outcome, stage, started, timings, error=None):
+    """Local screenshot and bounded metadata; never persist captions or DOM."""
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    stem = DEBUG_DIR / f"debug_ig_post_{account_key}_{stamp}_{outcome}"
+    metadata = {
+        "timestamp_utc": stamp, "slot": account_key, "outcome": outcome,
+        "stage": stage, "elapsed_s": round(monotonic() - started, 3),
+        "stage_timings_s": timings, "confirmation_cap_s": IG_UPLOAD_TIMEOUT_S,
+        "error_type": type(error).__name__ if error else None,
+    }
     try:
-        await page.wait_for_selector(
-            "img[alt='Animated checkmark'], span:has-text('shared'), span:has-text('Post shared'), span:has-text('Reel shared')",
-            timeout=180000,  # videos can take a while to process
-        )
-        return True
-    except Exception:
-        _log.warning(f"[Instagram] Warning: no post confirmation seen for {account_key} — result unconfirmed.")
-        await sleep_jittered(10)
-        return False
+        if page is None:
+            raise RuntimeError("Browser page unavailable")
+        await page.screenshot(path=str(stem.with_suffix(".png")), timeout=5000)
+    except Exception as exc:
+        metadata["screenshot_error_type"] = type(exc).__name__
+    try:
+        stem.with_suffix(".json").write_text(json.dumps(metadata, indent=2) + "\n")
+    except Exception as exc:
+        _log.warning(f"[Instagram] Could not save diagnostics for {account_key}: {type(exc).__name__}")
 
 
 async def post_media(
@@ -603,38 +645,64 @@ async def post_media(
     sequence, failure diagnostics and cleanup. Everything the flow does to
     the page lives in one of the helpers.
     """
-    async with async_playwright() as pw:
-        context = await _get_context(pw, account_key, headless=headless)
-        page = context.pages[0] if context.pages else await context.new_page()
+    async with AsyncExitStack() as stack:
+        context = None
+        page = None
+        started = monotonic()
+        stage = "browser_start"
+        timings = {}
+        share_attempted = False
+
+        async def step(name, fn, *args):
+            nonlocal stage
+            stage = name
+            began = monotonic()
+            _log.info(f"[Instagram] {account_key}: starting {name}.")
+            try:
+                return await fn(*args)
+            finally:
+                timings[name] = round(monotonic() - began, 3)
+                _log.info(f"[Instagram] {account_key}: {name} elapsed {timings[name]}s.")
 
         try:
-            await _open_instagram(page, account_key)
-            await _dismiss_popups(page)
-            await _browse_feed(page)
-            await _open_create_post(page)
-            await _upload_media_file(page, media_path)
-            await _dismiss_aspect_ratio_warning(page)
-            await _select_original_crop(page)
-            await _advance_past_edit_screens(page)
+            pw = await step("browser_start", stack.enter_async_context, async_playwright())
+            context = await step("browser_context", _get_context, pw, account_key, headless)
+            stage = "browser_page"
+            page = context.pages[0] if context.pages else await step("browser_page", context.new_page)
+            await step("open_instagram", _open_instagram, page, account_key)
+            await step("dismiss_popups", _dismiss_popups, page)
+            await step("browse_feed", _browse_feed, page)
+            await step("open_create", _open_create_post, page)
+            await step("upload_media", _upload_media_file, page, media_path)
+            await step("aspect_warning", _dismiss_aspect_ratio_warning, page)
+            await step("crop", _select_original_crop, page)
+            await step("edit_screens", _advance_past_edit_screens, page)
+            caption_field = await step("find_caption", _find_caption_field, page)
+            await step("enter_caption", _enter_caption, page, caption_field, caption, account_key)
 
-            caption_field = await _find_caption_field(page)
-            await _enter_caption(page, caption_field, caption, account_key)
-
-            await _share_post(page)
-            confirmed = await _await_post_confirmation(page, account_key)
-
+            # Set before dispatch: a click can reach Instagram and then raise.
+            # After this boundary, an unknown error must never invite a retry.
+            share_attempted = True
+            await step("share", _share_post, page)
+            confirmed = await step("confirmation", _await_post_confirmation, page, account_key)
+            if not confirmed:
+                await _save_post_diagnostics(page, account_key, "unconfirmed", stage, started, timings)
             return _post_id("ig_post", account_key, confirmed)
 
         except Exception as e:
-            # Take a debug screenshot on failure
-            try:
-                await page.screenshot(path=str(DEBUG_DIR / f"debug_ig_post_{account_key}.png"))
-            except Exception:
-                pass
-            raise Exception(f"Instagram post failed for {account_key}: {e}")
+            uncertain = share_attempted and not isinstance(e, InstagramShareRejected)
+            await _save_post_diagnostics(
+                page, account_key, "unconfirmed" if uncertain else "failed",
+                stage, started, timings, e,
+            )
+            if uncertain:
+                _log.warning(f"[Instagram] {account_key}: interrupted during {stage}; result unconfirmed ({type(e).__name__}).")
+                return _post_id("ig_post", account_key, False)
+            raise Exception(f"Instagram post failed for {account_key}: {e}") from e
         finally:
             try:
-                await context.close()
+                if context is not None:
+                    await context.close()
             except Exception as close_err:
                 # A failed close must not mask the real posting error
                 _log.warning(f"[Instagram] Warning: browser cleanup failed: {close_err}")
