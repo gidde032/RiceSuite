@@ -5,7 +5,11 @@ from pydantic import BaseModel
 
 from backend.config import ANTHROPIC_API_KEY, PROMPTS_DIR
 from backend.logging_setup import get_logger
-from ricesuite.anthropic_client import TIMEOUT_SECONDS, create_client
+from ricesuite.anthropic_client import (
+    TIMEOUT_SECONDS,
+    close_async_client,
+    create_client,
+)
 
 _log = get_logger("captions")
 
@@ -146,7 +150,5 @@ async def generate_caption(
             "restart the server."
         ) from e
     finally:
-        close = getattr(client, "close", None)
-        if close is not None:
-            await close()
+        await close_async_client(client)
     return response.content[0].text.strip()

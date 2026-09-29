@@ -8,10 +8,12 @@ credential or network client.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 TIMEOUT_SECONDS = 60.0
 MAX_RETRIES = 2
+_log = logging.getLogger(__name__)
 
 
 def create_client(
@@ -29,3 +31,23 @@ def create_client(
         options["auth_token"] = auth_token
     client_type = anthropic.AsyncAnthropic if asynchronous else anthropic.Anthropic
     return client_type(**options)
+
+
+def close_client(client: Any) -> None:
+    """Attempt cleanup without changing a completed result or domain error."""
+    close = getattr(client, "close", None)
+    if close is not None:
+        try:
+            close()
+        except Exception as exc:
+            _log.warning("Anthropic client cleanup failed (%s)", type(exc).__name__)
+
+
+async def close_async_client(client: Any) -> None:
+    """Async counterpart for Poster's request path."""
+    close = getattr(client, "close", None)
+    if close is not None:
+        try:
+            await close()
+        except Exception as exc:
+            _log.warning("Anthropic client cleanup failed (%s)", type(exc).__name__)

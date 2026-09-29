@@ -11,7 +11,7 @@ import json
 import math
 import os
 
-from ricesuite.anthropic_client import create_client
+from ricesuite.anthropic_client import close_client, create_client
 
 from ricesearcher.beat.profile import BeatProfile
 from ricesearcher.models import CandidateWindow
@@ -193,6 +193,6 @@ class AnthropicScorer:
                 messages=[{"role": "user", "content": build_prompt(windows, profile)}],
             )
         finally:
-            client.close()
+            close_client(client)
         text = "".join(block.text for block in message.content if block.type == "text")
         return parse_response(text, len(windows))

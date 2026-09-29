@@ -96,21 +96,26 @@ sudo apt install fonts-noto-color-emoji fonts-liberation
 
 ## Install
 
-Run these from the repo root. RiceClipper runs in place and is not installed as
-a package. Use any Python 3.11–3.14. Check what you have with `python3 --version`. If that
-prints 3.9 or 3.10, call a newer binary explicitly, for example `python3.14`
+Run these from the RiceSuite root. RiceClipper runs in place and uses the
+shared `ricesuite` Python package. Use Python 3.12–3.14. Check what you have
+with `python3 --version`. If that prints an older version, call a newer binary,
+for example `python3.14`
 (see `ls /opt/homebrew/bin/python3.* /usr/local/bin/python3.*`):
 
 ```bash
+git clone https://github.com/gidde032/RiceSuite.git
+cd RiceSuite
 python3 -m venv .venv                 # or: python3.14 -m venv .venv
 source .venv/bin/activate             # Windows: .venv\Scripts\activate
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt        # to run the app
-python -m pip install -r requirements-dev.txt    # adds dev tools (includes requirements.txt)
+python -m pip install -r requirements-dev.txt    # shared runtime + test tools
+pip install -e . -e searcher                     # suite modules and CLI
+cd clipper
 ```
 
-`requirements-dev.txt` already includes `requirements.txt` and adds pytest, ruff,
-and pre-commit, so contributors only need the second install.
+The suite root's `requirements-dev.txt` includes the shared runtime pins and
+test tools. Install the suite package before running Clipper or its tests from
+this monorepo.
 
 ## Configure
 

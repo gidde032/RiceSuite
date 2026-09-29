@@ -152,3 +152,14 @@ def test_owned_client_closes_on_success_and_failure(monkeypatch):
     with pytest.raises(header_gen.HeaderGenerationError):
         header_gen.generate_header("hello")
     assert closed == [True, True]
+
+
+def test_cleanup_failure_does_not_discard_header(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-key")
+
+    class BadClose(FakeClient):
+        def close(self):
+            raise RuntimeError("cleanup failed")
+
+    monkeypatch.setattr(header_gen, "_create_client", lambda key: BadClose())
+    assert header_gen.generate_header("hello") == "Header from model 🎉"

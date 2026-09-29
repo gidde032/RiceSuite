@@ -18,10 +18,12 @@ house style. Runs entirely on your machine — nothing is deployed.
 ## Installation
 
 ```bash
-git clone https://github.com/gidde032/RicePoster.git
-cd RicePoster
+git clone https://github.com/gidde032/RiceSuite.git
+cd RiceSuite
 python3 -m venv .venv && source .venv/bin/activate   # python3 = 3.12–3.14
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
+pip install -e . -e searcher    # shared suite package for captions and runtime
+cd poster
 playwright install chrome          # the `chrome` channel, NOT `chromium`
 pre-commit install                 # wire up the commit/push quality gates
 pre-commit install --hook-type pre-push
@@ -35,6 +37,11 @@ have Google Chrome installed system-wide, you can skip that line.
 
 Keep the virtual environment activated whenever you run RicePoster:
 `run.sh` and every command below call plain `python`.
+
+The suite root's `requirements-dev.txt` supplies the shared runtime and test
+tools. `pip install -e .` makes the neutral client module available when Poster
+runs from its own directory. The repository-wide CI runs Poster's existing
+test and coverage gates; see the suite root README for all commands.
 
 The two `pre-commit install` lines make the local quality gates real. Until you
 run them, local commits and pushes enforce nothing; pull requests still run the

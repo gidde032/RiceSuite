@@ -80,3 +80,28 @@ def test_owned_async_client_closes_on_success_and_failure(monkeypatch):
     with pytest.raises(RuntimeError, match="service unavailable"):
         asyncio.run(captions.generate_caption("video", "topic"))
     assert closed == [True, True]
+
+
+def test_cleanup_failure_preserves_caption_and_request_error(monkeypatch):
+    monkeypatch.setattr(captions, "ANTHROPIC_API_KEY", SecretStr("fake-key"))
+
+    class BadClose:
+        def __init__(self, *, api_key=None, **kwargs):
+            self.messages = self
+
+        async def create(self, **kwargs):
+            return SimpleNamespace(content=[SimpleNamespace(text="caption")])
+
+        async def close(self):
+            raise RuntimeError("cleanup failed")
+
+    monkeypatch.setattr(captions.anthropic, "AsyncAnthropic", BadClose)
+    assert asyncio.run(captions.generate_caption("video", "topic")) == "caption"
+
+    class BadRequest(BadClose):
+        async def create(self, **kwargs):
+            raise ValueError("request failed")
+
+    monkeypatch.setattr(captions.anthropic, "AsyncAnthropic", BadRequest)
+    with pytest.raises(ValueError, match="request failed"):
+        asyncio.run(captions.generate_caption("video", "topic"))

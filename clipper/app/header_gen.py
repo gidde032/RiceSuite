@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
-from ricesuite.anthropic_client import create_client
+from ricesuite.anthropic_client import close_client, create_client
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 
@@ -181,9 +181,7 @@ def generate_headers(
         raise HeaderGenerationError("header generation failed") from exc
     finally:
         if owns_client:
-            close = getattr(client, "close", None)
-            if close is not None:
-                close()
+            close_client(client)
 
     if not any(headers):
         raise HeaderGenerationError("model returned an empty header")

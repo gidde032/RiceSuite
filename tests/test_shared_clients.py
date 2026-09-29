@@ -1,5 +1,6 @@
 """Shared construction policies use fakes and never contact external services."""
 
+import asyncio
 import sys
 from types import ModuleType, SimpleNamespace
 
@@ -84,3 +85,20 @@ def test_whisper_consumes_lazy_words_and_propagates_iteration_error():
 def test_shared_modules_import_without_heavy_clients():
     assert "faster_whisper" not in whisper.__dict__
     assert "anthropic" not in anthropic_client.__dict__
+
+
+def test_cleanup_helpers_do_not_expose_errors(caplog):
+    class SyncClient:
+        def close(self):
+            raise RuntimeError("private cleanup detail")
+
+    class AsyncClient:
+        async def close(self):
+            raise RuntimeError("private cleanup detail")
+
+    anthropic_client.close_client(SyncClient())
+    anthropic_client.close_client(SimpleNamespace())
+    asyncio.run(anthropic_client.close_async_client(AsyncClient()))
+    asyncio.run(anthropic_client.close_async_client(SimpleNamespace()))
+    assert caplog.text.count("RuntimeError") == 2
+    assert "private cleanup detail" not in caplog.text

@@ -109,3 +109,23 @@ def test_scorer_closes_client_on_request_failure(monkeypatch):
     with pytest.raises(ValueError, match="request failed"):
         anthropic_scorer.AnthropicScorer().score(windows, profile)
     assert closed == [True]
+
+
+def test_scorer_cleanup_failure_keeps_request_error(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "key")
+
+    class Client:
+        def __init__(self):
+            self.messages = self
+
+        def create(self, **kwargs):
+            raise ValueError("request failed")
+
+        def close(self):
+            raise RuntimeError("cleanup failed")
+
+    monkeypatch.setattr(anthropic_scorer, "create_client", lambda **kwargs: Client())
+    profile = BeatProfile(version="1", name="beat", brief="brief")
+    windows = [CandidateWindow(source_id="s", start=0, end=2, text="hello")]
+    with pytest.raises(ValueError, match="request failed"):
+        anthropic_scorer.AnthropicScorer().score(windows, profile)
