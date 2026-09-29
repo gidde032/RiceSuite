@@ -221,6 +221,21 @@ shown there too; Pull recovers it before taking a new one. A caption you type
 while captions are generating is never overwritten. Posting and scheduling
 stay manual.
 
+**Restore last batch.** New Run, **Pull from Clipper** and Restore itself save
+the drafts they replace (media, caption, transcript, style and media type for
+each account) in this browser's local storage, so they survive a reload and a
+restart. **Restore last batch** on Review puts them back into the active
+accounts by roster position: a caption moved to a different account keeps its
+text and takes that account's caption style. It checks that each staged file
+in `media/` is still the same file (size and modified time), because upload
+names are reused after **Clear media**. Drafts whose media is gone or
+replaced, or that fall beyond the active roster, are named and left out, and
+Restore asks before a partial restore or before overwriting unposted drafts.
+The drafts it replaces become the new last batch, so pressing it again undoes
+it. Restore only fills drafts; it never posts, schedules, or acknowledges a
+pull. Drafts lost to a reload are not saved
+([RiceSuite #35](https://github.com/gidde032/RiceSuite/issues/35)).
+
 **Interrupted runs.** A manual Post All run writes a small in-flight marker in
 the data root before touching any platform and removes it once the run's
 results are recorded. If the run is cut off — an error mid-run, a shutdown, or

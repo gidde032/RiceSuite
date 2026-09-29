@@ -11,7 +11,7 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -413,6 +413,37 @@ async def media_info():
         "file_count": len(files),
         "total_bytes": sum(f.stat().st_size for f in files),
     }
+
+
+MEDIA_STAT_MAX_NAMES = 100
+
+
+@app.get("/api/media-stat")
+async def media_stat(name: Annotated[list[str], Query()] = []):
+    """Size and modification time of staged media files, by exact name.
+
+    Restore last batch (RiceSuite #30) uses this to check that a saved draft's
+    media is still the same file: upload names are reused after Clear media,
+    so a name alone could pair an old caption with a new upload. Read-only;
+    a name that is not a plain file directly under MEDIA_DIR reports null.
+    """
+    if len(name) > MEDIA_STAT_MAX_NAMES:
+        raise HTTPException(status_code=400, detail=f"at most {MEDIA_STAT_MAX_NAMES} names")
+    files: dict[str, dict | None] = {}
+    for requested in name:
+        path = MEDIA_DIR / requested
+        if (
+            not requested
+            or Path(requested).name != requested
+            or requested == ".gitkeep"
+            or path.is_symlink()
+            or not path.is_file()
+        ):
+            files[requested] = None
+            continue
+        st = path.stat()
+        files[requested] = {"size": st.st_size, "mtime_ns": st.st_mtime_ns}
+    return {"files": files}
 
 
 @app.post("/api/media/clear")

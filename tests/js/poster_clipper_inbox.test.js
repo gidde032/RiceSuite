@@ -151,6 +151,7 @@ const PULL_SOURCE = [
 
 function bootPull({ slots, confirmAnswer = true, onPull }) {
   const applied = [];
+  const saves = [];
   const statuses = [];
   const asked = [];
   const { fetch, calls } = scriptedFetch({
@@ -174,9 +175,12 @@ function bootPull({ slots, confirmAnswer = true, onPull }) {
     updateButtons() {}, updateThumbChip() {}, setCaptionError() {}, autoGrow() {}, updateCharCount() {},
     captureThumbnailFromUrl: async () => "",
     CAPTION_TIMEOUT_MS: 1000,
+    // Restore last batch (#30): Pull saves the drafts it replaces.
+    captureDrafts: () => Object.entries(slots).map(([slot, s]) => ({ slot, caption: s.caption, filename: s.filename })),
+    saveLastBatch: (drafts, reason) => { saves.push({ drafts, reason, appliedSoFar: applied.length }); },
   });
   vm.runInContext(PULL_SOURCE, ctx);
-  return { js: (e) => vm.runInContext(e, ctx), calls, applied, statuses, asked };
+  return { js: (e) => vm.runInContext(e, ctx), calls, applied, statuses, asked, saves };
 }
 
 test("manual Pull asks before overwriting a draft, and Cancel pulls nothing", async () => {
@@ -196,6 +200,41 @@ test("Pull from Clipper always asks the default pull, which recovers an unacknow
   const pull = calls.find((c) => c.method === "POST" && c.path === "api/pull-from-clipper");
   assert.ok(pull, "no pull request");
   assert.equal(pull.url, "api/pull-from-clipper");
+});
+
+test("Pull saves the drafts it replaces, before applying the batch", async () => {
+  const slots = { A: { file: null, filename: "A_old.mp4", caption: "old caption" } };
+  const { js, saves, asked } = bootPull({ slots });
+  js("generateAll = async () => { state.slots.A.caption = 'generated'; }");
+  assert.equal(await js("pullFromClipper()"), true);
+  assert.equal(asked.length, 1);
+  assert.equal(saves.length, 1);
+  assert.equal(saves[0].reason, "pull");
+  assert.equal(saves[0].appliedSoFar, 0);
+  assert.deepEqual(saves[0].drafts, [{ slot: "A", caption: "old caption", filename: "A_old.mp4" }]);
+});
+
+test("a Pull that finds nothing saves nothing", async () => {
+  const slots = { A: { file: null, filename: "", caption: "kept" } };
+  const { fetch } = scriptedFetch({ "POST api/pull-from-clipper": { pulled: false, reason: "No handoff batches to pull." } });
+  const saves = [];
+  const ctx = vm.createContext({
+    Date, console, state: { accounts: [{ slot: "A" }], slots },
+    fetchWithTimeout: fetch, handleFetchError: async () => {},
+    elOpt: () => element(), setPullStatus() {}, confirm: () => true,
+    captureDrafts: () => [], saveLastBatch: (d) => saves.push(d),
+  });
+  vm.runInContext(PULL_SOURCE, ctx);
+  assert.equal(await vm.runInContext("pullFromClipper()", ctx), false);
+  assert.equal(saves.length, 0);
+});
+
+test("Pull waits while a Restore is running", async () => {
+  const slots = { A: { file: null, filename: "", caption: "" } };
+  const { js, calls } = bootPull({ slots });
+  js("restoreInFlight = true");
+  assert.equal(await js("pullFromClipper()"), false);
+  assert.equal(calls.length, 0);
 });
 
 test("a caption typed while generation runs is never overwritten", async () => {

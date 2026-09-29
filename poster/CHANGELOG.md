@@ -19,6 +19,18 @@ published as a tagged release or GitHub Release.
 
 ### Added
 
+- **Restore last batch.** A new Review action brings back the drafts that the
+  last New Run, Pull from Clipper, or Restore replaced: media, caption,
+  transcript, style and media type, saved in the browser so they survive a
+  reload. They return by roster position; a caption landing on a different
+  account keeps its text and takes that account's caption style. Restore
+  checks each staged file's size and modified time through a new read-only
+  `GET /api/media-stat`, so an old caption is never paired with a new upload
+  that reused the name. Missing media or drafts beyond the roster are named
+  and left out after a confirm, and it asks before overwriting unposted
+  drafts. Pressing it again undoes it. It never posts or schedules. (RiceSuite
+  [#30](https://github.com/gidde032/RiceSuite/issues/30))
+
 - **Swapping accounts keeps the drafts in their slots.** An account leaving
   Review now hands its unposted draft (media, caption, topic, caption frame) to
   the account joining in its place instead of discarding it: switching the
