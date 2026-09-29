@@ -250,9 +250,10 @@ def _unique_snapshot_path(snap_dir: Path, name: str) -> Path:
     Snapshots were named by basename alone, so two slots whose media resolve to
     the same file name landed on one file: the second copy overwrote the first
     and *both* queue rows then pointed at the survivor, silently posting one
-    slot's media to two accounts. Uploads through the UI are prefixed per slot
-    and cannot collide, but a handcrafted API request can name any file under
-    the media directory (#4).
+    slot's media to two accounts. UI uploads never overwrite an existing media
+    file, but two slots can still name one file: a draft moved to another
+    account keeps its staged name (RiceSuite #19), and a handcrafted API
+    request can name any file under the media directory (#4).
 
     Disambiguation is applied only on collision, so ordinary snapshots keep the
     readable filename the maintainer needs when inspecting retained evidence.

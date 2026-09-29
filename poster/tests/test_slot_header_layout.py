@@ -21,6 +21,9 @@ HTML_PATH = Path(__file__).resolve().parent.parent / "frontend" / "index.html"
 HTML = HTML_PATH.read_text()
 
 ACCOUNTS = [{"slot": s, "account_id": s, "name": f"Account {s}"} for s in "ABC"]
+# An inactive account makes each slot's menu the live swap control (#19), so
+# the widest form of the header is the one measured.
+AVAILABLE = ACCOUNTS + [{"slot": "D", "account_id": "D", "name": "Account D"}]
 STATE = {
     "schema_version": 1, "active_account_ids": list("ABC"), "rosters": {},
     "caption_defaults": {}, "device_profiles": {},
@@ -43,7 +46,7 @@ def _fake_api(route):
     if "/api/accounts" in url:
         return route.fulfill(json={
             "post_mode": "browser", "headless": True, "accounts": ACCOUNTS,
-            "available_accounts": ACCOUNTS, "account_state": STATE,
+            "available_accounts": AVAILABLE, "account_state": STATE,
             "sessions": SESSIONS,
             "caption_styles": [{"name": "generic", "display_name": "Generic"}],
             "default_caption_style": "generic", "caption_limit": 2200,

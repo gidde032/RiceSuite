@@ -354,6 +354,19 @@ def _validate_active_targets(requested_ids: list[str]) -> None:
         )
 
 
+def _unused_media_path(name: str) -> Path:
+    """`MEDIA_DIR / name`, or `stem__N.ext` when that name is already taken."""
+    dest = MEDIA_DIR / name
+    if not dest.exists():
+        return dest
+    stem, suffix = Path(name).stem, Path(name).suffix
+    for i in range(2, 10_000):
+        candidate = MEDIA_DIR / f"{stem}__{i}{suffix}"
+        if not candidate.exists():
+            return candidate
+    raise HTTPException(status_code=409, detail=f"Too many uploads named '{name}'; clear media first.")
+
+
 @app.post("/api/upload/{slot}")
 async def upload_media(slot: str, file: UploadFile = File(...)):
     """Upload a media file for a given account slot. Returns filename and detected type."""
@@ -367,10 +380,13 @@ async def upload_media(slot: str, file: UploadFile = File(...)):
     # Save to media dir with slot prefix; basename only so path segments
     # in a client-supplied filename can't escape MEDIA_DIR
     safe_name = Path(file.filename).name
-    filename = f"{slot}_{safe_name}"
-    dest = MEDIA_DIR / filename
+    dest = _unused_media_path(f"{slot}_{safe_name}")
+    filename = dest.name
 
-    with open(dest, "wb") as f:
+    # Exclusive create: never overwrite. A draft moved to another account keeps
+    # its staged filename, so `{slot}_{name}` may already belong to a draft
+    # that now posts to a different account (RiceSuite #19).
+    with open(dest, "xb") as f:
         shutil.copyfileobj(file.file, f)
 
     # Detect media type from extension

@@ -492,10 +492,13 @@ def test_headless_badge_is_keyboard_operable():
 
 def test_slot_menu_is_decorative_not_an_inert_control():
     """Reviewer 2 (MEDIUM): the slot menu was a focusable, labelled button with
-    no handler. It is now an aria-hidden decorative glyph, not a keyboard/SR
-    dead-end."""
+    no handler. With nowhere to swap to it is an aria-hidden decorative glyph,
+    not a keyboard/SR dead-end; when an inactive account exists it is a live,
+    labelled disclosure menu whose choices are buttons (RiceSuite #19)."""
     body = _function_body("renderSlots")
     assert '<span class="slot-menu" aria-hidden="true">' in body
+    assert '<details class="slot-menu">' in body and "aria-label=" in body
+    assert "onclick=\"replaceAccount(" in body
     # It is a span, never a <button> (no keyboard/SR dead-end).
     assert 'class="slot-menu"' in body
     assert 'button type="button" class="slot-menu"' not in _script()
