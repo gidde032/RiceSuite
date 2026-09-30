@@ -54,6 +54,37 @@ function setBatches(field, batches) {
   }
 }
 
+function setClipBatches(incoming, open) {
+  const list = document.querySelector('[data-list="clip"]');
+  list.replaceChildren();
+  if (!Array.isArray(incoming) || !Array.isArray(open)) {
+    setCount("clip-waiting", "Clip is not answering", true);
+    const item = document.createElement("li");
+    item.className = "empty";
+    item.textContent = "Unavailable";
+    list.append(item);
+    return;
+  }
+  const batches = [
+    ...incoming.map(batch => ({ batch, label: "Incoming" })),
+    ...open.map(batch => ({ batch, label: "In Clip" }))
+  ];
+  setCount("clip-waiting", plural(batches.length, "batch", "batches"));
+  if (!batches.length) {
+    const item = document.createElement("li");
+    item.className = "empty";
+    item.textContent = "No batches waiting";
+    list.append(item);
+  }
+  for (const { batch, label } of batches) {
+    const item = document.createElement("li");
+    const name = batch.batch_id || "Unnamed batch";
+    const count = batch.clip_count;
+    item.textContent = `${label} · ${name}${count == null ? "" : ` · ${plural(count, "clip")}`}`;
+    list.append(item);
+  }
+}
+
 function setSchedule(batches) {
   const list = document.querySelector('[data-list="scheduled"]');
   list.replaceChildren();
@@ -105,17 +136,12 @@ function updateHome(data) {
     setCount("search-detail", "—", true);
   }
 
-  for (const [field, unavailable] of [
-    ["to_clipper", "Clip is not answering"],
-    ["to_poster", "Post is not answering"]
-  ]) {
-    const batches = data[field];
-    setCount(field, Array.isArray(batches) ? plural(batches.length, "batch", "batches") : unavailable, !Array.isArray(batches));
-    setBatches(field, batches);
-  }
+  setClipBatches(data.to_clipper, data.clip_open);
+  const postBatches = data.to_poster;
+  setCount("to_poster", Array.isArray(postBatches) ? plural(postBatches.length, "batch", "batches") : "Post is not answering", !Array.isArray(postBatches));
+  setBatches("to_poster", postBatches);
   const handoff = data.to_clipper;
-  const post = data.to_poster;
-  setCount("handoff", Array.isArray(handoff) && Array.isArray(post) ? handoff.length + post.length : "Unavailable", !Array.isArray(handoff) || !Array.isArray(post));
+  setCount("handoff", Array.isArray(handoff) && Array.isArray(postBatches) ? handoff.length + postBatches.length : "Unavailable", !Array.isArray(handoff) || !Array.isArray(postBatches));
 
   const scheduled = data.scheduled;
   setCount("scheduled", Array.isArray(scheduled) ? scheduled.length : "Unavailable", !Array.isArray(scheduled));

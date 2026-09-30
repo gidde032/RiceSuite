@@ -27,8 +27,10 @@ No pillar logo is a variant of the Suite logo.
 The maintainer selected **B · Operations** with two copy removals, the health
 heading changed to **Suite Health**, and the simplified Suite disc. The
 [interactive comparison](home-options.html) retains A and C as prior proposals.
-The home page remains read-only and uses the existing API for counts, handoff
-batches, schedule, and health. Its implementation has been visually checked
+The home page remains read-only. Its Clip row includes both incoming handoffs
+and batches already pulled into Clipper for review or render. The upcoming
+schedule counts only pending Post entries and orders them by fire time. The
+implementation has been visually checked
 with fixture data at [desktop](home-implemented-desktop.png) and
 [mobile](home-implemented-mobile.png) sizes.
 

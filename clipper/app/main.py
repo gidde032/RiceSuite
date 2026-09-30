@@ -487,6 +487,12 @@ def open_workspace_batch(batch_id: str | None = None) -> dict:
     return searcher_pickup.open_batch(batch_id)
 
 
+@app.get("/api/workspace-batches")
+def list_workspace_batches() -> dict:
+    """Read-only summaries of all batches awaiting Clipper review or render."""
+    return {"batches": searcher_pickup.open_batches()}
+
+
 @app.delete("/api/workspace")
 def discard_workspace_batch(batch_id: str) -> dict:
     """The reviewer discarded this pulled batch (Start over): stop offering it."""
