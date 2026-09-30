@@ -28,6 +28,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         assets = {
             "/": ("text/html", ROOT / "web/index.html"),
+            "/slate.css": ("text/css", ROOT.parent / "ricesuite/shell/slate.css"),
             "/style.css": ("text/css", ROOT / "web/style.css"),
             "/app.js": ("text/javascript", ROOT / "web/app.js"),
             "/slate-logo.png": ("image/png", ROOT / "web/slate-logo.png"),
@@ -520,7 +521,8 @@ def main():
                       }
                     })()"""
                 )
-                endpoint = "/api/jobs/fixture/output"
+                # Page requests are relative so the page works behind the gateway.
+                endpoint = "api/jobs/fixture/output"
                 if output_link != {
                     "video": endpoint,
                     "download": endpoint,
