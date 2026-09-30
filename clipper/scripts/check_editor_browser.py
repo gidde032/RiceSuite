@@ -138,6 +138,9 @@ CHECKS = r"""
   const lyricsPanel = rect(clip.lyricsEl);
   const lyrics = rect(clip.lyricsInputEl);
   const action = rect(document.querySelector(".batch-actions"));
+  const result = clip.resultEl;
+  const resultBox = rect(result);
+  const frameBox = rect(result.querySelector(".result-frame"));
   const wide = innerWidth > 880;
   // Layout width excludes a classic (non-overlay) scrollbar; media queries do not.
   const pageWidth = document.documentElement.clientWidth;
@@ -169,15 +172,51 @@ CHECKS = r"""
       check(near(transcriptPanel.y, lyricsPanel.y), "pane top alignment");
       check(near(transcript.y, lyrics.y), "text top alignment");
       check(transcriptPanel.right < lyricsPanel.x, "pane gap");
+      // The rendered column must not skew the split (Issue #20): both panes
+      // share the full grid width below the upper row.
+      check(near(transcriptPanel.x, preview.x), "music transcript left extent");
+      check(near(lyricsPanel.right, resultBox.right), "music lyrics right extent");
     } else {
       check(near(transcriptPanel.x, preview.x), "speech transcript left extent");
-      check(near(transcriptPanel.right, settings.right), "speech transcript right extent");
+      check(near(transcriptPanel.right, resultBox.right), "speech transcript right extent");
     }
   } else {
     check(preview.bottom <= settings.y && settings.bottom <= transcriptPanel.y, "narrow visual order");
     if (mode === "music") check(transcriptPanel.bottom <= lyricsPanel.y, "narrow lyric order");
     check(near(transcriptPanel.width, grid.width - unit * 2), "narrow transcript width");
     if (mode === "music") check(near(lyricsPanel.width, transcriptPanel.width), "narrow lyric width");
+  }
+  // Rendered 9:16 column (RiceSuite #20, variant C).
+  check(result.parentElement === clip.reviewGridEl, "rendered column lives in the review grid");
+  const output = clip.outputVideoEl;
+  const outputBox = rect(output);
+  check(near(frameBox.width / frameBox.height, 9 / 16, 0.005), "rendered frame is 9:16");
+  check(near(outputBox.x, frameBox.x) && near(outputBox.y, frameBox.y) && near(outputBox.width, frameBox.width) && near(outputBox.height, frameBox.height), "video fills its 9:16 frame");
+  check(["paddingTop", "paddingRight", "paddingBottom", "paddingLeft"].every((side) => css(output)[side] === "0px"), "video has no padding");
+  check(css(output).objectFit === "cover", "video never letterboxes");
+  output.setAttribute("width", "1920");
+  output.setAttribute("height", "1080");
+  const hinted = rect(output);
+  output.removeAttribute("width");
+  output.removeAttribute("height");
+  check(near(hinted.width / hinted.height, 9 / 16, 0.005) && near(hinted.height, outputBox.height), "frame keeps 9:16 against landscape metadata");
+  check(result.classList.contains("is-empty"), "fixture starts before the first render");
+  check(css(result.querySelector(".result-empty")).display !== "none", "empty frame shown before a render");
+  check(!clip.downloadEl.hasAttribute("href") && css(clip.downloadEl).visibility === "hidden", "no download before a render");
+  result.classList.add("is-busy");
+  const busy = result.querySelector(".result-busy");
+  check(css(busy).display !== "none" && near(rect(busy).height, frameBox.height), "rendering note covers the frame");
+  result.classList.remove("is-busy");
+  if (wide) {
+    check(resultBox.x > settings.right, "rendered column right of the controls");
+    check(near(resultBox.y, settings.y) && near(resultBox.y, preview.y), "rendered column top aligns with the upper row");
+    check(near(frameBox.height, 540), "rendered frame height");
+    check(resultBox.bottom <= Math.max(preview.bottom, settings.bottom) + 1, "rendered column fits the upper row");
+    check(transcriptPanel.y >= resultBox.bottom, "transcript below the rendered column");
+    check(near(resultBox.right, grid.right - unit), "rendered column meets the grid edge");
+  } else {
+    check(resultBox.y >= settings.bottom && resultBox.bottom <= transcriptPanel.y, "narrow rendered column between controls and transcript");
+    check(frameBox.width <= 361 && near(frameBox.x + frameBox.width / 2, resultBox.x + resultBox.width / 2), "narrow frame centred, at most 360 wide");
   }
   const textProperties = ["fontFamily", "fontSize", "lineHeight", "letterSpacing", "padding", "border", "backgroundColor"];
   for (const property of textProperties) {
