@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RiceSuite DJ controller logo variants</title>
+  <style>
+    :root { color-scheme: dark; --backdrop:#04060A; --interior:#14191E; --line:#2B3136; --text:#E5E8EA; --muted:#AEB3B6; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--backdrop); color:var(--text); font:15px/1.45 Inter, ui-sans-serif, system-ui, sans-serif; }
+    header { padding:28px clamp(16px,4vw,48px) 16px; border-bottom:1px solid var(--line); }
+    h1 { margin:0 0 6px; font-size:22px; }
+    p { margin:0; color:var(--muted); }
+    main { display:grid; grid-template-columns:repeat(auto-fit,minmax(270px,1fr)); gap:18px; padding:24px clamp(16px,4vw,48px) 48px; }
+    article { min-width:0; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--interior); }
+    .preview { aspect-ratio:1; display:grid; place-items:center; background:var(--backdrop); }
+    .preview img { display:block; width:100%; height:100%; object-fit:contain; }
+    .shell { height:54px; display:flex; align-items:center; gap:12px; padding:0 16px; background:var(--backdrop); border-block:1px solid var(--line); }
+    .shell img { width:40px; height:40px; object-fit:contain; }
+    .shell strong { font-size:15px; font-weight:650; letter-spacing:.02em; }
+    .tabs { display:flex; gap:14px; margin-left:auto; color:#80878C; font-size:13px; }
+    .details { padding:16px; }
+    h2 { margin:0 0 5px; font-size:17px; }
+    @media (max-width:420px) { .tabs { gap:7px; font-size:11px; } .shell { padding:0 10px; gap:5px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>RiceSuite DJ controller variants</h1>
+    <p>One shared layout: rice-stalk turntable, three rice-grain faders, and a master dial with a small rice-stalk pointer. Existing pillar marks stay as they are.</p>
+  </header>
+  <main>
+    <article>
+      <div class="preview"><img src="board-a-graphite.png" alt="Graphite RiceSuite controller with turntable, rice-grain faders, and master dial"></div>
+      <div class="shell"><img src="board-a-graphite.png" alt=""><strong>RiceSuite</strong><span class="tabs">Search&nbsp;&nbsp; Clip&nbsp;&nbsp; Post</span></div>
+      <div class="details"><h2>A · Graphite</h2><p>Solid hardware form with restrained bevels and pale controls.</p></div>
+    </article>
+    <article>
+      <div class="preview"><img src="board-b-satin.png" alt="Satin RiceSuite controller with turntable, rice-grain faders, and master dial"></div>
+      <div class="shell"><img src="board-b-satin.png" alt=""><strong>RiceSuite</strong><span class="tabs">Search&nbsp;&nbsp; Clip&nbsp;&nbsp; Post</span></div>
+      <div class="details"><h2>B · Satin</h2><p>Brushed metal surfaces and a low-profile console housing.</p></div>
+    </article>
+    <article>
+      <div class="preview"><img src="board-c-graphic.png" alt="Graphic RiceSuite controller with turntable, rice-grain faders, and master dial"></div>
+      <div class="shell"><img src="board-c-graphic.png" alt=""><strong>RiceSuite</strong><span class="tabs">Search&nbsp;&nbsp; Clip&nbsp;&nbsp; Post</span></div>
+      <div class="details"><h2>C · Graphic</h2><p>Bolder outlines and simplified depth for small sizes.</p></div>
+    </article>
+  </main>
+</body>
+</html>

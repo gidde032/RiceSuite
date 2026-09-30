@@ -4,7 +4,9 @@ Upstream pillars are replaced by an httpx MockTransport, so these tests
 exercise the gateway's own routing, header handling and guards.
 """
 
+import hashlib
 import json
+import xml.etree.ElementTree as ET
 
 import httpx
 import pytest
@@ -146,6 +148,23 @@ def test_shell_is_served_at_the_root(client):
     assert slate.status_code == 200
     assert slate.headers["content-type"].startswith("text/css")
     assert "--backdrop: #04060A" in slate.text
+
+
+def test_suite_logo_is_served_for_wordmark_and_favicon(client):
+    html = client.get("/").text
+    assert '<link rel="icon" href="shell/logo.png" type="image/png">' in html
+    assert '<img src="shell/logo.png" alt=""' in html
+
+    logo = client.get("/shell/logo.png")
+    assert logo.status_code == 200
+    assert logo.headers["content-type"].startswith("image/png")
+    assert hashlib.sha256(logo.content).hexdigest() == (
+        "40ca1cfcdac506366e82d4e7f3cd11ac461b78e6cf5d7dfd633e2201faebb64c"
+    )
+    vector = client.get("/shell/logo.svg")
+    assert vector.status_code == 200
+    assert ET.fromstring(vector.content).tag == "{http://www.w3.org/2000/svg}svg"
+    assert "RiceSuite" in vector.text
 
 
 def test_foreign_host_header_is_refused(upstream, client):
