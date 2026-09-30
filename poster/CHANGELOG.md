@@ -260,6 +260,27 @@ published as a tagged release or GitHub Release.
   ([#13](https://github.com/gidde032/RicePoster/issues/13),
   [#44](https://github.com/gidde032/RicePoster/issues/44))
 
+### Security
+
+- **Poster's own port refuses cross-site requests** (RiceSuite
+  [#14](https://github.com/gidde032/RiceSuite/issues/14)). A page in the
+  browser could POST straight to Poster's loopback port (`8793` in RiceSuite,
+  `1738` standalone), bypassing the RiceSuite gateway's guard. The API now
+  runs that same guard itself (`ricesuite.localguard`): a request not
+  addressed to `127.0.0.1:<port>` or `localhost:<port>` for the port Poster is
+  bound to gets 421, and a POST, PUT, PATCH or DELETE whose `Origin` is
+  neither Poster's own loopback origin nor the gateway's
+  (`http://127.0.0.1:8790` or `http://localhost:8790`) gets 403, as does
+  `Origin: null`. Requests without an Origin (curl, the launcher, the stop
+  guard) are unaffected. Tests address the app as `http://127.0.0.1:1738`.
+- **Poster can't be framed by another site, and staged media runs no script**
+  (RiceSuite [#38](https://github.com/gidde032/RiceSuite/issues/38)). Every
+  response carries `X-Frame-Options: SAMEORIGIN` and CSP
+  `frame-ancestors 'self'`, so another site cannot frame Post All behind decoy
+  UI. `/api/media/…` is served with `X-Content-Type-Options: nosniff` and CSP
+  `default-src 'none'; sandbox`, so a staged SVG or HTML file opened directly
+  cannot act as Poster's or the gateway's origin.
+
 ## [0.4.0] — 2026-07-31
 
 The tech-debt campaign: eight batches partitioned by file surface, each one

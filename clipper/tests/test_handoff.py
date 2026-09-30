@@ -110,7 +110,7 @@ def test_handoff_endpoint_writes_batch(isolated_jobs, tmp_path, monkeypatch):
     monkeypatch.setenv("RICECLIPPER_HANDOFF_DIR", str(handoff_root))
     job = _rendered_job()
 
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://127.0.0.1:8000") as client:
         res = client.post(
             "/api/handoff",
             json={
@@ -143,7 +143,7 @@ def test_handoff_endpoint_rejects_job_without_output(
     job = jobs.create_job()
     job.status = "ready"  # no rendered output
 
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://127.0.0.1:8000") as client:
         res = client.post(
             "/api/handoff", json={"clips": [{"job_id": job.id, "position": 1}]}
         )
@@ -152,14 +152,14 @@ def test_handoff_endpoint_rejects_job_without_output(
 
 
 def test_handoff_endpoint_rejects_empty_batch(isolated_jobs):
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://127.0.0.1:8000") as client:
         res = client.post("/api/handoff", json={"clips": []})
     assert res.status_code == 400
 
 
 def test_handoff_endpoint_unknown_job(isolated_jobs, tmp_path, monkeypatch):
     monkeypatch.setenv("RICECLIPPER_HANDOFF_DIR", str(tmp_path / "handoff"))
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://127.0.0.1:8000") as client:
         res = client.post(
             "/api/handoff", json={"clips": [{"job_id": "nope", "position": 1}]}
         )
@@ -184,7 +184,7 @@ def test_a_retried_send_key_returns_the_batch_it_wrote(
     out = tmp_path / "handoff"
     monkeypatch.setenv("RICECLIPPER_HANDOFF_DIR", str(out))
     job = _rendered_job()
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://127.0.0.1:8000") as client:
         first = _send(client, job, "key-0001-aaaa")
         again = _send(client, job, "key-0001-aaaa")
     assert first.status_code == again.status_code == 200
@@ -201,7 +201,7 @@ def test_the_same_clips_under_a_new_key_are_refused_as_already_sent(
     out = tmp_path / "handoff"
     monkeypatch.setenv("RICECLIPPER_HANDOFF_DIR", str(out))
     job = _rendered_job()
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://127.0.0.1:8000") as client:
         first = _send(client, job, "key-0001-aaaa").json()
         second = _send(client, job, "key-0002-bbbb")
         unkeyed = client.post(
@@ -217,7 +217,7 @@ def test_a_confirmed_resend_writes_a_new_batch(isolated_jobs, tmp_path, monkeypa
     out = tmp_path / "handoff"
     monkeypatch.setenv("RICECLIPPER_HANDOFF_DIR", str(out))
     job = _rendered_job()
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://127.0.0.1:8000") as client:
         first = _send(client, job, "key-0001-aaaa").json()
         second = client.post(
             "/api/handoff",
@@ -235,7 +235,7 @@ def test_a_confirmed_resend_writes_a_new_batch(isolated_jobs, tmp_path, monkeypa
 def test_a_failed_send_does_not_record_its_key(isolated_jobs, tmp_path, monkeypatch):
     monkeypatch.setenv("RICECLIPPER_HANDOFF_DIR", str(tmp_path / "handoff"))
     job = jobs.create_job()  # not rendered yet
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://127.0.0.1:8000") as client:
         assert _send(client, job, "key-0003-cccc").status_code == 409
         out = job.dir / "output.mp4"
         out.write_bytes(b"rendered")
@@ -254,7 +254,7 @@ def test_a_send_key_still_writing_is_refused(isolated_jobs, tmp_path, monkeypatc
     job = _rendered_job()
     assert send_keys.begin("key-0004-dddd") is None
     try:
-        with TestClient(main.app) as client:
+        with TestClient(main.app, base_url="http://127.0.0.1:8000") as client:
             res = _send(client, job, "key-0004-dddd")
         assert res.status_code == 409
         assert not (tmp_path / "handoff").exists() or not any(
@@ -266,7 +266,7 @@ def test_a_send_key_still_writing_is_refused(isolated_jobs, tmp_path, monkeypatc
 
 def test_a_malformed_send_key_is_rejected(isolated_jobs):
     job = _rendered_job()
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://127.0.0.1:8000") as client:
         assert _send(client, job, "../x").status_code == 422
 
 
@@ -278,7 +278,7 @@ def test_a_send_key_reused_for_other_clips_is_refused(
     out = tmp_path / "handoff"
     monkeypatch.setenv("RICECLIPPER_HANDOFF_DIR", str(out))
     job_a, job_b = _rendered_job(), _rendered_job()
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://127.0.0.1:8000") as client:
         assert _send(client, job_a, "key-0001-aaaa").status_code == 200
         reused = _send(client, job_b, "key-0001-aaaa")
     assert reused.status_code == 409

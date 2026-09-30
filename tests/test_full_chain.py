@@ -79,7 +79,7 @@ with Library(cfg.db_path) as lib:
                                scorer=HeuristicScorer(), library=lib)
 assert slices, "the heuristic scorer produced no candidates"
 
-client = TestClient(create_app(cfg))
+client = TestClient(create_app(cfg), base_url="http://127.0.0.1:8791")
 chosen = slices[0].id
 # The human gate: select in the review UI, then "Send selected".
 r = client.post(f"/api/slices/{chosen}/status", json={"status": "selected"})
@@ -110,7 +110,7 @@ def fake_render(work_dir, source_path, info, req, plan=None):  # stands in for f
     return out
 
 main.render = fake_render
-client = TestClient(main.app)
+client = TestClient(main.app, base_url="http://127.0.0.1:8792")
 
 inbox = client.get("/api/searcher-inbox").json()["batches"]
 assert len(inbox) == 1, inbox  # the page sees it waiting
@@ -142,7 +142,7 @@ def forbidden(*a, **k):
     raise AssertionError("the transport chain must never post or schedule")
 main.post_all_api = main.post_all_browser = main.add_batch = forbidden
 
-with TestClient(main.app) as client:
+with TestClient(main.app, base_url="http://127.0.0.1:8793") as client:
     inbox = client.get("/api/handoff/inbox").json()
     assert len(inbox["batches"]) == 1, inbox                     # waiting in the inbox
     pulled = client.post("/api/pull-from-clipper").json()        # the Pull click

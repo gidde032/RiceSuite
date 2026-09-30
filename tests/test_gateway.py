@@ -4,7 +4,9 @@ Upstream pillars are replaced by an httpx MockTransport, so these tests
 exercise the gateway's own routing, header handling and guards.
 """
 
+import hashlib
 import json
+import xml.etree.ElementTree as ET
 
 import httpx
 import pytest
@@ -146,6 +148,29 @@ def test_shell_is_served_at_the_root(client):
     assert slate.status_code == 200
     assert slate.headers["content-type"].startswith("text/css")
     assert "--backdrop: #04060A" in slate.text
+    assert "Studio overview" in r.text
+    assert "Suite Health" in r.text
+    assert "Everything waiting across the suite, in one scan" not in r.text
+    assert "Posting happens only from the Post tab, by you" not in r.text
+
+
+def test_suite_logo_is_served_for_wordmark_and_favicon(client):
+    html = client.get("/").text
+    assert '<link rel="icon" href="shell/logo.png" type="image/png">' in html
+    assert '<img src="shell/logo.png" alt=""' in html
+
+    logo = client.get("/shell/logo.png")
+    assert logo.status_code == 200
+    assert logo.headers["content-type"].startswith("image/png")
+    assert hashlib.sha256(logo.content).hexdigest() == (
+        "e8cb29dd48e045e6b8172743b914b77e73695e68d2c2616e24fd944e15616f57"
+    )
+    vector = client.get("/shell/logo.svg")
+    assert vector.status_code == 200
+    assert ET.fromstring(vector.content).tag == "{http://www.w3.org/2000/svg}svg"
+    assert "RiceSuite" in vector.text
+    assert "mixer" not in vector.text
+    assert "master-dial" not in vector.text
 
 
 def test_foreign_host_header_is_refused(upstream, client):
@@ -223,8 +248,27 @@ def test_home_tolerates_down_pillars(monkeypatch, client):
     data = client.get("/api/suite/home").json()
     assert data["search"] == {"candidates": 0, "selected": 0}
     assert data["to_clipper"] is None
+    assert data["clip_open"] is None
     assert data["to_poster"] is None
     assert data["scheduled"] is None
+
+
+def test_home_includes_clipper_batches_already_pulled_for_review(monkeypatch, client):
+    def handler(request):
+        if request.url.path == "/api/workspace-batches":
+            return httpx.Response(
+                200, json={"batches": [{"batch_id": "held", "clip_count": 2}]}
+            )
+        if request.url.path in ("/api/searcher-inbox", "/api/handoff/inbox"):
+            return httpx.Response(200, json={"batches": []})
+        if request.url.path == "/api/queue":
+            return httpx.Response(200, json={"batches": []})
+        return httpx.Response(200, json=[])
+
+    monkeypatch.setattr(gateway, "_client", mock_client(handler))
+    data = client.get("/api/suite/home").json()
+    assert data["to_clipper"] == []
+    assert data["clip_open"] == [{"batch_id": "held", "clip_count": 2}]
 
 
 def test_home_reports_scheduled_batches(monkeypatch, client):
@@ -235,11 +279,26 @@ def test_home_reports_scheduled_batches(monkeypatch, client):
                 json={
                     "batches": [
                         {
+                            "id": "later",
+                            "fire_time": "2026-10-02T09:00:00+00:00",
+                            "status": "pending",
+                        },
+                        {
+                            "id": "interrupted",
+                            "fire_time": "2026-09-28T09:00:00+00:00",
+                            "status": "interrupted",
+                        },
+                        {
                             "id": "q1",
-                            "fire_time": "t",
+                            "fire_time": "2026-10-01T09:00:00+00:00",
                             "status": "pending",
                             "slots": [{"caption": "private"}],
-                        }
+                        },
+                        {
+                            "id": "running",
+                            "fire_time": "2026-09-29T09:00:00+00:00",
+                            "status": "running",
+                        },
                     ]
                 },
             )
@@ -247,7 +306,10 @@ def test_home_reports_scheduled_batches(monkeypatch, client):
 
     monkeypatch.setattr(gateway, "_client", mock_client(handler))
     data = client.get("/api/suite/home").json()
-    assert data["scheduled"] == [{"id": "q1", "fire_time": "t", "status": "pending"}]
+    assert data["scheduled"] == [
+        {"id": "q1", "fire_time": "2026-10-01T09:00:00+00:00", "status": "pending"},
+        {"id": "later", "fire_time": "2026-10-02T09:00:00+00:00", "status": "pending"},
+    ]
 
 
 def test_status_lists_the_three_tabs(client, tmp_path, monkeypatch):

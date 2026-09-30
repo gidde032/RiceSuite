@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="66 397 480 480" role="img" aria-labelledby="title desc">
+  <title id="title">RiceSuite</title>
+  <desc id="desc">Slate turntable disc with a curled rice-stalk tonearm.</desc>
+  <defs>
+    <linearGradient id="silver" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#E5E8EA"/>
+      <stop offset="1" stop-color="#AEB3B6"/>
+    </linearGradient>
+    <g id="grain">
+      <path d="M0-46C25-30 29 20 0 47C-29 20-25-30 0-46Z" fill="url(#silver)" stroke="#090D10" stroke-width="5"/>
+      <path d="M0-33C4-13 4 12 0 33C-4 12-4-13 0-33Z" fill="#0A0E11"/>
+    </g>
+  </defs>
+
+  <!-- Editable vector reconstruction of the approved raster disc. -->
+  <g id="turntable">
+    <ellipse cx="306" cy="621" rx="200" ry="169" fill="#151A1E" stroke="#090D10" stroke-width="10"/>
+    <ellipse cx="306" cy="612" rx="184" ry="156" fill="#0A0D10" stroke="url(#silver)" stroke-width="23"/>
+    <ellipse cx="306" cy="612" rx="158" ry="133" fill="#080B0E"/>
+    <ellipse cx="305" cy="616" rx="49" ry="44" fill="url(#silver)"/>
+    <circle cx="305" cy="616" r="9" fill="#080B0E"/>
+    <path d="M394 723C453 671 477 609 472 555C469 511 443 480 399 456" fill="none" stroke="#0A0E11" stroke-width="22" stroke-linecap="round"/>
+    <path d="M394 723C453 671 477 609 472 555C469 511 443 480 399 456" fill="none" stroke="url(#silver)" stroke-width="12" stroke-linecap="round"/>
+    <circle cx="394" cy="723" r="24" fill="#0A0E11"/>
+    <circle cx="394" cy="723" r="16" fill="url(#silver)"/>
+    <circle cx="394" cy="723" r="8" fill="#0A0E11"/>
+    <use href="#grain" transform="translate(386 456) rotate(-51) scale(.59 .58)"/>
+    <use href="#grain" transform="translate(454 481) rotate(-32) scale(.51 .58)"/>
+    <use href="#grain" transform="translate(426 514) rotate(-55) scale(.52 .51)"/>
+    <use href="#grain" transform="translate(504 555) rotate(-23) scale(.49 .51)"/>
+  </g>
+
+</svg>

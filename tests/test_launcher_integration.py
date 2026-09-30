@@ -105,6 +105,8 @@ def suite(tmp_path):
     s = Suite()
     s.tmp, s.env, s.rice, s.start = tmp_path, env, rice, start
     s.gateway = f"http://127.0.0.1:{gateway}"
+    s.gateway_port = gateway
+    s.pillar_ports = {"searcher": searcher, "clipper": clipper, "poster": poster}
     s.legacy_port = legacy
     s.state_file = tmp_path / "run" / "state.json"
     s.poster_data = poster_data
@@ -180,6 +182,34 @@ def test_rice_runs_the_whole_suite_behind_one_port(suite):
 
         # Poster's data landed in the temp data root, never in the checkout.
         assert (suite.poster_data / "media").is_dir()
+
+        # Every listener, not just the gateway, refuses a hostile page (#14).
+        for name, port in suite.pillar_ports.items():
+            direct = f"http://127.0.0.1:{port}"
+            refused = httpx.post(
+                direct + "/api/stop-hold", headers={"origin": "https://evil.example"}
+            )
+            assert refused.status_code == 403, name
+            rebound = httpx.get(direct + "/", headers={"host": "evil.example"})
+            assert rebound.status_code == 421, name
+        # No other site may frame the shell or a pillar page (#38); the shell
+        # frames each pillar page from the gateway's own origin.
+        for path in ("/", "/search/", "/clip/", "/post/"):
+            framed = httpx.get(suite.gateway + path)
+            assert framed.headers["x-frame-options"] == "SAMEORIGIN", path
+            assert framed.headers.get_list("content-security-policy") == [
+                "frame-ancestors 'self'"
+            ], path
+        # A page served through the gateway still changes state: Poster admits
+        # the gateway's origin on the port the launcher actually used.
+        for origin_host in ("127.0.0.1", "localhost"):
+            origin = {"origin": f"http://{origin_host}:{suite.gateway_port}"}
+            held = httpx.post(suite.gateway + "/post/api/stop-hold", headers=origin)
+            assert held.status_code == 200 and held.json()["held"] is True, held.text
+            released = httpx.delete(
+                suite.gateway + "/post/api/stop-hold", headers=origin
+            )
+            assert released.status_code == 200, released.text
 
         status = suite.rice("status")
         assert status.returncode == 0 and "poster" in status.stdout

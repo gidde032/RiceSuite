@@ -15,6 +15,7 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query, Reque
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
+from ricesuite.localguard import LocalGuard, gateway_origins
 from backend.config import (
     get_accounts, env_bool, FRONTEND_DIR, HISTORY_FILE, MEDIA_DIR, QUEUE_MEDIA_DIR,
     MOCK_MODE, POST_MODE, HEADLESS, SLOT_IDS, check_startup_config,
@@ -116,6 +117,15 @@ async def lifespan(app):
 
 
 app = FastAPI(title="RicePoster", lifespan=lifespan)
+# This API is unauthenticated and can post to real accounts, and a browser page
+# can reach Poster's own loopback port without passing the RiceSuite gateway.
+# So Poster refuses foreign Hosts and cross-origin state changes itself (suite
+# SPEC FR-3, suite #14), on whatever port it is bound to. It also refuses to be
+# framed by another site, and serves staged media so it can run no script
+# (suite #38).
+app.add_middleware(
+    LocalGuard, trusted_origins=gateway_origins(), sandboxed_paths=("/api/media/",)
+)
 
 
 @app.exception_handler(RequestValidationError)

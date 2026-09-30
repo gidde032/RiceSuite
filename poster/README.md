@@ -145,7 +145,12 @@ real Instagram profile, without the maintainer's sign-off for that occasion
 ```
 
 The server binds localhost only, on purpose: the API has no authentication and
-can post to real accounts. Don't expose it to the network.
+can post to real accounts. Don't expose it to the network. It also answers only
+requests addressed to `127.0.0.1` or `localhost` on its own port (421 otherwise)
+and refuses changes sent from another site's page (403), so another site cannot
+send Poster requests through your browser (RiceSuite SPEC FR-3). Its pages cannot
+be framed by another site, and staged media is served so it can run no script
+([RiceSuite #38](https://github.com/gidde032/RiceSuite/issues/38)).
 
 ## Posting workflow
 

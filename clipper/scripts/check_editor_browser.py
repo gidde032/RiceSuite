@@ -1,8 +1,10 @@
 """Check the live review template in Chrome at the ratified editor viewports.
 
 Run with `python scripts/check_editor_browser.py`. Chrome and the development
-requirements (including uvicorn's websockets dependency) must be installed.
-Screenshots and a JSON result are written to .riceclipper_work/editor-browser/.
+requirements (including the websockets package) must be installed.
+Screenshots and a JSON result are written to the system temp directory
+(`riceclipper-editor-browser/`), or to RICECLIPPER_EDITOR_BROWSER_DIR. They are
+never written inside the repository or a Clipper data directory.
 """
 
 import base64
@@ -20,14 +22,28 @@ from urllib.request import urlopen
 from websockets.sync.client import connect
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = ROOT / ".riceclipper_work" / "editor-browser"
-VIEWPORTS = [(390, 844), (768, 1024), (1024, 768), (1440, 900), (1920, 1080)]
+OUTPUT = Path(
+    os.environ.get("RICECLIPPER_EDITOR_BROWSER_DIR")
+    or Path(tempfile.gettempdir()) / "riceclipper-editor-browser"
+)
+# 900x800 and 1366x768 cover the narrowest two-row width and a common laptop
+# once the rendered 9:16 column shares the upper row (RiceSuite #20).
+VIEWPORTS = [
+    (390, 844),
+    (768, 1024),
+    (900, 800),
+    (1024, 768),
+    (1366, 768),
+    (1440, 900),
+    (1920, 1080),
+]
 
 
 class FixtureHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         assets = {
             "/": ("text/html", ROOT / "web/index.html"),
+            "/slate.css": ("text/css", ROOT.parent / "ricesuite/shell/slate.css"),
             "/style.css": ("text/css", ROOT / "web/style.css"),
             "/app.js": ("text/javascript", ROOT / "web/app.js"),
             "/slate-logo.png": ("image/png", ROOT / "web/slate-logo.png"),
@@ -137,6 +153,9 @@ CHECKS = r"""
   const lyricsPanel = rect(clip.lyricsEl);
   const lyrics = rect(clip.lyricsInputEl);
   const action = rect(document.querySelector(".batch-actions"));
+  const result = clip.resultEl;
+  const resultBox = rect(result);
+  const frameBox = rect(result.querySelector(".result-frame"));
   const wide = innerWidth > 880;
   // Layout width excludes a classic (non-overlay) scrollbar; media queries do not.
   const pageWidth = document.documentElement.clientWidth;
@@ -168,15 +187,65 @@ CHECKS = r"""
       check(near(transcriptPanel.y, lyricsPanel.y), "pane top alignment");
       check(near(transcript.y, lyrics.y), "text top alignment");
       check(transcriptPanel.right < lyricsPanel.x, "pane gap");
+      // The rendered column must not skew the split (Issue #20): both panes
+      // share the full grid width below the upper row.
+      check(near(transcriptPanel.x, preview.x), "music transcript left extent");
+      check(near(lyricsPanel.right, resultBox.right), "music lyrics right extent");
     } else {
       check(near(transcriptPanel.x, preview.x), "speech transcript left extent");
-      check(near(transcriptPanel.right, settings.right), "speech transcript right extent");
+      check(near(transcriptPanel.right, resultBox.right), "speech transcript right extent");
     }
   } else {
     check(preview.bottom <= settings.y && settings.bottom <= transcriptPanel.y, "narrow visual order");
     if (mode === "music") check(transcriptPanel.bottom <= lyricsPanel.y, "narrow lyric order");
     check(near(transcriptPanel.width, grid.width - unit * 2), "narrow transcript width");
     if (mode === "music") check(near(lyricsPanel.width, transcriptPanel.width), "narrow lyric width");
+  }
+  // Rendered 9:16 column (RiceSuite #20, variant C).
+  check(result.parentElement === clip.reviewGridEl, "rendered column lives in the review grid");
+  const output = clip.outputVideoEl;
+  const outputBox = rect(output);
+  check(near(frameBox.width / frameBox.height, 9 / 16, 0.005), "rendered frame is 9:16");
+  check(near(outputBox.x, frameBox.x) && near(outputBox.y, frameBox.y) && near(outputBox.width, frameBox.width) && near(outputBox.height, frameBox.height), "video fills its 9:16 frame");
+  check(["paddingTop", "paddingRight", "paddingBottom", "paddingLeft"].every((side) => css(output)[side] === "0px"), "video has no padding");
+  check(css(output).objectFit === "cover", "video never letterboxes");
+  output.setAttribute("width", "1920");
+  output.setAttribute("height", "1080");
+  const hinted = rect(output);
+  output.removeAttribute("width");
+  output.removeAttribute("height");
+  check(near(hinted.width / hinted.height, 9 / 16, 0.005) && near(hinted.height, outputBox.height), "frame keeps 9:16 against landscape metadata");
+  check(result.classList.contains("is-empty"), "fixture starts before the first render");
+  check(css(result.querySelector(".result-empty")).display !== "none", "empty frame shown before a render");
+  check(!clip.downloadEl.hasAttribute("href") && css(clip.downloadEl).visibility === "hidden", "no download before a render");
+  result.classList.add("is-busy");
+  const busy = result.querySelector(".result-busy");
+  check(css(busy).display !== "none" && near(rect(busy).height, frameBox.height), "rendering note covers the frame");
+  result.classList.remove("is-busy");
+  result.classList.add("is-stale");
+  const stale = result.querySelector(".result-stale");
+  check(css(stale).display !== "none" && rect(stale).y >= frameBox.y && rect(stale).bottom <= frameBox.bottom, "stale note shows on the frame");
+  result.classList.remove("is-stale");
+  check(css(stale).display === "none", "stale note hidden while the render is current");
+  const download = rect(clip.downloadEl);
+  check(download.y >= frameBox.bottom && download.bottom <= resultBox.bottom - unit + 1 && near(download.width, frameBox.width), "download sits under the frame inside its column");
+  for (const el of clip.el.querySelectorAll(".choice-card, .header-sample")) {
+    if (el.getClientRects().length && el.scrollWidth > el.clientWidth + 1) {
+      check(false, "choice content overflows its card: " + el.textContent.trim().slice(0, 24));
+      break;
+    }
+  }
+  if (wide) {
+    check(resultBox.x > settings.right, "rendered column right of the controls");
+    check(near(resultBox.y, settings.y) && near(resultBox.y, preview.y), "rendered column top aligns with the upper row");
+    // 540 px tall, shrinking with a narrow or short window, never below 360.
+    const expected = Math.min(540, Math.max(360, Math.min(0.42 * innerWidth, innerHeight - 200)));
+    check(near(frameBox.height, expected, 1), "rendered frame height " + frameBox.height + " != " + expected);
+    check(download.bottom <= innerHeight, "download visible without scrolling");
+    check(near(resultBox.right, grid.right - unit), "rendered column meets the grid edge");
+  } else {
+    check(resultBox.y >= settings.bottom && resultBox.bottom <= transcriptPanel.y, "narrow rendered column between controls and transcript");
+    check(frameBox.width <= 361 && near(frameBox.x + frameBox.width / 2, resultBox.x + resultBox.width / 2), "narrow frame centred, at most 360 wide");
   }
   const textProperties = ["fontFamily", "fontSize", "lineHeight", "letterSpacing", "padding", "border", "backgroundColor"];
   for (const property of textProperties) {
@@ -346,6 +415,9 @@ def main():
                 chrome,
                 "--headless=new",
                 "--no-sandbox",
+                # Chrome's network service otherwise reads the login Keychain
+                # and stalls every navigation while the Mac is locked.
+                "--use-mock-keychain",
                 "--no-first-run",
                 "--no-default-browser-check",
                 "--remote-allow-origins=*",
@@ -495,7 +567,7 @@ def main():
                         outputUrl: null,
                         outputVideoEl: { src: "" },
                         downloadEl: { href: "", download: "" },
-                        resultEl: { classList: { remove: () => { visible = true; } } },
+                        resultEl: { classList: { remove: () => { visible = true; }, toggle() {} } },
                       };
                       let outputFetches = 0;
                       window.fetch = async (url, options) => {
@@ -520,7 +592,8 @@ def main():
                       }
                     })()"""
                 )
-                endpoint = "/api/jobs/fixture/output"
+                # Page requests are relative so the page works behind the gateway.
+                endpoint = "api/jobs/fixture/output"
                 if output_link != {
                     "video": endpoint,
                     "download": endpoint,

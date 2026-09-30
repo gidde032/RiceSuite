@@ -728,7 +728,7 @@ class TestLifespan:
     def test_scheduler_disabled_no_task(self, monkeypatch):
         import backend.main as main
         monkeypatch.setattr(main, "SCHEDULER_ENABLED", False)
-        with TestClient(main.app) as c:
+        with TestClient(main.app, base_url="http://127.0.0.1:1738") as c:
             resp = c.get("/api/accounts")
             assert resp.status_code == 200
 
@@ -746,7 +746,7 @@ class TestLifespan:
 
         monkeypatch.setattr(main, "SCHEDULER_ENABLED", True)
         monkeypatch.setattr(sched_mod, "scheduler_loop", fake_loop)
-        with TestClient(main.app) as c:
+        with TestClient(main.app, base_url="http://127.0.0.1:1738") as c:
             resp = c.get("/")
             assert resp.status_code == 200
         assert started, "scheduler_loop should have been called by lifespan"

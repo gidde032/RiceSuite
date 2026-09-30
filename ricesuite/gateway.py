@@ -8,11 +8,8 @@
 * ``/api/suite/…`` is the gateway's own read-only API for the shell.
 
 The gateway adds no capability a pillar did not already expose on localhost.
-It does refuse requests whose Host is not this loopback address (a DNS
-rebinding guard) and state-changing requests from another origin, because
-Poster's API is unauthenticated and can post to real accounts. That guard
-covers traffic through the gateway only; the pillars' own loopback ports are
-as reachable as the old apps' were (tracked in #14).
+It runs the same Host/Origin guard as every pillar listener
+(``ricesuite.localguard``, SPEC FR-3), for its own configured port.
 """
 
 from __future__ import annotations
@@ -20,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -36,6 +34,7 @@ from starlette.responses import (
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
+from ricesuite.localguard import LocalGuard
 from ricesuite.pillars import PILLARS
 from ricesuite.ports import GATEWAY_PORT, HOST, PILLAR_PORTS
 
@@ -60,24 +59,12 @@ HOP_BY_HOP = {
     "upgrade",
     "host",
 }
-SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 # No read timeout: Poster's Post All request stays open for the whole run.
 _client = httpx.AsyncClient(
     timeout=httpx.Timeout(connect=5.0, read=None, write=None, pool=None),
     follow_redirects=False,
 )
-
-
-def allowed_hosts(port: int = GATEWAY) -> set[str]:
-    return {f"127.0.0.1:{port}", f"localhost:{port}"}
-
-
-def _origin_ok(request: Request) -> bool:
-    origin = request.headers.get("origin")
-    if origin is None or request.method in SAFE_METHODS:
-        return True
-    return origin in {f"http://{h}" for h in allowed_hosts()}
 
 
 def upstream_url(port: int, path: str, query: str) -> str:
@@ -147,17 +134,22 @@ async def _get_json(port: int, path: str):
 
 
 async def suite_home(request: Request) -> Response:
-    """Batches waiting at each stage, as each consumer itself reports them
-    (Clipper's Searcher inbox, Poster's Clipper inbox), so the home view can
-    never disagree with what the next Pull would take. Every source is
-    best-effort: a pillar that is down reports null."""
-    profiles, clip_inbox, post_inbox, queue = await asyncio.gather(
+    """Read-only stage counts, including batches already in Clipper's workspace.
+
+    Every source is best-effort: an unavailable source reports null. Only
+    pending Poster queue entries are upcoming scheduled batches.
+    """
+    profiles, clip_inbox, clip_workspace, post_inbox, queue = await asyncio.gather(
         _get_json(PORTS["searcher"], "api/profiles"),
         _get_json(PORTS["clipper"], "api/searcher-inbox"),
+        _get_json(PORTS["clipper"], "api/workspace-batches"),
         _get_json(PORTS["poster"], "api/handoff/inbox"),
         _get_json(PORTS["poster"], "api/queue"),
     )
     to_clipper = clip_inbox.get("batches") if isinstance(clip_inbox, dict) else None
+    clip_open = (
+        clip_workspace.get("batches") if isinstance(clip_workspace, dict) else None
+    )
     to_poster = None
     if isinstance(post_inbox, dict):
         to_poster = list(post_inbox.get("batches") or [])
@@ -173,18 +165,32 @@ async def suite_home(request: Request) -> Response:
         }
     scheduled = None
     if isinstance(queue, dict):
+
+        def fire_time(batch):
+            try:
+                value = datetime.fromisoformat(batch["fire_time"])
+                if value.tzinfo is not None:
+                    return value.astimezone(UTC)
+            except (KeyError, TypeError, ValueError):
+                pass
+            return datetime.max.replace(tzinfo=UTC)
+
         scheduled = [
             {
                 "id": b.get("id"),
                 "fire_time": b.get("fire_time"),
                 "status": b.get("status"),
             }
-            for b in queue.get("batches", [])
+            for b in sorted(
+                (b for b in queue.get("batches", []) if b.get("status") == "pending"),
+                key=fire_time,
+            )
         ]
     return JSONResponse(
         {
             "search": search,
             "to_clipper": to_clipper,
+            "clip_open": clip_open,
             "to_poster": to_poster,
             "scheduled": scheduled,
         }
@@ -208,29 +214,6 @@ async def suite_status(request: Request) -> Response:
     )
 
 
-class GuardMiddleware:
-    """Refuse foreign Host headers and cross-origin state changes."""
-
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] == "http":
-            request = Request(scope)
-            host = request.headers.get("host", "")
-            if host not in allowed_hosts():
-                await JSONResponse({"detail": "unexpected Host"}, 421)(
-                    scope, receive, send
-                )
-                return
-            if not _origin_ok(request):
-                await JSONResponse({"detail": "cross-origin request refused"}, 403)(
-                    scope, receive, send
-                )
-                return
-        await self.app(scope, receive, send)
-
-
 def build_routes():
     routes = [
         Route("/", shell),
@@ -247,4 +230,4 @@ def build_routes():
     return routes
 
 
-app = GuardMiddleware(Starlette(routes=build_routes()))
+app = LocalGuard(Starlette(routes=build_routes()), port=GATEWAY)

@@ -158,7 +158,7 @@ def test_crash_mid_run_is_recorded_unconfirmed_on_next_start_and_not_retried(
     monkeypatch.setattr(main, "post_all_api", never)
     monkeypatch.setattr(main, "post_all_browser", never)
     monkeypatch.setattr(main, "SCHEDULER_ENABLED", False)
-    with TestClient(main.app):  # runs the lifespan startup
+    with TestClient(main.app, base_url="http://127.0.0.1:1738"):  # runs the lifespan startup
         pass
 
     rows = _history(tmp_history_file)
@@ -170,7 +170,7 @@ def test_crash_mid_run_is_recorded_unconfirmed_on_next_start_and_not_retried(
     assert not tmp_inflight_marker.exists()
 
     # A second start records nothing more.
-    with TestClient(main.app):
+    with TestClient(main.app, base_url="http://127.0.0.1:1738"):
         pass
     assert len(_history(tmp_history_file)) == 2
 
