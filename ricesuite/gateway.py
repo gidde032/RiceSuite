@@ -179,6 +179,7 @@ async def suite_home(request: Request) -> Response:
         }
     scheduled = None
     if isinstance(queue, dict):
+
         def fire_time(batch):
             try:
                 value = datetime.fromisoformat(batch["fire_time"])
