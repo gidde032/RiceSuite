@@ -139,12 +139,13 @@ def test_upload_sanitizes_filename_and_validates_slot(client, tmp_media):
 
 def test_no_screenshots_tracked_and_gitignore_covers_debug():
     """Finding #4 (Reviewers 1+2+3, HIGH): the five debug PNGs were tracked
-    in git. They are now untracked and future ones are gitignored."""
+    in git. Debug screenshots stay ignored; only the approved runtime logo
+    may be tracked so it loads on a clean clone."""
     tracked = subprocess.run(
         ["git", "ls-files", "*.png"],
         cwd=PROJECT_ROOT, capture_output=True, text=True,
     ).stdout.strip()
-    assert tracked == ""
+    assert tracked == "frontend/logo-ratified.png"
     gitignore = (PROJECT_ROOT / ".gitignore").read_text()
     assert "debug/" in gitignore
 

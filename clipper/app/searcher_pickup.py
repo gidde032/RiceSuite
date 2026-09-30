@@ -321,6 +321,23 @@ def open_batch(batch_id: str | None = None) -> dict:
     return _open_payload(lambda r: r["batch_id"] == batch_id)
 
 
+def open_batches() -> list[dict]:
+    """Summaries of every pulled batch still in the review workspace.
+
+    This is a read-only view for the Suite home page. Records whose jobs have
+    gone away are omitted, just as ``open_batch`` omits them on restore.
+    """
+    with jobs.job_operation_lock():
+        batches = []
+        for record in _load_open():
+            count = sum(
+                jobs.get_job(job_id) is not None for job_id in record["job_ids"]
+            )
+            if count:
+                batches.append({"batch_id": record["batch_id"], "clip_count": count})
+        return batches
+
+
 def _open_payload(wanted) -> dict:
     """The oldest open batch whose record ``wanted`` accepts. A batch none of
     whose jobs still exist (the media cache was cleared) is dropped."""

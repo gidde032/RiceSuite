@@ -303,6 +303,28 @@ def test_open_batches_come_back_oldest_first(env: Path) -> None:
     assert client.get("/api/workspace").json()["batch_id"] == "b2"
 
 
+def test_workspace_batches_lists_all_open_including_failed_render(env: Path) -> None:
+    _write_batch(env, "b1", created_at="2026-09-04T00:00:00Z")
+    _write_batch(env, "b2", created_at="2026-09-05T00:00:00Z")
+    client = TestClient(main.app, base_url="http://127.0.0.1:8000")
+    first = client.post("/api/pull-from-searcher").json()
+    client.post("/api/pull-from-searcher")
+    jobs.get_job(first["jobs"][0]["id"]).status = "error"
+
+    assert client.get("/api/searcher-inbox").json() == {"batches": []}
+    assert client.get("/api/workspace-batches").json() == {
+        "batches": [
+            {"batch_id": "b1", "clip_count": 1},
+            {"batch_id": "b2", "clip_count": 1},
+        ]
+    }
+
+    client.delete("/api/workspace", params={"batch_id": "b1"})
+    assert client.get("/api/workspace-batches").json()["batches"] == [
+        {"batch_id": "b2", "clip_count": 1}
+    ]
+
+
 def test_an_open_batch_whose_jobs_are_gone_is_dropped(env: Path) -> None:
     import shutil
 
@@ -312,6 +334,7 @@ def test_an_open_batch_whose_jobs_are_gone_is_dropped(env: Path) -> None:
         shutil.rmtree(jobs.WORK_ROOT / j["id"])
     jobs._JOBS.clear()
     assert client.get("/api/workspace").json()["batch_id"] is None
+    assert client.get("/api/workspace-batches").json() == {"batches": []}
 
 
 def test_a_retried_pull_key_returns_the_batch_it_pulled(env: Path) -> None:

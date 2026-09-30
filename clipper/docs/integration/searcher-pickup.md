@@ -82,6 +82,12 @@ own pulled batch in `sessionStorage` and restores it after a reload; an open
 batch the tab does not hold is named on the page and opens there only on a
 **Pull** click.
 
+For the RiceSuite home view, `GET /api/workspace-batches` returns a read-only
+`{"batches": [{"batch_id": "…", "clip_count": 1}]}` summary of **all** open
+batches, including one held after a failed render. It omits records whose jobs
+have been removed. Unlike `GET /api/workspace`, this endpoint does not select
+one batch for a tab or return job details.
+
 `POST /api/handoff` takes a `send_key`: a retry with the key of a send that
 already wrote its batch gets that batch back with `replayed: true`, and
 nothing new is written; a key reused for other clips is refused (409). Each
