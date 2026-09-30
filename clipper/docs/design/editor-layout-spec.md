@@ -1,6 +1,8 @@
 # Editing page layout
 
 Status: **Ratified design contract, 2026-09-23. Delivery tracked in Issue #6.**
+Amended 2026-09-29 with the rendered-clip column (RiceSuite
+[#20](https://github.com/gidde032/RiceSuite/issues/20), variant C).
 
 The [interactive reference](editor-layout-reference.html) is the approved
 Balanced layout. Its Music and Speech switches show the two required review
@@ -31,8 +33,21 @@ At viewport widths of **881 px and above**, the editor has two rows:
    Geometry, Header style, Burn captions, Caption style, and optional Music
    controls into short, consistently spaced rows. Keep Header and Generate in
    the settings area.
+   **Rendered column (Issue #20):** to the right of the settings, the upper
+   row ends in the rendered clip, shown as a true **9:16** frame **540 px**
+   tall (about 304 px wide) with the Download button under it. The frame sets
+   the shape (the video fills it with `object-fit: cover`), so there is no
+   letterbox padding, and it keeps 9:16 before the video's metadata loads.
+   The 40/60 preview-to-settings split applies to the width left of it.
+   The frame is always present: before the first render, or when a failed
+   render or an edit leaves nothing current, it is an empty frame that marks
+   the header band (`header_margin_v` to `header_margin_v` + 160 px of 1920)
+   and the caption band (340 to 540 px up from the bottom) and offers no
+   download. A re-render keeps the last render in place, paused and dimmed
+   with a "Rendering…" note, and withholds the download until it finishes.
 2. **Lower row, Music:** generated transcript on the left and optional pasted
-   lyrics on the right, in **equal-width, equal-height** panes. Both begin on
+   lyrics on the right, in **equal-width, equal-height** panes that together
+   span the full card width, under the rendered column too. Both begin on
    the same horizontal line. The pasted-lyrics textarea fills its pane; Align,
    Restore transcript, and alignment status sit directly below it. Transcript
    and lyric text use identical reading styles.
@@ -94,8 +109,8 @@ other status/error colors, logo, and caption preset colors remain as specified.
 ## Responsive layout
 
 At **880 px and below**, each clip becomes a single readable column in this
-order: video and notes, settings, transcript, then pasted lyrics when Music is
-selected. Speech retains the same settings position and omits the lyric pane.
+order: video and notes, settings, the rendered 9:16 frame (centered, at most
+360 px wide), transcript, then pasted lyrics when Music is selected. Speech retains the same settings position and omits the lyric pane.
 The transcript and lyric textarea use the full available column width and the
 same text style. The page and controls must not overflow horizontally or hide
 focus outlines. The batch actions may stack on narrow screens and must not
@@ -109,10 +124,16 @@ styles rather than relying on a screenshot alone:
 
 - page inset derives from `--editor-space` at every viewport; no horizontal
   document overflow;
-- desktop upper row has preview left and settings right, and narrow order is
-  video → settings → transcript → lyrics where applicable;
+- desktop upper row has preview left, settings in the middle and the rendered
+  column right, and narrow order is video → settings → rendered frame →
+  transcript → lyrics where applicable;
+- the rendered frame is 9:16, 540 px tall on desktop, the video fills it with
+  no padding and no letterbox (also against landscape size hints), the empty
+  frame shows before a render with no download, and the Rendering… note
+  covers the frame;
 - Music transcript and lyric panes have equal computed width and height and
-  aligned top edges; Speech transcript spans the full lower row;
+  aligned top edges, together spanning the full lower row; Speech transcript
+  spans the full lower row;
 - settings remain in the same location and order across modes;
 - the video player fills the preview side down to its notes on desktop and
   grows with viewport height on narrow screens without cropping;
@@ -136,3 +157,8 @@ retain their Music-mode position in Speech. The Settings rail and Text first
 options were considered but not selected. On 2026-09-24, the user amended the
 preview height, transcript word spacing, and red-button fill from live usage;
 those amendments supersede the corresponding reference details.
+
+On 2026-09-29, Finn chose variant **C, Three-up** for the rendered clip
+(RiceSuite #20) from three rendered options: fixed rail, sticky stage, and
+three-up. Finn added one condition: Music mode keeps its equal
+transcript/lyrics split. The decision is recorded on Issue #20.

@@ -21,6 +21,17 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   warning zone now follows the header: it covers the frame top down to the
   bottom of a 2-line header with its plate (`header_margin_v` + 160 = 370 px,
   was a fixed 450 px), so a face just below the raised header no longer warns.
+- **The rendered clip is a 9:16 view beside the controls** (RiceSuite
+  [#20](https://github.com/gidde032/RiceSuite/issues/20), variant C). It used
+  to be a full-width, letterboxed video under the card. Now each card's upper
+  row is source preview · controls · rendered clip: a 540 px tall 9:16 frame
+  the video fills with no padding, with Download under it. The frame shows
+  before the first render as an empty frame marking the header and caption
+  bands. A re-render keeps the last render in place, dimmed, and withholds
+  the download until it finishes. A failed render, lyric alignment or
+  transcript restore returns it to empty. In Music mode the transcript and
+  lyrics keep equal halves, now of the full card width. Below 880 px the
+  frame stacks between the controls and the transcript.
 
 ### Added
 - **First-time-user README.** Requirements table (Python 3.11–3.14, ffmpeg with
@@ -42,6 +53,11 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   than a generic "render failed".
 - `pre-commit` is now pinned in `requirements-dev.txt` (4.6.2), so the
   documented `pre-commit install` works in a fresh dev venv.
+- **The editor browser check runs again** (RiceSuite #20).
+  `scripts/check_editor_browser.py` did not serve the shared `slate.css`, and
+  it expected an absolute output URL, so it had failed since the shared Slate
+  sheet and the gateway base path landed. Its screenshots in
+  `docs/reviews/editor-layout/` are regenerated.
 
 ### Security
 

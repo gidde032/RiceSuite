@@ -456,7 +456,7 @@ async function alignLyrics(clip) {
     } else {
       clip.lyricsBadgeEl.removeAttribute("title");
     }
-    clip.resultEl.classList.add("hidden");
+    clearResult(clip);
     setClipStatus(clip, "Ready — review & render");
   } catch (err) {
     setClipStatus(clip, err.message, true);
@@ -481,7 +481,7 @@ async function restoreTranscript(clip) {
     clip.lyricsBadgeEl.textContent = "";
     clip.lyricsBadgeEl.classList.remove("lyrics-badge-warn");
     clip.lyricsBadgeEl.removeAttribute("title");
-    clip.resultEl.classList.add("hidden");
+    clearResult(clip);
     setClipStatus(clip, "Ready — review & render");
   } catch (err) {
     setClipStatus(clip, err.message, true);
@@ -829,7 +829,11 @@ async function pollRenderCompletion(clip) {
 
 async function renderClip(clip) {
   clip.status = "rendering";
-  clip.resultEl.classList.add("hidden");
+  // Keep the last render in its frame, paused and dimmed, with no download
+  // while its file is being replaced (Issue #20).
+  clip.outputVideoEl.pause();
+  clip.downloadEl.removeAttribute("href");
+  clip.resultEl.classList.add("is-busy");
   setClipStatus(clip, "Rendering…");
   updateCacheControls();
 
@@ -893,6 +897,7 @@ async function renderClip(clip) {
   } catch (err) {
     clip.status = "ready"; // keep failed renders retryable
     clip.error = err.message;
+    clearResult(clip);
     setClipStatus(clip, err.message, true);
     return false;
   }
@@ -908,7 +913,19 @@ async function showResult(clip) {
 
   clip.downloadEl.href = endpoint;
   clip.downloadEl.download = `riceclipper-${clip.jobId}.mp4`;
-  clip.resultEl.classList.remove("hidden");
+  clip.resultEl.classList.remove("is-empty", "is-busy");
+}
+
+// The rendered column keeps its 9:16 frame (Issue #20). With no current render
+// to show (before the first, after a failure, or once an edit makes it stale)
+// the frame is empty: no video and no download.
+function clearResult(clip) {
+  clip.outputVideoEl.pause();
+  clip.outputVideoEl.removeAttribute("src");
+  clip.outputVideoEl.load();
+  clip.downloadEl.removeAttribute("href");
+  clip.resultEl.classList.remove("is-busy");
+  clip.resultEl.classList.add("is-empty");
 }
 
 // --- send to RicePoster (handoff) -------------------------------------------
