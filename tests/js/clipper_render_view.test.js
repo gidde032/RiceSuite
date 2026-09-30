@@ -159,3 +159,77 @@ test("aligning lyrics clears the render it no longer matches", async () => {
   await settle();
   assert.deepEqual(state(ctx.clip), { empty: true, busy: false, video: "", download: "" });
 });
+
+// --- review repairs (PR #39) --------------------------------------------------
+
+test("a re-render makes the old video inert while its file is rewritten", async () => {
+  const hold = held();
+  const { js, ctx } = boot({
+    "POST api/jobs/j1/render": async () => { await hold.gate; return [200, { status: "done" }]; },
+  });
+  ctx.clip = card(true);
+  const done = js("renderClip(clip)");
+  await settle();
+  assert.equal(ctx.clip.outputVideoEl.inert, true);
+  hold.release();
+  await done;
+  assert.equal(ctx.clip.outputVideoEl.inert, false);
+});
+
+test("an edit after a render marks the render on show as stale", async () => {
+  const { js, ctx } = boot({});
+  ctx.clip = card(true);
+  ctx.clip.renderedEdits = 0;
+  assert.equal(ctx.clip.resultEl.classList.contains("is-stale"), false);
+  js("noteClipEdited(clip)");
+  assert.equal(ctx.clip.resultEl.classList.contains("is-stale"), true);
+});
+
+test("an edit during a render leaves the landed render marked stale", async () => {
+  const hold = held();
+  const { js, ctx } = boot({
+    "POST api/jobs/j1/render": async () => { await hold.gate; return [200, { status: "done" }]; },
+  });
+  ctx.clip = card(true);
+  const done = js("renderClip(clip)");
+  await settle();
+  js("noteClipEdited(clip)");
+  hold.release();
+  await done;
+  assert.equal(ctx.clip.resultEl.classList.contains("is-stale"), true);
+  // Rendering again brings it current.
+  const again = js("renderClip(clip)");
+  hold.release();
+  await again;
+  assert.equal(ctx.clip.resultEl.classList.contains("is-stale"), false);
+});
+
+for (const action of ["alignLyrics", "restoreTranscript"]) {
+  test(`${action} waits while the clip renders, keeping the Rendering note`, async () => {
+    const hold = held();
+    const { js, ctx, calls } = boot({
+      "POST api/jobs/j1/render": async () => { await hold.gate; return [200, { status: "done" }]; },
+      "POST api/jobs/j1/lyrics": { words: [], method: "anchors", anchor_rate: 1 },
+      "POST api/jobs/j1/restore-transcript": { words: [] },
+    });
+    ctx.clip = card(true);
+    const done = js("renderClip(clip)");
+    await settle();
+    await js(`${action}(clip)`);
+    assert.equal(calls.filter((c) => c.path.endsWith("/lyrics") || c.path.endsWith("/restore-transcript")).length, 0);
+    assert.deepEqual(state(ctx.clip), { empty: false, busy: true, video: OUTPUT, download: "" });
+    hold.release();
+    await done;
+  });
+}
+
+test("Render all points at each clip's download, not below the batch", async () => {
+  const { js, ctx } = boot({ "POST api/jobs/j1/render": { status: "done" } });
+  ctx.clip = card(false);
+  js("messages = []; setBatchStatus = (text) => messages.push(text); maybeAutoSend = async () => {};");
+  js("clips.push(clip)");
+  await js("handleRenderAll()");
+  const last = js("messages[messages.length - 1]");
+  assert.match(last, /^Rendered 1 clip\./);
+  assert.doesNotMatch(last, /below/);
+});

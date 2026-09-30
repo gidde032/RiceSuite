@@ -10,6 +10,8 @@ import re
 from html.parser import HTMLParser
 from pathlib import Path
 
+import pytest
+
 from render.ass import StyleConfig
 from render.framing import CAPTION_ZONE_PX, HEADER_BLOCK_MAX_PX
 
@@ -20,11 +22,75 @@ def _css() -> str:
     return " ".join((ROOT / "web/style.css").read_text(encoding="utf-8").split())
 
 
-def _rule(selector: str, css: str | None = None) -> str:
-    css = css if css is not None else _css()
-    match = re.search(re.escape(selector) + r" \{([^}]*)\}", css)
-    assert match, f"no rule for {selector}"
-    return match.group(1)
+def _rules(css: str) -> list[tuple[str | None, list[str], list[tuple[str, str]]]]:
+    """Parse flat CSS into (media, selectors, declarations) in source order."""
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    rules, media, start = [], None, 0
+    i = 0
+    while i < len(css):
+        if css[i] == "{":
+            head = css[start:i].strip()
+            if head.startswith("@media"):
+                media, start = head, i + 1
+            else:
+                end = css.index("}", i)
+                declarations = [
+                    tuple(part.strip() for part in d.split(":", 1))
+                    for d in css[i + 1 : end].split(";")
+                    if ":" in d
+                ]
+                selectors = [x.strip() for x in head.split(",")]
+                rules.append((media, selectors, declarations))
+                i, start = end, end + 1
+        elif css[i] == "}":
+            media, start = None, i + 1
+        i += 1
+    return rules
+
+
+def _matches(selector: str, element: str, states: set, ancestors: set) -> bool:
+    """Whether ``selector`` can style ``.element`` in ``states`` under ``ancestors``."""
+    # ``:not(...)`` only narrows a match, so it is ignored: conservative for
+    # finding rules that could override.
+    compounds = re.sub(r":not\([^)]*\)", "", selector).replace(">", " ").split()
+    own = set(re.findall(r"\.([\w-]+)", compounds[-1]))
+    if element not in own or not own <= {element} | states:
+        return False
+    return all(set(re.findall(r"\.([\w-]+)", c)) <= ancestors for c in compounds[:-1])
+
+
+def _effective(
+    prop: str,
+    element: str,
+    *,
+    states: frozenset = frozenset(),
+    ancestors: frozenset = frozenset({"clip-card", "review-grid", "clip-result"}),
+    narrow: bool = False,
+    css: str | None = None,
+) -> str | None:
+    """The last declared value of ``prop`` that can reach the element.
+
+    Specificity is ignored on purpose: any later rule that can reach the
+    element, in any state or ancestor context given, counts as an override.
+    """
+    value = None
+    for media, selectors, declarations in _rules(css if css is not None else _css()):
+        if media is not None and not (narrow and "max-width: 880px" in media):
+            continue
+        if any(_matches(x, element, set(states), set(ancestors)) for x in selectors):
+            for name, val in declarations:
+                if name == prop:
+                    value = val
+    return value
+
+
+RESULT_STATES = [
+    frozenset(),
+    frozenset({"is-empty"}),
+    frozenset({"is-busy"}),
+    frozenset({"is-stale"}),
+    frozenset({"is-empty", "is-busy"}),
+]
 
 
 def _classes(attrs) -> list[str]:
@@ -102,43 +168,97 @@ def test_transcript_and_lyrics_share_one_row_wrapper():
     assert _find("lyrics")[0][-1] == "text-row"
 
 
-def test_frame_is_nine_by_sixteen_and_never_letterboxes():
-    frame = _rule(".result-frame")
-    assert "aspect-ratio: 9 / 16;" in frame
-    assert "height: 540px;" in frame
-    video = _rule(".output-video")
-    assert "object-fit: cover;" in video
-    assert "padding: 0;" in video and "border: 0;" in video
-    assert "width: 100%; height: 100%;" in video
+def _assert_frame_contract(css: str) -> None:
+    for narrow in (False, True):
+        for states in RESULT_STATES:
+            ctx = {"states": states, "narrow": narrow, "css": css}
+            assert _effective("display", "clip-result", **ctx) != "none", ctx
+            assert _effective("order", "clip-result", **ctx) is None, ctx
+            assert _effective("aspect-ratio", "result-frame", **ctx) == "9 / 16", ctx
+            video = {
+                "narrow": narrow,
+                "css": css,
+                "ancestors": frozenset(
+                    {"clip-card", "review-grid", "clip-result", "result-frame"} | states
+                ),
+            }
+            assert _effective("object-fit", "output-video", **video) == "cover", ctx
+            assert _effective("padding", "output-video", **video) == "0", ctx
+            assert _effective("width", "output-video", **video) == "100%", ctx
+            assert _effective("height", "output-video", **video) == "100%", ctx
+    assert _effective("height", "result-frame", css=css) == (
+        "clamp(360px, min(42vw, 100vh - 200px), 540px)"
+    )
+    assert _effective("height", "result-frame", narrow=True, css=css) == "auto"
+    assert _effective("width", "result-frame", narrow=True, css=css) == (
+        "min(100%, 360px)"
+    )
+    assert _effective("flex-direction", "review-grid", narrow=True, css=css) == (
+        "column"
+    )
+    assert _effective("flex-direction", "text-row", narrow=True, css=css) == "column"
+
+
+def test_frame_is_nine_by_sixteen_in_every_state_and_never_letterboxes():
+    _assert_frame_contract(_css())
+
+
+# The review of PR #39 showed the earlier string checks passing against each
+# of these; the cascade-aware contract must reject every one.
+BREAKING_OVERRIDES = [
+    ".output-video { object-fit: contain; }",
+    ".clip-result.is-empty { display: none; }",
+    "@media (max-width: 880px) { .clip-result { order: 99; } }",
+    "@media (max-width: 880px) { .result-frame { height: 200px; } }",
+    ".clip-result.is-busy .output-video { object-fit: contain; }",
+    ".result-frame { aspect-ratio: 16 / 9; }",
+]
+
+
+@pytest.mark.parametrize("override", BREAKING_OVERRIDES)
+def test_contract_rejects_a_later_breaking_override(override):
+    with pytest.raises(AssertionError):
+        _assert_frame_contract(_css() + " " + override)
 
 
 def test_music_panes_split_the_full_row_in_equal_halves():
-    assert "grid-column: 1 / -1;" in _rule(".text-row")
-    assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in _rule(
-        ".review-grid.music-review .text-row"
+    assert _effective("grid-column", "text-row") == "1 / -1"
+    speech = frozenset({"clip-card", "review-grid"})
+    music = speech | {"music-review"}
+    assert _effective("grid-template-columns", "text-row", ancestors=speech) == (
+        "minmax(0, 1fr)"
     )
+    assert _effective("grid-template-columns", "text-row", ancestors=music) == (
+        "repeat(2, minmax(0, 1fr))"
+    )
+    # Both panes share the heading row, so their text boxes start level.
+    panel = music | {"text-row"}
+    assert _effective("grid-template-rows", "text-panel", ancestors=panel) == "subgrid"
 
 
 def test_guide_bands_follow_the_render_constants():
-    header = _rule(".guide-header")
-    top, block = re.search(
-        r"top: calc\((\d+) / 1920 \* 100%\); height: calc\((\d+) / 1920", header
-    ).groups()
-    assert int(top) == StyleConfig().header_margin_v
-    assert int(block) == HEADER_BLOCK_MAX_PX
-    caption = _rule(".guide-caption")
-    bottom, zone, margin = re.search(
-        r"bottom: calc\((\d+) / 1920 \* 100%\); "
-        r"height: calc\(\((\d+) - (\d+)\) / 1920",
-        caption,
-    ).groups()
-    assert int(bottom) == int(margin) == StyleConfig().caption_margin_v
-    assert int(zone) == CAPTION_ZONE_PX
+    top = _effective("top", "guide-header")
+    height = _effective("height", "guide-header")
+    assert top == f"calc({StyleConfig().header_margin_v} / 1920 * 100%)"
+    assert height == f"calc({HEADER_BLOCK_MAX_PX} / 1920 * 100%)"
+    margin = StyleConfig().caption_margin_v
+    assert _effective("bottom", "guide-caption") == f"calc({margin} / 1920 * 100%)"
+    assert _effective("height", "guide-caption") == (
+        f"calc(({CAPTION_ZONE_PX} - {margin}) / 1920 * 100%)"
+    )
 
 
-def test_rendered_column_stacks_below_the_existing_breakpoint():
-    css = _css()
-    narrow = css.split("@media (max-width: 880px) {", 1)[1].split("@media", 1)[0]
-    assert "flex-direction: column;" in _rule(".review-grid", narrow)
-    assert "width: min(100%, 360px); height: auto;" in _rule(".result-frame", narrow)
-    assert "flex-direction: column;" in _rule(".text-row", narrow)
+def test_stale_note_shows_only_on_a_stale_render_that_is_not_rerendering():
+    shown = {
+        states: _effective(
+            "display",
+            "result-stale",
+            ancestors=frozenset(
+                {"clip-card", "review-grid", "result-frame", "clip-result"} | states
+            ),
+        )
+        for states in RESULT_STATES
+    }
+    assert shown[frozenset({"is-stale"})] == "flex"
+    assert shown[frozenset()] == "none"
+    assert _find("result-stale")[0][-1] == "result-frame"

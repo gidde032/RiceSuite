@@ -5,7 +5,9 @@ Amended 2026-09-29 with the rendered-clip column (RiceSuite
 [#20](https://github.com/gidde032/RiceSuite/issues/20), variant C).
 
 The [interactive reference](editor-layout-reference.html) is the approved
-Balanced layout. Its Music and Speech switches show the two required review
+Balanced layout, except for the rendered column added on 2026-09-29 (see
+Desktop anatomy and the Decision record), which the reference does not show
+and which supersedes it where they differ. Its Music and Speech switches show the two required review
 states. The [exploration file](proposals/editor-layout-options.html) records the
 three options considered; it is not an implementation reference. This document
 owns editing-page geometry and spacing. The [Slate UI spec](slate-ui-spec.md)
@@ -35,16 +37,22 @@ At viewport widths of **881 px and above**, the editor has two rows:
    the settings area.
    **Rendered column (Issue #20):** to the right of the settings, the upper
    row ends in the rendered clip, shown as a true **9:16** frame **540 px**
-   tall (about 304 px wide) with the Download button under it. The frame sets
+   tall (about 304 px wide) with the Download button under it. On a narrow
+   or short window the frame shrinks, to `clamp(360px, min(42vw, 100vh -
+   200px), 540px)`, so the settings keep room just above the breakpoint and
+   Download stays in view on a laptop screen. The frame sets
    the shape (the video fills it with `object-fit: cover`), so there is no
    letterbox padding, and it keeps 9:16 before the video's metadata loads.
    The 40/60 preview-to-settings split applies to the width left of it.
-   The frame is always present: before the first render, or when a failed
-   render or an edit leaves nothing current, it is an empty frame that marks
-   the header band (`header_margin_v` to `header_margin_v` + 160 px of 1920)
-   and the caption band (340 to 540 px up from the bottom) and offers no
-   download. A re-render keeps the last render in place, paused and dimmed
-   with a "Rendering…" note, and withholds the download until it finishes.
+   The frame is always present. Before the first render, after a failed
+   render, and after lyric alignment or a transcript restore replaces the
+   words, it is an empty frame that marks the header band (`header_margin_v`
+   to `header_margin_v` + 160 px of 1920) and the caption band (340 to 540 px
+   up from the bottom) and offers no download. Any other edit after a render
+   keeps that render on show, with Download, marked "Edited since this
+   render" until the clip renders again. A re-render keeps the last render in
+   place, paused, dimmed and inert with a "Rendering…" note, and withholds the
+   download until it finishes; Align and Restore wait for it to finish.
 2. **Lower row, Music:** generated transcript on the left and optional pasted
    lyrics on the right, in **equal-width, equal-height** panes that together
    span the full card width, under the rendered column too. Both begin on
@@ -118,8 +126,8 @@ cover either text pane.
 
 ## Required verification for implementation
 
-Automated browser checks must use **390×844, 768×1024, 1024×768, 1440×900,
-and 1920×1080** viewports, in both Content modes. Pin computed geometry and
+Automated browser checks must use **390×844, 768×1024, 900×800, 1024×768,
+1366×768, 1440×900, and 1920×1080** viewports, in both Content modes. Pin computed geometry and
 styles rather than relying on a screenshot alone:
 
 - page inset derives from `--editor-space` at every viewport; no horizontal
@@ -127,10 +135,12 @@ styles rather than relying on a screenshot alone:
 - desktop upper row has preview left, settings in the middle and the rendered
   column right, and narrow order is video → settings → rendered frame →
   transcript → lyrics where applicable;
-- the rendered frame is 9:16, 540 px tall on desktop, the video fills it with
+- the rendered frame is 9:16 at its specified height, the video fills it with
   no padding and no letterbox (also against landscape size hints), the empty
-  frame shows before a render with no download, and the Rendering… note
-  covers the frame;
+  frame shows before a render with no download, the Rendering… note covers
+  the frame, the stale note shows only on a stale render, and Download sits
+  under the frame and in view at the top of the page;
+- no choice card's content overflows it at any tested viewport;
 - Music transcript and lyric panes have equal computed width and height and
   aligned top edges, together spanning the full lower row; Speech transcript
   spans the full lower row;

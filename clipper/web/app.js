@@ -207,18 +207,27 @@ function setRadioDisabled(group, disabled) {
 
 // --- clip cards -------------------------------------------------------------
 
+// Any edit after a render leaves that render on show but marks it stale, in
+// the status line and on the rendered frame (Issue #20).
+function noteClipEdited(clip) {
+  clip.edits = (clip.edits || 0) + 1;
+  if (clip.status === "done") {
+    setClipStatus(clip, "Edited since its render. Render it again before it is sent.");
+  }
+  syncResultStale(clip);
+}
+
+function syncResultStale(clip) {
+  clip.resultEl.classList.toggle("is-stale", clip.status === "done" && !clipCurrent(clip));
+}
+
 function buildCard(clip) {
   const node = $("clip-card-template").content.firstElementChild.cloneNode(true);
   clip.el = node;
   // Every control in the card (captions, geometry, content, music, lyrics…)
   // bubbles its input/change events here, so any edit made after a send makes
   // the batch differ from what was sent and holds the workspace.
-  const markEdited = () => {
-    clip.edits = (clip.edits || 0) + 1;
-    if (clip.status === "done") {
-      setClipStatus(clip, "Edited since its render. Render it again before it is sent.");
-    }
-  };
+  const markEdited = () => noteClipEdited(clip);
   node.addEventListener("input", markEdited);
   node.addEventListener("change", markEdited);
   clip.reviewGridEl = node.querySelector(".review-grid");
@@ -424,7 +433,9 @@ function collectWords(clip) {
 }
 
 async function alignLyrics(clip) {
-  if (!clip.jobId) return;
+  // A render in flight uses the words it was sent; changing them now would
+  // land a render that no longer matches (Issue #20 review).
+  if (!clip.jobId || clip.status === "rendering") return;
   clip.lyricsAlignEl.disabled = true;
   setClipStatus(clip, "Aligning lyrics…");
   try {
@@ -466,7 +477,7 @@ async function alignLyrics(clip) {
 }
 
 async function restoreTranscript(clip) {
-  if (!clip.jobId) return;
+  if (!clip.jobId || clip.status === "rendering") return;
   clip.lyricsRestoreEl.disabled = true;
   setClipStatus(clip, "Restoring transcript…");
   try {
@@ -797,7 +808,7 @@ async function handleRenderAll() {
   await refreshCacheInfo();
   setBatchStatus(
     ok === targets.length
-      ? `Rendered ${ok} clip${ok === 1 ? "" : "s"}. Download below.`
+      ? `Rendered ${ok} clip${ok === 1 ? "" : "s"}. Download from each clip's frame.`
       : `Rendered ${ok} of ${targets.length}; see the per-clip errors above.`,
     ok !== targets.length,
   );
@@ -829,11 +840,14 @@ async function pollRenderCompletion(clip) {
 
 async function renderClip(clip) {
   clip.status = "rendering";
-  // Keep the last render in its frame, paused and dimmed, with no download
-  // while its file is being replaced (Issue #20).
+  // Keep the last render in its frame, paused, dimmed and inert, with no
+  // download while its file is being replaced in place (Issue #20).
   clip.outputVideoEl.pause();
+  clip.outputVideoEl.inert = true;
   clip.downloadEl.removeAttribute("href");
   clip.resultEl.classList.add("is-busy");
+  clip.lyricsAlignEl.disabled = true;
+  clip.lyricsRestoreEl.disabled = true;
   setClipStatus(clip, "Rendering…");
   updateCacheControls();
 
@@ -900,6 +914,9 @@ async function renderClip(clip) {
     clearResult(clip);
     setClipStatus(clip, err.message, true);
     return false;
+  } finally {
+    clip.lyricsAlignEl.disabled = false;
+    clip.lyricsRestoreEl.disabled = false;
   }
 }
 
@@ -913,18 +930,22 @@ async function showResult(clip) {
 
   clip.downloadEl.href = endpoint;
   clip.downloadEl.download = `riceclipper-${clip.jobId}.mp4`;
+  clip.outputVideoEl.inert = false;
   clip.resultEl.classList.remove("is-empty", "is-busy");
+  syncResultStale(clip);
 }
 
-// The rendered column keeps its 9:16 frame (Issue #20). With no current render
-// to show (before the first, after a failure, or once an edit makes it stale)
-// the frame is empty: no video and no download.
+// The rendered column keeps its 9:16 frame (Issue #20). With no render to show
+// (before the first, after a failed render, or once lyric alignment or a
+// transcript restore replaces the words) the frame is empty: no video and no
+// download. Other edits keep the render on show, marked stale.
 function clearResult(clip) {
   clip.outputVideoEl.pause();
+  clip.outputVideoEl.inert = false;
   clip.outputVideoEl.removeAttribute("src");
   clip.outputVideoEl.load();
   clip.downloadEl.removeAttribute("href");
-  clip.resultEl.classList.remove("is-busy");
+  clip.resultEl.classList.remove("is-busy", "is-stale");
   clip.resultEl.classList.add("is-empty");
 }
 

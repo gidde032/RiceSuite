@@ -102,7 +102,10 @@ input[type="file"]::file-selector-button { margin-right: 10px; border: 1px solid
 /* Transcript and lyrics share the full width below the upper row, in equal
    halves for music, whatever the rendered column's width (Issue #20). */
 .text-row { display: grid; grid-column: 1 / -1; grid-row: 2; grid-template-columns: minmax(0, 1fr); gap: var(--editor-space); }
-.review-grid.music-review .text-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.review-grid.music-review .text-row { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(3, auto); }
+/* Both panes share the heading row, so a wrapped hint cannot push one text
+   box below the other. */
+.review-grid.music-review .text-panel { display: grid; grid-row: span 3; grid-template-rows: subgrid; row-gap: 0; align-content: start; }
 .text-heading { display: flex; min-height: 28px; align-items: start; justify-content: space-between; gap: var(--editor-space); padding-bottom: calc(var(--editor-space) * 0.5); }
 .text-heading .hint { margin: 0; }
 .text-heading .field-label { padding: 0; }
@@ -123,7 +126,10 @@ input[type="file"]::file-selector-button { margin-right: 10px; border: 1px solid
    controls. The frame, not the video's metadata, sets the shape, and cover
    means no letterbox; renders are always 1080x1920. */
 .clip-result { display: flex; grid-column: 11; grid-row: 1; align-self: start; min-width: 0; padding: var(--editor-space); flex-direction: column; gap: var(--editor-space); border: 1px solid var(--hairline); border-radius: 6px; background: var(--backdrop); }
-.result-frame { position: relative; height: 540px; max-width: 100%; aspect-ratio: 9 / 16; }
+/* 540 px tall, shrinking with a narrow or short window (never below 360 px)
+   so the controls keep room above the 880 px breakpoint and Download stays
+   in view on a laptop screen. */
+.result-frame { position: relative; height: clamp(360px, min(42vw, 100vh - 200px), 540px); max-width: 100%; aspect-ratio: 9 / 16; }
 .output-video { display: block; width: 100%; height: 100%; padding: 0; border: 0; border-radius: 6px; background: #000; object-fit: cover; }
 .result-empty, .result-busy { position: absolute; inset: 0; display: none; border-radius: 6px; }
 .result-empty { flex-direction: column; align-items: center; justify-content: center; gap: calc(var(--editor-space) * 0.5); padding: var(--editor-space); border: 1px dashed var(--control-line); background: var(--backdrop); color: var(--muted); font-family: Arial, sans-serif; font-size: 12px; text-align: center; }
@@ -136,7 +142,9 @@ input[type="file"]::file-selector-button { margin-right: 10px; border: 1px solid
 .guide-caption { bottom: calc(340 / 1920 * 100%); height: calc((540 - 340) / 1920 * 100%); align-items: flex-end; }
 .result-busy { align-items: flex-end; justify-content: center; padding: var(--editor-space); background: rgb(4 6 10 / 62%); color: var(--text); font-family: Arial, sans-serif; font-size: 12px; }
 .result-busy span { padding: 6px 10px; border: 1px solid var(--hairline); border-radius: 4px; background: var(--midground); }
-.clip-result.is-empty .result-empty, .clip-result.is-busy .result-busy { display: flex; }
+.result-stale { position: absolute; top: var(--editor-space); right: var(--editor-space); left: var(--editor-space); display: none; justify-content: center; font-family: Arial, sans-serif; font-size: 12px; }
+.result-stale span { padding: 6px 10px; border: 1px solid var(--danger); border-radius: 4px; background: var(--midground); color: var(--text); }
+.clip-result.is-empty .result-empty, .clip-result.is-busy .result-busy, .clip-result.is-stale:not(.is-busy) .result-stale { display: flex; }
 .clip-result.is-empty .output-video { visibility: hidden; }
 .clip-result .download-link { width: 100%; }
 .clip-result.is-empty .download-link { visibility: hidden; }

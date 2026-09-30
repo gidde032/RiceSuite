@@ -1,8 +1,10 @@
 """Check the live review template in Chrome at the ratified editor viewports.
 
 Run with `python scripts/check_editor_browser.py`. Chrome and the development
-requirements (including uvicorn's websockets dependency) must be installed.
-Screenshots and a JSON result are written to .riceclipper_work/editor-browser/.
+requirements (including the websockets package) must be installed.
+Screenshots and a JSON result are written to the system temp directory
+(`riceclipper-editor-browser/`), or to RICECLIPPER_EDITOR_BROWSER_DIR. They are
+never written inside the repository or a Clipper data directory.
 """
 
 import base64
@@ -20,8 +22,21 @@ from urllib.request import urlopen
 from websockets.sync.client import connect
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = ROOT / ".riceclipper_work" / "editor-browser"
-VIEWPORTS = [(390, 844), (768, 1024), (1024, 768), (1440, 900), (1920, 1080)]
+OUTPUT = Path(
+    os.environ.get("RICECLIPPER_EDITOR_BROWSER_DIR")
+    or Path(tempfile.gettempdir()) / "riceclipper-editor-browser"
+)
+# 900x800 and 1366x768 cover the narrowest two-row width and a common laptop
+# once the rendered 9:16 column shares the upper row (RiceSuite #20).
+VIEWPORTS = [
+    (390, 844),
+    (768, 1024),
+    (900, 800),
+    (1024, 768),
+    (1366, 768),
+    (1440, 900),
+    (1920, 1080),
+]
 
 
 class FixtureHandler(BaseHTTPRequestHandler):
@@ -207,12 +222,26 @@ CHECKS = r"""
   const busy = result.querySelector(".result-busy");
   check(css(busy).display !== "none" && near(rect(busy).height, frameBox.height), "rendering note covers the frame");
   result.classList.remove("is-busy");
+  result.classList.add("is-stale");
+  const stale = result.querySelector(".result-stale");
+  check(css(stale).display !== "none" && rect(stale).y >= frameBox.y && rect(stale).bottom <= frameBox.bottom, "stale note shows on the frame");
+  result.classList.remove("is-stale");
+  check(css(stale).display === "none", "stale note hidden while the render is current");
+  const download = rect(clip.downloadEl);
+  check(download.y >= frameBox.bottom && download.bottom <= resultBox.bottom - unit + 1 && near(download.width, frameBox.width), "download sits under the frame inside its column");
+  for (const el of clip.el.querySelectorAll(".choice-card, .header-sample")) {
+    if (el.getClientRects().length && el.scrollWidth > el.clientWidth + 1) {
+      check(false, "choice content overflows its card: " + el.textContent.trim().slice(0, 24));
+      break;
+    }
+  }
   if (wide) {
     check(resultBox.x > settings.right, "rendered column right of the controls");
     check(near(resultBox.y, settings.y) && near(resultBox.y, preview.y), "rendered column top aligns with the upper row");
-    check(near(frameBox.height, 540), "rendered frame height");
-    check(resultBox.bottom <= Math.max(preview.bottom, settings.bottom) + 1, "rendered column fits the upper row");
-    check(transcriptPanel.y >= resultBox.bottom, "transcript below the rendered column");
+    // 540 px tall, shrinking with a narrow or short window, never below 360.
+    const expected = Math.min(540, Math.max(360, Math.min(0.42 * innerWidth, innerHeight - 200)));
+    check(near(frameBox.height, expected, 1), "rendered frame height " + frameBox.height + " != " + expected);
+    check(download.bottom <= innerHeight, "download visible without scrolling");
     check(near(resultBox.right, grid.right - unit), "rendered column meets the grid edge");
   } else {
     check(resultBox.y >= settings.bottom && resultBox.bottom <= transcriptPanel.y, "narrow rendered column between controls and transcript");
@@ -386,6 +415,9 @@ def main():
                 chrome,
                 "--headless=new",
                 "--no-sandbox",
+                # Chrome's network service otherwise reads the login Keychain
+                # and stalls every navigation while the Mac is locked.
+                "--use-mock-keychain",
                 "--no-first-run",
                 "--no-default-browser-check",
                 "--remote-allow-origins=*",
@@ -535,7 +567,7 @@ def main():
                         outputUrl: null,
                         outputVideoEl: { src: "" },
                         downloadEl: { href: "", download: "" },
-                        resultEl: { classList: { remove: () => { visible = true; } } },
+                        resultEl: { classList: { remove: () => { visible = true; }, toggle() {} } },
                       };
                       let outputFetches = 0;
                       window.fetch = async (url, options) => {
