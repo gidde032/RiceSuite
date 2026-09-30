@@ -430,7 +430,7 @@ def api(env, monkeypatch):
     monkeypatch.setattr(queue_mod, "QUEUE_FILE", env["queue_file"])
     monkeypatch.setattr(queue_mod, "HISTORY_FILE", env["history_file"])
     monkeypatch.setattr(queue_mod, "QUEUE_MEDIA_DIR", env["queue_media_dir"])
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://127.0.0.1:1738") as client:
         yield client
 
 

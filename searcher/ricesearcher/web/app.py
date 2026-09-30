@@ -28,6 +28,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from ricesuite.localguard import LocalGuard, gateway_origins
 
 from ricesearcher.acquire.watchfolder import ffprobe_duration
 from ricesearcher.beat.profile import (
@@ -127,6 +128,14 @@ def create_app(config: Config | None = None) -> FastAPI:
     # ``example-beat``) always have a matching profile in the UI (ADR-002 seed).
     ensure_seed(cfg.profiles_dir)
     app = FastAPI(title="RiceSearcher Review")
+    # A browser page can reach this port without passing the RiceSuite gateway,
+    # so the app refuses foreign Hosts and cross-origin state changes itself
+    # (suite SPEC FR-3, suite #14), on whatever port it is bound to. It also
+    # refuses to be framed by another site, and serves cached source media so
+    # it can run no script (suite #38).
+    app.add_middleware(
+        LocalGuard, trusted_origins=gateway_origins(), sandboxed_paths=("/cache/",)
+    )
 
     @app.get("/static/slate.css", include_in_schema=False)
     def slate_css() -> FileResponse:

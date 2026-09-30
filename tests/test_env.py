@@ -137,6 +137,12 @@ def test_unknown_keys_are_reported():
     ) == ["POST_MOED"]
 
 
+def test_launcher_owned_keys_are_not_unknown():
+    values = {"RICESUITE_GATEWAY_PORT": "9999", "POST_MOED": "x"}
+    assert env.unknown_keys(values) == ["POST_MOED"]
+    assert env.launcher_keys(values) == ["RICESUITE_GATEWAY_PORT"]
+
+
 # --- Handoff directories: set by the suite, never mismatched ------------------
 
 

@@ -36,6 +36,24 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 - `pre-commit` is now pinned in `requirements-dev.txt` (4.6.2), so the
   documented `pre-commit install` works in a fresh dev venv.
 
+### Security
+
+- **The review app refuses cross-site requests** (RiceSuite
+  [#14](https://github.com/gidde032/RiceSuite/issues/14)). It now runs the
+  RiceSuite gateway's Host/Origin guard itself (`ricesuite.localguard`), on
+  the port it is bound to (`8792` in RiceSuite, `8000` standalone): a request
+  not addressed to `127.0.0.1:<port>` or `localhost:<port>` gets 421, and a
+  POST or DELETE whose `Origin` is neither the app's own loopback origin nor
+  the gateway's (`http://127.0.0.1:8790` or `http://localhost:8790`) gets
+  403, as does `Origin: null`. Requests without an Origin (curl, scripts) are
+  unaffected. Tests address the app as `http://127.0.0.1:8000`.
+- **Pages can't be framed by another site, and job media runs no script**
+  (RiceSuite [#38](https://github.com/gidde032/RiceSuite/issues/38)). Every
+  response carries `X-Frame-Options: SAMEORIGIN` and CSP
+  `frame-ancestors 'self'`. Responses under `/api/jobs/` (including an
+  upload's source and the rendered output) are served with
+  `X-Content-Type-Options: nosniff` and CSP `default-src 'none'; sandbox`.
+
 ## [1.0.0] - 2026-09-20
 
 First public release. RiceClipper is published under the MIT License as a

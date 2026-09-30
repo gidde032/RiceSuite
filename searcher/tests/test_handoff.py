@@ -474,7 +474,7 @@ def test_ui_handoff_endpoint(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(writer_mod, "ffprobe_duration", lambda _path: 30.0)
     cfg, lib = _lib_with_selected(tmp_path)
     lib.close()
-    client = TestClient(create_app(cfg))
+    client = TestClient(create_app(cfg), base_url="http://127.0.0.1:8765")
     r = client.post("/api/handoff", json={"profile": LEGACY_PROFILE_ID})
     assert r.status_code == 200
     assert r.json()["clip_count"] == 1
@@ -569,7 +569,7 @@ def test_h2_concurrent_handoff_delivers_once(tmp_path: Path, monkeypatch) -> Non
     monkeypatch.setattr(writer_mod, "ffprobe_duration", lambda _path: 30.0)
     cfg, lib = _lib_with_selected(tmp_path)
     lib.close()
-    client = TestClient(create_app(cfg))
+    client = TestClient(create_app(cfg), base_url="http://127.0.0.1:8765")
     results: list[dict] = []
     barrier = threading.Barrier(2)
 
@@ -904,7 +904,7 @@ def test_c_unusable_clip_returns_503_not_500(tmp_path: Path, monkeypatch) -> Non
     monkeypatch.setattr(writer_mod, "ffprobe_duration", lambda _path: 100.0)
     cfg, lib = _lib_with_selected(tmp_path)
     lib.close()
-    client = TestClient(create_app(cfg))
+    client = TestClient(create_app(cfg), base_url="http://127.0.0.1:8765")
     r = client.post("/api/handoff", json={"profile": LEGACY_PROFILE_ID})
     assert r.status_code == 503
     assert "remain selected" in r.json()["detail"]

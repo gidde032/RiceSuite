@@ -209,7 +209,7 @@ def test_handed_off_window_is_terminal_and_unchanged(tmp_path: Path) -> None:
             ]
         )
 
-    response = TestClient(create_app(cfg)).patch(
+    response = TestClient(create_app(cfg), base_url="http://127.0.0.1:8765").patch(
         "/api/slices/sl1/window",
         json={"target_in": 3, "target_out": 7},
     )

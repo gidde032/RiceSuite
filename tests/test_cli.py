@@ -163,6 +163,19 @@ def test_start_warns_about_unknown_keys(tmp_path, monkeypatch, capsys):
     assert "POST_MOED" in capsys.readouterr().out
 
 
+def test_start_says_the_launcher_owns_the_gateway_port(monkeypatch, capsys):
+    """Every pillar reads RICESUITE_GATEWAY_PORT, but the launcher sets it
+    itself, so a value in ricesuite.env is ignored and the warning says so
+    rather than claiming no pillar reads it (#14 review)."""
+    with open(os.environ["RICESUITE_ENV"], "a") as f:
+        f.write("RICESUITE_GATEWAY_PORT=9999\n")
+    monkeypatch.setattr(ports, "startup_conflicts", lambda: ["busy"])
+    cli.main(["start"])
+    out = capsys.readouterr().out
+    assert "no pillar reads" not in out
+    assert "RICESUITE_GATEWAY_PORT" in out and "launcher sets" in out
+
+
 def test_build_children_sets_env_ports_and_gateway_config(tmp_path):
     env = {"RICESEARCHER_HANDOFF_DIR": "/a", "HANDOFF_DIR": "/b"}
     children = {c.name: c for c in cli.build_children(env, tmp_path / "state.json")}
@@ -175,6 +188,15 @@ def test_build_children_sets_env_ports_and_gateway_config(tmp_path):
     assert config["pillar_ports"] == ports.PILLAR_PORTS
     assert config["state_file"] == str(tmp_path / "state.json")
     assert "RICESUITE_GATEWAY_CONFIG" not in children["poster"].env
+
+
+def test_pillars_are_told_which_gateway_origin_to_trust(tmp_path, monkeypatch):
+    """Each pillar's guard admits state changes from the gateway's origin, so
+    it must know the gateway port actually in use (#14, SPEC FR-3)."""
+    monkeypatch.setattr(ports, "GATEWAY_PORT", 9123)
+    children = {c.name: c for c in cli.build_children({}, tmp_path / "state.json")}
+    for name in ("searcher", "clipper", "poster"):
+        assert children[name].env["RICESUITE_GATEWAY_PORT"] == "9123"
 
 
 def test_start_runs_supervises_and_cleans_up(monkeypatch, capsys):

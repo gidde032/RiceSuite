@@ -66,7 +66,7 @@ def storage(tmp_path: Path):
 def _client(cfg: Config) -> TestClient:
     from ricesearcher.web.app import create_app
 
-    return TestClient(create_app(cfg))
+    return TestClient(create_app(cfg), base_url="http://127.0.0.1:8765")
 
 
 def _pull(cfg: Config, media: Path, transcriber, library: Library | None = None):

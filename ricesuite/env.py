@@ -74,6 +74,9 @@ POSTER_VARIABLES = (
     "TT_UPLOAD_TIMEOUT_S",
 )
 SHARED_VARIABLES = ("ANTHROPIC_API_KEY",)
+# Read by the pillars but set by the launcher itself, so a value in
+# ricesuite.env is ignored.
+LAUNCHER_VARIABLES = ("RICESUITE_GATEWAY_PORT",)
 # Read by RiceSuite itself, never by a pillar.
 SUITE_VARIABLES = (
     "RICESUITE_ENV",
@@ -124,7 +127,12 @@ def read_env_file(path: Path) -> dict[str, str]:
 
 def unknown_keys(values: Mapping[str, str]) -> list[str]:
     """Keys no pillar reads — almost always a typo worth reporting."""
-    return sorted(k for k in values if not is_known(k))
+    return sorted(k for k in values if not is_known(k) and k not in LAUNCHER_VARIABLES)
+
+
+def launcher_keys(values: Mapping[str, str]) -> list[str]:
+    """Keys the launcher sets itself, overriding the file."""
+    return sorted(k for k in values if k in LAUNCHER_VARIABLES)
 
 
 def merge(file_values: Mapping[str, str], base: Mapping[str, str]) -> dict[str, str]:
