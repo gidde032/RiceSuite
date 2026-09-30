@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RiceSuite home directions — Issue 22</title>
+  <style>
+    :root { --backdrop:#04060a; --midground:#0c1116; --interior:#14191e; --hairline:#2b3136; --control-line:#626a70; --rice:#aeb3b6; --muted:#80878c; --text:#e5e8ea; --focus:#d5d9db; }
+    * { box-sizing:border-box; }
+    html,body { margin:0; min-height:100%; background:var(--backdrop); color:var(--text); font:14px/1.5 Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    a { color:inherit; }
+    .topbar { height:60px; display:flex; align-items:center; gap:30px; padding:0 clamp(20px,3vw,48px); border-bottom:1px solid var(--hairline); }
+    .brand { display:flex; align-items:center; gap:6px; font-size:16px; font-weight:650; letter-spacing:.02em; text-decoration:none; white-space:nowrap; }
+    .brand img { width:69px; height:38px; object-fit:cover; }
+    .tabs { display:flex; gap:3px; }
+    .tabs span { display:flex; align-items:center; gap:8px; padding:7px 14px; color:var(--muted); border-radius:8px; }
+    .tabs .alive::after { content:""; width:7px; height:7px; border-radius:50%; background:var(--rice); }
+    .switcher { margin-left:auto; display:flex; align-items:center; gap:5px; border:1px solid var(--hairline); border-radius:9px; padding:3px; background:var(--midground); }
+    .switcher a { padding:5px 10px; border-radius:6px; text-decoration:none; font-size:12px; color:var(--muted); white-space:nowrap; }
+    .switcher a.on { background:var(--interior); color:var(--text); }
+    .mock { display:none; max-width:1330px; min-height:calc(100vh - 60px); margin:auto; padding:38px clamp(20px,3vw,48px) 56px; }
+    .mock.on { display:block; }
+    .eyebrow { color:var(--rice); font-size:11px; font-weight:700; letter-spacing:.17em; text-transform:uppercase; }
+    h1,h2,h3,p { margin-top:0; }
+    h1 { font-size:clamp(27px,3vw,39px); line-height:1.16; letter-spacing:-.035em; font-weight:620; margin-bottom:10px; }
+    h2 { font-size:17px; font-weight:620; letter-spacing:-.01em; }
+    h3 { font-size:12px; font-weight:650; letter-spacing:.08em; text-transform:uppercase; }
+    .lede,.subtle { color:var(--muted); }
+    .lede { max-width:610px; font-size:15px; }
+    .note { margin:26px 0 0; padding-top:15px; border-top:1px solid var(--hairline); color:var(--muted); font-size:12px; }
+    .card { border:1px solid var(--hairline); border-radius:12px; background:linear-gradient(145deg,#10151a,#080b0f); }
+    .pill { display:inline-flex; align-items:center; gap:7px; border:1px solid var(--hairline); border-radius:100px; padding:5px 10px; color:var(--rice); font-size:11px; }
+    .pill::before { content:""; width:6px; height:6px; border-radius:50%; background:var(--rice); }
+    .mono { font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .small { font-size:12px; }
+    .rule { border-top:1px solid var(--hairline); }
+    .tag { display:inline-block; padding:3px 8px; border:1px solid var(--hairline); border-radius:5px; color:var(--rice); font-size:11px; }
+    .link { color:var(--rice); font-size:12px; font-weight:600; text-decoration:none; }
+    .link::after { content:"  ↗"; }
+    .dot { display:inline-block; width:7px; height:7px; margin-right:8px; border-radius:50%; background:var(--rice); }
+
+    /* A — pipeline: the handoff path is the page's structure. */
+    .a-head { display:flex; justify-content:space-between; gap:20px; align-items:end; margin-bottom:30px; }
+    .a-head .pill { flex:none; }
+    .a-pipeline { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; position:relative; }
+    .a-stage { min-height:340px; padding:24px; position:relative; }
+    .a-stage:not(:last-child)::after { content:"→"; position:absolute; z-index:2; right:-20px; top:122px; width:24px; height:24px; border-radius:50%; border:1px solid var(--hairline); background:var(--backdrop); color:var(--rice); text-align:center; line-height:22px; }
+    .a-stage .step { font-size:11px; color:var(--muted); letter-spacing:.12em; }
+    .a-stage h2 { margin:19px 0 20px; font-size:23px; }
+    .a-stage .big { font-size:57px; font-weight:570; line-height:1; letter-spacing:-.07em; }
+    .a-stage .unit { color:var(--rice); margin:8px 0 20px; }
+    .a-stage .detail { min-height:78px; padding:15px 0; color:var(--muted); border-top:1px solid var(--hairline); }
+    .a-stage .detail strong { color:var(--text); font-weight:600; }
+    .a-stage .link { display:inline-block; margin-top:10px; }
+    .a-bottom { display:grid; grid-template-columns:1.5fr 1fr; gap:16px; margin-top:16px; }
+    .a-bottom .card { padding:20px 24px; }
+    .a-bottom h3 { color:var(--rice); margin-bottom:13px; }
+    .a-bottom p { margin:0; color:var(--muted); }
+    .a-bottom strong { color:var(--text); }
+
+    /* B — operations dashboard: compact facts and scan-friendly tables. */
+    .b-head { display:flex; justify-content:space-between; gap:20px; align-items:end; margin-bottom:24px; }
+    .b-head h1 { margin-bottom:5px; }
+    .b-timestamp { color:var(--muted); font-size:12px; }
+    .b-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-bottom:18px; }
+    .b-metric { padding:17px 20px; }
+    .b-metric label { display:block; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.08em; }
+    .b-metric strong { display:block; margin:6px 0 0; font-size:31px; line-height:1.1; font-weight:610; }
+    .b-grid { display:grid; grid-template-columns:minmax(0,1.7fr) minmax(300px,.8fr); gap:18px; }
+    .b-panel { padding:22px 24px; }
+    .b-panel-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+    .b-panel h2 { margin:0; }
+    .b-table { width:100%; border-collapse:collapse; text-align:left; }
+    .b-table th { padding:11px 8px; color:var(--muted); border-bottom:1px solid var(--hairline); font-size:11px; text-transform:uppercase; letter-spacing:.07em; font-weight:600; }
+    .b-table td { padding:16px 8px; border-bottom:1px solid var(--hairline); }
+    .b-table tr:last-child td { border-bottom:0; }
+    .b-table td:first-child { color:var(--rice); font-weight:600; }
+    .b-side { display:grid; align-content:start; gap:18px; }
+    .b-schedule { padding:0; }
+    .b-schedule h2,.b-health h2 { padding:21px 22px 15px; margin:0; }
+    .b-schedule .item { display:flex; justify-content:space-between; gap:10px; padding:14px 22px; border-top:1px solid var(--hairline); }
+    .b-schedule .item small { display:block; color:var(--muted); margin-top:3px; }
+    .b-health { padding-bottom:13px; }
+    .b-health .item { display:flex; justify-content:space-between; padding:8px 22px; }
+    .b-health .item span:last-child { color:var(--rice); font-size:12px; }
+
+    /* C — queue first: each manual boundary gets a dedicated lane. */
+    .c-head { display:flex; justify-content:space-between; gap:20px; align-items:start; margin-bottom:30px; }
+    .c-head h1 { max-width:630px; }
+    .c-live { display:flex; align-items:center; gap:9px; color:var(--rice); font-size:12px; }
+    .c-live .dot { margin:0; }
+    .c-feature { display:grid; grid-template-columns:230px 1fr; overflow:hidden; }
+    .c-intro { padding:26px; border-right:1px solid var(--hairline); background:#11161b; }
+    .c-intro .big { font-size:71px; line-height:1; letter-spacing:-.07em; font-weight:570; margin:20px 0 7px; }
+    .c-intro h2 { font-size:16px; margin-bottom:7px; }
+    .c-intro p { color:var(--muted); font-size:12px; }
+    .c-lanes { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .c-lane { padding:26px; }
+    .c-lane + .c-lane { border-left:1px solid var(--hairline); }
+    .c-lane h3 { color:var(--rice); margin-bottom:6px; }
+    .c-lane p { color:var(--muted); font-size:12px; margin-bottom:20px; }
+    .c-batch { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:13px 0; border-top:1px solid var(--hairline); }
+    .c-batch strong { font-weight:550; }
+    .c-batch span { color:var(--muted); font-size:12px; }
+    .c-low { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-top:16px; }
+    .c-low .card { padding:22px; }
+    .c-low h3 { color:var(--rice); margin-bottom:16px; }
+    .c-low .number { display:block; font-size:36px; line-height:1.1; letter-spacing:-.04em; font-weight:600; }
+    .c-low p { color:var(--muted); font-size:12px; margin:7px 0 0; }
+    .c-low .health-row { display:flex; justify-content:space-between; padding:4px 0; font-size:12px; }
+    .c-low .health-row span:last-child { color:var(--rice); }
+    @media(max-width:900px) {
+      .a-pipeline,.b-grid,.c-feature,.c-low { grid-template-columns:1fr; }
+      .a-stage { min-height:0; }
+      .a-stage:not(:last-child)::after { display:none; }
+      .a-bottom { grid-template-columns:1fr; }
+      .b-metrics { grid-template-columns:repeat(2,1fr); }
+      .c-intro { border-right:0; border-bottom:1px solid var(--hairline); }
+    }
+    @media(max-width:620px) {
+      .topbar { height:auto; min-height:60px; flex-wrap:wrap; gap:4px 15px; padding:8px 15px; }
+      .brand img { width:44px; height:30px; }
+      .tabs span { padding:5px; }
+      .switcher { width:100%; justify-content:space-between; }
+      .mock { padding:25px 15px 40px; }
+      .a-head,.b-head,.c-head { display:block; }
+      .a-head .pill { margin-top:10px; }
+      .b-metrics { gap:8px; }
+      .b-metric { padding:13px; }
+      .b-table { font-size:11px; }
+      .b-table td,.b-table th { padding-inline:3px; }
+      .c-lanes { grid-template-columns:1fr; }
+      .c-lane + .c-lane { border-left:0; border-top:1px solid var(--hairline); }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../../../ricesuite/shell/logo.png"><img src="../../../ricesuite/shell/logo.png" alt="">RiceSuite</a>
+    <nav class="tabs" aria-label="Existing pillar tabs"><span class="alive">Search</span><span class="alive">Clip</span><span class="alive">Post</span></nav>
+    <nav class="switcher" aria-label="Home direction"><a href="#pipeline" data-option="pipeline">A · Pipeline</a><a href="#operations" data-option="operations">B · Operations</a><a href="#queues" data-option="queues">C · Queues</a></nav>
+  </header>
+
+  <main class="mock" data-mock="pipeline">
+    <div class="a-head"><div><div class="eyebrow">A / Pipeline</div><h1>From search to post</h1><p class="lede">See what is ready at each handoff, then enter the pillar that needs your attention.</p></div><span class="pill">All 3 pillars running</span></div>
+    <div class="a-pipeline">
+      <article class="card a-stage"><div class="step">01 / SEARCH</div><h2>Find the right moments</h2><div class="big">12</div><div class="unit">candidates to review</div><div class="detail"><strong>3 selected</strong><br>Ready for your “Send selected” decision.</div><span class="link">Open Search</span></article>
+      <article class="card a-stage"><div class="step">02 / CLIP</div><h2>Shape the story</h2><div class="big">2</div><div class="unit">batches waiting</div><div class="detail mono">s-2409 · 4 clips<br>s-2410 · 2 clips</div><span class="link">Open Clip</span></article>
+      <article class="card a-stage"><div class="step">03 / POST</div><h2>Prepare the release</h2><div class="big">1</div><div class="unit">batch waiting</div><div class="detail mono">c-1182 · 3 clips<br><span class="subtle">2 scheduled in Post's queue</span></div><span class="link">Open Post</span></article>
+    </div>
+    <div class="a-bottom"><div class="card"><h3>Scheduled in Post</h3><p><strong class="mono">q-302</strong> · Oct 1, 10:00 AM &nbsp;&nbsp; <strong class="mono">q-303</strong> · Oct 2, 2:30 PM</p></div><div class="card"><h3>Manual gate</h3><p>Posting happens only from the Post tab, by you.</p></div></div>
+    <p class="note">Design fixture: 12 Search candidates, 3 selected, 2 batches for Clip, 1 for Post, 2 scheduled. This is a static mockup.</p>
+  </main>
+
+  <main class="mock" data-mock="operations">
+    <div class="b-head"><div><div class="eyebrow">B / Operations</div><h1>Studio overview</h1><div class="subtle">Everything waiting across the suite, in one scan.</div></div><div class="b-timestamp">Illustrative data · Sep 29, 2026</div></div>
+    <div class="b-metrics"><div class="card b-metric"><label>Search candidates</label><strong>12</strong></div><div class="card b-metric"><label>Selected</label><strong>3</strong></div><div class="card b-metric"><label>Handoff batches</label><strong>3</strong></div><div class="card b-metric"><label>Scheduled</label><strong>2</strong></div></div>
+    <div class="b-grid"><section class="card b-panel"><div class="b-panel-head"><h2>Waiting at each stage</h2><span class="tag">Read only</span></div><table class="b-table"><thead><tr><th>Stage</th><th>Waiting</th><th>Detail</th><th></th></tr></thead><tbody><tr><td>Search</td><td>12 candidates</td><td>3 selected</td><td><span class="link">Open</span></td></tr><tr><td>Clip</td><td>2 batches</td><td class="mono">s-2409 · 4 clips<br>s-2410 · 2 clips</td><td><span class="link">Open</span></td></tr><tr><td>Post</td><td>1 batch</td><td class="mono">c-1182 · 3 clips</td><td><span class="link">Open</span></td></tr></tbody></table><p class="note">Posting happens only from the Post tab, by you.</p></section>
+      <div class="b-side"><section class="card b-schedule"><h2>Upcoming schedule</h2><div class="item"><div><strong class="mono">q-302</strong><small>Oct 1 · 10:00 AM</small></div><span class="tag">Pending</span></div><div class="item"><div><strong class="mono">q-303</strong><small>Oct 2 · 2:30 PM</small></div><span class="tag">Pending</span></div></section><section class="card b-health"><h2>Pillar health</h2><div class="item"><span><i class="dot"></i>Search</span><span>Running</span></div><div class="item"><span><i class="dot"></i>Clip</span><span>Running</span></div><div class="item"><span><i class="dot"></i>Post</span><span>Running</span></div></section></div>
+    </div><p class="note">Same static fixture as A and C. This layout emphasizes density and quick scanning.</p>
+  </main>
+
+  <main class="mock" data-mock="queues">
+    <div class="c-head"><div><div class="eyebrow">C / Queues</div><h1>Three batches are waiting at the handoffs.</h1><p class="lede">Pick a pillar to continue the work. The home page only reports what is waiting.</p></div><div class="c-live"><span class="dot"></span>3 pillars running</div></div>
+    <section class="card c-feature"><div class="c-intro"><div class="eyebrow">Across handoffs</div><div class="big">03</div><h2>Waiting batches</h2><p>Two headed into Clip, one headed into Post.</p></div><div class="c-lanes"><div class="c-lane"><h3>Search → Clip</h3><p>Sent from Search; Clip has not picked these up.</p><div class="c-batch"><strong class="mono">s-2409</strong><span>4 clips</span></div><div class="c-batch"><strong class="mono">s-2410</strong><span>2 clips</span></div><p style="margin-top:18px"><span class="link">Open Clip</span></p></div><div class="c-lane"><h3>Clip → Post</h3><p>Sent from Clip; Post has not picked this up.</p><div class="c-batch"><strong class="mono">c-1182</strong><span>3 clips</span></div><p style="margin-top:18px"><span class="link">Open Post</span></p></div></div></section>
+    <div class="c-low"><section class="card"><h3>Search review</h3><span class="number">12 <span class="small subtle">candidates</span></span><p>3 selected · <span class="link">Open Search</span></p></section><section class="card"><h3>Post schedule</h3><span class="number">2 <span class="small subtle">pending</span></span><p><span class="mono">q-302</span> · Oct 1, 10:00 AM<br><span class="mono">q-303</span> · Oct 2, 2:30 PM</p></section><section class="card"><h3>Pillar health</h3><div class="health-row"><span>Search</span><span>Running</span></div><div class="health-row"><span>Clip</span><span>Running</span></div><div class="health-row"><span>Post</span><span>Running</span></div></section></div>
+    <p class="note">Posting happens only from the Post tab, by you. Static design fixture; no action runs from this page.</p>
+  </main>
+  <script>
+    function showOption() {
+      const selected = ["pipeline","operations","queues"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "pipeline";
+      document.querySelectorAll("[data-mock]").forEach(el => el.classList.toggle("on", el.dataset.mock === selected));
+      document.querySelectorAll("[data-option]").forEach(el => el.classList.toggle("on", el.dataset.option === selected));
+    }
+    addEventListener("hashchange", showOption);
+    showOption();
+  </script>
+</body>
+</html>
