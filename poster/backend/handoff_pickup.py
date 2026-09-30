@@ -51,10 +51,6 @@ class NoBatchAvailable(HandoffPickupError):
     """No ready batch was found in the handoff directory."""
 
 
-class AwaitingAcknowledgement(HandoffPickupError):
-    """A pulled batch was never acknowledged and `replay=False` was asked."""
-
-
 def _ready_batches(root: Path) -> list[Path]:
     """Return batch dirs that carry a manifest, oldest first.
 
@@ -323,10 +319,10 @@ def _require_same_targets(receipt: dict, target_ids: list[str]) -> None:
 
 
 def waiting_batches() -> dict:
-    """What Pull would take next, read-only (RiceSuite ADR-001 Q12).
+    """What Pull would take next, read-only (RiceSuite ADR-001 Q12, amended).
 
-    The Post tab polls this to show an inbox and to ingest automatically when
-    no unposted draft is at risk. Lists complete batches oldest first, plus an
+    The Post tab polls this to show an inbox; only the maintainer's Pull
+    ingests (amendment of 2026-09-29). Lists complete batches oldest first, plus an
     archived batch whose receipt was never acknowledged (Pull replays that one
     first). Stages, moves and acknowledges nothing.
     """
@@ -348,7 +344,7 @@ def waiting_batches() -> dict:
     return {"batches": batches, "unacknowledged": unacknowledged, "error": error}
 
 
-def ingest_oldest(target_ids: list[str], *, replay: bool = True) -> dict:
+def ingest_oldest(target_ids: list[str]) -> dict:
     """Stage the oldest ready batch and return its slot assignments.
 
     Copies each clip into `MEDIA_DIR` as `{account_id}_{batch}_{file}` and,
@@ -364,13 +360,6 @@ def ingest_oldest(target_ids: list[str], *, replay: bool = True) -> dict:
     target_ids = _validate_targets(target_ids)
 
     pending = _oldest_unacknowledged()
-    if pending is not None and not replay:
-        # RiceSuite's automatic pull passes replay=False: recovering a staged
-        # batch stays the maintainer's Pull, so one batch never lands in two
-        # open pages and a posted-but-unacknowledged batch never returns.
-        raise AwaitingAcknowledgement(
-            f"batch {pending[0].name} was pulled but never acknowledged"
-        )
     if pending is not None:
         archive_dir, receipt = pending
         _require_same_targets(receipt, target_ids)

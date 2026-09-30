@@ -696,7 +696,7 @@ def test_account_switch_removes_every_stale_slot_not_only_drafts():
     assert "for (const id of drafts) delete state.slots[id];" not in html
 
 
-# --- RiceSuite automatic ingest: the read-only inbox (ADR-001 Q12) -----------
+# --- RiceSuite Clipper inbox: read-only; only Pull ingests (ADR-001 Q12, amended) -
 
 
 def _tree(root):
@@ -752,25 +752,30 @@ def test_inbox_endpoint_never_stages_posts_or_schedules(client, tmp_handoff_path
     assert _tree(media) == before
 
 
-def test_automatic_pull_never_replays_an_unacknowledged_batch(tmp_handoff_paths):
-    """Replaying belongs to the maintainer's Pull: an automatic replay could
-    stage one batch into two open pages, or bring back a batch that was
-    posted but never acknowledged."""
+def test_pull_has_no_no_replay_mode(client, tmp_handoff_paths):
+    """Only the maintainer's Pull ingests (ADR-001 Q12 as amended 2026-09-29),
+    so the automatic path's `replay=0` is gone: the button's pull recovers an
+    unacknowledged batch first."""
     handoff = tmp_handoff_paths["handoff"]
     _write_batch(handoff, "batch_20260826_120000_aaaa", [(1, "clip_1.mp4", "t")])
     _write_batch(handoff, "batch_20260826_130000_bbbb", [(1, "clip_1.mp4", "t")])
-    handoff_pickup.ingest_oldest(["creator-one"])  # staged, never acknowledged
-    with pytest.raises(handoff_pickup.AwaitingAcknowledgement):
-        handoff_pickup.ingest_oldest(["creator-one"], replay=False)
-    # The manual path still recovers it.
-    assert handoff_pickup.ingest_oldest(["creator-one"])["replayed"] is True
-
-
-def test_pull_endpoint_without_replay_reports_the_waiting_batch(client, tmp_handoff_paths):
-    handoff = tmp_handoff_paths["handoff"]
-    _write_batch(handoff, "batch_20260826_120000_aaaa", [(1, "clip_1.mp4", "t")])
     first = client.post("/api/pull-from-clipper").json()
-    assert first["pulled"]
-    again = client.post("/api/pull-from-clipper?replay=0").json()
-    assert again["pulled"] is False
-    assert "acknowledg" in again["reason"]
+    assert first["pulled"] and first["batch_id"] == "batch_20260826_120000_aaaa"
+    again = client.post("/api/pull-from-clipper").json()
+    assert again["pulled"] is True
+    assert again["replayed"] is True
+    assert again["batch_id"] == "batch_20260826_120000_aaaa"
+
+
+@pytest.mark.parametrize("query", ["?replay=0", "?replay=1", "?replay="])
+def test_a_page_from_before_manual_pull_is_refused(client, tmp_handoff_paths, query):
+    """A Post page loaded before the upgrade still auto-pulls with
+    `?replay=0` (the shell keeps pages alive). Fail closed instead of letting
+    it pull without a click: nothing is staged, and it is told to reload."""
+    handoff, media = tmp_handoff_paths["handoff"], tmp_handoff_paths["media"]
+    _write_batch(handoff, "batch_20260826_120000_aaaa", [(1, "clip_1.mp4", "t")])
+    before = (_tree(handoff), _tree(media))
+    r = client.post(f"/api/pull-from-clipper{query}")
+    assert r.status_code == 409
+    assert "reload" in r.json()["detail"].lower()
+    assert (_tree(handoff), _tree(media)) == before

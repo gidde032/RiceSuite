@@ -145,7 +145,7 @@ main.post_all_api = main.post_all_browser = main.add_batch = forbidden
 with TestClient(main.app) as client:
     inbox = client.get("/api/handoff/inbox").json()
     assert len(inbox["batches"]) == 1, inbox                     # waiting in the inbox
-    pulled = client.post("/api/pull-from-clipper").json()        # automatic ingest
+    pulled = client.post("/api/pull-from-clipper").json()        # the Pull click
     assert pulled["pulled"], pulled
     ack = client.post(f"/api/pull-from-clipper/{pulled['batch_id']}/ack")
     assert ack.status_code == 200, ack.text
