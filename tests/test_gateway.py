@@ -148,6 +148,10 @@ def test_shell_is_served_at_the_root(client):
     assert slate.status_code == 200
     assert slate.headers["content-type"].startswith("text/css")
     assert "--backdrop: #04060A" in slate.text
+    assert "Studio overview" in r.text
+    assert "Suite Health" in r.text
+    assert "Everything waiting across the suite, in one scan" not in r.text
+    assert "Posting happens only from the Post tab, by you" not in r.text
 
 
 def test_suite_logo_is_served_for_wordmark_and_favicon(client):
@@ -159,12 +163,14 @@ def test_suite_logo_is_served_for_wordmark_and_favicon(client):
     assert logo.status_code == 200
     assert logo.headers["content-type"].startswith("image/png")
     assert hashlib.sha256(logo.content).hexdigest() == (
-        "40ca1cfcdac506366e82d4e7f3cd11ac461b78e6cf5d7dfd633e2201faebb64c"
+        "e8cb29dd48e045e6b8172743b914b77e73695e68d2c2616e24fd944e15616f57"
     )
     vector = client.get("/shell/logo.svg")
     assert vector.status_code == 200
     assert ET.fromstring(vector.content).tag == "{http://www.w3.org/2000/svg}svg"
     assert "RiceSuite" in vector.text
+    assert "mixer" not in vector.text
+    assert "master-dial" not in vector.text
 
 
 def test_foreign_host_header_is_refused(upstream, client):

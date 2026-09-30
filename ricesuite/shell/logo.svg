@@ -1,15 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1254 1254" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="66 397 480 480" role="img" aria-labelledby="title desc">
   <title id="title">RiceSuite</title>
-  <desc id="desc">Slate DJ controller with a rice-stalk turntable, three rice-grain faders, and a dial whose straight stalk pointer grows from the center.</desc>
+  <desc id="desc">Slate turntable disc with a curled rice-stalk tonearm.</desc>
   <defs>
-    <linearGradient id="deck" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#41464A"/>
-      <stop offset="1" stop-color="#30363A"/>
-    </linearGradient>
-    <linearGradient id="edge" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#30363A"/>
-      <stop offset="1" stop-color="#1D2327"/>
-    </linearGradient>
     <linearGradient id="silver" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#E5E8EA"/>
       <stop offset="1" stop-color="#AEB3B6"/>
@@ -20,14 +12,7 @@
     </g>
   </defs>
 
-  <rect width="1254" height="1254" fill="#04060A"/>
-
-  <!-- One low-profile controller body. -->
-  <path d="M153 403H1102Q1126 403 1135 425L1214 786Q1223 812 1205 831H49Q31 812 40 786L119 425Q128 403 153 403Z" fill="url(#deck)" stroke="#101519" stroke-width="12"/>
-  <path d="M47 816Q52 823 66 823H1188Q1202 823 1207 816L1212 843Q1213 871 1183 880H71Q41 871 42 843Z" fill="url(#edge)" stroke="#101519" stroke-width="10"/>
-  <path d="M72 817H1182" fill="none" stroke="#171C20" stroke-width="6" stroke-linecap="round"/>
-
-  <!-- Turntable with rice stalk as the tonearm. -->
+  <!-- Editable vector reconstruction of the approved raster disc. -->
   <g id="turntable">
     <ellipse cx="306" cy="621" rx="200" ry="169" fill="#151A1E" stroke="#090D10" stroke-width="10"/>
     <ellipse cx="306" cy="612" rx="184" ry="156" fill="#0A0D10" stroke="url(#silver)" stroke-width="23"/>
@@ -45,23 +30,4 @@
     <use href="#grain" transform="translate(504 555) rotate(-23) scale(.49 .51)"/>
   </g>
 
-  <!-- Three separate grains are the mixer slider caps; no stalk on the mixer. -->
-  <g id="mixer">
-    <rect x="556" y="457" width="35" height="333" rx="17" fill="#0A0E11" stroke="#252B2F" stroke-width="3"/>
-    <rect x="647" y="457" width="35" height="333" rx="17" fill="#0A0E11" stroke="#252B2F" stroke-width="3"/>
-    <rect x="738" y="457" width="35" height="333" rx="17" fill="#0A0E11" stroke="#252B2F" stroke-width="3"/>
-    <use href="#grain" transform="translate(573 676) scale(1 .99)"/>
-    <use href="#grain" transform="translate(664 582) scale(1 .99)"/>
-    <use href="#grain" transform="translate(755 676) scale(1 .99)"/>
-  </g>
-
-  <!-- Master dial: the straight stem originates at its center. -->
-  <g id="master-dial">
-    <ellipse cx="980" cy="622" rx="162" ry="148" fill="#151A1E" stroke="#090D10" stroke-width="9"/>
-    <ellipse cx="980" cy="608" rx="147" ry="132" fill="#090D10" stroke="url(#silver)" stroke-width="20"/>
-    <ellipse cx="980" cy="608" rx="126" ry="110" fill="#080B0E"/>
-    <path d="M978 613L1042 555" stroke="url(#silver)" stroke-width="9" stroke-linecap="round"/>
-    <use href="#grain" transform="translate(1021 530) rotate(-41) scale(.47 .43)"/>
-    <use href="#grain" transform="translate(1072 559) rotate(-28) scale(.39 .40)"/>
-  </g>
 </svg>

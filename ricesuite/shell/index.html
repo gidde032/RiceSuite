@@ -10,7 +10,7 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="wordmark" href="#home" data-tab="home"><img src="shell/logo.png" alt="" width="68" height="36">RiceSuite</a>
+    <a class="wordmark" href="#home" data-tab="home"><img src="shell/logo.png" alt="" width="38" height="38">RiceSuite</a>
     <nav class="tabs" aria-label="Pillars">
       <a class="tab" href="#search" data-tab="search">Search <span class="dot" data-status="searcher"></span></a>
       <a class="tab" href="#clip" data-tab="clip">Clip <span class="dot" data-status="clipper"></span></a>
@@ -20,28 +20,49 @@
 
   <main>
     <section id="view-home" class="view" data-view="home">
-      <h1>Waiting at each stage</h1>
-      <div class="stages">
-        <article class="stage" id="stage-search">
-          <h2>Search</h2>
-          <p class="count" data-field="search"></p>
-          <p class="hint">Candidates to review; selected slices go to Clip with “Send selected”.</p>
-        </article>
-        <article class="stage" id="stage-clip">
-          <h2>Clip</h2>
-          <p class="count" data-field="to_clipper"></p>
-          <p class="hint">Batches sent from Search that Clip has not picked up yet.</p>
-          <ul class="batches" data-list="to_clipper"></ul>
-        </article>
-        <article class="stage" id="stage-post">
-          <h2>Post</h2>
-          <p class="count" data-field="to_poster"></p>
-          <p class="hint">Batches sent from Clip that Post has not picked up yet.</p>
-          <ul class="batches" data-list="to_poster"></ul>
-          <p class="count secondary" data-field="scheduled"></p>
-        </article>
+      <div class="home-heading">
+        <div>
+          <p class="eyebrow">Home</p>
+          <h1>Studio overview</h1>
+        </div>
+        <span class="freshness" data-freshness></span>
       </div>
-      <p class="note">Posting only ever happens from the Post tab, by you.</p>
+
+      <div class="metrics" aria-label="Suite counts">
+        <div class="metric"><span>Search candidates</span><strong data-field="search">—</strong></div>
+        <div class="metric"><span>Selected</span><strong data-field="selected">—</strong></div>
+        <div class="metric"><span>Handoff batches</span><strong data-field="handoff">—</strong></div>
+        <div class="metric"><span>Scheduled</span><strong data-field="scheduled">—</strong></div>
+      </div>
+
+      <div class="home-grid">
+        <section class="panel waiting" aria-labelledby="waiting-heading">
+          <div class="panel-heading"><h2 id="waiting-heading">Waiting at each stage</h2><span class="read-only">Read only</span></div>
+          <table class="stage-table">
+            <thead><tr><th scope="col">Stage</th><th scope="col">Waiting</th><th scope="col">Detail</th><th scope="col"><span class="visually-hidden">Open pillar</span></th></tr></thead>
+            <tbody>
+              <tr><th scope="row">Search</th><td data-field="search-waiting">—</td><td data-field="search-detail">—</td><td><a href="#search">Open</a></td></tr>
+              <tr><th scope="row">Clip</th><td data-field="to_clipper">—</td><td><ul class="batch-list" data-list="to_clipper"></ul></td><td><a href="#clip">Open</a></td></tr>
+              <tr><th scope="row">Post</th><td data-field="to_poster">—</td><td><ul class="batch-list" data-list="to_poster"></ul></td><td><a href="#post">Open</a></td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <div class="side-panels">
+          <section class="panel schedule" aria-labelledby="schedule-heading">
+            <h2 id="schedule-heading">Upcoming schedule</h2>
+            <ul data-list="scheduled"><li class="empty">Loading…</li></ul>
+          </section>
+          <section class="panel health" aria-labelledby="health-heading">
+            <h2 id="health-heading">Suite Health</h2>
+            <ul>
+              <li><span><i class="health-dot" data-status="searcher"></i>Search</span><span data-health="searcher">Unknown</span></li>
+              <li><span><i class="health-dot" data-status="clipper"></i>Clip</span><span data-health="clipper">Unknown</span></li>
+              <li><span><i class="health-dot" data-status="poster"></i>Post</span><span data-health="poster">Unknown</span></li>
+            </ul>
+          </section>
+        </div>
+      </div>
     </section>
     <section class="view frame" data-view="search"><iframe title="Search" data-src="search/"></iframe></section>
     <section class="view frame" data-view="clip"><iframe title="Clip" data-src="clip/"></iframe></section>
