@@ -14,6 +14,32 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   environment take precedence. `python-dotenv` is now pinned directly
   (1.2.3) instead of arriving through `uvicorn[standard]`. Tests redirect the
   path so they never read a developer's real `.env`.
+- **The header sits higher** (RiceSuite
+  [#20](https://github.com/gidde032/RiceSuite/issues/20)). `header_margin_v`
+  moves from 450 px (~23% of the 1920 px frame) to 210 px (~11%), on both the
+  libass and the emoji-PNG header paths. The subject-crop "face near header"
+  warning zone now follows the header: it covers the frame top down to the
+  bottom of a 2-line header with its plate (`header_margin_v` + 160 = 370 px,
+  was a fixed 450 px), so a face just below the raised header no longer warns.
+- **The rendered clip is a 9:16 view beside the controls** (RiceSuite
+  [#20](https://github.com/gidde032/RiceSuite/issues/20), variant C). It used
+  to be a full-width, letterboxed video under the card. Now each card's upper
+  row is source preview · controls · rendered clip: a 540 px tall 9:16 frame
+  the video fills with no padding, with Download under it. The frame shows
+  before the first render as an empty frame marking the header and caption
+  bands. A re-render keeps the last render in place, dimmed, and withholds
+  the download until it finishes. A failed render, lyric alignment or
+  transcript restore returns it to empty. In Music mode the transcript and
+  lyrics keep equal halves, now of the full card width. Below 880 px the
+  frame stacks between the controls and the transcript.
+  - The frame shrinks on a narrow or short window, from 540 px down to no
+    less than 360 px, so the controls keep room just above the breakpoint
+    and Download stays in view on a laptop screen.
+  - An edit after a render marks the frame "Edited since this render".
+  - During a re-render the old video is inert, and Align and Restore
+    transcript wait for the render to finish.
+  - In Music mode the two panes share their heading row, so their text boxes
+    start level even when a heading hint wraps.
 
 ### Added
 - **First-time-user README.** Requirements table (Python 3.11–3.14, ffmpeg with
@@ -35,6 +61,15 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   than a generic "render failed".
 - `pre-commit` is now pinned in `requirements-dev.txt` (4.6.2), so the
   documented `pre-commit install` works in a fresh dev venv.
+- **The editor browser check runs again** (RiceSuite #20).
+  `scripts/check_editor_browser.py` did not serve the shared `slate.css`, and
+  it expected an absolute output URL, so it had failed since the shared Slate
+  sheet and the gateway base path landed. Its screenshots in
+  `docs/reviews/editor-layout/` are regenerated. It now writes to the system
+  temp directory (or `RICECLIPPER_EDITOR_BROWSER_DIR`) instead of
+  `.riceclipper_work/`, the legacy Clipper work directory, and it passes
+  `--use-mock-keychain` so headless Chrome does not stall while the Mac is
+  locked.
 
 ### Security
 

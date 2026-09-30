@@ -53,7 +53,7 @@ class StyleConfig:
     header_border_style: int = 1  # 1 = outline, 3 = opaque box
     header_outline: int = 2
     header_shadow: int = 2
-    header_margin_v: int = 450  # px down from the top (~23% of 1920px)
+    header_margin_v: int = 210  # px down from the top (~11% of 1920px; Issue #20)
 
 
 CAPTION_STYLE_NAMES = (

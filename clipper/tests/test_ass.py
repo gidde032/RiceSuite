@@ -167,9 +167,9 @@ def test_header_presets_share_compact_scale_and_plain_has_no_plate():
     )
 
     assert "Style: Header,Arial,42" in plain
-    assert ",1,2,2,8,80,80,450,1" in plain
-    assert ",3,16,0,8,80,80,450,1" in black
-    assert ",3,16,0,8,80,80,450,1" in white
+    assert ",1,2,2,8,80,80,210,1" in plain
+    assert ",3,16,0,8,80,80,210,1" in black
+    assert ",3,16,0,8,80,80,210,1" in white
     assert "Style: HeaderPlate,Arial,42,&HFFFFFFFF,&HFFFFFFFF,&H00FFFFFF" in white
     assert "Style: Header,Arial,42,&H00FFFFFF,&H00FFFFFF,&H00000000" in white
     assert "Dialogue: 0,0:00:00.00,0:00:01.00,HeaderPlate" in white

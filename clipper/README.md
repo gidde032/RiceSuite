@@ -261,8 +261,9 @@ with an **85% coverage floor** on Python 3.12, on every PR and on every push to
 `main`. That job is the required check. A second, non-required job runs the
 suite on Python 3.14. `tests/test_gates.py` locks those numbers so they can't silently drift.
 The editor browser check uses a locally installed Chrome or Chromium (or
-`RICECLIPPER_CHROME`) and writes ten full-page screenshots to
-`.riceclipper_work/editor-browser/`.
+`RICECLIPPER_CHROME`) and writes fourteen full-page screenshots to
+`riceclipper-editor-browser/` in the system temp directory (or to
+`RICECLIPPER_EDITOR_BROWSER_DIR`).
 Optional local hooks mirror CI. `pre-commit` is pinned in
 `requirements-dev.txt`:
 

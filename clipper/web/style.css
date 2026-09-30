@@ -39,14 +39,13 @@ body:has(#batch-panel:not(.hidden)) main { width: 100%; padding: calc(var(--edit
 .clip-title { overflow: hidden; font-size: 13px; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
 .clip-head .clip-status { flex: 1; margin: 0; text-align: right; }
 .clip-remove { width: 36px; min-height: 36px; padding: 0; border-color: var(--destructive); color: var(--destructive); }
-.review-grid { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: var(--editor-space); padding: var(--editor-space); }
+.review-grid { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)) auto; gap: var(--editor-space); padding: var(--editor-space); }
 .preview-col { display: flex; grid-column: 1 / span 4; grid-row: 1; min-width: 0; padding: var(--editor-space); flex-direction: column; border: 1px solid var(--hairline); border-radius: 6px; background: var(--backdrop); }
-.preview-col video, .output-video { display: block; width: 100%; background: #000; }
+.preview-col video { display: block; width: 100%; background: #000; }
 .source-video { height: 360px; min-height: 360px; flex: 1 1 360px; border: 1px solid var(--hairline); border-radius: 6px; object-fit: contain; }
-.output-video { max-height: 680px; margin-bottom: 16px; border-radius: 6px; object-fit: contain; }
 .geo-note { margin-top: var(--editor-space); padding: var(--editor-space); border: 1px solid var(--hairline); border-radius: 6px; background: var(--midground); font-family: Arial, sans-serif; }
 
-.edit-col { grid-column: 5 / -1; grid-row: 1; min-width: 0; padding: 0 var(--editor-space); }
+.edit-col { grid-column: 5 / span 6; grid-row: 1; min-width: 0; padding: 0 var(--editor-space); }
 .field { margin: 0; padding: var(--editor-space) 0; border: 0; border-bottom: 1px solid var(--hairline); }
 .field-row { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: var(--editor-space); align-items: start; }
 .field > label, .field-label, .field legend { padding: calc(var(--editor-space) * 0.5) 0 0; color: var(--text); font-size: 12px; font-weight: 560; letter-spacing: 0.02em; text-transform: uppercase; }
@@ -100,8 +99,13 @@ input[type="file"]::file-selector-button { margin-right: 10px; border: 1px solid
 .switch-label { display: flex; min-height: 36px; padding: 0 !important; align-items: center; gap: var(--editor-space); font-size: 14px !important; font-weight: 400 !important; letter-spacing: 0 !important; text-transform: none !important; }
 .switch-label input { width: 38px; height: 22px; accent-color: var(--rice); }
 .text-panel { min-width: 0; padding: var(--editor-space); border: 1px solid var(--hairline); border-radius: 6px; background: var(--interior); }
-.transcript-panel { grid-column: 1 / -1; grid-row: 2; }
-.review-grid.music-review .transcript-panel { grid-column: 1 / span 5; }
+/* Transcript and lyrics share the full width below the upper row, in equal
+   halves for music, whatever the rendered column's width (Issue #20). */
+.text-row { display: grid; grid-column: 1 / -1; grid-row: 2; grid-template-columns: minmax(0, 1fr); gap: var(--editor-space); }
+.review-grid.music-review .text-row { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(3, auto); }
+/* Both panes share the heading row, so a wrapped hint cannot push one text
+   box below the other. */
+.review-grid.music-review .text-panel { display: grid; grid-row: span 3; grid-template-rows: subgrid; row-gap: 0; align-content: start; }
 .text-heading { display: flex; min-height: 28px; align-items: start; justify-content: space-between; gap: var(--editor-space); padding-bottom: calc(var(--editor-space) * 0.5); }
 .text-heading .hint { margin: 0; }
 .text-heading .field-label { padding: 0; }
@@ -109,7 +113,6 @@ input[type="file"]::file-selector-button { margin-right: 10px; border: 1px solid
 .lyrics-input { resize: none; }
 .transcript .word { display: inline-block; padding: 0; border-radius: 3px; outline: none; }
 .transcript .word:focus { background: rgb(174 179 182 / 20%); outline: 1px solid var(--rice); }
-.lyrics { grid-column: 6 / -1; grid-row: 2; }
 .lyrics[hidden] { display: none; }
 .lyrics-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--editor-space); padding-top: var(--editor-space); }
 .lyrics-actions button { min-height: 36px; padding: calc(var(--editor-space) * 0.5) var(--editor-space); }
@@ -119,7 +122,33 @@ input[type="file"]::file-selector-button { margin-right: 10px; border: 1px solid
 .vol input { width: 100%; accent-color: var(--rice); }
 .vol-label { padding: 7px 5px; border: 1px solid var(--control-line); border-radius: 5px; color: var(--text); text-align: center; }
 
-.clip-result { padding: 16px; border-top: 1px solid var(--hairline); }
+/* Rendered clip (RiceSuite #20, variant C): a true 9:16 frame beside the
+   controls. The frame, not the video's metadata, sets the shape, and cover
+   means no letterbox; renders are always 1080x1920. */
+.clip-result { display: flex; grid-column: 11; grid-row: 1; align-self: start; min-width: 0; padding: var(--editor-space); flex-direction: column; gap: var(--editor-space); border: 1px solid var(--hairline); border-radius: 6px; background: var(--backdrop); }
+/* 540 px tall, shrinking with a narrow or short window (never below 360 px)
+   so the controls keep room above the 880 px breakpoint and Download stays
+   in view on a laptop screen. */
+.result-frame { position: relative; height: clamp(360px, min(42vw, 100vh - 200px), 540px); max-width: 100%; aspect-ratio: 9 / 16; }
+.output-video { display: block; width: 100%; height: 100%; padding: 0; border: 0; border-radius: 6px; background: #000; object-fit: cover; }
+.result-empty, .result-busy { position: absolute; inset: 0; display: none; border-radius: 6px; }
+.result-empty { flex-direction: column; align-items: center; justify-content: center; gap: calc(var(--editor-space) * 0.5); padding: var(--editor-space); border: 1px dashed var(--control-line); background: var(--backdrop); color: var(--muted); font-family: Arial, sans-serif; font-size: 12px; text-align: center; }
+.result-empty strong { color: var(--text); font-size: 14px; font-weight: 600; }
+/* Guide bands in output pixels of the 1920 px frame: the header block is
+   header_margin_v (210) plus 160 (render/framing.py HEADER_ZONE_PX); captions
+   sit from caption_margin_v (340) up to the 540 px caption zone. */
+.result-guide { position: absolute; left: var(--editor-space); right: var(--editor-space); display: flex; padding: 2px 6px; border: 1px dashed var(--control-line); border-radius: 3px; font-size: 10px; }
+.guide-header { top: calc(210 / 1920 * 100%); height: calc(160 / 1920 * 100%); align-items: flex-start; }
+.guide-caption { bottom: calc(340 / 1920 * 100%); height: calc((540 - 340) / 1920 * 100%); align-items: flex-end; }
+.result-busy { align-items: flex-end; justify-content: center; padding: var(--editor-space); background: rgb(4 6 10 / 62%); color: var(--text); font-family: Arial, sans-serif; font-size: 12px; }
+.result-busy span { padding: 6px 10px; border: 1px solid var(--hairline); border-radius: 4px; background: var(--midground); }
+.result-stale { position: absolute; top: var(--editor-space); right: var(--editor-space); left: var(--editor-space); display: none; justify-content: center; font-family: Arial, sans-serif; font-size: 12px; }
+.result-stale span { padding: 6px 10px; border: 1px solid var(--danger); border-radius: 4px; background: var(--midground); color: var(--text); }
+.clip-result.is-empty .result-empty, .clip-result.is-busy .result-busy, .clip-result.is-stale:not(.is-busy) .result-stale { display: flex; }
+.clip-result.is-empty .output-video { visibility: hidden; }
+.clip-result .download-link { width: 100%; }
+.clip-result.is-empty .download-link { visibility: hidden; }
+.clip-result.is-busy .download-link { opacity: 0.45; }
 .batch-actions { display: grid; grid-template-columns: 1fr 1.3fr 1.3fr; gap: var(--editor-space); margin-top: var(--editor-space); padding: var(--editor-space) 0; border-top: 1px solid var(--hairline); background: var(--backdrop); }
 #restart-btn { border-color: var(--destructive); color: var(--destructive); }
 #batch-panel button { min-height: 36px; padding: calc(var(--editor-space) * 0.5) var(--editor-space); }
@@ -137,7 +166,7 @@ button:focus-visible, .primary:focus-visible, textarea:focus-visible, select:foc
 .cache-actions button { min-height: 36px; padding: 6px 12px; color: var(--muted); }
 
 @media (max-width: 1120px) { .music-controls { grid-template-columns: 1fr; } }
-@media (max-width: 880px) { body:has(#batch-panel:not(.hidden)) main { padding: var(--editor-space); } .review-grid { display: flex; flex-direction: column; } .preview-col, .edit-col, .transcript-panel, .lyrics { width: 100%; } .edit-col { padding: 0 var(--editor-space); } .source-video { height: min(80vh, 900px); min-height: 0; flex: 0 0 auto; } }
+@media (max-width: 880px) { body:has(#batch-panel:not(.hidden)) main { padding: var(--editor-space); } .review-grid { display: flex; flex-direction: column; } .preview-col, .edit-col, .transcript-panel, .lyrics { width: 100%; } .clip-result { align-self: stretch; align-items: center; } .result-frame { width: min(100%, 360px); height: auto; } .clip-result .download-link { width: min(100%, 360px); } .text-row { display: flex; flex-direction: column; } .edit-col { padding: 0 var(--editor-space); } .source-video { height: min(80vh, 900px); min-height: 0; flex: 0 0 auto; } }
 @media (max-width: 620px) { .topbar { padding-inline: 12px; } .field-row { grid-template-columns: 1fr; gap: calc(var(--editor-space) * 0.5); } .field > label, .field-label, .field legend { padding-top: 0; } .field legend { float: none; width: auto; } .field legend + * { margin-left: 0; margin-top: calc(var(--editor-space) * 0.5); } .header-choice-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .caption-choice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .batch-actions { position: static; grid-template-columns: 1fr; } .cache-actions { align-items: stretch; flex-direction: column; } .dropzone { min-height: 200px; padding-inline: 16px; } }
 @media (pointer: coarse) { #batch-panel button, #batch-panel select, #batch-panel input[type="file"], #batch-panel .choice-card, #batch-panel .switch-label, #batch-panel .vol { min-height: 44px; } #batch-panel .clip-remove { width: 44px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }
