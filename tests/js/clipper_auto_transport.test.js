@@ -393,7 +393,7 @@ function renderable(jobId, ord) {
     musicInputEl: { files: [] }, musicVolumeEl: { value: "0.5" },
     resultEl: { classList: { add() {}, remove() {} } },
     outputVideoEl: { pause() {}, load() {}, removeAttribute() {} },
-    downloadEl: { removeAttribute() {} } }`;
+    downloadEl: { removeAttribute() {} }, lyricsAlignEl: {}, lyricsRestoreEl: {} }`;
 }
 
 function stubRender(js) {

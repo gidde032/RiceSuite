@@ -32,6 +32,14 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   transcript restore returns it to empty. In Music mode the transcript and
   lyrics keep equal halves, now of the full card width. Below 880 px the
   frame stacks between the controls and the transcript.
+  - The frame shrinks on a narrow or short window, from 540 px down to no
+    less than 360 px, so the controls keep room just above the breakpoint
+    and Download stays in view on a laptop screen.
+  - An edit after a render marks the frame "Edited since this render".
+  - During a re-render the old video is inert, and Align and Restore
+    transcript wait for the render to finish.
+  - In Music mode the two panes share their heading row, so their text boxes
+    start level even when a heading hint wraps.
 
 ### Added
 - **First-time-user README.** Requirements table (Python 3.11–3.14, ffmpeg with
@@ -57,7 +65,11 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   `scripts/check_editor_browser.py` did not serve the shared `slate.css`, and
   it expected an absolute output URL, so it had failed since the shared Slate
   sheet and the gateway base path landed. Its screenshots in
-  `docs/reviews/editor-layout/` are regenerated.
+  `docs/reviews/editor-layout/` are regenerated. It now writes to the system
+  temp directory (or `RICECLIPPER_EDITOR_BROWSER_DIR`) instead of
+  `.riceclipper_work/`, the legacy Clipper work directory, and it passes
+  `--use-mock-keychain` so headless Chrome does not stall while the Mac is
+  locked.
 
 ### Security
 
