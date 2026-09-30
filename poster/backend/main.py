@@ -11,10 +11,11 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
+from ricesuite.localguard import LocalGuard, gateway_origins
 from backend.config import (
     get_accounts, env_bool, FRONTEND_DIR, HISTORY_FILE, MEDIA_DIR, QUEUE_MEDIA_DIR,
     MOCK_MODE, POST_MODE, HEADLESS, SLOT_IDS, check_startup_config,
@@ -116,6 +117,15 @@ async def lifespan(app):
 
 
 app = FastAPI(title="RicePoster", lifespan=lifespan)
+# This API is unauthenticated and can post to real accounts, and a browser page
+# can reach Poster's own loopback port without passing the RiceSuite gateway.
+# So Poster refuses foreign Hosts and cross-origin state changes itself (suite
+# SPEC FR-3, suite #14), on whatever port it is bound to. It also refuses to be
+# framed by another site, and serves staged media so it can run no script
+# (suite #38).
+app.add_middleware(
+    LocalGuard, trusted_origins=gateway_origins(), sandboxed_paths=("/api/media/",)
+)
 
 
 @app.exception_handler(RequestValidationError)
@@ -415,6 +425,41 @@ async def media_info():
     }
 
 
+MEDIA_STAT_MAX_NAMES = 100
+
+
+@app.get("/api/media-stat")
+async def media_stat(name: Annotated[list[str], Query()] = []):
+    """Size and modification time of staged media files, by exact name.
+
+    Restore last batch (RiceSuite #30) uses this to check that a saved draft's
+    media is still the same file: upload names are reused after Clear media,
+    so a name alone could pair an old caption with a new upload. Read-only;
+    a name that is not a plain file directly under MEDIA_DIR reports null.
+    """
+    if len(name) > MEDIA_STAT_MAX_NAMES:
+        raise HTTPException(status_code=400, detail=f"at most {MEDIA_STAT_MAX_NAMES} names")
+    files: dict[str, dict | None] = {}
+    for requested in name:
+        path = MEDIA_DIR / requested
+        if (
+            not requested
+            or Path(requested).name != requested
+            or requested == ".gitkeep"
+            or path.is_symlink()
+            or not path.is_file()
+        ):
+            files[requested] = None
+            continue
+        try:
+            st = path.stat()
+        except OSError:  # removed since the check above (e.g. Clear media)
+            files[requested] = None
+            continue
+        files[requested] = {"size": st.st_size, "mtime_ns": st.st_mtime_ns}
+    return {"files": files}
+
+
 @app.post("/api/media/clear")
 async def clear_media():
     """Delete all uploaded media copies. Originals live elsewhere on disk —
@@ -502,15 +547,25 @@ async def clipper_inbox():
 
 
 @app.post("/api/pull-from-clipper")
-async def pull_from_clipper(replay: bool = True):
+async def pull_from_clipper(request: Request):
     """Stage the oldest RiceClipper handoff batch into a pending run.
 
     Copies the batch's media into MEDIA_DIR and returns per-slot assignments
     (filename + transcript topic + default style). Captioning happens in the
     browser afterward via /api/generate-caption, so a pulled clip is captioned
     on a real frame just like manual. This endpoint NEVER posts and NEVER
-    schedules (CLAUDE.md safety rule) — it only stages files.
+    schedules (CLAUDE.md safety rule) — it only stages files. Only the
+    maintainer's Pull from Clipper click calls it (RiceSuite ADR-001 Q12,
+    amended 2026-09-29).
     """
+    if "replay" in request.query_params:
+        # Only a Post page loaded before manual-only Pull sends `replay`: its
+        # inbox poll would still pull without a click. Fail closed.
+        raise HTTPException(
+            status_code=409,
+            detail="This Post page is out of date and may pull on its own. "
+            "Reload the Post tab, then use Pull from Clipper.",
+        )
     _discovered, account_state, state_error, _store = _account_context()
     if state_error:
         raise HTTPException(
@@ -518,14 +573,7 @@ async def pull_from_clipper(replay: bool = True):
             detail=f"Local account state is invalid; repair it before pulling: {state_error}",
         )
     try:
-        result = handoff_pickup.ingest_oldest(
-            account_state.active_account_ids, replay=replay
-        )
-    except handoff_pickup.AwaitingAcknowledgement as e:
-        return {
-            "pulled": False,
-            "reason": f"{e}; use Pull from Clipper to recover it.",
-        }
+        result = handoff_pickup.ingest_oldest(account_state.active_account_ids)
     except handoff_pickup.NoBatchAvailable:
         return {"pulled": False, "reason": "No handoff batches to pull."}
     except handoff_pickup.HandoffPickupError as e:

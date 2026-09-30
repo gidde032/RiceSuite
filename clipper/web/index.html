@@ -194,31 +194,45 @@
           </div>
         </div>
 
-        <div class="text-panel transcript-panel">
-          <div class="text-heading">
-            <span class="field-label">Generated transcript</span>
-            <span class="hint">Edit any misheard word. Timing stays locked.</span>
+        <!-- Rendered clip (RiceSuite #20): a 9:16 frame beside the controls,
+             empty until a render lands. -->
+        <div class="clip-result is-empty">
+          <div class="result-frame">
+            <video class="output-video" controls playsinline preload="metadata"></video>
+            <div class="result-empty">
+              <span class="result-guide guide-header">Header</span>
+              <span class="result-guide guide-caption">Captions</span>
+              <strong>Rendered clip appears here</strong>
+              <span>9:16 · 1080×1920</span>
+            </div>
+            <div class="result-stale"><span>Edited since this render</span></div>
+            <div class="result-busy" aria-hidden="true"><span>Rendering…</span></div>
           </div>
-          <div class="transcript" contenteditable="false" aria-label="Editable transcript"></div>
+          <a class="download-link primary" download>Download mp4</a>
         </div>
 
-        <div class="text-panel lyrics" hidden>
-          <div class="text-heading">
-            <label class="field-label" for="lyrics-input">Paste lyrics</label>
-            <span class="hint">Optional</span>
+        <div class="text-row">
+          <div class="text-panel transcript-panel">
+            <div class="text-heading">
+              <span class="field-label">Generated transcript</span>
+              <span class="hint">Edit any misheard word. Timing stays locked.</span>
+            </div>
+            <div class="transcript" contenteditable="false" aria-label="Editable transcript"></div>
           </div>
-          <textarea id="lyrics-input" class="lyrics-input" rows="4" placeholder="Paste lyrics, one line per caption line"></textarea>
-          <div class="lyrics-actions">
-            <button class="lyrics-align" type="button">Align</button>
-            <button class="lyrics-restore" type="button">Restore transcript</button>
-            <span class="lyrics-badge" aria-live="polite"></span>
+
+          <div class="text-panel lyrics" hidden>
+            <div class="text-heading">
+              <label class="field-label" for="lyrics-input">Paste lyrics</label>
+              <span class="hint">Optional</span>
+            </div>
+            <textarea id="lyrics-input" class="lyrics-input" rows="4" placeholder="Paste lyrics, one line per caption line"></textarea>
+            <div class="lyrics-actions">
+              <button class="lyrics-align" type="button">Align</button>
+              <button class="lyrics-restore" type="button">Restore transcript</button>
+              <span class="lyrics-badge" aria-live="polite"></span>
+            </div>
           </div>
         </div>
-      </div>
-
-      <div class="clip-result hidden">
-        <video class="output-video" controls playsinline></video>
-        <a class="download-link primary" download>Download mp4</a>
       </div>
     </article>
   </template>

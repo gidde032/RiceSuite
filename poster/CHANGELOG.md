@@ -5,7 +5,34 @@
 This section contains changes merged into `main` that have not yet been
 published as a tagged release or GitHub Release.
 
+### Changed
+
+- **Pull from Clipper is manual only.** The Post page no longer pulls a
+  waiting Clip batch on its own, not even into an empty Review: only your
+  **Pull from Clipper** click pulls. The inbox note still lists waiting,
+  unacknowledged and errored batches and now points to the button, which
+  shows the waiting count (**Pull from Clipper · 2**). The automatic path's
+  no-replay request (`POST /api/pull-from-clipper?replay=0`) is removed; every
+  pull recovers an unacknowledged batch first, and a request that still sends
+  `replay` (a Post page loaded before the upgrade) is refused with 409 and a
+  request to reload. (RiceSuite
+  [#30](https://github.com/gidde032/RiceSuite/issues/30), ADR-001 amendment
+  of 2026-09-29)
+
 ### Added
+
+- **Restore last batch.** A new Review action brings back the drafts that the
+  last New Run, Pull from Clipper, or Restore replaced: media, caption,
+  transcript, style and media type, saved in the browser so they survive a
+  reload. Review becomes that batch again, by roster position (an account it
+  had no draft for is cleared); a caption landing on a different
+  account keeps its text and takes that account's caption style. Restore
+  checks each staged file's size and modified time through a new read-only
+  `GET /api/media-stat`, so an old caption is never paired with a new upload
+  that reused the name. Missing media or drafts beyond the roster are named
+  and left out after a confirm, and it asks before overwriting or clearing
+  unposted drafts. Pressing it again undoes it. It never posts or schedules. (RiceSuite
+  [#30](https://github.com/gidde032/RiceSuite/issues/30))
 
 - **Swapping accounts keeps the drafts in their slots.** An account leaving
   Review now hands its unposted draft (media, caption, topic, caption frame) to
@@ -232,6 +259,27 @@ published as a tagged release or GitHub Release.
   ceiling that only detects hangs.
   ([#13](https://github.com/gidde032/RicePoster/issues/13),
   [#44](https://github.com/gidde032/RicePoster/issues/44))
+
+### Security
+
+- **Poster's own port refuses cross-site requests** (RiceSuite
+  [#14](https://github.com/gidde032/RiceSuite/issues/14)). A page in the
+  browser could POST straight to Poster's loopback port (`8793` in RiceSuite,
+  `1738` standalone), bypassing the RiceSuite gateway's guard. The API now
+  runs that same guard itself (`ricesuite.localguard`): a request not
+  addressed to `127.0.0.1:<port>` or `localhost:<port>` for the port Poster is
+  bound to gets 421, and a POST, PUT, PATCH or DELETE whose `Origin` is
+  neither Poster's own loopback origin nor the gateway's
+  (`http://127.0.0.1:8790` or `http://localhost:8790`) gets 403, as does
+  `Origin: null`. Requests without an Origin (curl, the launcher, the stop
+  guard) are unaffected. Tests address the app as `http://127.0.0.1:1738`.
+- **Poster can't be framed by another site, and staged media runs no script**
+  (RiceSuite [#38](https://github.com/gidde032/RiceSuite/issues/38)). Every
+  response carries `X-Frame-Options: SAMEORIGIN` and CSP
+  `frame-ancestors 'self'`, so another site cannot frame Post All behind decoy
+  UI. `/api/media/…` is served with `X-Content-Type-Options: nosniff` and CSP
+  `default-src 'none'; sandbox`, so a staged SVG or HTML file opened directly
+  cannot act as Poster's or the gateway's origin.
 
 ## [0.4.0] — 2026-07-31
 

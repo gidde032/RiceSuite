@@ -53,7 +53,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     # The fixture intentionally uses a fake media path; window tests that need
     # a real duration override this probe below.
     monkeypatch.setattr(web_app, "ffprobe_duration", lambda _path: 100.0)
-    return TestClient(create_app(cfg))
+    return TestClient(create_app(cfg), base_url="http://127.0.0.1:8765")
 
 
 def _get(client: TestClient, sid: str) -> dict:

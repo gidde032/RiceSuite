@@ -203,7 +203,7 @@ def allow_browser_post_media(monkeypatch):
 def client():
     from backend.main import app
 
-    return TestClient(app)
+    return TestClient(app, base_url="http://127.0.0.1:1738")
 
 
 @pytest.fixture

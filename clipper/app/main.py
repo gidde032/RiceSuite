@@ -17,6 +17,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from ricesuite.localguard import LocalGuard, gateway_origins
 
 from app import env
 
@@ -86,6 +87,17 @@ async def no_store_review_assets(request: Request, call_next):
     if request.url.path in {"/", "/index.html", "/app.js", "/style.css", "/slate.css"}:
         response.headers["Cache-Control"] = "no-store"
     return response
+
+
+# A browser page can reach this port without passing the RiceSuite gateway, so
+# the app refuses foreign Hosts and cross-origin state changes itself (suite
+# SPEC FR-3, suite #14), on whatever port it is bound to. It also refuses to be
+# framed by another site, and serves job media (uploads keep their own
+# extension) so it can run no script (suite #38). Added last, so it is the
+# outermost middleware.
+app.add_middleware(
+    LocalGuard, trusted_origins=gateway_origins(), sandboxed_paths=("/api/jobs/",)
+)
 
 
 @app.get("/api/health")

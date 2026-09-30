@@ -17,7 +17,8 @@ root).
 RiceSuite is the three Rice pillars run as one local app: one `rice` command
 starts a single localhost front door (the gateway) and three supervised pillar
 processes sharing one Python environment. Batches move between pillars
-automatically over the existing filesystem handoff contracts. The three human
+automatically over the existing filesystem handoff contracts, up to Poster's
+inbox, which the maintainer pulls from (ADR-001 amendment of 2026-09-29). The three human
 judgement gates stay exactly where they are, and nothing is ever posted
 automatically.
 
@@ -35,7 +36,7 @@ and no fallback to an old app needed.
 | Gateway | One localhost-only HTTP port; routes each tab to its own pillar | Q6, Q11 |
 | Slate shell | Top bar with Search / Clip / Post tabs, plus a home view of batches waiting at each stage | Q11 |
 | Pillars | `searcher/`, `clipper/`, `poster/`, each its own process, unchanged except as ADR-001 overrides | Q6, Q13 |
-| Transport | Filesystem handoffs, auto-ingested by each consumer | Q7, Q12 |
+| Transport | Filesystem handoffs, auto-ingested by Clipper; Poster ingests on the maintainer's Pull | Q7, Q12 (amended 2026-09-29) |
 | Config | One `ricesuite.env` at the suite root | Q14 |
 
 ### 2.1 Ports
@@ -65,12 +66,32 @@ Each requirement is written so a test can check it. "The launcher" means the
   gateway and each pillar, whether it is running, its port, and its restart
   count.
 - **FR-3** Every listener binds to 127.0.0.1 only. No option binds to another
-  interface. The gateway answers only requests addressed to
-  `127.0.0.1:<port>` or `localhost:<port>` (DNS-rebinding guard) and refuses
-  state-changing requests carrying another origin, because Poster's API is
-  unauthenticated. This covers traffic through the gateway only: each pillar
-  still listens on its own loopback port, exactly as the old apps did
-  (hardening tracked in #14).
+  interface. Every listener, the gateway and each pillar alike, runs the same
+  guard (`ricesuite/localguard.py`), because Poster's API is unauthenticated
+  and a browser page can reach a pillar's own loopback port without passing
+  the gateway (#14):
+  - It answers only requests addressed to `127.0.0.1:<port>` or
+    `localhost:<port>`, where `<port>` is the port the listener is bound to
+    (the gateway's is its configured port). Anything else gets 421
+    (DNS-rebinding guard). A pillar run standalone on its old port is
+    therefore guarded too.
+  - It refuses with 403 any state-changing request (not GET, HEAD or OPTIONS),
+    and closes any WebSocket handshake, whose `Origin` is not the listener's own
+    loopback origin or, for a pillar, the gateway's
+    (`http://127.0.0.1:8790`, `http://localhost:8790`; the launcher passes the
+    gateway port it uses in `RICESUITE_GATEWAY_PORT`). `Origin: null` is
+    refused. A request without an Origin is allowed, so the launcher, the stop
+    guard, `rice status` and curl keep working. A refused WebSocket
+    handshake (foreign Host or Origin) is closed before it is accepted, which
+    the server answers with 403.
+  - Every response says only the listener's own origin may frame it
+    (`X-Frame-Options: SAMEORIGIN`, CSP `frame-ancestors 'self'`), so another
+    site cannot frame a page and trick the maintainer into clicking it; the
+    shell frames each pillar page from the gateway's own origin (#38).
+  - Files a user or a download supplied (Poster `/api/media/`, Clipper
+    `/api/jobs/…/source` and `/output`, Searcher `/cache/`) are served with
+    `X-Content-Type-Options: nosniff` and CSP `default-src 'none'; sandbox`,
+    so such a file opened directly runs no script as a suite origin (#38).
 - **FR-4** The launcher refuses to start, and exits non-zero naming the port,
   if anything is accepting connections on 8765, 8000 or 1738 (an old app may be
   running; only one side runs at a time, Q10). It also refuses if a suite port
@@ -113,7 +134,7 @@ Each requirement is written so a test can check it. "The launcher" means the
   batches not yet ingested by Clipper, Clipper batches not yet sent or held by
   a failed render, and batches waiting in Poster's inbox.
 
-### Automatic transport (Q12)
+### Automatic transport (Q12, Poster clause amended 2026-09-29)
 
 The handoff contracts are unchanged: batch schema, `manifest.json` written
 last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
@@ -132,16 +153,20 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
   it refuses while any clip is unrendered, failed, or edited since its render,
   names those clips, and never sends part of a batch. Removing a clip from the
   batch is the reviewer's way to send the rest.
-- **FR-14 Poster ingest.** A complete Clipper batch is ingested automatically
-  only when Poster's draft workspace is empty. Otherwise it waits, visibly, in
-  an inbox on the Post tab, and is never merged into or replaces existing
-  drafts without the maintainer's action (preserves Poster's
-  confirm-before-discard). Captions generate on ingest as today.
+- **FR-14 Poster ingest.** A complete Clipper batch is ingested only when the
+  maintainer clicks **Pull from Clipper**, never on its own, even when Poster's
+  draft workspace is empty (ADR-001 amendment "Manual Poster ingest",
+  2026-09-29). Until then it waits, visibly, in an inbox on the Post tab, and
+  the Pull button shows how many batches wait. Pull confirms before
+  overwriting unposted drafts (preserves Poster's confirm-before-discard), and
+  recovers an unacknowledged batch before taking a new one. Captions generate
+  on ingest as today.
 - **How FR-12 – FR-14 are driven.** Clipper's batch and Poster's drafts live
   in their pages (transcript edits, headers and captions are browser state),
-  so each consumer's page drives its own transport: it polls a read-only inbox
-  endpoint (`GET api/searcher-inbox` on Clipper, `GET api/handoff/inbox` on
-  Poster) and then performs exactly the pull or send its button performs.
+  so each consumer's page drives its own transport: Clipper polls a read-only
+  inbox endpoint (`GET api/searcher-inbox`) and then performs exactly the pull
+  or send its button performs. Poster polls `GET api/handoff/inbox` only to
+  report waiting batches; it never pulls from the poll.
   Clipper pulls only when nothing unsent would be displaced: the workspace is
   empty, or it holds exactly what was last sent (a later edit or re-render
   holds it). The Pull button follows the same rule, and one pull runs at a
@@ -162,15 +187,13 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
   reload (`GET api/workspace?batch_id=`). An open batch the tab does not hold
   (another tab's, or a closed tab's) is named on the page and opens there
   only on a Pull click. Browser-only edits are still lost on a reload.
-  Poster pulls only when its manual Pull would not have to ask before
-  overwriting a draft, re-checks that after the request returns, and never
-  replays an unacknowledged batch (it calls `POST api/pull-from-clipper?replay=0`,
-  which answers `pulled: false` instead of replaying; the default, used by
-  the button, still replays); recovering one stays the maintainer's Pull. The shell loads
-  all three pages up front and keeps them alive, so transport runs whenever
-  RiceSuite is open (Q18: v1 runs while open). Limits of page-driven transport
-  (background-tab throttling, a sleeping laptop, a second open tab) are
-  tracked in #16; handoff folders are durable, so a delay loses nothing.
+  Poster's only ingest is the Pull from Clipper button
+  (`POST api/pull-from-clipper`), which replays an unacknowledged batch before
+  taking the next one. The shell loads all three pages up front and keeps them
+  alive, so Clipper's transport runs whenever RiceSuite is open (Q18: v1 runs
+  while open). Limits of page-driven transport (background-tab throttling, a
+  sleeping laptop, a second open tab) are tracked in #16; handoff folders are
+  durable, so a delay loses nothing.
 - **FR-15 Never auto-post.** No transport step posts, schedules, or discards a
   draft. Post All and Schedule remain explicit human actions in Poster.
 
@@ -255,7 +278,7 @@ draft PR, stacked.
 |---|---|---|---|
 | 1 Foundation | #1 | This spec, one venv with aligned pins, `RICEPOSTER_DATA_DIR`, `ricesuite.env` loader, boundary test, one CI | Every pillar runs and passes its gates from one environment and one CI |
 | 2 Front door | #2 | `rice` CLI, supervisor, gateway, Slate shell and home view, port refusals, stop rules | One command, one tab for the daily workflow (manual Pull/Send still used) |
-| 3 Auto-transport | #3 | FR-12 – FR-16, full-chain mock-mode test | Batches flow between tabs with no plumbing clicks |
+| 3 Auto-transport | #3 | FR-12 – FR-16, full-chain mock-mode test | Batches flow between tabs with no plumbing clicks (Post's Pull is manual since the ADR-001 amendment of 2026-09-29) |
 
 ## 7. Out of scope (post-burn-in Issues)
 

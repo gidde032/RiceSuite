@@ -145,7 +145,12 @@ real Instagram profile, without the maintainer's sign-off for that occasion
 ```
 
 The server binds localhost only, on purpose: the API has no authentication and
-can post to real accounts. Don't expose it to the network.
+can post to real accounts. Don't expose it to the network. It also answers only
+requests addressed to `127.0.0.1` or `localhost` on its own port (421 otherwise)
+and refuses changes sent from another site's page (403), so another site cannot
+send Poster requests through your browser (RiceSuite SPEC FR-3). Its pages cannot
+be framed by another site, and staged media is served so it can run no script
+([RiceSuite #38](https://github.com/gidde032/RiceSuite/issues/38)).
 
 ## Posting workflow
 
@@ -211,16 +216,37 @@ not delete the archive. A caption-generation failure leaves the receipt staged
 for a safe retry. You land at step 5 (review captions → Post All). Pull never
 posts or schedules on its own.
 
-**Automatic pull (RiceSuite).** While the page is open it polls
-`GET /api/handoff/inbox` (read-only). When a batch is waiting and no active
-account holds an unposted draft — exactly when **Pull from Clipper** would not
-need to ask — it runs the same pull automatically, captions included, and it
-keeps any draft you start while that request runs. Otherwise the batch waits
-in an inbox note under the actions until you post or clear the drafts, or pull
-by hand. A batch that was pulled but never acknowledged is shown there too,
-and is recovered only by your **Pull from Clipper**, never automatically. A
-caption you type while captions are generating is never overwritten.
-Posting and scheduling stay manual.
+**Clipper inbox (RiceSuite).** Pulling is manual only: nothing pulls a batch
+without your **Pull from Clipper** click, even when Review is empty (RiceSuite
+ADR-001 amendment of 2026-09-29). While the page is open it polls
+`GET /api/handoff/inbox` (read-only) to show waiting batches in an inbox note
+under the actions, and the button shows how many are waiting
+(**Pull from Clipper · 2**). A batch that was pulled but never acknowledged is
+shown there too; Pull recovers it before taking a new one. A Post page
+loaded before this change is refused with a request to reload it, so it
+cannot keep pulling on its own. A caption you type
+while captions are generating is never overwritten. Posting and scheduling
+stay manual.
+
+**Restore last batch.** New Run, **Pull from Clipper** and Restore itself save
+the drafts they replace (media, caption, transcript, style and media type for
+each account) in this browser's local storage, so they survive a reload and a
+restart. **Restore last batch** on Review makes Review that batch again, by
+roster position: a caption moved to a different account keeps its text and
+takes that account's caption style, and an account the batch had no draft for
+is cleared. It checks that each staged file
+in `media/` is still the same file (size and modified time), because upload
+names are reused after **Clear media**. Drafts whose media is gone or
+replaced, or that fall beyond the active roster, are named and left out, and
+Restore asks before a partial restore or before overwriting or clearing
+unposted drafts. The drafts it replaces become the new last batch, so pressing
+it again undoes it; retrying a Pull that replays the batch already in Review
+keeps the saved batch. Restore only fills drafts; it never posts, schedules,
+or acknowledges a pull. The saved batch is per browser origin, so every open
+Post tab shares one (the last New Run, Pull or Restore in any of them wins),
+and Poster opened directly on its own port keeps a separate one. Drafts lost
+to a reload are not saved
+([RiceSuite #35](https://github.com/gidde032/RiceSuite/issues/35)).
 
 **Interrupted runs.** A manual Post All run writes a small in-flight marker in
 the data root before touching any platform and removes it once the run's

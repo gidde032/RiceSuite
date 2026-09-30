@@ -9,6 +9,14 @@ from ricesuite import SUITE_ROOT, env
 
 EXAMPLE = SUITE_ROOT / "ricesuite.env.example"
 
+
+@pytest.fixture(autouse=True)
+def _isolated_home(tmp_path, monkeypatch):
+    """The default data root is ``~/.ricesuite``. Without this, a machine that
+    has completed a real cutover leaks its live marker into these tests."""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+
+
 # How each pillar spells an environment read. Literal names only; Poster's
 # per-slot names are f-strings and are covered by KNOWN_PATTERNS.
 _READ_PATTERNS = (
@@ -127,6 +135,12 @@ def test_unknown_keys_are_reported():
     assert env.unknown_keys(
         {"POST_MODE": "mock", "POST_MOED": "x", "IG_ACCOUNT_Z_TOKEN": "t"}
     ) == ["POST_MOED"]
+
+
+def test_launcher_owned_keys_are_not_unknown():
+    values = {"RICESUITE_GATEWAY_PORT": "9999", "POST_MOED": "x"}
+    assert env.unknown_keys(values) == ["POST_MOED"]
+    assert env.launcher_keys(values) == ["RICESUITE_GATEWAY_PORT"]
 
 
 # --- Handoff directories: set by the suite, never mismatched ------------------

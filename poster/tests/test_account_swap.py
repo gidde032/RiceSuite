@@ -39,6 +39,7 @@ globalThis.confirm = msg => { log.confirms.push(msg); return confirmAnswer; };
 globalThis.alert = msg => { log.alerts.push(msg); };
 let draftWork = 0;
 let pullInFlight = false;
+let restoreInFlight = false;
 let persistDelay = 0;
 let accountChangeInFlight = false;
 async function persistAccountState() {
@@ -233,7 +234,9 @@ await new Promise(r => setTimeout(r, 0));
     assert out["slots"]["B"]["filename"] == "B_clip.mp4"
 
 
-@pytest.mark.parametrize("busy", ["draftWork = 1;", "pullInFlight = true;"])
+@pytest.mark.parametrize(
+    "busy", ["draftWork = 1;", "pullInFlight = true;", "restoreInFlight = true;"]
+)
 def test_drafts_do_not_move_while_work_on_them_is_in_flight(busy):
     """An upload or caption request writes back to the account id it started
     under, and an unacknowledged pull must replay to its frozen targets, so a
@@ -355,6 +358,7 @@ def test_every_in_flight_draft_writer_counts_as_busy():
         body = _function_body(name)
         assert "draftWork += 1" in body and "draftWork -= 1" in body, name
     assert "pullInFlight" in _function_body("draftWorkBusy")
+    assert "restoreInFlight" in _function_body("draftWorkBusy")  # RiceSuite #30
 
 
 def test_draft_writers_do_not_start_while_an_account_change_is_saving():

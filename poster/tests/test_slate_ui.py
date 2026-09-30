@@ -245,7 +245,8 @@ def test_summary_derives_from_existing_progress_data_only():
 def test_action_bar_order_is_ratified():
     html = _html()
     actions = html.split('<div class="actions">', 1)[1].split("</div>", 1)[0]
-    order = ["btnPullClipper", "btnGenerate", "btnPost", "btnSchedule", "New Run"]
+    # Restore last batch sits beside Pull, the other way drafts arrive (RiceSuite #30).
+    order = ["btnPullClipper", "btnRestore", "btnGenerate", "btnPost", "btnSchedule", 'onclick="newRun()"']
     positions = [actions.index(x) for x in order]
     assert positions == sorted(positions), "action bar buttons are out of order"
     # Post All keeps its existing disabled-until-captioned semantics.
