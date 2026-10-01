@@ -220,3 +220,45 @@ def test_manifest_publication_failure_preserves_copied_count(progress_env, monke
     assert snapshot["completed"] == 3
     assert all(item["state"] == "copied" for item in snapshot["items"])
     assert not list(output.glob("*/manifest.json"))
+
+
+def test_same_key_retry_while_original_copy_runs_is_unconfirmed(
+    progress_env, monkeypatch
+):
+    _, output = progress_env
+    payload = rendered_payload(1)
+    entered, release = Event(), Event()
+    copy = handoff.shutil.copy2
+
+    def blocked_copy(source, destination):
+        entered.set()
+        assert release.wait(5)
+        return copy(source, destination)
+
+    monkeypatch.setattr(handoff.shutil, "copy2", blocked_copy)
+    client = TestClient(main.app, base_url="http://127.0.0.1:8000")
+    with ThreadPoolExecutor() as pool:
+        original = pool.submit(
+            client.post,
+            "/api/handoff",
+            json={**payload, "observation_id": "original-attempt"},
+        )
+        try:
+            assert entered.wait(5)
+            retry = client.post(
+                "/api/handoff",
+                json={**payload, "observation_id": "retry-attempt"},
+            )
+            assert retry.status_code == 409
+            snapshot = client.get("/api/progress/send/retry-attempt").json()
+            assert snapshot["status"] == "unconfirmed"
+            assert not snapshot["published"] and not snapshot["batch_id"]
+            assert retry.json()["send_in_progress"] is True
+            assert not original.done()
+        finally:
+            release.set()
+        assert original.result().status_code == 200
+    assert len(list(output.glob("*/manifest.json"))) == 1
+    assert (
+        client.get("/api/progress/send/original-attempt").json()["status"] == "complete"
+    )

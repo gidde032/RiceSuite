@@ -229,7 +229,9 @@ function snapshotProgress(data) {
     detail = `${failure ? `Clip ${failure.position} — ${failure.title}: ` : ""}${data.detail}. ${notAttempted ? `${notAttempted} not attempted. ` : ""}${sending ? "Batch was not handed off." : "Pull was not confirmed; existing custody recovery still applies."}`;
   } else if (data.status === "unconfirmed") {
     state = "? Result unknown";
-    detail = `Batch ${data.batch_id} reached the handoff boundary; confirmation is unavailable. ${data.detail}`;
+    detail = data.published
+      ? `Batch ${data.batch_id} reached the handoff boundary; confirmation is unavailable. ${data.detail}`
+      : `An earlier send may still be running; result unknown. ${data.detail}`;
   }
   showProgress(operation, state, count, detail, ["failed", "unconfirmed"].includes(data.status));
 }
@@ -1136,7 +1138,7 @@ function batchReadyToSend() {
 // Why a clip holds the batch, for the reviewer.
 function heldReason(c) {
   if (c.status === "done") return `Clip ${c.ord} changed after its render`;
-  if (c.error) return `Clip ${c.ord} failed to render`;
+  if (c.error) return `Clip ${c.ord} is not rendered — ${c.error}`;
   return `Clip ${c.ord} is not rendered`;
 }
 
@@ -1208,6 +1210,10 @@ async function sendBatch({ automatic = false } = {}) {
     });
     answered = true;
     const data = await res.json();
+    if (res.status === 409 && data.send_in_progress) {
+      showProgress("Send to Poster", "? Result unknown", "", data.detail, true);
+      return;
+    }
     if (res.status === 409 && data.already_sent) {
       stopProgress();
       // These clips already went (another tab, or before a reload). What went

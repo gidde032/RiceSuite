@@ -466,7 +466,7 @@ test("read failures freeze the last snapshot and profile switches never attach i
   assert.equal(harness.timers.size, 0);
 });
 
-test("reload reconnects to its saved operation only and an unavailable record stays unknown", async () => {
+test("reload reconnects read-only and unavailable progress unlocks review without retrying", async () => {
   const snapshot = operationSnapshot("saved-attempt");
   const harness = await boot([], { id: "saved-attempt", profile: "alpha", unknown: true, snapshot });
   const reconnect = await nextRequest(harness);
@@ -475,6 +475,8 @@ test("reload reconnects to its saved operation only and an unavailable record st
   reconnect.resolve(response({ detail: "unavailable" }, false, 404));
   await new Promise((resolve) => setImmediate(resolve));
   assert.match(textOf(harness.nodes.progress), /Operation unavailable; result unknown/);
+  assert.equal(harness.nodes.list.inert, false);
+  assert.equal(harness.nodes.handoffBtn.disabled, false);
   assert.equal(harness.timers.size, 0);
   assert.equal(harness.requests.length, 0);
 });

@@ -151,7 +151,8 @@ files only.
   available. Read/response loss freezes the last-known progress as unknown and
   makes read-only queries; it never retries the mutation. Polling runs every
   700 ms while active and stops at a terminal result or explicit abandonment.
-  An unavailable record after expiry/restart remains unknown. The latest result
+  An unavailable record after expiry/restart remains unknown and releases the
+  browser's busy controls without retrying work. The latest result
   persists across list/filter refreshes and names its original profile.
 - **FR-10 — Safety.** No network call posts, publishes, or uploads content. The
   only outbound calls are source acquisition (yt-dlp fetch) and the scoring LLM

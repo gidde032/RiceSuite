@@ -103,6 +103,8 @@ async function pollOperation(generation = observationGeneration) {
       // Unlike a transient read failure, an expired/restarted record cannot reconnect.
       rememberOperation();
       stopObservation();
+      handoffPending = false;
+      refreshInteractionState();
       return;
     }
     if (!res.ok) throw new Error("HTTP " + res.status);

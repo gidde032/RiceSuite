@@ -303,6 +303,9 @@ terminal results are preferred for expiry. Duplicate observation ids are refused
 instead of replacing an attempt. Notification, start-recording, and completion
 observer errors cannot fail actual work. Existing keyed replay confirms the
 earlier result without writing another batch.
+If that keyed send is still running, HTTP 409 includes `send_in_progress: true`;
+the retry's observation is unconfirmed without claiming publication or failure
+of the earlier send. A later explicit keyed retry can confirm its result.
 
 The browser polls at 750 ms while observation is active, stops on a terminal
 outcome, and preserves its latest summary in tab-local session storage. A lost

@@ -158,3 +158,42 @@ test('edited output and unresolved renders hold send with an honest final summar
     assert.match(h.element('progress-current').textContent, unknown ? /result unknown/ : /changed after its render/);
   }
 });
+
+test('an upstream transcription failure holds send without becoming a render failure', async () => {
+  const h = harness();
+  h.run(`clips.push({ord:1, jobId:'one',status:'ready'},
+    {ord:2,jobId:'two',status:'error',error:'Transcription decoder failed'});
+    renderClip = async (clip) => { clip.status='done'; clip.renderedEdits=0; return true; };
+    refreshCacheInfo = async () => {};`);
+  h.context.fetch = async () => { throw Error('send must remain held'); };
+  await h.run('handleRenderAll()');
+  assert.equal(h.element('progress-count').textContent, '1 / 2 rendered');
+  assert.match(h.element('progress-current').textContent, /Clip 2.*Transcription decoder failed/);
+  assert.doesNotMatch(h.element('progress-current').textContent, /failed to render/);
+  assert.match(h.element('progress-current').textContent, /Automatic send held/);
+});
+
+test('a pending keyed retry remains unknown before publication and later replay confirms once', async () => {
+  const h = harness();
+  h.run(`clips.push({ord:1,jobId:'one',status:'done',headerEl:{value:'Title'}});
+    batchSnapshot = () => 'unchanged'; radioValue = () => 'classic'; collectWords = () => [{text:'text'}];`);
+  const payloads = [];
+  h.context.fetch = async (url, options) => {
+    if (!options) return {ok:true,json:async()=>({...snapshot('unconfirmed'),total:0,completed:0,current:null,batch_id:'',published:false,detail:'A send of these clips has not finished.'})};
+    assert.equal(url, 'api/handoff'); payloads.push(JSON.parse(options.body));
+    if (payloads.length === 1) throw Error('reply lost while copying');
+    if (payloads.length === 2) return {ok:false,status:409,json:async()=>({send_in_progress:true,detail:'A send of these clips has not finished.'})};
+    return {ok:true,status:200,json:async()=>({batch_id:'batch_once',clip_count:1,replayed:true})};
+  };
+  await h.run('sendBatch()');
+  await h.run('sendBatch()');
+  assert.match(h.element('progress-state').textContent, /unknown/);
+  await h.next();
+  assert.match(h.element('progress-state').textContent, /unknown/);
+  assert.doesNotMatch(h.element('progress-current').textContent, /not handed off|reached the handoff boundary/);
+  assert.equal(h.timers.size, 0);
+  await h.run('sendBatch()');
+  assert.equal(payloads.length, 3);
+  assert.equal(new Set(payloads.map(p=>p.send_key)).size, 1);
+  assert.equal(h.element('progress-count').textContent, '1 / 1 handed off');
+});

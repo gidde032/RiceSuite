@@ -430,6 +430,16 @@ def handoff_batch(req: HandoffRequest) -> dict:
     try:
         result = _handoff_batch(req, progress)
     except Exception as exc:
+        if isinstance(exc.__cause__, send_keys.SendInProgress):
+            # Refusing this retry says nothing about the original send's
+            # eventual publication. Keep transport unchanged and report that
+            # uncertainty explicitly to both response and progress readers.
+            detail = str(getattr(exc, "detail", exc))
+            _finish_progress(progress, "unconfirmed", detail)
+            return JSONResponse(
+                status_code=409,
+                content={"detail": detail, "send_in_progress": True},
+            )
         _finish_progress(progress, "failed", str(getattr(exc, "detail", exc)))
         raise
     if isinstance(result, JSONResponse):

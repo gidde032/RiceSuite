@@ -86,8 +86,8 @@ production behavior. The selected reference has its own geometry/state checks
 in `reference-checks.json` and reference screenshot files.
 
 Production checks on 2026-10-01: suite 302 tests / 92.85% coverage, Searcher
-324 / 94.36%, Clipper 486 / 91.82%; root page behavior 93 cases, Searcher
-24 cases, and Clipper progress behavior 10 cases. Existing coverage floors and
+324 / 94.36%, Clipper 487 / 91.84%; root page behavior 93 cases, Searcher
+24 cases, and Clipper progress behavior 12 cases. Existing coverage floors and
 lint/format/type gates pass. Synthetic request tests show real intermediate
 progress while handoff responses remain pending.
 
