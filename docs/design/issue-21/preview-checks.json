@@ -1,0 +1,636 @@
+{
+  "checks": 90,
+  "runtime_errors": [],
+  "results": [
+    {
+      "width": 390,
+      "direction": "panel",
+      "pillar": "search",
+      "phase": "active",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "panel",
+      "pillar": "search",
+      "phase": "failed",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "panel",
+      "pillar": "search",
+      "phase": "complete",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "panel",
+      "pillar": "search",
+      "phase": "lost",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "panel",
+      "pillar": "search",
+      "phase": "idle",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "panel",
+      "pillar": "clip",
+      "phase": "active",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "panel",
+      "pillar": "clip",
+      "phase": "failed",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "panel",
+      "pillar": "clip",
+      "phase": "complete",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "panel",
+      "pillar": "clip",
+      "phase": "lost",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "panel",
+      "pillar": "clip",
+      "phase": "idle",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "card",
+      "pillar": "search",
+      "phase": "active",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "card",
+      "pillar": "search",
+      "phase": "failed",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "card",
+      "pillar": "search",
+      "phase": "complete",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "card",
+      "pillar": "search",
+      "phase": "lost",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "card",
+      "pillar": "search",
+      "phase": "idle",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "card",
+      "pillar": "clip",
+      "phase": "active",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "card",
+      "pillar": "clip",
+      "phase": "failed",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "card",
+      "pillar": "clip",
+      "phase": "complete",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "card",
+      "pillar": "clip",
+      "phase": "lost",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "card",
+      "pillar": "clip",
+      "phase": "idle",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "rail",
+      "pillar": "search",
+      "phase": "active",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "rail",
+      "pillar": "search",
+      "phase": "failed",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "rail",
+      "pillar": "search",
+      "phase": "complete",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "rail",
+      "pillar": "search",
+      "phase": "lost",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "rail",
+      "pillar": "search",
+      "phase": "idle",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "rail",
+      "pillar": "clip",
+      "phase": "active",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "rail",
+      "pillar": "clip",
+      "phase": "failed",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "rail",
+      "pillar": "clip",
+      "phase": "complete",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "rail",
+      "pillar": "clip",
+      "phase": "lost",
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "direction": "rail",
+      "pillar": "clip",
+      "phase": "idle",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "panel",
+      "pillar": "search",
+      "phase": "active",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "panel",
+      "pillar": "search",
+      "phase": "failed",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "panel",
+      "pillar": "search",
+      "phase": "complete",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "panel",
+      "pillar": "search",
+      "phase": "lost",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "panel",
+      "pillar": "search",
+      "phase": "idle",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "panel",
+      "pillar": "clip",
+      "phase": "active",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "panel",
+      "pillar": "clip",
+      "phase": "failed",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "panel",
+      "pillar": "clip",
+      "phase": "complete",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "panel",
+      "pillar": "clip",
+      "phase": "lost",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "panel",
+      "pillar": "clip",
+      "phase": "idle",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "card",
+      "pillar": "search",
+      "phase": "active",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "card",
+      "pillar": "search",
+      "phase": "failed",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "card",
+      "pillar": "search",
+      "phase": "complete",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "card",
+      "pillar": "search",
+      "phase": "lost",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "card",
+      "pillar": "search",
+      "phase": "idle",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "card",
+      "pillar": "clip",
+      "phase": "active",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "card",
+      "pillar": "clip",
+      "phase": "failed",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "card",
+      "pillar": "clip",
+      "phase": "complete",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "card",
+      "pillar": "clip",
+      "phase": "lost",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "card",
+      "pillar": "clip",
+      "phase": "idle",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "rail",
+      "pillar": "search",
+      "phase": "active",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "rail",
+      "pillar": "search",
+      "phase": "failed",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "rail",
+      "pillar": "search",
+      "phase": "complete",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "rail",
+      "pillar": "search",
+      "phase": "lost",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "rail",
+      "pillar": "search",
+      "phase": "idle",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "rail",
+      "pillar": "clip",
+      "phase": "active",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "rail",
+      "pillar": "clip",
+      "phase": "failed",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "rail",
+      "pillar": "clip",
+      "phase": "complete",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "rail",
+      "pillar": "clip",
+      "phase": "lost",
+      "overflow": false
+    },
+    {
+      "width": 1024,
+      "direction": "rail",
+      "pillar": "clip",
+      "phase": "idle",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "panel",
+      "pillar": "search",
+      "phase": "active",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "panel",
+      "pillar": "search",
+      "phase": "failed",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "panel",
+      "pillar": "search",
+      "phase": "complete",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "panel",
+      "pillar": "search",
+      "phase": "lost",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "panel",
+      "pillar": "search",
+      "phase": "idle",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "panel",
+      "pillar": "clip",
+      "phase": "active",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "panel",
+      "pillar": "clip",
+      "phase": "failed",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "panel",
+      "pillar": "clip",
+      "phase": "complete",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "panel",
+      "pillar": "clip",
+      "phase": "lost",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "panel",
+      "pillar": "clip",
+      "phase": "idle",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "card",
+      "pillar": "search",
+      "phase": "active",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "card",
+      "pillar": "search",
+      "phase": "failed",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "card",
+      "pillar": "search",
+      "phase": "complete",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "card",
+      "pillar": "search",
+      "phase": "lost",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "card",
+      "pillar": "search",
+      "phase": "idle",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "card",
+      "pillar": "clip",
+      "phase": "active",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "card",
+      "pillar": "clip",
+      "phase": "failed",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "card",
+      "pillar": "clip",
+      "phase": "complete",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "card",
+      "pillar": "clip",
+      "phase": "lost",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "card",
+      "pillar": "clip",
+      "phase": "idle",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "rail",
+      "pillar": "search",
+      "phase": "active",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "rail",
+      "pillar": "search",
+      "phase": "failed",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "rail",
+      "pillar": "search",
+      "phase": "complete",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "rail",
+      "pillar": "search",
+      "phase": "lost",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "rail",
+      "pillar": "search",
+      "phase": "idle",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "rail",
+      "pillar": "clip",
+      "phase": "active",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "rail",
+      "pillar": "clip",
+      "phase": "failed",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "rail",
+      "pillar": "clip",
+      "phase": "complete",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "rail",
+      "pillar": "clip",
+      "phase": "lost",
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "direction": "rail",
+      "pillar": "clip",
+      "phase": "idle",
+      "overflow": false
+    }
+  ]
+}

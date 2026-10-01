@@ -226,10 +226,11 @@ for (const action of ["alignLyrics", "restoreTranscript"]) {
 test("Render all points at each clip's download, not below the batch", async () => {
   const { js, ctx } = boot({ "POST api/jobs/j1/render": { status: "done" } });
   ctx.clip = card(false);
-  js("messages = []; setBatchStatus = (text) => messages.push(text); maybeAutoSend = async () => {};");
+  js("messages = []; localProgress = (_operation, _state, completed, total, label, text) => messages.push({count: `${completed} / ${total} ${label}`, text}); maybeAutoSend = async () => {};");
   js("clips.push(clip)");
   await js("handleRenderAll()");
   const last = js("messages[messages.length - 1]");
-  assert.match(last, /^Rendered 1 clip\./);
-  assert.doesNotMatch(last, /below/);
+  assert.equal(last.count, "1 / 1 rendered");
+  assert.match(last.text, /available in their existing frames/);
+  assert.doesNotMatch(last.text, /below/);
 });

@@ -103,6 +103,11 @@ files only.
   shows one profile at a time: a profile select in the topbar and a Profiles
   page listing name, version, sources, candidates, and selected per profile
   (D9). A slice whose version differs from its profile file is marked stale.
+  The review workspace uses the full document width, with two equal cards per row
+  at 900 px and above and one column below that width. Score order remains
+  row-major. A card content width of 500 px uses a 34/66 preview/metadata split;
+  narrower cards stack those sections. All controls and source framing remain
+  available (RiceSuite #21, [feature reference](../docs/design/issue-21/progress-reference.html)).
   - **FR-8a — Media management.** The UI includes a media-management page listing
     every stored source (url, cached media, size, slice count) with a per-source
     **delete** and a whole-cache **clear**. These are **full-purge** (maintainer-
@@ -130,6 +135,24 @@ files only.
   timing. A batch holds the selected slices of one profile and carries `profile_id`
   per clip. Producer only ever writes; it never deletes or ingests. Batch identity
   is stable and idempotent.
+  The compact handoff tracker observes the current attempt's actual checking,
+  preparation, and whole-batch commit boundaries. Prepared clips are not reported
+  handed off until publication and library marking succeed. A failure after
+  filesystem publication is unconfirmed, even when cleanup removes the batch,
+  because a consumer may already have observed it. Per-card progress stays
+  separate from saved-window validation and identifies only the attempt's profile
+  and participating slices.
+  `POST /api/handoff` accepts an optional single-use `observation_id` (1–64
+  ASCII letters, digits, underscores or hyphens). The browser creates a fresh ID
+  for every mutation attempt. `GET /api/handoff/progress/{observation_id}?profile=…`
+  observes that exact attempt without taking the handoff/library lock. Up to
+  64 process-local records are retained; no worker or durable history is added.
+  Tab-local session storage reconnects on reload while the record remains
+  available. Read/response loss freezes the last-known progress as unknown and
+  makes read-only queries; it never retries the mutation. Polling runs every
+  700 ms while active and stops at a terminal result or explicit abandonment.
+  An unavailable record after expiry/restart remains unknown. The latest result
+  persists across list/filter refreshes and names its original profile.
 - **FR-10 — Safety.** No network call posts, publishes, or uploads content. The
   only outbound calls are source acquisition (yt-dlp fetch) and the scoring LLM
   API; neither touches any account, platform, or posting surface.

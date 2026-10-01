@@ -1,0 +1,101 @@
+<div id="rice-progress-reference" aria-label="Selected RiceSuite status and Searcher layout">
+  <style>
+    #rice-progress-reference { --rr-back:#04060A; --rr-mid:#0C1116; --rr-card:#14191E; --rr-line:#2B3136; --rr-control:#626A70; --rr-rice:#AEB3B6; --rr-muted:#80878C; --rr-text:#E5E8EA; --rr-danger:#d9605a; color:var(--rr-text); font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--rr-mid); border-radius:8px; }
+    #rice-progress-reference * { box-sizing:border-box; }
+    #rice-progress-reference [hidden] { display:none !important; }
+    #rice-progress-reference button,#rice-progress-reference select,#rice-progress-reference input { font:inherit; color:var(--rr-text); background:var(--rr-card); border:1px solid var(--rr-control); border-radius:6px; padding:7px 10px; min-height:36px; max-width:100%; }
+    #rice-progress-reference :focus-visible { outline:2px solid #D5D9DB; outline-offset:2px; }
+    #rice-progress-reference button[aria-pressed="true"] { background:#3B4044; border-color:var(--rr-rice); }
+    #rice-progress-reference button:disabled { opacity:.5; }
+    #rice-progress-reference .rr-lab { display:flex; flex-wrap:wrap; gap:10px; align-items:center; padding:12px 16px; border-bottom:1px solid var(--rr-control); background:var(--rr-card); }
+    #rice-progress-reference .rr-lab strong { margin-right:auto; }
+    #rice-progress-reference .rr-lab label { display:flex; gap:6px; align-items:center; }
+    #rice-progress-reference .rr-shell { display:flex; flex-wrap:wrap; gap:16px; align-items:center; background:var(--rr-back); padding:12px 16px; border-bottom:1px solid var(--rr-line); }
+    #rice-progress-reference .rr-shell strong { margin-right:10px; }
+    #rice-progress-reference .rr-shell button { background:transparent; border-color:transparent; }
+    #rice-progress-reference .rr-shell button[aria-pressed="true"] { background:var(--rr-card); border-color:var(--rr-control); }
+    #rice-progress-reference .rr-tool { display:flex; flex-wrap:wrap; gap:10px; align-items:center; padding:12px 16px; border-bottom:1px solid var(--rr-line); }
+    #rice-progress-reference .rr-tool strong { margin-right:auto; }
+    #rice-progress-reference .rr-tool label { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+    #rice-progress-reference .rr-work { padding:16px; }
+    #rice-progress-reference .rr-bar { padding:10px 12px; border:1px solid var(--rr-line); border-radius:8px; background:var(--rr-card); font-size:13px; }
+    #rice-progress-reference[data-page="clip"] .rr-bar { font-family:Arial,sans-serif; padding:8px; }
+    #rice-progress-reference .rr-summary { display:flex; flex-wrap:wrap; gap:8px 18px; align-items:center; }
+    #rice-progress-reference .rr-operation { font-size:14px; font-weight:600; }
+    #rice-progress-reference .rr-count { margin-left:auto; color:var(--rr-rice); font-variant-numeric:tabular-nums; }
+    #rice-progress-reference .rr-now { margin-top:6px; color:var(--rr-rice); overflow-wrap:anywhere; }
+    #rice-progress-reference .rr-fail { color:var(--rr-danger); }
+    #rice-progress-reference .rr-results { display:grid; gap:16px; margin-top:16px; }
+    #rice-progress-reference .rr-result { min-width:0; padding:16px; background:var(--rr-card); border:1px solid var(--rr-line); border-radius:8px; container-type:inline-size; }
+    #rice-progress-reference .rr-result.selected { border-color:var(--rr-rice); }
+    #rice-progress-reference .rr-cardbody { display:grid; grid-template-columns:minmax(0,34%) minmax(0,1fr); gap:12px; }
+    #rice-progress-reference .rr-video { display:grid; align-content:center; justify-items:center; width:100%; min-height:140px; gap:8px; aspect-ratio:16/9; border-radius:6px; background:var(--rr-back); color:var(--rr-rice); }
+    #rice-progress-reference .rr-window { margin-top:8px; font-size:13px; color:var(--rr-rice); }
+    #rice-progress-reference .rr-meta { min-width:0; display:flex; flex-direction:column; gap:12px; }
+    #rice-progress-reference .rr-heading { display:flex; align-items:flex-start; gap:12px; }
+    #rice-progress-reference .rr-score { font-size:24px; line-height:1.1; font-weight:700; font-variant-numeric:tabular-nums; }
+    #rice-progress-reference h2 { font:600 16px/1.3 system-ui,sans-serif; color:var(--rr-rice); margin:0; overflow-wrap:anywhere; }
+    #rice-progress-reference .rr-meta p { margin:0; }
+    #rice-progress-reference .rr-transcript { color:var(--rr-rice); font-size:13px; }
+    #rice-progress-reference .rr-badges { display:flex; flex-wrap:wrap; gap:6px; }
+    #rice-progress-reference .rr-badge { border:1px solid var(--rr-control); border-radius:20px; padding:2px 7px; color:var(--rr-rice); font-size:12px; }
+    #rice-progress-reference .rr-bounds { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    #rice-progress-reference .rr-bounds label { display:flex; align-items:center; gap:6px; font-size:13px; }
+    #rice-progress-reference .rr-bounds input { width:76px; }
+    #rice-progress-reference .rr-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:auto; }
+    #rice-progress-reference .rr-itemstatus { font-size:13px; color:var(--rr-rice); overflow-wrap:anywhere; }
+    #rice-progress-reference .rr-itemstatus.rr-fail { color:var(--rr-danger); }
+    @media (min-width:900px) { #rice-progress-reference .rr-results { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+    @container (max-width:499px) { #rice-progress-reference .rr-cardbody { grid-template-columns:1fr; } }
+    @media (max-width:720px) { #rice-progress-reference .rr-work { padding:8px; } #rice-progress-reference .rr-summary { gap:6px 12px; } #rice-progress-reference .rr-count { margin-left:0; } }
+    @media (pointer:coarse) { #rice-progress-reference button,#rice-progress-reference select,#rice-progress-reference input { min-height:44px; } }
+  </style>
+  <div class="rr-lab"><strong>B · Selected reference</strong><label>State <select class="rr-state"><option value="active">Working</option><option value="commit">Handing off</option><option value="failed">Failed / held</option><option value="complete">Complete</option><option value="lost">Connection lost</option><option value="idle">Idle</option></select></label></div>
+  <header class="rr-shell"><strong>RiceSuite</strong><button type="button" class="cursor-interaction" data-page="search" aria-pressed="true">Search</button><button type="button" class="cursor-interaction" data-page="clip" aria-pressed="false">Clip</button><span>Post</span></header>
+  <div class="rr-tool"></div>
+  <div class="rr-work">
+    <section class="rr-bar" aria-label="Operation progress"><div class="rr-summary"><strong class="rr-operation"></strong><span class="rr-stateword"></span><span class="rr-count"></span></div><div class="rr-now" role="status" aria-live="polite"></div></section>
+    <main class="rr-results" aria-label="Searcher review results"></main>
+  </div>
+  <script>
+    (()=>{
+      const root=document.getElementById('rice-progress-reference');
+      const state={page:'search',phase:'active',operation:'render'};
+      const clips=[
+        {score:'0.94',title:'The moment the crowd took over',text:'A clear setup, an unexpected crowd response, and a complete reaction.',words:'I stopped singing for a second because I could hear everyone singing it back.',start:92.4,end:124.8},
+        {score:'0.89',title:'Finding confidence on stage',text:'A specific turning point with a strong closing line.',words:'The first few shows felt different. Then I learned to trust the room.',start:214.6,end:249.2},
+        {score:'0.85',title:'The story behind the chorus',text:'A concise writing story that resolves within the selected window.',words:'That line was the last thing we wrote, and it ended up being the whole song.',start:303.1,end:335.6},
+        {score:'0.81',title:'A small ritual before every show',text:'An easy standalone moment with a recognizable routine.',words:'We all get together for one quiet minute before we walk out.',start:410.2,end:437.9}
+      ];
+      const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      function render(){
+        const search=state.page==='search',send=search||state.operation==='send',transcribe=state.operation==='transcribe',pull=state.operation==='pull';
+        const verb=search?'preparing':pull?'importing':transcribe?'transcribing':state.operation==='send'?'copying':'rendering';
+        const prepared=search?'prepared':pull?'imported':transcribe?'ready':state.operation==='send'?'copied':'rendered';
+        const operation=search?'Send selected to Clipper':pull?'Pull from Searcher':transcribe?'Transcribe clips':state.operation==='send'?'Send to Poster':'Render all';
+        const phase=state.phase;
+        root.dataset.page=state.page;
+        root.querySelectorAll('[data-page]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.page===state.page));
+        root.querySelector('.rr-state').value=phase;
+        root.querySelector('.rr-operation').textContent=operation;
+        root.querySelector('.rr-stateword').textContent=phase==='idle'?'○ Idle':phase==='lost'?'? Result unknown':phase==='failed'?'✗ '+(send||pull?'Failed':'Batch held'):phase==='complete'?'✓ Complete':phase==='commit'?'● '+(send?'Handing off':'Finishing stage'):'● Working';
+        root.querySelector('.rr-stateword').classList.toggle('rr-fail',phase==='failed'||phase==='lost');
+        root.querySelector('.rr-count').textContent=phase==='idle'?'No active operation':phase==='failed'?'1 failed':phase==='complete'?'3 / 3 '+(send?'handed off':prepared):phase==='commit'?'3 / 3 '+prepared:'1 / 3 '+prepared;
+        let message=phase==='active'?'Now: '+verb+' clip 2 of 3 — Finding confidence on stage':phase==='commit'?send?'Handing off complete batch…':'Finalizing '+(pull?'batch import':'stage')+'…':phase==='lost'?'Progress connection lost. Last seen: '+verb+' clip 2. Work may continue; reconnecting…':phase==='idle'?'Ready when you are.':phase==='failed'?send?'Clip 2: source unavailable. Batch not handed off; correct the source error before retrying.':pull?'Clip 2: source unavailable. Batch import failed; no new review batch was applied.':'Clip 2 failed. Other clips completed; batch held for review.':search?'3 clips handed off to Clipper.':state.operation==='send'?'3 clips waiting in Poster’s inbox. Pull in Post to review them.':pull?'3 clips imported. Transcription begins next.':transcribe?'3 clips ready. Review before rendering.':'3 clips rendered. Automatic send is the next stage when every clip is eligible.';
+        root.querySelector('.rr-now').textContent=message;
+        root.querySelector('.rr-now').classList.toggle('rr-fail',phase==='failed'||phase==='lost');
+        root.querySelector('.rr-tool').innerHTML=search?'<strong>RiceSearcher · Review</strong><label>Profile<select disabled><option>Music interviews</option></select></label><label>Show<select disabled><option>All</option></select></label><button type="button" disabled>Send 3 selected → Clipper</button>':'<strong>RiceClipper · Status bar</strong><label>Operation<select class="rr-operationpick"><option value="pull">Pull from Searcher</option><option value="transcribe">Transcription</option><option value="render">Render all</option><option value="send">Send to Poster</option></select></label>';
+        const picker=root.querySelector('.rr-operationpick');if(picker){picker.value=state.operation;picker.addEventListener('change',()=>{state.operation=picker.value;render();});}
+        const results=root.querySelector('.rr-results');results.hidden=!search;
+        results.innerHTML=search?clips.map((c,i)=>{
+          const status=i===3?'':phase==='idle'?'':phase==='failed'?i===1?'✗ Source unavailable · batch not handed off':i===0?'— Prepared work discarded · batch not handed off':'○ Not attempted':phase==='complete'?'✓ Batch handoff confirmed':phase==='commit'?'✓ Prepared · awaiting batch handoff':i===0?'✓ Prepared · awaiting batch handoff':i===1?phase==='lost'?'? Last seen: preparing · result unknown':'● Preparing clip…':'○ Waiting';
+          return '<article class="rr-result '+(i<3?'selected':'')+'"><div class="rr-cardbody"><div><div class="rr-video"><i data-lucide="play" aria-hidden="true"></i><span>Interview excerpt</span><small>Source preview · 0:32</small></div><div class="rr-window">Selected '+c.start+'–'+c.end+'s</div></div><div class="rr-meta"><div class="rr-heading"><span class="rr-score">'+c.score+'</span><h2>'+esc(c.title)+'</h2></div><div class="rr-badges"><span class="rr-badge">'+(i<3?'Selected':'Candidate')+'</span><span class="rr-badge">Rights risk: high</span>'+(i===2?'<span class="rr-badge">Possible duplicate</span>':'')+'</div><p>'+esc(c.text)+'</p><p class="rr-transcript">'+esc(c.words)+'</p><div class="rr-bounds"><label>In<input type="number" value="'+c.start+'" readonly aria-label="Clip '+(i+1)+' in time"></label><label>Out<input type="number" value="'+c.end+'" readonly aria-label="Clip '+(i+1)+' out time"></label><button type="button" disabled>Save window</button></div><div class="rr-itemstatus '+(phase==='failed'||phase==='lost'?'rr-fail':'')+'">'+esc(status)+'</div><div class="rr-actions"><button type="button" disabled>'+(i<3?'Selected':'Select')+'</button><button type="button" disabled>Reject</button></div></div></div></article>';
+        }).join(''):'';
+        if(globalThis.lucide)lucide.createIcons({attrs:{width:20,height:20}});
+      }
+      root.querySelectorAll('[data-page]').forEach(b=>b.addEventListener('click',()=>{state.page=b.dataset.page;render();}));
+      root.querySelector('.rr-state').addEventListener('change',e=>{state.phase=e.target.value;render();});
+      render();
+    })();
+  </script>
+</div>

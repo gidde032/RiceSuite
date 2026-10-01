@@ -89,15 +89,19 @@ async function nextRequest(harness) {
   assert.fail("expected a fetch request");
 }
 
-async function boot(initialSlices = []) {
+async function boot(initialSlices = [], savedOperation = null) {
   const nodes = Object.fromEntries(
-    ["list", "count", "status", "statusFilter", "profileSelect", "handoffBtn"].map(
+    ["list", "count", "status", "progress", "statusFilter", "profileSelect", "handoffBtn"].map(
       (id) => [id, new FakeNode("div", id)],
     ),
   );
   nodes.statusFilter.value = "candidate";
   const requests = [];
   const storage = new Map();
+  const session = new Map();
+  if (savedOperation) session.set("ricesearcher.handoff.operation", JSON.stringify(savedOperation));
+  const timers = new Map();
+  let timerId = 0;
   const document = {
     getElementById: (id) => nodes[id],
     createElement: (tag) => new FakeNode(tag),
@@ -110,6 +114,9 @@ async function boot(initialSlices = []) {
   const context = vm.createContext({
     console,
     document,
+    setTimeout(callback) { const id = ++timerId; timers.set(id, callback); return id; },
+    clearTimeout(id) { timers.delete(id); },
+    sessionStorage: { getItem: (key) => session.get(key) ?? null, setItem: (key, value) => session.set(key, value) },
     encodeURIComponent,
     fetch(url, options) {
       const pending = deferred();
@@ -122,7 +129,7 @@ async function boot(initialSlices = []) {
     },
   });
   vm.runInContext(APP_JS, context);
-  const harness = { context, nodes, requests };
+  const harness = { context, nodes, requests, timers, session };
 
   let request = await nextRequest(harness);
   assert.equal(request.url, "api/profiles");
@@ -344,4 +351,155 @@ test("offline-scored slices carry an offline badge; LLM-scored slices do not (#2
   };
   collectScores(harness.nodes.list);
   assert.deepEqual(scores, ["offline heuristic score (not LLM-scored)", "LLM clippability score"]);
+});
+
+function operationSnapshot(id, overrides = {}) {
+  return {
+    operation_id: id, operation: "handoff", scope: "alpha", status: "active", stage: "preparing",
+    items: [{ id: "a", title: "alpha source", position: 1, state: "preparing" }],
+    current: { id: "a", title: "alpha source", position: 1, state: "preparing" },
+    completed: 0, total: 1, detail: "", batch_id: "", published: false,
+    ...overrides,
+  };
+}
+
+function runTimer(harness) {
+  const entry = harness.timers.entries().next().value;
+  assert.ok(entry, "a read-only poll is scheduled");
+  harness.timers.delete(entry[0]);
+  return entry[1]();
+}
+
+async function finishRefresh(harness) {
+  const profiles = await nextRequest(harness);
+  assert.equal(profiles.url, "api/profiles");
+  profiles.resolve(response([{ id: "alpha", name: "Alpha", selected: 0 }, { id: "beta", name: "Beta", selected: 0 }]));
+  const slices = await nextRequest(harness);
+  assert.match(slices.url, /api\/slices/);
+  slices.resolve(response([]));
+}
+
+test("actual handoff progress preserves validation, reports preparation before commit, and stops on success", async () => {
+  const harness = await boot([slice("a", "alpha")]);
+  cardMessage(harness).textContent = "window validation remains here";
+  const sending = harness.context.handoff();
+  const post = await nextRequest(harness);
+  assert.equal(post.options.method, "POST");
+  const attempt = JSON.parse(post.options.body).observation_id;
+  assert.ok(attempt);
+  assert.equal(harness.nodes.list.inert, true);
+  const polling = runTimer(harness);
+  const poll = await nextRequest(harness);
+  assert.equal(poll.options, undefined);
+  assert.ok(poll.url.includes(attempt));
+  poll.resolve(response(operationSnapshot(attempt)));
+  await polling;
+  assert.match(textOf(harness.nodes.progress), /preparing clip 1 of 1/);
+  assert.doesNotMatch(textOf(harness.nodes.progress), /handed off/);
+  assert.equal(cardMessage(harness).textContent, "window validation remains here");
+  assert.match(textOf(harness.nodes.list), /Preparing clip/);
+
+  const committing = runTimer(harness);
+  const commitPoll = await nextRequest(harness);
+  commitPoll.resolve(response(operationSnapshot(attempt, { stage: "committing", completed: 1, current: null, items: [{ id: "a", state: "prepared" }] })));
+  await committing;
+  assert.match(textOf(harness.nodes.progress), /1 \/ 1 prepared/);
+  assert.match(textOf(harness.nodes.progress), /Handing off batch/);
+  assert.doesNotMatch(textOf(harness.nodes.progress), /handed off/);
+
+  post.resolve(response({ batch_id: "batch_fixture", clip_count: 1 }));
+  await finishRefresh(harness);
+  await sending;
+  assert.match(textOf(harness.nodes.progress), /1 \/ 1 handed off/);
+  assert.equal(harness.nodes.list.inert, false);
+  assert.equal(harness.timers.size, 0);
+});
+
+test("a lost mutation reply reconnects read-only and never repeats the write", async () => {
+  const harness = await boot([slice("a", "alpha")]);
+  const sending = harness.context.handoff();
+  const post = await nextRequest(harness);
+  const attempt = JSON.parse(post.options.body).observation_id;
+  post.reject(new Error("reply lost"));
+  const reconnect = await nextRequest(harness);
+  assert.equal(reconnect.options, undefined);
+  assert.ok(reconnect.url.includes(attempt));
+  assert.match(textOf(harness.nodes.progress), /Result unknown/);
+  reconnect.resolve(response(operationSnapshot(attempt)));
+  await sending;
+  assert.equal(harness.nodes.list.inert, true);
+  assert.equal(harness.timers.size, 1);
+  const completion = runTimer(harness);
+  const poll = await nextRequest(harness);
+  poll.resolve(response(operationSnapshot(attempt, { status: "complete", completed: 1, batch_id: "batch_fixture", detail: "Batch handed off to Clipper.", current: null })));
+  await finishRefresh(harness);
+  await completion;
+  assert.equal(harness.timers.size, 0);
+  assert.equal(harness.nodes.list.inert, false);
+  assert.match(textOf(harness.nodes.progress), /handed off/);
+  assert.equal(harness.requests.length, 0);
+});
+
+test("read failures freeze the last snapshot and profile switches never attach its statuses", async () => {
+  const harness = await boot([slice("a", "alpha")]);
+  harness.context.beginObservation("attempt-scope", "alpha");
+  const first = runTimer(harness);
+  let request = await nextRequest(harness);
+  request.resolve(response(operationSnapshot("attempt-scope", { completed: 1, current: null, items: [{ id: "a", state: "prepared" }] })));
+  await first;
+  assert.match(textOf(harness.nodes.progress), /1 \/ 1 prepared/);
+  const failed = runTimer(harness);
+  request = await nextRequest(harness);
+  request.reject(new Error("offline"));
+  await failed;
+  assert.match(textOf(harness.nodes.progress), /1 \/ 1 prepared/);
+  assert.match(textOf(harness.nodes.progress), /Result unknown/);
+  assert.match(textOf(harness.nodes.list), /Last known: prepared/);
+  harness.nodes.profileSelect.value = "beta";
+  const loading = harness.context.load();
+  request = await nextRequest(harness);
+  request.resolve(response([slice("a", "beta")]));
+  await loading;
+  assert.match(textOf(harness.nodes.progress), /alpha/);
+  assert.doesNotMatch(textOf(harness.nodes.list), /Last known|Prepared|Preparing clip/);
+  harness.context.stopObservation();
+  assert.equal(harness.timers.size, 0);
+});
+
+test("reload reconnects to its saved operation only and an unavailable record stays unknown", async () => {
+  const snapshot = operationSnapshot("saved-attempt");
+  const harness = await boot([], { id: "saved-attempt", profile: "alpha", unknown: true, snapshot });
+  const reconnect = await nextRequest(harness);
+  assert.match(reconnect.url, /progress\/saved-attempt\?profile=alpha/);
+  assert.equal(reconnect.options, undefined);
+  reconnect.resolve(response({ detail: "unavailable" }, false, 404));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(textOf(harness.nodes.progress), /Operation unavailable; result unknown/);
+  assert.equal(harness.timers.size, 0);
+  assert.equal(harness.requests.length, 0);
+});
+
+test("late progress from an abandoned attempt cannot overwrite a newer operation", async () => {
+  const harness = await boot();
+  harness.context.beginObservation("old-attempt", "alpha");
+  const oldPoll = runTimer(harness);
+  const oldRequest = await nextRequest(harness);
+  harness.context.beginObservation("new-attempt", "beta");
+  oldRequest.resolve(response(operationSnapshot("old-attempt", { status: "complete", batch_id: "old-batch" })));
+  await oldPoll;
+  assert.match(textOf(harness.nodes.progress), /beta/);
+  assert.doesNotMatch(textOf(harness.nodes.progress), /old-batch|handed off/);
+  harness.context.stopObservation();
+});
+
+test("a terminal publication error names the published batch and stops observation", async () => {
+  const harness = await boot([slice("a", "alpha")]);
+  harness.context.beginObservation("published-error", "alpha");
+  const polling = runTimer(harness);
+  const request = await nextRequest(harness);
+  request.resolve(response(operationSnapshot("published-error", { status: "unconfirmed", published: true, batch_id: "batch_published", detail: "marking unavailable", completed: 1, current: null })));
+  await polling;
+  assert.match(textOf(harness.nodes.progress), /Batch batch_published was published; final library confirmation failed/);
+  assert.doesNotMatch(textOf(harness.nodes.progress), /1 \/ 1 handed off/);
+  assert.equal(harness.timers.size, 0);
 });

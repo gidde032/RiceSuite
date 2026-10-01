@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from ricesuite.progress import Progress, notify
+
 SCHEMA_VERSION = 1
 _HANDOFF_ENV = "RICECLIPPER_HANDOFF_DIR"
 _DEFAULT_HANDOFF_DIR = "~/riceclipper-handoff"
@@ -35,6 +37,7 @@ class HandoffEntry:
     header: str = ""
     caption_style: str = "classic"
     header_style: str = "plain"
+    item_id: str = ""
 
 
 def handoff_root() -> Path:
@@ -47,7 +50,12 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def write_batch(entries: list[HandoffEntry], *, root: Path | None = None) -> dict:
+def write_batch(
+    entries: list[HandoffEntry],
+    *,
+    root: Path | None = None,
+    progress: Progress | None = None,
+) -> dict:
     """Write ``entries`` as one handoff batch and return its id and clip count.
 
     Copies each entry's rendered mp4 to ``clip_<position>.mp4`` under a fresh
@@ -74,9 +82,24 @@ def write_batch(entries: list[HandoffEntry], *, root: Path | None = None) -> dic
         raise HandoffError("resolved batch directory escapes the handoff root")
     batch_dir.mkdir()
 
+    notify(
+        progress,
+        "items",
+        items=[
+            {
+                "id": e.item_id or str(e.position),
+                "title": e.header or e.source.name,
+                "position": e.position,
+            }
+            for e in sorted(entries, key=lambda e: e.position)
+        ],
+    )
+    active_entry = None
     try:
         manifest_clips = []
         for entry in sorted(entries, key=lambda e: e.position):
+            active_entry = entry
+            notify(progress, "copying", item_id=entry.item_id or str(entry.position))
             source = Path(entry.source)
             if not source.is_file():
                 raise HandoffError(f"clip {entry.position} has no rendered output")
@@ -85,6 +108,8 @@ def write_batch(entries: list[HandoffEntry], *, root: Path | None = None) -> dic
             if dest.parent != batch_dir:
                 raise HandoffError("resolved clip path escapes the batch directory")
             shutil.copy2(source, dest)
+            notify(progress, "copied", item_id=entry.item_id or str(entry.position))
+            active_entry = None
             manifest_clips.append(
                 {
                     "file": filename,
@@ -106,10 +131,22 @@ def write_batch(entries: list[HandoffEntry], *, root: Path | None = None) -> dic
             "clips": manifest_clips,
         }
         # The atomic rename is the "batch is complete" signal.
+        notify(progress, "committing", batch_id=batch_id)
         tmp = batch_dir / "manifest.json.tmp"
         tmp.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         os.replace(tmp, batch_dir / "manifest.json")
-    except Exception:
+        notify(progress, "published", batch_id=batch_id)
+    except Exception as exc:
+        notify(
+            progress,
+            "failed",
+            **(
+                {"item_id": active_entry.item_id or str(active_entry.position)}
+                if active_entry
+                else {}
+            ),
+            detail=str(exc),
+        )
         # A manifest-less directory is invisible to pickup and otherwise leaks
         # forever. Remove only this newly-created batch; prior batches are safe.
         shutil.rmtree(batch_dir, ignore_errors=True)

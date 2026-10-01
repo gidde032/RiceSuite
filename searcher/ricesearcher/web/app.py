@@ -27,8 +27,9 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from ricesuite.localguard import LocalGuard, gateway_origins
+from ricesuite.progress import Progress, ProgressStore, notify
 
 from ricesearcher.acquire.watchfolder import ffprobe_duration
 from ricesearcher.beat.profile import (
@@ -73,6 +74,22 @@ class _WindowIn(BaseModel):
 
 class _HandoffIn(BaseModel):
     profile: str | None = None
+    observation_id: str | None = Field(
+        default=None, min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$"
+    )
+
+
+def _finish_progress(
+    progress: Progress | None,
+    status: str = "complete",
+    detail: str = "",
+    batch_id: str = "",
+) -> None:
+    if progress is not None:
+        try:
+            progress.finish(status, detail, batch_id)
+        except Exception:
+            pass  # Reporting cannot change a committed handoff's outcome.
 
 
 def _slice_dto(
@@ -128,6 +145,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     # ``example-beat``) always have a matching profile in the UI (ADR-002 seed).
     ensure_seed(cfg.profiles_dir)
     app = FastAPI(title="RiceSearcher Review")
+    progress_store = ProgressStore()
     # A browser page can reach this port without passing the RiceSuite gateway,
     # so the app refuses foreign Hosts and cross-origin state changes itself
     # (suite SPEC FR-3, suite #14), on whatever port it is bound to. It also
@@ -331,20 +349,59 @@ def create_app(config: Config | None = None) -> FastAPI:
         RiceClipper or any posting surface.
         """
         profile_id = _require_profile(body.profile if body else None)
-        with _handoff_lock, Library(cfg.db_path) as lib:
+        progress = None
+        if body and body.observation_id:
             try:
-                return hand_off_selected(lib, config=cfg, profile_id=profile_id)
-            except HandoffError as exc:
+                progress = progress_store.start(
+                    body.observation_id, "handoff", profile_id
+                )
+            except ValueError as exc:
                 raise HTTPException(409, str(exc)) from exc
-            except (OSError, subprocess.SubprocessError, ClipExtractError) as exc:
-                # ClipExtractError: ffmpeg ran but produced an unusable clip, so
-                # nothing was marked and the batch is retryable — a graceful 503,
-                # not a raw 500 (review finding C).
-                raise HTTPException(
-                    503,
-                    "handoff execution failed; selected slices remain selected "
-                    f"for retry: {exc}",
-                ) from exc
+        try:
+            with _handoff_lock, Library(cfg.db_path) as lib:
+                result = hand_off_selected(
+                    lib, config=cfg, profile_id=profile_id, progress=progress
+                )
+            if progress is not None:
+                if not result["clip_count"]:
+                    notify(progress, "not_delivered", batch_id="")
+                _finish_progress(
+                    progress,
+                    detail="Batch handed off to Clipper."
+                    if result["clip_count"]
+                    else "Nothing selected or selection changed; no batch handed off.",
+                    batch_id=result["batch_id"] or "",
+                )
+            return result
+        except Exception as exc:
+            if progress is not None:
+                _finish_progress(progress, "failed", str(exc))
+            if isinstance(exc, HandoffError):
+                raise HTTPException(409, str(exc)) from exc
+            if isinstance(exc, (OSError, subprocess.SubprocessError, ClipExtractError)):
+                snapshot = (
+                    progress_store.get(body.observation_id)
+                    if body and body.observation_id
+                    else None
+                )
+                detail = (
+                    "handoff publication occurred but final confirmation failed; "
+                    "check the batch before retry: "
+                    if snapshot and snapshot["published"]
+                    else "handoff execution failed; selected slices remain selected "
+                    "for retry: "
+                )
+                raise HTTPException(503, detail + str(exc)) from exc
+            raise
+
+    @app.get("/api/handoff/progress/{operation_id}")
+    def handoff_progress(operation_id: str, profile: str | None = None) -> dict:
+        # Observation never acquires the handoff or library lock.
+        profile_id = _require_profile(profile)
+        snapshot = progress_store.get(operation_id)
+        if snapshot is None or snapshot["scope"] != profile_id:
+            raise HTTPException(404, "operation unavailable; result unknown")
+        return snapshot
 
     # -- media management (local-only delete/clear) -----------------------
     # These remove local library rows and cached bytes; they never contact any

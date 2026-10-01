@@ -167,11 +167,115 @@ function setClipStatus(clip, text, isError = false) {
   clip.statusEl.textContent = text;
 }
 
+// Operation observation is independent of transport keys and never starts work.
+let progressAttempt = null;
+let progressTimer = null;
+let progressGeneration = 0;
+const PROGRESS_TAB_KEY = "riceclipper.progress.v1";
+const PROGRESS_VIEW_KEY = "riceclipper.progressView.v1";
+
+function showProgress(operation, state, count, detail, isError = false) {
+  const bar = $("operation-progress");
+  bar.classList.toggle("error", isError);
+  for (const [id, value] of [["progress-operation", operation], ["progress-state", state],
+    ["progress-count", count], ["progress-current", detail]]) {
+    if ($(id).textContent !== value) $(id).textContent = value;
+  }
+  try { sessionStorage.setItem(PROGRESS_VIEW_KEY, JSON.stringify({ operation, state, count, detail, isError })); } catch { /* optional */ }
+}
+
+function stopProgress() {
+  clearTimeout(progressTimer);
+  progressTimer = null;
+  progressGeneration += 1;
+  progressAttempt = null;
+  try { sessionStorage.removeItem(PROGRESS_TAB_KEY); } catch { /* optional */ }
+}
+
 function setBatchStatus(text, isError = false) {
-  const s = $("batch-status");
-  s.className = isError ? "status error" : "status";
-  s.setAttribute("aria-live", isError ? "assertive" : "polite");
-  s.textContent = text;
+  $("batch-status").textContent = text;
+  if (text) showProgress($("progress-operation").textContent, isError ? "! Held / failed" : "✓ Complete",
+    $("progress-count").textContent, text, isError);
+}
+
+function localProgress(operation, state, completed, total, label, detail, isError = false) {
+  stopProgress();
+  showProgress(operation, state, `${completed} / ${total} ${label}`, detail, isError);
+}
+
+function snapshotProgress(data) {
+  const sending = data.operation === "send";
+  const operation = sending ? "Send to Poster" : "Pull from Searcher";
+  const label = sending ? "copied" : "imported";
+  const current = data.current;
+  let state = "↻ Working";
+  let detail = current
+    ? `Now: ${{copying: "copying", copied: "copied", importing: "importing", imported: "imported"}[data.stage] || data.stage} clip ${current.position} of ${data.total} — ${current.title}`
+    : sending ? "Preparing batch…" : "Finding the next batch…";
+  let count = data.total ? `${data.completed} / ${data.total} ${label}` : "";
+  if (["committing", "published"].includes(data.stage)) {
+    state = "↻ Handing off";
+    detail = sending ? "Handing off batch…" : "Recording imported batch custody…";
+  }
+  if (data.status === "complete") {
+    state = "✓ Complete";
+    count = `${data.total} / ${data.total} ${sending ? "handed off" : "imported"}`;
+    detail = sending ? `Batch ${data.batch_id} is waiting in Poster's inbox.`
+      : data.total ? `Imported batch ${data.batch_id}; ready for transcription.` : "No batches waiting.";
+  } else if (data.status === "failed") {
+    state = "! Failed";
+    const failure = data.items.find((item) => item.state === "failed");
+    const notAttempted = data.items.filter((item) => item.state === "waiting").length;
+    detail = `${failure ? `Clip ${failure.position} — ${failure.title}: ` : ""}${data.detail}. ${notAttempted ? `${notAttempted} not attempted. ` : ""}${sending ? "Batch was not handed off." : "Pull was not confirmed; existing custody recovery still applies."}`;
+  } else if (data.status === "unconfirmed") {
+    state = "? Result unknown";
+    detail = `Batch ${data.batch_id} reached the handoff boundary; confirmation is unavailable. ${data.detail}`;
+  }
+  showProgress(operation, state, count, detail, ["failed", "unconfirmed"].includes(data.status));
+}
+
+function watchProgress(operation, id, restoring = false) {
+  stopProgress();
+  const attempt = { operation, id };
+  progressAttempt = attempt;
+  const generation = progressGeneration;
+  let unavailableReads = 0;
+  try { sessionStorage.setItem(PROGRESS_TAB_KEY, JSON.stringify(attempt)); } catch { /* optional */ }
+  if (!restoring) showProgress(operation === "send" ? "Send to Poster" : "Pull from Searcher", "↻ Working", "",
+    operation === "send" ? "Preparing batch…" : "Finding the next batch…");
+  async function poll() {
+    if (generation !== progressGeneration) return;
+    try {
+      const response = await fetch(`api/progress/${operation}/${encodeURIComponent(id)}`);
+      if (generation !== progressGeneration) return;
+      if (!response.ok) {
+        if (response.status === 404 && (restoring || ++unavailableReads >= 3)) {
+          showProgress($("progress-operation").textContent, "? Result unknown", $("progress-count").textContent,
+            "Operation progress unavailable after restart or expiry; outcome unknown.", true);
+          stopProgress();
+          return;
+        }
+        throw new Error("Progress connection lost");
+      }
+      const data = await response.json();
+      if (generation !== progressGeneration) return;
+      unavailableReads = 0;
+      snapshotProgress(data);
+      if (data.status !== "active") { stopProgress(); return; }
+    } catch {
+      if (generation !== progressGeneration) return;
+      showProgress($("progress-operation").textContent, "? Connection lost / result unknown",
+        $("progress-count").textContent, $("progress-current").textContent, true);
+    }
+    if (generation === progressGeneration) progressTimer = setTimeout(poll, 750);
+  }
+  progressTimer = setTimeout(poll, 350);
+  return id;
+}
+
+function lostProgress(message) {
+  showProgress($("progress-operation").textContent, "? Connection lost / result unknown",
+    $("progress-count").textContent, `${$("progress-current").textContent} ${message}`, true);
 }
 
 function updateRenderAllButton() {
@@ -605,9 +709,8 @@ function addFiles(fileList) {
 }
 
 function setPullStatus(text, isError = false) {
-  const el = $("pull-status");
-  el.textContent = text || "";
-  el.className = isError ? "status error" : "status";
+  $("pull-status").textContent = text || "";
+  if (text) showProgress("Pull from Searcher", isError ? "! Failed" : "✓ Complete", $("progress-count").textContent, text, isError);
 }
 
 // Add jobs pulled from RiceSearcher as review cards. They already have a server
@@ -682,7 +785,8 @@ async function pullNext({ automatic }) {
   };
   try {
     if (clips.length) clearWorkspace(); // only a fully sent batch gets here
-    const res = await fetch(`api/pull-from-searcher?pull_key=${encodeURIComponent(key)}`, {
+    const observation = watchProgress("pull", newSendKey());
+    const res = await fetch(`api/pull-from-searcher?pull_key=${encodeURIComponent(key)}&observation_id=${encodeURIComponent(observation)}`, {
       method: "POST",
     });
     writeTab({ pendingPullKey: "" }); // answered: nothing left to retry
@@ -691,20 +795,22 @@ async function pullNext({ automatic }) {
       failed(data.detail || "pull failed");
       return;
     }
+    stopProgress();
     if (!data.clip_count) {
-      if (!automatic) setPullStatus("No batches waiting in ~/ricesearcher-handoff.");
+      localProgress("Pull from Searcher", "✓ Complete", 0, 0, "imported", "No batches waiting in ~/ricesearcher-handoff.");
       return;
     }
+    localProgress("Pull from Searcher", "✓ Complete", data.clip_count, data.clip_count, "imported", `Imported batch ${data.batch_id}.`);
     addPulledJobs(data.jobs || [], data.batch_id);
     if (automatic) {
-      setBatchStatus(`Batch ${data.batch_id} arrived from RiceSearcher; transcribing ${data.clip_count} clip(s)…`);
+      $("batch-status").textContent = `Batch ${data.batch_id} arrived from RiceSearcher; transcribing ${data.clip_count} clip(s)…`;
     } else {
-      setPullStatus(`Pulled ${data.clip_count} clip(s) from batch ${data.batch_id}.`);
+      $("pull-status").textContent = `Pulled ${data.clip_count} clip(s) from batch ${data.batch_id}.`;
     }
   } catch (err) {
     if (readTab().pendingPullKey) {
       // The reply was lost: the next poll retries with the same key.
-      setPullStatus(`The pull's reply was lost (${err.message}); retrying…`, true);
+      lostProgress(`The pull's reply was lost (${err.message}); existing keyed recovery remains available.`);
     } else {
       failed(err.message);
     }
@@ -724,26 +830,51 @@ async function processIngestQueue() {
       const clip = clips.find((c) => c.status === "queued");
       if (!clip) break;
       await ingestClip(clip);
+      const ready = clips.filter((c) => ["ready", "done"].includes(c.status)).length;
+      const failures = clips.filter((c) => c.status === "error");
+      const unknown = failures.filter((c) => c.operationUnknown);
+      localProgress("Transcribe clips", unknown.length ? "? Connection lost / result unknown" : failures.length ? "! Held / failed" : "↻ Working", ready, clips.length, "ready",
+        unknown.length ? `Response lost for ${unknown.map((c) => `Clip ${c.ord}`).join(", ")}; work may still be running. No transcription was retried.` : failures.length ? `${failures.length} failed: ${failures.map((c) => `Clip ${c.ord} — ${c.error}`).join("; ")}` : `Clip ${clip.ord} is ready for review.`, failures.length > 0);
     }
   } finally {
     ingesting = false;
+    if (clips.length && clips.every((c) => ["ready", "done"].includes(c.status)))
+      localProgress("Transcribe clips", "✓ Ready", clips.length, clips.length, "ready", "Review each clip, then render.");
     updateRenderAllButton();
     updateCacheControls();
     await refreshCacheInfo();
   }
 }
 
+async function observedIngestRead(clip, response) {
+  try { return await response.json(); } catch (error) {
+    clip.operationUnknown = true;
+    lostProgress(`The response for clip ${clip.ord} was lost; work may still be running.`);
+    throw error;
+  }
+}
+
+async function observedIngestFetch(clip, url, options) {
+  try { return await fetch(url, options); } catch (error) {
+    clip.operationUnknown = true;
+    lostProgress(`The response for clip ${clip.ord} was lost; work may still be running.`);
+    throw error;
+  }
+}
+
 async function ingestClip(clip) {
+  clip.operationUnknown = false;
   try {
     if (!clip.jobId) {
       // Normal upload path. A pulled clip already has a server job, so skip it.
       clip.status = "uploading";
       setClipStatus(clip, "Uploading…");
+      localProgress("Transcribe clips", "↻ Working", clips.filter((c) => ["ready", "done"].includes(c.status)).length, clips.length, "ready", `Now: uploading clip ${clip.ord} — ${clip.name || clip.file.name}`);
       updateCacheControls();
       const form = new FormData();
       form.append("file", clip.file);
-      const up = await fetch("api/upload", { method: "POST", body: form });
-      const updata = await up.json();
+      const up = await observedIngestFetch(clip, "api/upload", { method: "POST", body: form });
+      const updata = await observedIngestRead(clip, up);
       if (!up.ok || updata.status === "error") {
         throw new Error(updata.error || updata.detail || "upload failed");
       }
@@ -753,12 +884,13 @@ async function ingestClip(clip) {
 
     clip.status = "transcribing";
     setClipStatus(clip, "Transcribing… (first run downloads the model)");
+    localProgress("Transcribe clips", "↻ Working", clips.filter((c) => ["ready", "done"].includes(c.status)).length, clips.length, "ready", `Now: transcribing clip ${clip.ord} of ${clips.length} — ${clip.name || clip.file.name}`);
     clip.lyricsBadgeEl.textContent = "";
     clip.lyricsBadgeEl.classList.remove("lyrics-badge-warn");
     clip.lyricsBadgeEl.removeAttribute("title");
     clip.transcriptEl.innerHTML = '<span class="hint">Transcribing…</span>';
-    const tr = await fetch(`api/jobs/${clip.jobId}/transcribe`, { method: "POST" });
-    const trdata = await tr.json();
+    const tr = await observedIngestFetch(clip, `api/jobs/${clip.jobId}/transcribe`, { method: "POST" });
+    const trdata = await observedIngestRead(clip, tr);
     if (!tr.ok || trdata.status === "error") {
       throw new Error(trdata.error || trdata.detail || "transcription failed");
     }
@@ -797,21 +929,30 @@ async function handleRenderAll() {
   updateCacheControls();
 
   let ok = 0;
+  const failedRenders = [];
   for (let i = 0; i < targets.length; i++) {
-    setBatchStatus(`Rendering clip ${i + 1} of ${targets.length}…`);
+    localProgress("Render all", "↻ Working", ok, clips.length, "rendered", `Now: rendering clip ${targets[i].ord} of ${clips.length} — ${targets[i].name || targets[i].file?.name || "clip"}`);
     if (await renderClip(targets[i])) ok += 1;
+    else failedRenders.push(targets[i]);
   }
 
   batchBusy = false;
   updateRenderAllButton();
   updateCacheControls();
   await refreshCacheInfo();
-  setBatchStatus(
+  const heldAfterRender = clips.filter((c) => !clipCurrent(c));
+  const unknownRenders = failedRenders.filter((c) => c.renderUnknown);
+  const heldDetail = unknownRenders.length
+    ? `Render result unknown for ${unknownRenders.map((c) => `Clip ${c.ord}`).join(", ")}; work may still be running. Automatic send held.`
+    : failedRenders.length
+    ? `${failedRenders.length} failed: ${failedRenders.map((c) => `Clip ${c.ord} — ${c.error}`).join("; ")}. Automatic send held.`
+    : heldAfterRender.length ? `${heldAfterRender.map(heldReason).join("; ")}. Automatic send held.`
+      : "Rendered clips are available in their existing frames.";
+  localProgress("Render all", unknownRenders.length ? "? Connection lost / result unknown" : heldAfterRender.length ? "! Held / failed" : "✓ Complete", ok, clips.length, "rendered", heldDetail, heldAfterRender.length > 0);
+  $("batch-status").textContent =
     ok === targets.length
       ? `Rendered ${ok} clip${ok === 1 ? "" : "s"}. Download from each clip's frame.`
-      : `Rendered ${ok} of ${targets.length}; see the per-clip errors above.`,
-    ok !== targets.length,
-  );
+      : `Rendered ${ok} of ${targets.length}; see the per-clip errors above.`;
   await maybeAutoSend();
 }
 
@@ -839,6 +980,7 @@ async function pollRenderCompletion(clip) {
 }
 
 async function renderClip(clip) {
+  clip.renderUnknown = false;
   clip.status = "rendering";
   // Keep the last render in its frame, paused, dimmed and inert, with no
   // download while its file is being replaced in place (Issue #20).
@@ -857,6 +999,7 @@ async function renderClip(clip) {
     let filename = null;
     if (mode !== "none" && musicFile) {
       setClipStatus(clip, "Uploading music…");
+      showProgress("Render all", "↻ Working", $("progress-count").textContent, `Now: uploading music for clip ${clip.ord}`);
       const form = new FormData();
       form.append("file", musicFile);
       const mres = await fetch(`api/jobs/${clip.jobId}/music`, { method: "POST", body: form });
@@ -866,6 +1009,7 @@ async function renderClip(clip) {
     }
 
     setClipStatus(clip, "Rendering… (captions, header & audio)");
+    showProgress("Render all", "↻ Working", $("progress-count").textContent, `Now: rendering clip ${clip.ord} — captions, header & audio`);
     // Any edit after this point is not in the MP4 (W1-06).
     const editsAtRender = clip.edits || 0;
     const payload = {
@@ -879,16 +1023,19 @@ async function renderClip(clip) {
       music: { mode: musicFile ? mode : "none", volume: Number(clip.musicVolumeEl.value), filename },
     };
     let res;
+    let data;
     try {
       res = await fetch(`api/jobs/${clip.jobId}/render`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+      data = await res.json();
     } catch (netErr) {
       // The render fetch dropped before a response. A long batch can outlast the
       // browser's patience while the server still finishes (Issue #30). Poll job
       // state; treat done+output as success, error as failure, timeout as drop.
+      lostProgress(`Render response lost for clip ${clip.ord}; checking its existing job state.`);
       if (await pollRenderCompletion(clip)) {
         clip.renders = (clip.renders || 0) + 1;
         clip.renderedEdits = editsAtRender;
@@ -897,9 +1044,9 @@ async function renderClip(clip) {
         await showResult(clip);
         return true;
       }
+      clip.renderUnknown = true;
       throw netErr;
     }
-    const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "render failed");
 
     clip.renders = (clip.renders || 0) + 1;
@@ -1038,8 +1185,11 @@ async function sendBatch({ automatic = false } = {}) {
 
   $("send-handoff-btn").disabled = true;
   setBatchStatus(`Sending ${done.length} clip${done.length === 1 ? "" : "s"} to RicePoster…`);
+  const observation = watchProgress("send", newSendKey());
+  showProgress("Send to Poster", "↻ Working", `0 / ${done.length} copied`, "Preparing batch…");
   try {
     const payload = {
+      observation_id: observation,
       send_key: sendKey,
       resend,
       clips: done.map((c, i) => ({
@@ -1059,6 +1209,7 @@ async function sendBatch({ automatic = false } = {}) {
     answered = true;
     const data = await res.json();
     if (res.status === 409 && data.already_sent) {
+      stopProgress();
       // These clips already went (another tab, or before a reload). What went
       // is not known here, so the workspace stays held (review S-1).
       batchSent = true;
@@ -1070,6 +1221,7 @@ async function sendBatch({ automatic = false } = {}) {
       return;
     }
     if (!res.ok) throw new Error(data.detail || "handoff failed");
+    stopProgress();
     const n = data.clip_count;
     batchSent = true;
     sentBatchId = data.batch_id;
@@ -1082,12 +1234,13 @@ async function sendBatch({ automatic = false } = {}) {
       : automatic
         ? "Every clip rendered — sent"
         : "Sent";
-    setBatchStatus(`${how} batch ${data.batch_id} (${n} clip${n === 1 ? "" : "s"}) to RicePoster.`);
+    localProgress("Send to Poster", "✓ Complete", n, n, "handed off", `${how} batch ${data.batch_id}; waiting in Poster's inbox.`);
   } catch (err) {
     const lost = answered
       ? ""
       : " The reply was lost. Send again: a batch that already arrived is not sent twice.";
-    setBatchStatus(err.message + lost, true);
+    if (!answered) lostProgress(err.message + lost);
+    else setBatchStatus(err.message, true);
   } finally {
     sendInFlight = false;
     updateRenderAllButton();
@@ -1153,6 +1306,8 @@ function clearWorkspace() {
   $("file-input").value = "";
   $("upload-status").textContent = "";
   setBatchStatus("");
+  stopProgress();
+  showProgress("Clip progress", "○ Idle", "", "Choose clips or pull a batch to begin.");
   batchSent = false;
   sentBatchId = "";
   sentSnapshot = null;
@@ -1209,11 +1364,10 @@ async function restoreOpenBatch(batchId = "") {
     if (clips.length) clearWorkspace(); // only a fully sent batch gets here
     addPulledJobs(pulled, data.batch_id);
     const n = data.clip_count;
-    setBatchStatus(
+    $("batch-status").textContent =
       batchId
         ? `Batch ${data.batch_id} from RiceSearcher was restored; transcribing ${n} clip(s) again…`
-        : `Opened batch ${data.batch_id}: it was pulled earlier and not sent. If another tab works on it, use that tab.`,
-    );
+        : `Opened batch ${data.batch_id}: it was pulled earlier and not sent. If another tab works on it, use that tab.`;
     return true;
   } catch {
     return false;
@@ -1229,7 +1383,7 @@ async function noteOpenBatch() {
     const res = await fetch("api/workspace");
     if (!res.ok) return;
     const data = await res.json();
-    if (data.batch_id) {
+    if (data.batch_id && $("progress-state").textContent === "○ Idle") {
       setPullStatus(
         `Batch ${data.batch_id} was pulled and not sent (in another tab, or one that was closed). Press Pull to open it here.`,
       );
@@ -1306,3 +1460,13 @@ $("clear-cache-btn").addEventListener("click", async () => {
 checkHealth();
 refreshCacheInfo();
 updateCacheControls();
+
+// Reload restores observation only; ordinary workspace recovery remains separate.
+try {
+  const view = JSON.parse(sessionStorage.getItem(PROGRESS_VIEW_KEY));
+  if (view && ["operation", "state", "count", "detail"].every((key) => typeof view[key] === "string"))
+    showProgress(view.operation, view.state, view.count, view.detail, Boolean(view.isError));
+  const saved = JSON.parse(sessionStorage.getItem(PROGRESS_TAB_KEY));
+  if (saved && ["pull", "send"].includes(saved.operation) && /^[A-Za-z0-9_-]{8,64}$/.test(saved.id))
+    watchProgress(saved.operation, saved.id, true);
+} catch { /* optional session storage */ }

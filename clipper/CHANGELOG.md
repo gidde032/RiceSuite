@@ -8,6 +8,14 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- **Compact staged progress** (RiceSuite [#21](https://github.com/gidde032/RiceSuite/issues/21)).
+  Pull/import, transcription, render-all/music upload, and send share a bar above
+  the existing review cards, with actual clip identity, stage counts, and held
+  failures. Copies remain "copied" until the complete handoff is confirmed;
+  success says the batch waits in Poster's inbox. Read-only observation reconnects
+  to the exact temporary attempt after a lost response or same-process reload,
+  and labels unavailable results unknown. Transport keys, automatic transport,
+  review gates, slots, and rendered preview design retain their contracts.
 - **`.env` is loaded automatically** (#2). `app.main` loads the repo-root `.env`
   at startup, before any settings are read, so a bare `uvicorn app.main:app`
   picks it up; `--env-file` is no longer needed. Variables already set in the

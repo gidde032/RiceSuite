@@ -185,3 +185,25 @@ button:focus-visible, .primary:focus-visible, textarea:focus-visible, select:foc
 .header-gen { display: flex; gap: 8px; margin-top: 8px; align-items: stretch; }
 .header-generate { min-height: 36px; padding: 6px 12px; flex: 0 0 auto; white-space: nowrap; }
 .header-feedback { flex: 1 1 auto; min-width: 0; padding: 6px 10px; }
+
+/* Issue #21: only the operation bar; editor and preview rules stay unchanged. */
+.operation-progress {
+  padding: var(--editor-space, 8px);
+  margin-bottom: var(--editor-space, 8px);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--interior);
+  color: var(--text);
+  font: 400 13px/1.5 Arial, sans-serif;
+  overflow-wrap: anywhere;
+}
+.operation-progress-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: calc(var(--editor-space, 8px) * 0.5) calc(var(--editor-space, 8px) * 2);
+}
+.operation-progress strong { font-size: 14px; font-weight: 600; }
+#progress-count { font-variant-numeric: tabular-nums; }
+#progress-current { margin-top: calc(var(--editor-space, 8px) * 0.5); color: var(--muted); }
+.operation-progress.error #progress-current { color: var(--danger); }

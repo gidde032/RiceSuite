@@ -18,6 +18,7 @@ from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from ricesuite.localguard import LocalGuard, gateway_origins
+from ricesuite.progress import Progress, ProgressStore, notify
 
 from app import env
 
@@ -47,6 +48,28 @@ from render.pipeline import render  # noqa: E402
 from transcribe import lyrics, whisper  # noqa: E402
 
 logger = logging.getLogger("riceclipper")
+
+PROGRESS = ProgressStore()
+
+
+def _start_progress(operation_id: str | None, operation: str) -> Progress | None:
+    if not operation_id:
+        return None
+    try:
+        return PROGRESS.start(operation_id, operation)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception:
+        return None
+
+
+def _finish_progress(progress, status="complete", detail="", batch_id=""):
+    if progress is not None:
+        try:
+            progress.finish(status=status, detail=detail, batch_id=batch_id)
+        except Exception:
+            pass
+
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
@@ -403,6 +426,22 @@ def render_job(job_id: str, req: RenderRequest) -> JobState:
 
 @app.post("/api/handoff")
 def handoff_batch(req: HandoffRequest) -> dict:
+    progress = _start_progress(req.observation_id, "send")
+    try:
+        result = _handoff_batch(req, progress)
+    except Exception as exc:
+        _finish_progress(progress, "failed", str(getattr(exc, "detail", exc)))
+        raise
+    if isinstance(result, JSONResponse):
+        _finish_progress(
+            progress, "failed", "These clips were already sent under another key."
+        )
+    else:
+        _finish_progress(progress, batch_id=result["batch_id"])
+    return result
+
+
+def _handoff_batch(req: HandoffRequest, progress: Progress | None = None) -> dict:
     """Write a rendered batch into the RicePoster handoff directory.
 
     Producer side of the pickup contract (SPEC §7 Wave-1 #1). Reads job outputs
@@ -444,6 +483,19 @@ def handoff_batch(req: HandoffRequest) -> dict:
             },
         )
     if done is not None:
+        notify(
+            progress,
+            "items",
+            items=[
+                {
+                    "id": c.job_id,
+                    "title": c.header or f"Clip {c.position}",
+                    "position": c.position,
+                }
+                for c in req.clips
+            ],
+        )
+        notify(progress, "published", batch_id=done["batch_id"])
         searcher_pickup.close_open_batches(job_ids)
         return {
             "batch_id": done["batch_id"],
@@ -451,7 +503,11 @@ def handoff_batch(req: HandoffRequest) -> dict:
             "replayed": True,
         }
     try:
-        result = _write_handoff(req)
+        result = (
+            _write_handoff(req, progress)
+            if progress is not None
+            else _write_handoff(req)
+        )
         send_keys.record(key, result, job_ids)
     finally:
         send_keys.end(key)
@@ -459,7 +515,7 @@ def handoff_batch(req: HandoffRequest) -> dict:
     return result
 
 
-def _write_handoff(req: HandoffRequest) -> dict:
+def _write_handoff(req: HandoffRequest, progress: Progress | None = None) -> dict:
     entries: list[handoff.HandoffEntry] = []
     with jobs.job_operation_lock():
         for clip in req.clips:
@@ -475,6 +531,7 @@ def _write_handoff(req: HandoffRequest) -> dict:
             entries.append(
                 handoff.HandoffEntry(
                     position=clip.position,
+                    item_id=clip.job_id,
                     source=job.output_path,
                     transcript=clip.transcript,
                     header=clip.header,
@@ -486,7 +543,11 @@ def _write_handoff(req: HandoffRequest) -> dict:
     # Copy outside the job lock: gathering the source paths is quick, but the
     # file copies are not, and they must not block status/upload requests.
     try:
-        return handoff.write_batch(entries)
+        return (
+            handoff.write_batch(entries, progress=progress)
+            if progress is not None
+            else handoff.write_batch(entries)
+        )
     except handoff.HandoffError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -520,6 +581,7 @@ def searcher_inbox() -> dict:
 @app.post("/api/pull-from-searcher")
 def pull_from_searcher(
     pull_key: str | None = Query(default=None, pattern=r"^[A-Za-z0-9_-]{8,64}$"),
+    observation_id: str | None = Query(default=None, pattern=r"^[A-Za-z0-9_-]{8,64}$"),
 ) -> dict:
     """Ingest the oldest RiceSearcher handoff batch as new review jobs.
 
@@ -528,10 +590,39 @@ def pull_from_searcher(
     flow through the normal review → render → "Send to RicePoster" path (which
     writes the separate ``~/riceclipper-handoff``).
     """
+    progress = _start_progress(observation_id, "pull")
     try:
-        return searcher_pickup.pull_next_batch(pull_key)
-    except searcher_pickup.PickupError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        result = (
+            searcher_pickup.pull_next_batch(pull_key, progress=progress)
+            if progress is not None
+            else searcher_pickup.pull_next_batch(pull_key)
+        )
+    except Exception as exc:
+        _finish_progress(progress, "failed", str(exc))
+        if isinstance(exc, searcher_pickup.PickupError):
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise
+    if result.get("replayed"):
+        notify(
+            progress,
+            "items",
+            items=[
+                {"id": j["id"], "title": j.get("title", ""), "position": i + 1}
+                for i, j in enumerate(result["jobs"])
+            ],
+        )
+    _finish_progress(progress, batch_id=result.get("batch_id") or "")
+    return result
+
+
+@app.get("/api/progress/{operation}/{observation_id}")
+def operation_progress(operation: str, observation_id: str) -> dict:
+    result = PROGRESS.get(observation_id)
+    if result is None or result["operation"] != operation:
+        raise HTTPException(
+            status_code=404, detail="Operation progress unavailable; outcome unknown."
+        )
+    return result
 
 
 @app.get("/api/jobs/{job_id}/output")

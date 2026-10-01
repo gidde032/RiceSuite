@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from ricesuite.progress import Progress, notify
+
 from ricesearcher.acquire.watchfolder import ffprobe_duration
 from ricesearcher.config import Config, load_config
 from ricesearcher.handoff.extract import ClipExtractor, FfmpegClipExtractor
@@ -50,6 +52,7 @@ class HandoffEntry:
     beat_profile_version: str
     profile_id: str
     scorer_model: str = ""
+    item_id: str = ""
 
     @property
     def transcript(self) -> str:
@@ -80,11 +83,16 @@ def write_batch(
     *,
     extractor: ClipExtractor,
     root: Path,
+    progress: Progress | None = None,
 ) -> dict:
     """Write ``entries`` as one atomic handoff batch; return its id + clip count."""
-    prepared = _prepare_batch(entries, extractor=extractor, root=root)
+    prepared = _prepare_batch(
+        entries, extractor=extractor, root=root, progress=progress
+    )
     try:
+        notify(progress, "committing", batch_id=prepared.batch_id)
         _publish_batch(prepared)
+        notify(progress, "published", batch_id=prepared.batch_id)
     except BaseException:
         _discard_batch(prepared)
         raise
@@ -96,6 +104,7 @@ def _prepare_batch(
     *,
     extractor: ClipExtractor,
     root: Path,
+    progress: Progress | None = None,
 ) -> PreparedBatch:
     """Write clips and a temporary manifest without exposing a complete batch."""
     if not entries:
@@ -123,6 +132,7 @@ def _prepare_batch(
     try:
         manifest_clips = []
         for entry in sorted(entries, key=lambda e: e.position):
+            notify(progress, "preparing", item_id=entry.item_id or str(entry.position))
             source = Path(entry.source_media)
             if not source.is_file():
                 raise HandoffError(f"clip {entry.position}: source media missing")
@@ -147,6 +157,7 @@ def _prepare_batch(
             if not math.isfinite(measured) or measured <= 0:
                 raise HandoffError(f"clip {entry.position}: invalid measured duration")
             manifest_clips.append(_manifest_clip(entry, filename, measured))
+            notify(progress, "prepared", item_id=entry.item_id or str(entry.position))
 
         manifest = {
             "schema_version": SCHEMA_VERSION,
@@ -273,6 +284,7 @@ def _entry_for(
         beat_profile_version=slice_.beat_profile_version,
         profile_id=slice_.profile_id,
         scorer_model=slice_.scorer_model,
+        item_id=slice_.id,
     )
 
 
@@ -283,6 +295,7 @@ def hand_off_selected(
     extractor: ClipExtractor | None = None,
     config: Config | None = None,
     duration_prober: Callable[[Path], float] | None = None,
+    progress: Progress | None = None,
 ) -> dict:
     """Write ``selected`` slices as one handoff batch, then mark them handed_off.
 
@@ -306,11 +319,25 @@ def hand_off_selected(
 
     # Position by score (best first); stable tie-break for determinism.
     ordered = sorted(selected, key=lambda s: (-s.score, s.created_at, s.id))
+    titles = library.source_titles()
+    notify(
+        progress,
+        "items",
+        items=[
+            {
+                "id": sl.id,
+                "title": titles.get(sl.source_id) or sl.source_id,
+                "position": i,
+            }
+            for i, sl in enumerate(ordered, start=1)
+        ],
+    )
     entries = []
     sources: dict[str, Source] = {}
     durations: dict[str, float] = {}
     probe = duration_prober or ffprobe_duration
     for i, sl in enumerate(ordered, start=1):
+        notify(progress, "checking", item_id=sl.id)
         if not (
             math.isfinite(sl.target_in)
             and math.isfinite(sl.target_out)
@@ -345,12 +372,16 @@ def hand_off_selected(
                 f"target_in {sl.target_in}"
             )
         entries.append(_entry_for(sl, source, i, target_out=target_out))
+        notify(progress, "checked", item_id=sl.id)
     snapshot_ids = [sl.id for sl in ordered]
 
     # Phase 2 — encode and prepare the batch with NO database lock held. The
     # temporary manifest keeps the batch invisible to the pickup consumer.
     prepared = _prepare_batch(
-        entries, extractor=extractor or FfmpegClipExtractor(), root=cfg.handoff_dir
+        entries,
+        extractor=extractor or FfmpegClipExtractor(),
+        root=cfg.handoff_dir,
+        progress=progress,
     )
 
     # Phase 3 — short critical section. Under the write lock, re-read every
@@ -359,6 +390,7 @@ def hand_off_selected(
     # this call a no-op whose invisible prepared batch is discarded. SQLite still
     # cannot enlist the filesystem in its transaction, so a crash in this narrow
     # publication window can require manual recovery.
+    notify(progress, "committing", batch_id=prepared.batch_id)
     try:
         with library.immediate_transaction():
             still_selected = {
@@ -374,6 +406,7 @@ def hand_off_selected(
                 # competing handoff cannot publish the same snapshot before its
                 # terminal status update becomes visible.
                 _publish_batch(prepared)
+                notify(progress, "published", batch_id=prepared.batch_id)
                 library.bulk_update_status(snapshot_ids, SliceStatus.HANDED_OFF)
     except BaseException:
         # A failure marking the snapshot must not leave an unmarked batch on disk

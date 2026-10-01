@@ -241,7 +241,17 @@ CHECKS = r"""
     // 540 px tall, shrinking with a narrow or short window, never below 360.
     const expected = Math.min(540, Math.max(360, Math.min(0.42 * innerWidth, innerHeight - 200)));
     check(near(frameBox.height, expected, 1), "rendered frame height " + frameBox.height + " != " + expected);
-    check(download.bottom <= innerHeight, "download visible without scrolling");
+    // Finn accepted the #21 bar above the unchanged editor on 2026-10-01,
+    // including the short laptop scroll. Only the bar's measured space may
+    // move Download below the first viewport; the frame budget is unchanged.
+    const progressBar = document.getElementById("operation-progress");
+    const progressSpace = progressBar && progressBar.getClientRects().length
+      ? rect(progressBar).height + parseFloat(css(progressBar).marginBottom) : 0;
+    check(download.bottom <= innerHeight + progressSpace, "download retains its original viewport budget plus progress bar");
+    clip.downloadEl.scrollIntoView({ block: "center" });
+    const scrolledDownload = rect(clip.downloadEl);
+    check(scrolledDownload.y >= 0 && scrolledDownload.bottom <= innerHeight, "download reachable by scrolling");
+    window.scrollTo(0, 0);
     check(near(resultBox.right, grid.right - unit), "rendered column meets the grid edge");
   } else {
     check(resultBox.y >= settings.bottom && resultBox.bottom <= transcriptPanel.y, "narrow rendered column between controls and transcript");
