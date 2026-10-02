@@ -34,6 +34,9 @@ ricesuite.env
 .idea/
 .vscode/
 
+# Trailer sources and renders (local only; the MP4 ships as a release asset)
+trailer/
+
 # Claude Code local state
 .claude/scheduled_tasks.lock
 .claude/settings.local.json
