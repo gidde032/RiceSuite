@@ -27,6 +27,7 @@ function slice(from, to) {
 // Verbatim page code: the draft predicates and busy guards, the Restore block,
 // and New Run.
 const SOURCE = [
+  slice("function knownStyle(", "function styleOptions("),
   slice("function draftsAtRisk()", "// Returns true when a batch was pulled"),
   slice("// --- Restore last batch", "// Capture a frame from a staged"),
   slice("function newRun()", "async function refreshMediaInfo()"),
@@ -52,7 +53,7 @@ const draft = (fields = {}) => ({
 // `disk` maps a staged filename to its identity; a name absent from it is gone.
 function boot({
   accounts = ["A", "B"], slots, disk = {}, stored, confirmAnswer = true, defaults = {},
-  onStat, thumb = async () => "data:thumb",
+  captionStyles, onStat, thumb = async () => "data:thumb",
 } = {}) {
   let js;
   const { fetch, calls } = scriptedFetch({
@@ -74,6 +75,7 @@ function boot({
       slots: slots || Object.fromEntries(accounts.map((a) => [a, draft()])),
       accountState: { caption_defaults: defaults },
       defaultCaptionStyle: "generic",
+      captionStyles,
       runId: "",
     },
     localStorage: storage,
@@ -217,6 +219,20 @@ test("when no saved media remains, nothing is restored and the reason is shown",
   assert.equal(asked.length, 0);
   assert.equal(ctx.state.slots.A.filename, "");
   assert.match(statuses.at(-1).m, /A_gone\.mp4/);
+});
+
+test("a restored draft whose style left prompts/ takes its account's default style (#50)", async () => {
+  const stored = savedBatch([
+    savedDraft(0, "A", "A_clip.mp4", { style: "retired" }),
+    savedDraft(1, "B", "B_clip.mp4", { style: "retired" }),
+  ]);
+  const disk = { "A_clip.mp4": ID(0), "B_clip.mp4": ID(1) };
+  const captionStyles = ["generic", "calm"].map((name) => ({ name, display_name: name }));
+  const { js, ctx } = boot({ stored, disk, defaults: { A: "calm" }, captionStyles });
+  assert.equal(await js("restoreLastBatch()"), true);
+  const { A, B } = ctx.state.slots;
+  assert.deepEqual([A.caption, A.style], ["caption 0", "calm"]);
+  assert.deepEqual([B.caption, B.style], ["caption 1", "generic"]);
 });
 
 test("a changed roster is filled by position; the caption stays and takes the new account's style", async () => {

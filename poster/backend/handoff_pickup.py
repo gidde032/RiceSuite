@@ -31,6 +31,7 @@ import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
+from backend.captions import DEFAULT_STYLE, load_styles
 from backend.config import CLIPPER_INGEST_STYLE, HANDOFF_DIR, MEDIA_DIR
 from backend.logging_setup import get_logger
 
@@ -256,13 +257,26 @@ def _validate_receipt(receipt: dict, batch_dir: Path) -> None:
             )
 
 
+def _current_style(style, known: set[str]) -> str:
+    """A receipt freezes each slot's style at first pickup. A style removed
+    from prompts/ since then would fail every caption request, so it falls
+    back to the current CLIPPER_INGEST_STYLE, then the default (#50)."""
+    if style in known:
+        return style
+    return CLIPPER_INGEST_STYLE if CLIPPER_INGEST_STYLE in known else DEFAULT_STYLE
+
+
+def _result_slot(slot: dict, known: set[str]) -> dict:
+    result = {k: v for k, v in slot.items() if k not in ("source_file", "sha256")}
+    result["style"] = _current_style(slot.get("style"), known)
+    return result
+
+
 def _receipt_result(receipt: dict, *, replayed: bool) -> dict:
+    known = set(load_styles())
     return {
         "batch_id": receipt["batch_id"],
-        "slots": [
-            {key: value for key, value in slot.items() if key != "source_file" and key != "sha256"}
-            for slot in receipt["slots"]
-        ],
+        "slots": [_result_slot(slot, known) for slot in receipt["slots"]],
         "receipt_status": receipt.get("status", "staged"),
         "replayed": replayed,
         "source_archived": True,

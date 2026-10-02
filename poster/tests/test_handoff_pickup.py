@@ -181,6 +181,50 @@ def test_unacknowledged_pull_replays_frozen_targets_and_restores_media(tmp_hando
     assert missing.read_bytes() == b"clip_1.mp4 bytes"
 
 
+def test_replay_replaces_a_removed_style(tmp_handoff_paths, monkeypatch):
+    """#50: a receipt froze a style that no longer exists in prompts/. The
+    replay must return the current ingest style, or every caption fails."""
+    handoff = tmp_handoff_paths["handoff"]
+    _write_batch(handoff, "batch_20260826_120000_aaaa", [(1, "clip_1.mp4", "hello")])
+    first = handoff_pickup.ingest_oldest(["creator-one"])
+    archive_dir = handoff_pickup._archive_root() / first["batch_id"]
+    receipt_path = archive_dir / handoff_pickup.RECEIPT_FILENAME
+    receipt = json.loads(receipt_path.read_text())
+    receipt["slots"][0]["style"] = "retired-style"
+    receipt_path.write_text(json.dumps(receipt))
+    monkeypatch.setattr(handoff_pickup, "CLIPPER_INGEST_STYLE", "sports")
+
+    replay = handoff_pickup.ingest_oldest(["creator-one"])
+
+    assert replay["replayed"] is True
+    assert replay["slots"][0]["style"] == "sports"
+
+
+def test_pickup_with_an_unknown_ingest_style_uses_the_default(
+    tmp_handoff_paths, monkeypatch
+):
+    """#50 review: CLIPPER_INGEST_STYLE itself may name a removed style."""
+    handoff = tmp_handoff_paths["handoff"]
+    _write_batch(handoff, "batch_20260826_120000_aaaa", [(1, "clip_1.mp4", "hello")])
+    monkeypatch.setattr(handoff_pickup, "CLIPPER_INGEST_STYLE", "retired-style")
+
+    first = handoff_pickup.ingest_oldest(["creator-one"])
+    replay = handoff_pickup.ingest_oldest(["creator-one"])
+
+    assert first["slots"][0]["style"] == replay["slots"][0]["style"] == "generic"
+
+
+def test_replay_keeps_an_existing_style(tmp_handoff_paths, monkeypatch):
+    handoff = tmp_handoff_paths["handoff"]
+    _write_batch(handoff, "batch_20260826_120000_aaaa", [(1, "clip_1.mp4", "hello")])
+    first = handoff_pickup.ingest_oldest(["creator-one"])
+    monkeypatch.setattr(handoff_pickup, "CLIPPER_INGEST_STYLE", "sports")
+
+    replay = handoff_pickup.ingest_oldest(["creator-one"])
+
+    assert replay["slots"][0]["style"] == first["slots"][0]["style"] == "generic"
+
+
 def test_unacknowledged_pull_fails_closed_when_roster_would_retarget(tmp_handoff_paths):
     """Incident repair (CRITICAL): a roster change must never retarget staged work."""
     handoff = tmp_handoff_paths["handoff"]
