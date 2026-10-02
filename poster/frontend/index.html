@@ -809,7 +809,9 @@
   }
 
   @media (max-width: 860px) {
-    .app { grid-template-columns: 1fr; }
+    /* Keep the icon strip at its content height even when the active view is
+       short; auto grid rows otherwise share the viewport's unused space. */
+    .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
     .sidebar {
       position: static;
       height: auto;

@@ -108,3 +108,36 @@ and [Clip mobile](implemented-clip-390.png).
 
 Implementation follows the approved contract. Production browser evidence is
 included here; the owning PR records review, CI, and delivery status.
+
+## Maintainer visual refinements — 2026-10-01
+
+Finn requested two corrections after reviewing the implementation:
+
+- Post's narrow navigation keeps its intrinsic 57 px height, including when
+  the active view has little content. Grid rows previously distributed unused
+  viewport space to the icon strip. Desktop navigation and all handlers stay
+  unchanged.
+- Clip's operation bar matches Search's system font, muted grey stage/count/
+  detail text, 10 × 12 px padding, and 8 × 16 px row gaps. The operation title
+  stays bright; existing editor styling and each pillar's error red remain.
+
+[`check_ui_refinements.py`](../../../scripts/check_ui_refinements.py) verifies
+18 production fixture cases at 390, 490, 768, 860, 861, and 1440 px: short and
+long Post content, compact nav/header, no horizontal overflow, and computed
+bar styles. All requests are intercepted; Poster scripts are stripped before
+rendering. The checks reproduced the tall navigation and mismatched bar styles
+before their respective fixes. The existing 24 production browser cases still
+pass with identical Clipper slot geometry. The earlier reference screenshots
+record the initial approval; the selected HTML reference and production Clip
+screenshots now reflect the requested styling correction.
+
+Updated evidence: [Post compact navigation](refined-post-490.png),
+[Clip completed bar](refined-clip-bar-390.png), and
+[`refinement-checks.json`](refinement-checks.json).
+
+Local gates: suite 302 passed / 92.85% coverage; Clipper 487 / 91.84%; Poster
+1305 passed, 5 documented skips / 88.84%, including its 2-second smoke gate,
+in a disposable tracked-only checkout under `POST_MODE=mock`. The working
+checkout's unrelated local caption-preset sensitivity check fails against
+imported history; the clean checkout excludes those private presets. No local
+presets or live state were changed.

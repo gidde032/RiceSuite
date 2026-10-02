@@ -18,12 +18,11 @@
     #rice-progress-reference .rr-tool strong { margin-right:auto; }
     #rice-progress-reference .rr-tool label { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
     #rice-progress-reference .rr-work { padding:16px; }
-    #rice-progress-reference .rr-bar { padding:10px 12px; border:1px solid var(--rr-line); border-radius:8px; background:var(--rr-card); font-size:13px; }
-    #rice-progress-reference[data-page="clip"] .rr-bar { font-family:Arial,sans-serif; padding:8px; }
-    #rice-progress-reference .rr-summary { display:flex; flex-wrap:wrap; gap:8px 18px; align-items:center; }
-    #rice-progress-reference .rr-operation { font-size:14px; font-weight:600; }
-    #rice-progress-reference .rr-count { margin-left:auto; color:var(--rr-rice); font-variant-numeric:tabular-nums; }
-    #rice-progress-reference .rr-now { margin-top:6px; color:var(--rr-rice); overflow-wrap:anywhere; }
+    #rice-progress-reference .rr-bar { padding:10px 12px; border:1px solid var(--rr-line); border-radius:8px; background:var(--rr-card); color:var(--rr-muted); font:400 13px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+    #rice-progress-reference .rr-summary { display:flex; flex-wrap:wrap; gap:8px 16px; align-items:baseline; }
+    #rice-progress-reference .rr-operation { color:var(--rr-text); font-size:14px; font-weight:600; }
+    #rice-progress-reference .rr-count { font-variant-numeric:tabular-nums; }
+    #rice-progress-reference .rr-now { margin-top:4px; overflow-wrap:anywhere; }
     #rice-progress-reference .rr-fail { color:var(--rr-danger); }
     #rice-progress-reference .rr-results { display:grid; gap:16px; margin-top:16px; }
     #rice-progress-reference .rr-result { min-width:0; padding:16px; background:var(--rr-card); border:1px solid var(--rr-line); border-radius:8px; container-type:inline-size; }
@@ -47,7 +46,7 @@
     #rice-progress-reference .rr-itemstatus.rr-fail { color:var(--rr-danger); }
     @media (min-width:900px) { #rice-progress-reference .rr-results { grid-template-columns:repeat(2,minmax(0,1fr)); } }
     @container (max-width:499px) { #rice-progress-reference .rr-cardbody { grid-template-columns:1fr; } }
-    @media (max-width:720px) { #rice-progress-reference .rr-work { padding:8px; } #rice-progress-reference .rr-summary { gap:6px 12px; } #rice-progress-reference .rr-count { margin-left:0; } }
+    @media (max-width:720px) { #rice-progress-reference .rr-work { padding:8px; } }
     @media (pointer:coarse) { #rice-progress-reference button,#rice-progress-reference select,#rice-progress-reference input { min-height:44px; } }
   </style>
   <div class="rr-lab"><strong>B · Selected reference</strong><label>State <select class="rr-state"><option value="active">Working</option><option value="commit">Handing off</option><option value="failed">Failed / held</option><option value="complete">Complete</option><option value="lost">Connection lost</option><option value="idle">Idle</option></select></label></div>

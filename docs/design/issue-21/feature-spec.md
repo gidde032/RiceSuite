@@ -52,8 +52,10 @@ comparison's simplified Clipper editor is exploration evidence only.
 
 The [shared Slate ownership](../slate-ownership.md) remains authoritative.
 Palette reuse is already delivered; local status and layout rules belong to
-the owning pages. Poster supplies a presentation reference only and receives
-no changes.
+the owning pages. On 2026-10-01 Finn additionally requested a bounded Poster
+responsive correction: its narrow icon navigation must retain its intrinsic
+compact height instead of stretching into unused viewport space. Poster control
+IDs, handlers, content, posting behavior, and desktop sidebar remain unchanged.
 
 ## 3. Status-bar anatomy
 
@@ -84,11 +86,14 @@ Use the existing Slate tokens: backdrop #04060A, midground #0C1116, interior
 #14191E, hairline #2B3136, control line #626A70, rice grey #AEB3B6, and primary
 text #E5E8EA. Retain each page's existing semantic error red; no new status hues.
 Use an 8 px radius, 1 px hairline border, 12 px horizontal padding and 10 px
-vertical padding in Searcher. Clipper derives padding and gaps from its
-existing `--editor-space: 8px` using 0.5, 1, or 2 multipliers, with 8 px padding.
+vertical padding in both Searcher and Clipper, with an 8 px row gap and 16 px
+column gap. Finn's 2026-10-01 screenshot feedback supersedes the earlier
+Clipper-specific bar padding and font: match Searcher's cleaner sizing and muted
+grey stage/count/detail text, keeping the operation title in primary text.
 Operation text is 14 px/600; stage/count/current-action text is 13 px/400,
-line-height 1.5. Clipper operational text retains Arial; Searcher retains its
-system font. Counts use tabular numerals. State marks never stand alone.
+line-height 1.5. Both bars use Searcher's system font stack; Clipper's editor
+typography remains unchanged. Counts use tabular numerals. State marks never
+stand alone.
 
 The operation, state, and count share a wrapping upper row; the current action
 sits immediately below. Long filenames and errors wrap rather than truncate.

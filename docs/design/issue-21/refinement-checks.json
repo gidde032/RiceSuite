@@ -1,0 +1,152 @@
+[
+  {
+    "pillar": "post",
+    "width": 390,
+    "content_height": 0,
+    "navHeight": 57,
+    "navTop": 0,
+    "headerTop": 57,
+    "headerHeight": 57,
+    "overflow": false
+  },
+  {
+    "pillar": "post",
+    "width": 390,
+    "content_height": 1600,
+    "navHeight": 57,
+    "navTop": 0,
+    "headerTop": 57,
+    "headerHeight": 57,
+    "overflow": false
+  },
+  {
+    "pillar": "progress",
+    "width": 390,
+    "matched": true
+  },
+  {
+    "pillar": "post",
+    "width": 490,
+    "content_height": 0,
+    "navHeight": 57,
+    "navTop": 0,
+    "headerTop": 57,
+    "headerHeight": 57,
+    "overflow": false
+  },
+  {
+    "pillar": "post",
+    "width": 490,
+    "content_height": 1600,
+    "navHeight": 57,
+    "navTop": 0,
+    "headerTop": 57,
+    "headerHeight": 57,
+    "overflow": false
+  },
+  {
+    "pillar": "progress",
+    "width": 490,
+    "matched": true
+  },
+  {
+    "pillar": "post",
+    "width": 768,
+    "content_height": 0,
+    "navHeight": 57,
+    "navTop": 0,
+    "headerTop": 57,
+    "headerHeight": 57,
+    "overflow": false
+  },
+  {
+    "pillar": "post",
+    "width": 768,
+    "content_height": 1600,
+    "navHeight": 57,
+    "navTop": 0,
+    "headerTop": 57,
+    "headerHeight": 57,
+    "overflow": false
+  },
+  {
+    "pillar": "progress",
+    "width": 768,
+    "matched": true
+  },
+  {
+    "pillar": "post",
+    "width": 860,
+    "content_height": 0,
+    "navHeight": 57,
+    "navTop": 0,
+    "headerTop": 57,
+    "headerHeight": 57,
+    "overflow": false
+  },
+  {
+    "pillar": "post",
+    "width": 860,
+    "content_height": 1600,
+    "navHeight": 57,
+    "navTop": 0,
+    "headerTop": 57,
+    "headerHeight": 57,
+    "overflow": false
+  },
+  {
+    "pillar": "progress",
+    "width": 860,
+    "matched": true
+  },
+  {
+    "pillar": "post",
+    "width": 861,
+    "content_height": 0,
+    "navHeight": 900,
+    "navTop": 0,
+    "headerTop": 0,
+    "headerHeight": 83,
+    "overflow": false
+  },
+  {
+    "pillar": "post",
+    "width": 861,
+    "content_height": 1600,
+    "navHeight": 900,
+    "navTop": 0,
+    "headerTop": 0,
+    "headerHeight": 83,
+    "overflow": false
+  },
+  {
+    "pillar": "progress",
+    "width": 861,
+    "matched": true
+  },
+  {
+    "pillar": "post",
+    "width": 1440,
+    "content_height": 0,
+    "navHeight": 900,
+    "navTop": 0,
+    "headerTop": 0,
+    "headerHeight": 73,
+    "overflow": false
+  },
+  {
+    "pillar": "post",
+    "width": 1440,
+    "content_height": 1600,
+    "navHeight": 900,
+    "navTop": 0,
+    "headerTop": 0,
+    "headerHeight": 73,
+    "overflow": false
+  },
+  {
+    "pillar": "progress",
+    "width": 1440,
+    "matched": true
+  }
+]
