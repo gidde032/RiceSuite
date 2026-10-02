@@ -1327,7 +1327,9 @@ function knownStyle(style, slot) {
   const usable = name => Boolean(name) && (!names.size || names.has(name));
   if (usable(style)) return style;
   const accountDefault = state.accountState.caption_defaults?.[slot];
-  return usable(accountDefault) ? accountDefault : state.defaultCaptionStyle;
+  if (usable(accountDefault)) return accountDefault;
+  if (usable(state.defaultCaptionStyle)) return state.defaultCaptionStyle;
+  return state.captionStyles[0].name;
 }
 
 function styleOptions(slot) {
@@ -2604,8 +2606,7 @@ function renderAccounts() {
     const profile = !account.instagram_device_required
       ? 'not required (TikTok only)'
       : assignedProfile == null ? 'not assigned' : `profile ${assignedProfile + 1}`;
-    const selectedStyle = state.accountState.caption_defaults?.[account.slot]
-      || state.defaultCaptionStyle || 'generic';
+    const selectedStyle = knownStyle('', account.slot);
     const options = (state.captionStyles || []).map(style =>
       `<option value="${escAttr(style.name)}" ${style.name === selectedStyle ? 'selected' : ''}>${esc(style.display_name)}</option>`
     ).join('');

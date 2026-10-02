@@ -122,3 +122,23 @@ console.log(JSON.stringify({
     assert result == {
         "kept": "meme-humor", "accountDefault": "sports", "empty": "generic",
     }
+
+
+def test_a_removed_server_default_falls_back_to_the_first_listed_style():
+    """#50 review: the last fallback must also be a listed style."""
+    result = _run_node(_STATE + """
+state.defaultCaptionStyle = 'retired-default';
+state.slots.B.style = 'retired-style';
+console.log(JSON.stringify({
+  style: knownStyle('retired-style', 'B'),
+  selected: (styleOptions('B').match(/value="([^"]+)" selected/) || [])[1],
+}));
+""")
+    assert result == {"style": "sports", "selected": "sports"}
+
+
+def test_account_default_picker_shows_the_effective_default():
+    """#50 review: the account settings picker had the same hidden mismatch
+    for a stored default that prompts/ no longer has."""
+    script = _script()
+    assert "const selectedStyle = knownStyle('', account.slot);" in script

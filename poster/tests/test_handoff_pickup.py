@@ -200,6 +200,20 @@ def test_replay_replaces_a_removed_style(tmp_handoff_paths, monkeypatch):
     assert replay["slots"][0]["style"] == "sports"
 
 
+def test_pickup_with_an_unknown_ingest_style_uses_the_default(
+    tmp_handoff_paths, monkeypatch
+):
+    """#50 review: CLIPPER_INGEST_STYLE itself may name a removed style."""
+    handoff = tmp_handoff_paths["handoff"]
+    _write_batch(handoff, "batch_20260826_120000_aaaa", [(1, "clip_1.mp4", "hello")])
+    monkeypatch.setattr(handoff_pickup, "CLIPPER_INGEST_STYLE", "retired-style")
+
+    first = handoff_pickup.ingest_oldest(["creator-one"])
+    replay = handoff_pickup.ingest_oldest(["creator-one"])
+
+    assert first["slots"][0]["style"] == replay["slots"][0]["style"] == "generic"
+
+
 def test_replay_keeps_an_existing_style(tmp_handoff_paths, monkeypatch):
     handoff = tmp_handoff_paths["handoff"]
     _write_batch(handoff, "batch_20260826_120000_aaaa", [(1, "clip_1.mp4", "hello")])
