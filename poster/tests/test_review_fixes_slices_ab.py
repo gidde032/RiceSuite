@@ -307,7 +307,14 @@ def _run_import(module: str, env_overrides: dict) -> subprocess.CompletedProcess
     a subprocess rather than via importlib.reload keeps a deliberately
     broken config from leaking into the rest of the session.
     """
-    env = {"PATH": "", "PYTHONHASHSEED": "0", **env_overrides}
+    # An explicit data root keeps the child off the suite fallback (#45),
+    # which would otherwise read the live ricesuite.env.
+    env = {
+        "PATH": "",
+        "PYTHONHASHSEED": "0",
+        "RICEPOSTER_DATA_DIR": str(_ROOT),
+        **env_overrides,
+    }
     return subprocess.run(
         [sys.executable, "-c", f"import {module}"],
         capture_output=True, text=True, env=env, cwd=str(_ROOT),

@@ -37,8 +37,9 @@ UNDER_PYTEST = "pytest" in sys.modules
 def resolve_data_root(raw: str | None) -> Path:
     """Parse RICEPOSTER_DATA_DIR into the root for everything the app writes.
 
-    Unset or blank yields PROJECT_ROOT itself, so every path below keeps its
-    exact historical value. A value is `~`-expanded but deliberately *not*
+    Unset or blank yields PROJECT_ROOT itself, the historical layout. Outside
+    pytest, DATA_ROOT below never passes an unset value: it asks the suite
+    first (see suite_data_root). A value is `~`-expanded but deliberately *not*
     `.resolve()`d, for the same reason PROJECT_ROOT is not: session paths
     reach Chrome as `str(path)`, and a different string is a different
     profile. A relative value is refused, because it would silently move with
@@ -64,15 +65,36 @@ def resolve_data_root(raw: str | None) -> Path:
     return path
 
 
+def suite_data_root() -> str:
+    """The Poster data directory `rice start` would pass in RICEPOSTER_DATA_DIR.
+
+    Without this, every entry point outside the launcher (the README's
+    session_manager login, a standalone server) wrote to the checkout instead
+    of the suite data location (#45). The launcher and this function share
+    ricesuite.env.prepare_poster_dir, so both resolve the same directory.
+    """
+    from ricesuite import env as suite_env
+
+    try:
+        return suite_env.prepare_poster_dir(suite_env.load())
+    except suite_env.SuiteConfigError as exc:
+        raise ValueError(f"RiceSuite data location: {exc}") from exc
+
+
 # Data root (RiceSuite ADR-001 Q10). Browser sessions, debug screenshots,
 # uploaded media, the queue and the history all live under DATA_ROOT, so a
 # RiceSuite checkout can use an existing RicePoster data set in place. Code
 # and tracked assets (credentials.env, prompts/, frontend/) stay with the
 # checkout. Read from the process environment only: credentials.env is
-# loaded further down and itself lives at a fixed checkout path. Ignored
-# under pytest for the same reason credentials.env is.
+# loaded further down and itself lives at a fixed checkout path. If the
+# variable is unset or blank, the suite configuration decides. Ignored under
+# pytest for the same reason credentials.env is.
 DATA_ROOT = (
-    PROJECT_ROOT if UNDER_PYTEST else resolve_data_root(os.getenv("RICEPOSTER_DATA_DIR"))
+    PROJECT_ROOT
+    if UNDER_PYTEST
+    else resolve_data_root(
+        (os.getenv("RICEPOSTER_DATA_DIR") or "").strip() or suite_data_root()
+    )
 )
 
 

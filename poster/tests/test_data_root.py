@@ -63,8 +63,40 @@ print(json.dumps({n: str(getattr(mods[n.split(".")[0]], n.split(".")[1]))
 """
 
 
-def _import_paths_with(data_dir: str | None) -> dict[str, str]:
-    env = {k: v for k, v in os.environ.items() if k != "RICEPOSTER_DATA_DIR"}
+def _suite_environ(tmp_path: Path, lines: tuple[str, ...] = ()) -> dict[str, str]:
+    """A child environment that can reach no live suite data (#45).
+
+    With RICEPOSTER_DATA_DIR unset, config asks the suite for the data root.
+    HOME and RICESUITE_ENV point into tmp_path, and every inherited suite
+    variable is dropped, so the child never reads the live ricesuite.env or
+    ~/.ricesuite.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    env_file = tmp_path / "ricesuite.env"
+    env_file.write_text("".join(f"{line}\n" for line in lines))
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if not k.startswith("RICE") and k != "HANDOFF_DIR"
+    }
+    env.update(HOME=str(home), RICESUITE_ENV=str(env_file), POST_MODE="mock")
+    return env
+
+
+def _unified_root(tmp_path: Path) -> Path:
+    """A suite data root after cutover, as `rice data cutover` leaves it."""
+    root = tmp_path / "suite"
+    root.mkdir()
+    (root / ".cutover.json").write_text('{"version":1,"digest":"fixture"}')
+    return root
+
+
+def _import_paths_with(
+    data_dir: str | None, base: dict[str, str] | None = None
+) -> dict[str, str]:
+    env = dict(os.environ if base is None else base)
+    env.pop("RICEPOSTER_DATA_DIR", None)
     env["POST_MODE"] = "mock"
     if data_dir is not None:
         env["RICEPOSTER_DATA_DIR"] = data_dir
@@ -120,11 +152,73 @@ def test_missing_data_root_is_refused_not_created(tmp_path):
     assert not missing.exists()
 
 
-def test_unset_variable_keeps_every_path_on_the_checkout():
-    paths = _import_paths_with(None)
-    root = str(PROJECT_ROOT)
-    for name, segments in {**_DATA_PATHS, **_CODE_PATHS}.items():
-        assert paths[name] == _join(Path(root), segments), name
+@pytest.mark.parametrize("raw", [None, "   "])
+def test_unset_variable_follows_the_suite_data_location(tmp_path, raw):
+    """#45: outside `rice start`, Poster used to write to the checkout. It now
+    uses the Poster directory the launcher would pass, and creates it."""
+    root = _unified_root(tmp_path)
+    paths = _import_paths_with(
+        raw, _suite_environ(tmp_path, (f"RICESUITE_DATA_DIR={root}",))
+    )
+    for name, segments in _DATA_PATHS.items():
+        assert paths[name] == _join(root / "poster", segments), name
+    for name, segments in _CODE_PATHS.items():
+        assert paths[name] == _join(PROJECT_ROOT, segments), name
+    assert (root / "poster").stat().st_mode & 0o777 == 0o700
+
+
+def test_unset_variable_uses_the_poster_dir_set_in_ricesuite_env(tmp_path):
+    chosen = tmp_path / "chosen"
+    chosen.mkdir()
+    env = _suite_environ(tmp_path, (f"RICEPOSTER_DATA_DIR={chosen}",))
+    paths = _import_paths_with(None, env)
+    for name, segments in _DATA_PATHS.items():
+        assert paths[name] == _join(chosen, segments), name
+
+
+def test_session_manager_cli_saves_sessions_in_the_suite_data_location(tmp_path):
+    """The README login command must route to the suite data location (#45).
+    `status` only reads the disk, so no browser opens."""
+    root = _unified_root(tmp_path)
+    env = _suite_environ(tmp_path, (f"RICESUITE_DATA_DIR={root}",))
+    result = subprocess.run(
+        [sys.executable, "-m", "backend.session_manager", "status"],
+        cwd=PROJECT_ROOT, env=env, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (root / "poster" / "sessions" / "instagram").is_dir()
+    assert (root / "poster" / "sessions" / "tiktok").is_dir()
+
+
+def _import_config(env: dict[str, str]) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, "-c", "from backend import config"],
+        cwd=PROJECT_ROOT, env=env, capture_output=True, text=True,
+    )
+
+
+def test_a_suite_configuration_error_stops_the_import(tmp_path):
+    """An interrupted cutover must stop Poster before it opens any browser."""
+    root = _unified_root(tmp_path)
+    (root / ".cutover.json").write_text("not json")
+    result = _import_config(
+        _suite_environ(tmp_path, (f"RICESUITE_DATA_DIR={root}",))
+    )
+    assert result.returncode != 0
+    assert "RiceSuite data location" in result.stderr
+    assert not (root / "poster").exists()
+
+
+def test_a_symlinked_unified_root_is_refused(tmp_path):
+    real = _unified_root(tmp_path)
+    link = tmp_path / "link"
+    link.symlink_to(real)
+    result = _import_config(
+        _suite_environ(tmp_path, (f"RICESUITE_DATA_DIR={link}",))
+    )
+    assert result.returncode != 0
+    assert "symlinked unified data root" in result.stderr
+    assert not (real / "poster").exists()
 
 
 def test_data_dir_moves_every_written_path_and_nothing_else(tmp_path):

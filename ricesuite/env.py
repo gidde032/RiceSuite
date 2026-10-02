@@ -223,6 +223,23 @@ def data_root(env: Mapping[str, str]) -> Path:
     return path
 
 
+def prepare_poster_dir(env: Mapping[str, str]) -> str:
+    """Poster's data directory from a loaded environment, ready to use.
+
+    Shared by the launcher and Poster's own config (#45), so every Poster
+    entry point writes where `rice start` would. The unified ``<root>/poster``
+    is created on first use, because Poster refuses a missing data root. A
+    symlinked unified root is refused.
+    """
+    poster = env["RICEPOSTER_DATA_DIR"]
+    root = data_root(env)
+    if Path(poster) == root / "poster":
+        if root.is_symlink() or (root / "poster").is_symlink():
+            raise SuiteConfigError("refusing a symlinked unified data root")
+        (root / "poster").mkdir(parents=True, exist_ok=True, mode=0o700)
+    return poster
+
+
 def _legacy_present(
     suite_root: Path = SUITE_ROOT, *, under_pytest: bool | None = None
 ) -> bool:
@@ -285,8 +302,8 @@ def data_env(env: Mapping[str, str], *, legacy_present: bool = False) -> dict[st
             "RICECLIPPER_HANDOFF_DIR": "HANDOFF_DIR",
         }.get(variable)
         paths[variable] = (
-            env.get(variable)
-            or (env.get(consumer) if consumer else None)
+            env.get(variable, "").strip()
+            or (env.get(consumer, "").strip() if consumer else "")
             or str(root / suffix if unified else Path(legacy).expanduser())
         )
     if not unified and env.get("RICESUITE_DATA_DIR"):
