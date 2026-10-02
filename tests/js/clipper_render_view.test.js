@@ -95,8 +95,9 @@ function held() {
 const state = (clip) => ({
   empty: clip.resultEl.classList.contains("is-empty"),
   busy: clip.resultEl.classList.contains("is-busy"),
-  video: clip.outputVideoEl.src,
-  download: clip.downloadEl.href,
+  // Lifecycle checks compare the route; freshness is tested separately below.
+  video: clip.outputVideoEl.src.split("?")[0],
+  download: clip.downloadEl.href.split("?")[0],
 });
 
 test("a first render fills the empty 9:16 frame", async () => {
@@ -234,3 +235,32 @@ test("Render all points at each clip's download, not below the batch", async () 
   assert.match(last.text, /available in their existing frames/);
   assert.doesNotMatch(last.text, /below/);
 });
+
+for (const dropped of [false, true]) {
+  test(`changed caption styles refresh preview and download${dropped ? " after a lost render response" : ""}`, async () => {
+    const requests = [];
+    const { js, ctx } = boot({
+      "POST api/jobs/j1/render": (call) => {
+        requests.push(JSON.parse(call.body));
+        if (dropped && requests.length > 1) throw new Error("response lost");
+        return [200, { status: "done", has_output: true }];
+      },
+      "GET api/jobs/j1": { status: "done", has_output: true },
+    });
+    ctx.clip = card(false);
+    let selected = "clean";
+    ctx.clip.captionStyleEl = { querySelector: () => ({ value: selected }) };
+    const urls = [];
+    for (const style of ["clean", "punch", "editorial"]) {
+      selected = style;
+      if (urls.length) js("noteClipEdited(clip)");
+      assert.equal(await js("renderClip(clip)"), true);
+      urls.push(ctx.clip.outputVideoEl.src);
+      assert.equal(ctx.clip.downloadEl.href, urls.at(-1));
+      assert.equal(urls.at(-1).split("?")[0], OUTPUT);
+      assert.equal(js("clipCurrent(clip)"), true);
+    }
+    assert.deepEqual(requests.map((r) => r.caption_style), ["clean", "punch", "editorial"]);
+    assert.equal(new Set(urls).size, 3, "each completed render needs a fresh media URL");
+  });
+}

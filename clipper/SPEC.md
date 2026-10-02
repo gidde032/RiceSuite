@@ -142,6 +142,10 @@ the audio side, choosing a music file defaults the mode to *mix under original*
 while the mode is still untouched — a convenience default that never overrides a
 deliberate choice and adds no new mode (D13 unchanged).
 
+Rerendering applies the currently selected styles. Each completed render uses a
+fresh media URL for both preview and Download, and output responses are not
+cached, so replacing a job's MP4 cannot leave its previous subtitles on show.
+
 ### 5.2 Slate browser-interface polish
 
 **Slate** is the ratified visual theme for the local browser review UI. It

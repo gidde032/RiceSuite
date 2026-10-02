@@ -64,6 +64,11 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   3.14 job exists and stays non-required.
 
 ### Fixed
+- **Rerendered caption styles refresh in the browser** (RiceSuite
+  [#47](https://github.com/gidde032/RiceSuite/issues/47)). Preview and Download
+  share a fresh media URL after each successful render, including completion
+  recovered after a lost response. Replaceable output is served without caching
+  and retains range playback support.
 - **Emoji headers render off macOS** (#3). Header fonts are now also looked up
   at the Linux package paths (Noto Color Emoji; Liberation Sans / DejaVu Sans)
   and, failing those, through fontconfig (`fc-match`, `fc-list :color=true`).

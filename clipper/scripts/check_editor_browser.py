@@ -581,7 +581,7 @@ def main():
                       };
                       let outputFetches = 0;
                       window.fetch = async (url, options) => {
-                        if (String(url).endsWith("/output")) {
+                        if (String(url).split("?")[0].endsWith("/output")) {
                           outputFetches += 1;
                           throw new TypeError("Failed to fetch");
                         }
@@ -603,7 +603,9 @@ def main():
                     })()"""
                 )
                 # Page requests are relative so the page works behind the gateway.
-                endpoint = "api/jobs/fixture/output"
+                endpoint = output_link["video"]
+                if not endpoint.startswith("api/jobs/fixture/output?render="):
+                    failures.append(f"completed-render fresh URL: {endpoint}")
                 if output_link != {
                     "video": endpoint,
                     "download": endpoint,
