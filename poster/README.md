@@ -321,6 +321,11 @@ no topic text). Seed styles: `generic` (the default), `meme-humor`,
 change all four fields, and refresh the UI — files are re-read on every
 request, no restart needed. A malformed file is skipped with a console warning.
 
+If you remove or rename a style, drafts that still use it fall back. A draft
+takes its account's default style, or `generic` if that default is also gone.
+A replayed Clipper pull takes the current `CLIPPER_INGEST_STYLE`. The style
+dropdown always shows the style that Generate and Regenerate send.
+
 ## Troubleshooting
 
 - **"Session expired"** — run the login command shown in the error message

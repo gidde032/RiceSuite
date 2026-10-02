@@ -29,6 +29,7 @@ _FUNCTIONS = (
     "draftWorkBusy", "applyActiveAccounts", "toggleAccount", "moveAccount",
     "replaceAccount", "selectRoster", "clearSlotPreview", "accountLabel",
     "isPlatformEnabled", "enabledPlatforms", "buildSlotsPayload", "slotOf",
+    "knownStyle",
 )
 
 _PRELUDE = """

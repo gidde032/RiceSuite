@@ -173,6 +173,13 @@ published as a tagged release or GitHub Release.
 
 ### Fixed
 
+- A draft with a removed caption style no longer fails Regenerate (RiceSuite
+  [#50](https://github.com/gidde032/RiceSuite/issues/50)). A replayed Clipper
+  pull and Restore last batch kept the style that the draft was saved with.
+  The dropdown showed its first option, but Regenerate sent the removed style
+  and failed with `Unknown caption style`. Each draft now falls back to its
+  account's default style, then `generic`. A replayed pull falls back to the
+  current `CLIPPER_INGEST_STYLE`.
 - TikTok posting on slow networks (RiceSuite
   [#28](https://github.com/gidde032/RiceSuite/issues/28)). The flow slept a
   fixed 5 s after sending the video and then clicked Post, which TikTok keeps

@@ -1232,8 +1232,7 @@ async function init() {
     if (typeof data.caption_limit === 'number') state.captionLimit = data.caption_limit;
     for (const account of state.accounts) {
       const s = state.slots[account.slot] || (state.slots[account.slot] = emptySlot());
-      if (!s.style) s.style = state.accountState.caption_defaults?.[account.slot]
-        || state.defaultCaptionStyle;
+      s.style = knownStyle(s.style, account.slot);
     }
 
     // Header badges
@@ -1318,8 +1317,21 @@ function toggleHeadless() {
   renderHeadlessBadge();
 }
 
+// A draft can carry a style that prompts/ no longer has: a replayed pickup
+// or a restored batch keeps the style it was saved with. No <option> matches
+// such a value, so the browser shows the first option while Regenerate sends
+// the stale one (#50). Every draft style passes through here instead.
+function knownStyle(style, slot) {
+  const names = new Set((state.captionStyles || []).map(st => st.name));
+  // Before the style list loads there is nothing to judge against.
+  const usable = name => Boolean(name) && (!names.size || names.has(name));
+  if (usable(style)) return style;
+  const accountDefault = state.accountState.caption_defaults?.[slot];
+  return usable(accountDefault) ? accountDefault : state.defaultCaptionStyle;
+}
+
 function styleOptions(slot) {
-  const current = state.slots[slot].style || state.defaultCaptionStyle;
+  const current = state.slots[slot].style = knownStyle(state.slots[slot].style, slot);
   return (state.captionStyles || []).map(st =>
     `<option value="${escAttr(st.name)}" ${st.name === current ? 'selected' : ''}>${esc(st.display_name)}</option>`
   ).join('');
@@ -1763,7 +1775,7 @@ function applyPulledSlot(entry) {
   s.filename = entry.filename;
   s.mediaType = entry.media_type || 'video';
   s.topic = entry.topic || '';
-  s.style = entry.style || s.style || state.defaultCaptionStyle;
+  s.style = knownStyle(entry.style || s.style, slot);
   s.caption = '';
   s.thumb = '';
 
@@ -1910,9 +1922,7 @@ function applyRestoredDraft(slot, d) {
   s.thumb = '';
   // Same account: its own style. Another account: that account's default, as
   // when drafts move between accounts (#19); the caption text is kept.
-  s.style = d.account === slot && d.style
-    ? d.style
-    : state.accountState.caption_defaults?.[slot] || state.defaultCaptionStyle;
+  s.style = knownStyle(d.account === slot ? d.style : '', slot);
   setCaptionError(slot, '');
 }
 
@@ -2272,7 +2282,7 @@ async function generateAll() {
     const formData = new FormData();
     formData.append('media_type', s.mediaType);
     formData.append('topic', s.topic);
-    formData.append('style', s.style || state.defaultCaptionStyle);
+    formData.append('style', s.style = knownStyle(s.style, slot));
     if (s.thumb) formData.append('thumbnail', s.thumb);
 
     try {
@@ -2320,7 +2330,7 @@ async function regenerateCaption(slot) {
   const formData = new FormData();
   formData.append('media_type', s.mediaType);
   formData.append('topic', s.topic);
-  formData.append('style', s.style || state.defaultCaptionStyle);
+  formData.append('style', s.style = knownStyle(s.style, slot));
   formData.append('avoid_caption', s.caption);
   formData.append('feedback', slotEl('feedback', slot).value);
   if (s.thumb) formData.append('thumbnail', s.thumb);
@@ -2772,7 +2782,7 @@ async function applyActiveAccounts(ids) {
     const draft = state.slots[from];
     delete state.slots[from];
     clearSlotPreview(state.slots[to]);
-    draft.style = state.accountState.caption_defaults?.[to] || state.defaultCaptionStyle;
+    draft.style = knownStyle('', to);
     return [to, draft];
   });
   for (const id of removed) {
@@ -2790,8 +2800,7 @@ async function applyActiveAccounts(ids) {
   }));
   for (const account of state.accounts) {
     const draft = state.slots[account.slot] || (state.slots[account.slot] = emptySlot());
-    if (!draft.style) draft.style = state.accountState.caption_defaults?.[account.slot]
-      || state.defaultCaptionStyle;
+    draft.style = knownStyle(draft.style, account.slot);
   }
   renderSlots();
   renderSessionStrip();
