@@ -87,6 +87,29 @@ def test_review_assets_are_not_cached_across_local_code_changes():
             assert response.headers["cache-control"] == "no-store"
 
 
+def test_replaceable_output_is_not_cached_and_still_supports_ranges(isolated_jobs):
+    job = _ready_job(isolated_jobs)
+    job.output_path = job.dir / "output.mp4"
+    job.status = "done"
+    job.output_path.write_bytes(b"first video")
+    endpoint = f"/api/jobs/{job.id}/output?render=first"
+
+    with TestClient(main.app, base_url="http://127.0.0.1:8000") as client:
+        first = client.get(endpoint)
+        part = client.get(endpoint, headers={"Range": "bytes=0-4"})
+        job.output_path.write_bytes(b"new video")
+        second = client.get(f"/api/jobs/{job.id}/output?render=second")
+
+    assert first.content == b"first video"
+    assert part.status_code == 206
+    assert part.content == b"first"
+    assert part.headers["content-range"] == "bytes 0-4/11"
+    assert second.content == b"new video"
+    for response in (first, part, second):
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["content-type"] == "video/mp4"
+
+
 def test_searcher_render_survives_restart(monkeypatch, isolated_jobs):
     job = _ready_job(isolated_jobs)
     job.searcher_manifest = {"batch": "one"}

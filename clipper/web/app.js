@@ -1070,7 +1070,9 @@ async function renderClip(clip) {
 }
 
 async function showResult(clip) {
-  const endpoint = `api/jobs/${clip.jobId}/output`;
+  // output.mp4 is replaced in place. A fresh URL also bypasses the browser's
+  // media/range cache, which can keep playing the first render at a stable URL.
+  const endpoint = `api/jobs/${clip.jobId}/output?render=${newSendKey()}`;
   // The video element requests playable ranges on demand. Fetching the whole
   // MP4 as a blob first can fail even after the server has finished rendering.
   if (clip.outputUrl) URL.revokeObjectURL(clip.outputUrl);

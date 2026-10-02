@@ -642,7 +642,11 @@ def get_output(job_id: str) -> FileResponse:
         raise HTTPException(status_code=404, detail="no rendered output")
     # Serve inline (no attachment disposition) so the <video> element can play
     # it; the UI's download anchor sets its own filename for saving.
-    return FileResponse(job.output_path, media_type="video/mp4")
+    return FileResponse(
+        job.output_path,
+        media_type="video/mp4",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 # Static review UI mounted last so /api/* routes take precedence.
