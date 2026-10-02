@@ -266,3 +266,65 @@ def test_overlapping_data_roots_are_refused(tmp_path):
                 "RICESEARCHER_DATA_DIR": str(tmp_path / "poster"),
             }
         )
+
+
+def test_a_blank_pillar_path_counts_as_unset(tmp_path):
+    """#45: a blank shell export must not reach a pillar as a path."""
+    loaded = env.load(
+        tmp_path / "missing.env",
+        base={
+            "RICESUITE_DATA_DIR": str(tmp_path / "suite"),
+            "RICEPOSTER_DATA_DIR": " ",
+        },
+    )
+    assert loaded["RICEPOSTER_DATA_DIR"] == str(tmp_path / "suite/poster")
+
+
+def test_prepare_poster_dir_creates_the_unified_poster_dir(tmp_path):
+    root = tmp_path / "suite"
+    poster = env.prepare_poster_dir(
+        {"RICESUITE_DATA_DIR": str(root), "RICEPOSTER_DATA_DIR": str(root / "poster")}
+    )
+    assert poster == str(root / "poster")
+    assert (root / "poster").stat().st_mode & 0o777 == 0o700
+
+
+def test_prepare_poster_dir_leaves_an_explicit_dir_alone(tmp_path):
+    chosen = tmp_path / "chosen"
+    poster = env.prepare_poster_dir(
+        {
+            "RICESUITE_DATA_DIR": str(tmp_path / "suite"),
+            "RICEPOSTER_DATA_DIR": str(chosen),
+        }
+    )
+    assert poster == str(chosen)
+    assert not chosen.exists()
+    assert not (tmp_path / "suite").exists()
+
+
+def test_prepare_poster_dir_refuses_a_symlinked_root(tmp_path):
+    real = tmp_path / "real"
+    real.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real)
+    with pytest.raises(env.SuiteConfigError, match="symlinked"):
+        env.prepare_poster_dir(
+            {
+                "RICESUITE_DATA_DIR": str(link),
+                "RICEPOSTER_DATA_DIR": str(link / "poster"),
+            }
+        )
+    assert not (real / "poster").exists()
+
+
+def test_prepare_poster_dir_reports_an_unusable_path(tmp_path):
+    root = tmp_path / "suite"
+    root.mkdir()
+    (root / "poster").write_text("not a directory")
+    with pytest.raises(env.SuiteConfigError, match="cannot create"):
+        env.prepare_poster_dir(
+            {
+                "RICESUITE_DATA_DIR": str(root),
+                "RICEPOSTER_DATA_DIR": str(root / "poster"),
+            }
+        )

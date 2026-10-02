@@ -116,8 +116,9 @@ Each requirement is written so a test can check it. "The launcher" means the
   `~/riceclipper-handoff`). Contradictory ends of one stage, or one directory
   for both stages, are refused at startup.
 - **FR-9** Poster's data root is configurable with `RICEPOSTER_DATA_DIR`
-  (Q10). Unset, every Poster path is byte-identical to RicePoster's
-  repository-relative layout. Set, it must be an existing absolute directory;
+  (Q10). Unset or blank, Poster uses the directory the launcher would pass:
+  the suite data location's `poster/`, or the checkout on a legacy install
+  (#45). Set, it must be an existing absolute directory;
   it moves `sessions/`, `debug/`, `media/`, `queue.jsonl`, `queue_media/`,
   `history.jsonl` and the in-flight run marker of FR-16, and nothing else. It is never `.resolve()`d (session paths
   reach Chrome as strings). It is ignored under pytest.

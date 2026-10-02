@@ -322,12 +322,11 @@ def _start(lock) -> int:
             f"rice: warning: ricesuite.env sets {key}, which the launcher sets "
             "itself; the file's value is ignored"
         )
-    root = suite_env.data_root(environ)
-    if Path(environ["RICEPOSTER_DATA_DIR"]) == root / "poster":
-        if root.is_symlink() or (root / "poster").is_symlink():
-            print("rice: refusing a symlinked unified data root", file=sys.stderr)
-            return 2
-        (root / "poster").mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        suite_env.prepare_poster_dir(environ)
+    except suite_env.SuiteConfigError as exc:
+        print(f"rice: {exc}", file=sys.stderr)
+        return 2
     problems = ports.startup_conflicts()
     if problems:
         for problem in problems:

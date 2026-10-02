@@ -57,7 +57,11 @@ def test_viewport_is_stable_across_processes():
     for seed in ("0", "1", "12345"):
         out = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, env={"PYTHONHASHSEED": seed, "PATH": ""},
+            capture_output=True, text=True,
+            # An explicit data root keeps the child off the suite fallback
+            # (#45), which would otherwise read the live ricesuite.env.
+            env={"PYTHONHASHSEED": seed, "PATH": "",
+                 "RICEPOSTER_DATA_DIR": str(pathlib.Path(__file__).parent.parent)},
             cwd=str(pathlib.Path(__file__).parent.parent),
         )
         assert out.returncode == 0, out.stderr
