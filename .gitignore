@@ -34,7 +34,7 @@ ricesuite.env
 .idea/
 .vscode/
 
-# Trailer sources and renders (local only; the MP4 ships as a release asset)
+# Trailer sources and renders (local only; the README video is a GitHub attachment)
 trailer/
 
 # Claude Code local state

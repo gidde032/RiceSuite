@@ -1,6 +1,6 @@
 # RiceSuite
 
-[![RiceSuite trailer, 45 s](docs/media/ricesuite-trailer-poster.jpg)](https://github.com/gidde032/RiceSuite/releases/latest/download/ricesuite-trailer.mp4)
+https://github.com/user-attachments/assets/75a386cd-5fa9-4092-bdbf-a42125f7a7d2
 
 RiceSuite combines the three Rice pillars into one local app:
 
