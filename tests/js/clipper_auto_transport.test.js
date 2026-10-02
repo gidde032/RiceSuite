@@ -31,7 +31,12 @@ function boot(routes, extra = {}) {
     "GET api/media-info": { files: 0, bytes: 0 },
     ...routes,
   });
-  const { ctx, timers } = context(fetch, extra);
+  // Observation timers are advanced explicitly in progress tests. Running every
+  // delayed reconnect immediately would busy-loop after the lost-reply cases.
+  const { ctx, timers } = context(fetch, {
+    setTimeout: (fn, ms) => { if (ms === 3000) fn(); return 0; },
+    ...extra,
+  });
   const js = run(SOURCE, ctx);
   return { js, calls, timers };
 }
@@ -358,6 +363,7 @@ function bootWithButtons(routes, extra = {}) {
     getElementById: (id) => {
       if (!byId[id]) {
         const el = element();
+        if (id === "progress-state") el.textContent = "○ Idle";
         el.addEventListener = (type, fn) => {
           (listeners[`${id} ${type}`] ||= []).push(fn);
         };

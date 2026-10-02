@@ -40,7 +40,9 @@ At viewport widths of **881 px and above**, the editor has two rows:
    tall (about 304 px wide) with the Download button under it. On a narrow
    or short window the frame shrinks, to `clamp(360px, min(42vw, 100vh -
    200px), 540px)`, so the settings keep room just above the breakpoint and
-   Download stays in view on a laptop screen. The frame sets
+   The frame retains its laptop height budget. Finn accepted the Issue #21
+   progress bar above the editor on 2026-10-01, including a short scroll to
+   Download at some laptop sizes. Editor geometry remains unchanged. The frame sets
    the shape (the video fills it with `object-fit: cover`), so there is no
    letterbox padding, and it keeps 9:16 before the video's metadata loads.
    The 40/60 preview-to-settings split applies to the width left of it.

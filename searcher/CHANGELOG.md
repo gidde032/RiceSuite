@@ -7,6 +7,14 @@ All notable changes to RiceSearcher are documented here. This project adheres to
 
 ### Added
 
+- Searcher review now fills the available width with two score-ordered cards per
+  row at 900 px and above, and adaptive preview/metadata layout (RiceSuite #21).
+- Compact handoff status shows actual clip preparation and batch commitment,
+  with separate participating-card progress. A process-local, profile-scoped
+  observation endpoint supports read-only reconnection after a lost response or
+  reload; publication without final library confirmation is shown as unconfirmed.
+  No mutation is retried by polling, and no durable progress history is added.
+
 - First-time-user README: requirements (Python versions, ffmpeg, disk and model
   downloads), venv install, configuration table, an offline-first first run, how
   each stage works, beat profiles, the RiceClipper handoff layout, and

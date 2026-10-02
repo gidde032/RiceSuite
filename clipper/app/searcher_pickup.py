@@ -25,6 +25,8 @@ import shutil
 from collections.abc import Iterable
 from pathlib import Path
 
+from ricesuite.progress import Progress, notify
+
 from app import jobs, probe
 
 _INBOX_ENV = "RICECLIPPER_SEARCHER_INBOX"
@@ -163,7 +165,9 @@ def _validated_clips(batch_dir: Path, data: dict) -> list[dict]:
     return sorted(clips, key=lambda c: c["position"])
 
 
-def pull_next_batch(pull_key: str | None = None) -> dict:
+def pull_next_batch(
+    pull_key: str | None = None, *, progress: Progress | None = None
+) -> dict:
     """Ingest the oldest un-consumed batch into durable review jobs.
 
     Returns ``{"batch_id", "clip_count", "jobs": [ {job state + "title"} ]}``.
@@ -196,11 +200,24 @@ def pull_next_batch(pull_key: str | None = None) -> dict:
         batch_dir, data = selected
         clips = _validated_clips(batch_dir, data)  # full validation first
         batch_id = data["batch_id"]
+        notify(
+            progress,
+            "items",
+            items=[
+                {
+                    "id": str(c["position"]),
+                    "title": c.get("source_title", c["file"]),
+                    "position": c["position"],
+                }
+                for c in clips
+            ],
+        )
 
         created: list[jobs.Job] = []
         batch_jobs: list[jobs.Job] = []
         try:
             for clip in clips:
+                notify(progress, "importing", item_id=str(clip["position"]))
                 src = batch_dir / clip["file"]
                 job = jobs.find_searcher_job(clip, data)
                 if job is not None:
@@ -212,6 +229,7 @@ def pull_next_batch(pull_key: str | None = None) -> dict:
                             f"custody for clip {clip['position']} is unavailable"
                         )
                     batch_jobs.append(job)
+                    notify(progress, "imported", item_id=str(clip["position"]))
                     continue
 
                 job = jobs.create_job()
@@ -230,11 +248,14 @@ def pull_next_batch(pull_key: str | None = None) -> dict:
                 job.searcher_manifest = data
                 jobs.persist_searcher_job(job)
                 batch_jobs.append(job)
+                notify(progress, "imported", item_id=str(clip["position"]))
         except Exception as exc:
+            notify(progress, "failed", item_id=str(clip["position"]), detail=str(exc))
             _rollback(created)
             raise PickupError(f"ingest failed: {exc}") from exc
 
         # Custody is durable → record consumed and remove the source batch.
+        notify(progress, "committing", batch_id=batch_id)
         consumed.add(batch_id)
         try:
             _save_consumed(root, consumed)
@@ -242,6 +263,7 @@ def pull_next_batch(pull_key: str | None = None) -> dict:
             # Keep the durable jobs and source batch.  A retry can match the
             # sidecars and finish this commit without duplicating live jobs.
             raise PickupError(f"could not record consumed batch: {exc}") from exc
+        notify(progress, "published", batch_id=batch_id)
         shutil.rmtree(batch_dir, ignore_errors=True)
         # The source batch is gone: until it is sent or discarded, the page can
         # get it back from open_batch() if this reply never reaches it.

@@ -1,0 +1,155 @@
+<div id="rice-progress-discovery" aria-label="RiceSuite progress layout comparison">
+  <style>
+    #rice-progress-discovery { --rp-back:#04060A; --rp-mid:#0C1116; --rp-card:#14191E; --rp-line:#2B3136; --rp-control:#626A70; --rp-rice:#AEB3B6; --rp-muted:#80878C; --rp-text:#E5E8EA; --rp-danger:#d9605a; color:var(--rp-text); font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--rp-mid); border-radius:8px; overflow:clip; }
+    #rice-progress-discovery * { box-sizing:border-box; }
+    #rice-progress-discovery [hidden] { display:none !important; }
+    #rice-progress-discovery button,#rice-progress-discovery select,#rice-progress-discovery input { font:inherit; color:var(--rp-text); background:var(--rp-card); border:1px solid var(--rp-control); border-radius:6px; padding:7px 10px; min-height:36px; max-width:100%; }
+    #rice-progress-discovery button { cursor:pointer; }
+    #rice-progress-discovery button[aria-pressed="true"],#rice-progress-discovery .rp-primary { background:#3B4044; border-color:var(--rp-rice); }
+    #rice-progress-discovery button:disabled { opacity:.5; cursor:default; }
+    #rice-progress-discovery :focus-visible { outline:2px solid #D5D9DB; outline-offset:2px; }
+    #rice-progress-discovery .rp-lab { display:flex; flex-wrap:wrap; gap:10px; align-items:center; padding:12px 16px; border-bottom:1px solid var(--rp-control); background:var(--rp-card); }
+    #rice-progress-discovery .rp-lab strong { margin-right:auto; }
+    #rice-progress-discovery .rp-options { display:flex; gap:6px; flex-wrap:wrap; }
+    #rice-progress-discovery .rp-lab label { display:flex; align-items:center; gap:6px; }
+    #rice-progress-discovery .rp-shell { display:flex; gap:20px; align-items:center; background:var(--rp-back); padding:12px 16px; border-bottom:1px solid var(--rp-line); }
+    #rice-progress-discovery .rp-shell strong { margin-right:8px; }
+    #rice-progress-discovery .rp-shell button { background:transparent; border-color:transparent; color:var(--rp-rice); }
+    #rice-progress-discovery .rp-shell button[aria-pressed="true"] { border-color:var(--rp-control); background:var(--rp-card); color:var(--rp-text); }
+    #rice-progress-discovery .rp-tool { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:12px 16px; border-bottom:1px solid var(--rp-line); }
+    #rice-progress-discovery .rp-tool strong { margin-right:auto; }
+    #rice-progress-discovery .rp-tool label { display:flex; align-items:center; gap:6px; color:var(--rp-rice); }
+    #rice-progress-discovery .rp-work { display:grid; gap:16px; padding:16px; align-items:start; container-type:inline-size; }
+    #rice-progress-discovery .rp-main { min-width:0; }
+    #rice-progress-discovery .rp-tracker { background:var(--rp-card); border:1px solid var(--rp-line); border-radius:8px; min-width:0; }
+    #rice-progress-discovery .rp-summary { display:flex; flex-wrap:wrap; align-items:center; gap:8px 18px; padding:10px 12px; }
+    #rice-progress-discovery .rp-summary strong { font-weight:600; }
+    #rice-progress-discovery .rp-summary .rp-count { margin-left:auto; color:var(--rp-rice); font-variant-numeric:tabular-nums; }
+    #rice-progress-discovery .rp-summary button { padding:4px 8px; min-height:30px; background:transparent; border-color:var(--rp-line); }
+    #rice-progress-discovery .rp-now { padding:0 12px 10px; color:var(--rp-rice); overflow-wrap:anywhere; }
+    #rice-progress-discovery .rp-trackrows { padding:0 12px 8px; }
+    #rice-progress-discovery .rp-trackrow { display:grid; grid-template-columns:20px minmax(120px,1fr) minmax(150px,1fr); gap:8px; align-items:start; border-top:1px solid var(--rp-line); padding:8px 0; font-size:13px; }
+    #rice-progress-discovery .rp-trackrow span { overflow-wrap:anywhere; }
+    #rice-progress-discovery .rp-stage { color:var(--rp-rice); }
+    #rice-progress-discovery .rp-error { color:var(--rp-danger); }
+    #rice-progress-discovery .rp-results { display:grid; gap:16px; margin-top:16px; min-width:0; }
+    #rice-progress-discovery .rp-result { background:var(--rp-card); border:1px solid var(--rp-line); border-radius:8px; padding:14px; min-width:0; container-type:inline-size; }
+    #rice-progress-discovery .rp-result.selected { border-color:var(--rp-rice); }
+    #rice-progress-discovery .rp-resulthead { display:flex; gap:10px; align-items:start; margin-bottom:12px; }
+    #rice-progress-discovery .rp-score { font-size:24px; line-height:1.1; font-weight:700; font-variant-numeric:tabular-nums; }
+    #rice-progress-discovery .rp-resulthead h2 { font:600 16px/1.3 system-ui,sans-serif; margin:0; color:var(--rp-rice); overflow-wrap:anywhere; }
+    #rice-progress-discovery .rp-rank { color:var(--rp-muted); margin-left:auto; white-space:nowrap; font-size:12px; }
+    #rice-progress-discovery .rp-cardbody { display:grid; gap:12px; grid-template-columns:minmax(0,34%) minmax(0,1fr); }
+    #rice-progress-discovery .rp-video { display:grid; width:100%; min-width:0; align-content:center; justify-items:center; gap:8px; min-height:140px; aspect-ratio:16/9; background:var(--rp-back); border-radius:6px; color:var(--rp-rice); }
+    #rice-progress-discovery .rp-video small { color:var(--rp-muted); }
+    #rice-progress-discovery .rp-video i { width:24px; height:24px; }
+    #rice-progress-discovery .rp-copy p { margin:0 0 10px; }
+    #rice-progress-discovery .rp-transcript { color:var(--rp-rice); font-size:13px; }
+    #rice-progress-discovery .rp-badges { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0; }
+    #rice-progress-discovery .rp-badge { padding:2px 7px; border:1px solid var(--rp-control); border-radius:20px; font-size:12px; color:var(--rp-rice); }
+    #rice-progress-discovery .rp-bounds { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:12px 0; }
+    #rice-progress-discovery .rp-bounds label { display:flex; gap:6px; align-items:center; font-size:13px; color:var(--rp-rice); }
+    #rice-progress-discovery .rp-bounds input { width:76px; }
+    #rice-progress-discovery .rp-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    #rice-progress-discovery .rp-footer { margin-top:12px; border-top:1px solid var(--rp-line); padding-top:10px; font-size:13px; }
+    #rice-progress-discovery .rp-clip { padding:14px; margin-top:16px; border:1px solid var(--rp-line); background:var(--rp-card); border-radius:8px; }
+    #rice-progress-discovery .rp-cliphead { display:flex; gap:12px; flex-wrap:wrap; justify-content:space-between; margin-bottom:12px; }
+    #rice-progress-discovery .rp-editor { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) minmax(110px,.8fr); gap:14px; align-items:start; }
+    #rice-progress-discovery .rp-settings { display:grid; gap:10px; min-width:0; }
+    #rice-progress-discovery .rp-settings label { display:grid; gap:5px; font-size:13px; color:var(--rp-rice); }
+    #rice-progress-discovery .rp-rendered { width:100%; max-width:304px; justify-self:end; aspect-ratio:9/16; background:var(--rp-back); display:grid; align-content:center; text-align:center; color:var(--rp-muted); gap:24px; border:1px solid var(--rp-line); padding:10px; border-radius:6px; }
+    #rice-progress-discovery .rp-textreview { padding:12px; margin-top:14px; background:var(--rp-mid); border:1px solid var(--rp-line); border-radius:6px; font:14px/1.5 Arial,sans-serif; }
+    #rice-progress-discovery .rp-textreview strong { display:block; margin-bottom:8px; }
+    #rice-progress-discovery .rp-batchactions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; margin-top:14px; }
+    #rice-progress-discovery[data-direction="card"] .rp-trackrows { display:none; }
+    #rice-progress-discovery[data-direction="card"] .rp-tracker .rp-collapse { display:none; }
+    #rice-progress-discovery[data-direction="stack"] .rp-cardbody { grid-template-columns:1fr; }
+    #rice-progress-discovery[data-direction="stack"] .rp-cardbody .rp-video { max-height:200px; aspect-ratio:16/9; min-height:140px; }
+    @container (min-width:860px) { #rice-progress-discovery .rp-results { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+    @container (max-width:499px) { #rice-progress-discovery .rp-cardbody { grid-template-columns:1fr; } }
+    @media (min-width:960px) { #rice-progress-discovery[data-direction="rail"] .rp-work { grid-template-columns:minmax(0,1fr) 280px; } #rice-progress-discovery[data-direction="rail"] .rp-tracker { grid-column:2; grid-row:1; } #rice-progress-discovery[data-direction="rail"] .rp-main { grid-column:1; grid-row:1; } #rice-progress-discovery[data-direction="rail"] .rp-trackrow { grid-template-columns:20px 1fr; } #rice-progress-discovery[data-direction="rail"] .rp-stage { grid-column:2; } }
+    @media (max-width:620px) { #rice-progress-discovery .rp-work { padding:10px; gap:10px; } #rice-progress-discovery .rp-shell { gap:6px; flex-wrap:wrap; } #rice-progress-discovery .rp-trackrow { grid-template-columns:20px 1fr; } #rice-progress-discovery .rp-stage { grid-column:2; } #rice-progress-discovery .rp-editor { grid-template-columns:1fr; } #rice-progress-discovery .rp-rendered { max-width:220px; width:100%; justify-self:center; } #rice-progress-discovery .rp-summary .rp-count { margin-left:0; } }
+    @media (pointer:coarse) { #rice-progress-discovery button,#rice-progress-discovery select,#rice-progress-discovery input { min-height:44px; } }
+  </style>
+  <div class="rp-lab">
+    <strong>Issue 21 · Layout comparison</strong>
+    <div class="rp-options" aria-label="Layout direction">
+      <button type="button" data-direction="panel" aria-pressed="true">A · Batch panel</button>
+      <button type="button" data-direction="card" aria-pressed="false">B · Card status</button>
+      <button type="button" data-direction="rail" aria-pressed="false">C · Side rail</button>
+    </div>
+    <label>State <select class="rp-state"><option value="active">Working</option><option value="failed">Failed</option><option value="complete">Complete</option><option value="lost">Connection lost</option><option value="idle">Idle</option></select></label>
+  </div>
+  <header class="rp-shell"><strong>RiceSuite</strong><button type="button" data-page="search" aria-pressed="true">Search</button><button type="button" data-page="clip" aria-pressed="false">Clip</button><span>Post</span></header>
+  <div class="rp-tool"></div>
+  <div class="rp-work">
+    <section class="rp-tracker" aria-label="Batch progress">
+      <div class="rp-summary"><strong class="rp-operation"></strong><span class="rp-count"></span><button type="button" class="rp-collapse" aria-expanded="true">Hide clips</button></div>
+      <div class="rp-now" role="status" aria-live="polite"></div>
+      <div class="rp-trackrows"></div>
+    </section>
+    <main class="rp-main" aria-label="Review workspace"></main>
+  </div>
+  <script>
+    (() => {
+      const root = document.getElementById('rice-progress-discovery');
+      const model = { direction:'panel', page:'search', phase:'active', cardLayout:'split', expanded:true, operation:'render' };
+      const samples = [
+        { score:'0.94', title:'The moment the crowd took over', text:'A clear setup, an unexpected crowd response, and a complete reaction.', words:'I stopped singing for a second because I could hear everyone singing it back.', start:92.4, end:124.8 },
+        { score:'0.89', title:'Finding confidence on stage', text:'A specific turning point with a strong closing line.', words:'The first few shows felt different. Then I learned to trust the room.', start:214.6, end:249.2 },
+        { score:'0.85', title:'The story behind the chorus', text:'A concise writing story that resolves within the selected window.', words:'That line was the last thing we wrote, and it ended up being the whole song.', start:303.1, end:335.6 },
+        { score:'0.81', title:'A small ritual before every show', text:'An easy standalone moment with a recognizable routine.', words:'We all get together for one quiet minute before we walk out.', start:410.2, end:437.9 }
+      ];
+      const esc = s => String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      function states() {
+        const action = model.page === 'search' ? 'Preparing clip' : model.operation === 'pull' ? 'Transcribing' : model.operation === 'send' ? 'Copying clip' : 'Rendering';
+        const done = model.page === 'search' ? 'Prepared · awaiting batch handoff' : model.operation === 'pull' ? 'Ready for review' : model.operation === 'send' ? 'Copied · awaiting batch handoff' : 'Rendered';
+        if (model.phase === 'idle') return samples.slice(0,3).map(()=>({mark:'○',text:'Waiting for an operation'}));
+        if (model.phase === 'complete') return samples.slice(0,3).map(()=>({mark:'✓',text:model.page==='search' || model.operation==='send' ? 'Batch handoff confirmed' : done}));
+        if (model.phase === 'failed') return model.page==='search' || model.operation==='send'
+          ? [{mark:'—',text:'Prepared work discarded · batch not handed off'},{mark:'✗',text:'Source unavailable · failed'},{mark:'○',text:'Not attempted'}]
+          : [{mark:'✓',text:done},{mark:'✗',text:'Processing failed · review this clip'},{mark:'✓',text:done}];
+        return [{mark:'✓',text:done},{mark:model.phase==='lost'?'?':'●',text:model.phase==='lost'?'Last seen: '+action.toLowerCase()+' · result unknown':action+'…'},{mark:'○',text:'Waiting'}];
+      }
+      function video(label) { return '<div class="rp-video"><i data-lucide="play" aria-hidden="true"></i><span>'+esc(label)+'</span><small>Source preview · 0:32</small></div>'; }
+      function searchCard(s,i,rows) {
+        return '<article class="rp-result '+(i<3?'selected':'')+'"><div class="rp-resulthead"><span class="rp-score">'+s.score+'</span><h2>'+s.title+'</h2><span class="rp-rank">#'+(i+1)+'</span></div><div class="rp-cardbody">'+video('Interview excerpt')+'<div class="rp-copy"><p>'+s.text+'</p><p class="rp-transcript">'+s.words+'</p><div class="rp-badges"><span class="rp-badge">'+(i<3?'Selected':'Candidate')+'</span><span class="rp-badge">Rights risk: high</span>'+(i===2?'<span class="rp-badge">Possible duplicate</span>':'')+'</div></div></div><div class="rp-bounds"><label>In <input type="number" value="'+s.start+'" step="0.1" aria-label="Clip '+(i+1)+' in time"></label><label>Out <input type="number" value="'+s.end+'" step="0.1" aria-label="Clip '+(i+1)+' out time"></label><button type="button" disabled>Save window</button></div><div class="rp-actions"><button type="button" disabled>'+ (i<3?'Selected':'Select')+'</button><button type="button" disabled>Reject</button></div>'+(model.direction==='card'&&i<3?'<div class="rp-footer '+(rows[i].mark==='✗'?'rp-error':'')+'">'+esc(rows[i].mark+' '+rows[i].text)+'</div>':'')+'</article>';
+      }
+      function clipCard(s,i,rows) {
+        const row=rows[i];
+        return '<article class="rp-clip"><div class="rp-cliphead"><strong>Clip '+(i+1)+' — '+s.title+'</strong><span class="'+(row.mark==='✗'?'rp-error':'rp-stage')+'">'+esc(row.mark+' '+row.text)+'</span></div>'+(i===1?'<div class="rp-editor">'+video('Source clip')+'<div class="rp-settings"><label>Header<input value="'+s.title+'" readonly></label><label>Content<select disabled><option>Speech</option></select></label><label>Caption style<select disabled><option>Clean</option></select></label><label>Geometry<select disabled><option>Auto · subject crop</option></select></label></div><div class="rp-rendered"><span>Header</span><span>'+(model.phase==='complete'?'Rendered clip':model.phase==='active'&&model.operation==='render'?'Rendering…':'9:16 rendered clip')+'</span><span>Captions</span></div></div><div class="rp-textreview"><strong>Generated transcript</strong>'+s.words+'</div>':'')+'</article>';
+      }
+      function render() {
+        root.dataset.direction=model.direction; root.dataset.page=model.page;
+        root.style.setProperty('--rp-layout',model.cardLayout);
+        root.querySelectorAll('[data-direction]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.direction===model.direction));
+        root.querySelectorAll('[data-page]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.page===model.page));
+        root.querySelector('.rp-state').value=model.phase;
+        const rows=states();
+        const search=model.page==='search', op=search?'Send selected to Clipper':model.operation==='pull'?'Pull from Searcher':model.operation==='send'?'Send to Poster':'Render all';
+        root.querySelector('.rp-operation').textContent=op;
+        root.querySelector('.rp-count').textContent=model.phase==='complete'?'3 / 3 complete':model.phase==='failed'?'1 failed':model.phase==='idle'?'No active operation':search||model.operation==='send'?'1 / 3 prepared':'1 / 3 complete';
+        let now=model.phase==='idle'?'Ready when you are.':model.phase==='lost'?'Progress connection lost. Work may continue; reconnecting…':model.phase==='failed'?search||model.operation==='send'?'Batch not handed off. Correct the source error, then retry the existing Send action.':'Batch held: clip 2 needs attention. Other clips finished; nothing sent to Poster.':model.phase==='complete'?search?'3 clips handed off to Clipper.':model.operation==='send'?'3 clips are waiting in Poster’s inbox. Pull in Post to review them.':model.operation==='pull'?'3 clips ready. Review them before rendering.':'3 clips rendered. Sending the complete batch to Poster’s inbox…':search?'Now: preparing clip 2 of 3 — Finding confidence on stage':model.operation==='pull'?'Now: transcribing clip 2 of 3 — Finding confidence on stage':model.operation==='send'?'Now: copying clip 2 of 3 — Finding confidence on stage':'Now: rendering clip 2 of 3 — captions, header & audio';
+        const nowEl=root.querySelector('.rp-now'); nowEl.textContent=now; nowEl.classList.toggle('rp-error',model.phase==='failed'||model.phase==='lost');
+        root.querySelector('.rp-trackrows').innerHTML=rows.map((r,i)=>'<div class="rp-trackrow"><span class="'+(r.mark==='✗'?'rp-error':'')+'">'+esc(r.mark)+'</span><span>Clip '+(i+1)+' · '+samples[i].title+'</span><span class="rp-stage '+(r.mark==='✗'?'rp-error':'')+'">'+esc(r.text)+'</span></div>').join('');
+        root.querySelector('.rp-trackrows').hidden=!model.expanded;
+        const collapse=root.querySelector('.rp-collapse');collapse.textContent=model.expanded?'Hide clips':'Show clips';collapse.setAttribute('aria-expanded',model.expanded);
+        root.querySelector('.rp-tool').innerHTML=search?'<strong>RiceSearcher · Review</strong><label>Profile<select disabled><option>Music interviews</option></select></label><label>Show<select disabled><option>All</option></select></label><button type="button" class="rp-primary" disabled>Send 3 selected → Clipper</button>':'<strong>RiceClipper · Review</strong><label>Operation<select class="rp-op"><option value="pull">Pull / transcribe</option><option value="render">Render all</option><option value="send">Send to Poster</option></select></label>';
+        const opEl=root.querySelector('.rp-op');if(opEl){opEl.value=model.operation;opEl.addEventListener('change',()=>{model.operation=opEl.value;render();});}
+        root.querySelector('.rp-main').innerHTML=search?'<div class="rp-results">'+samples.map((s,i)=>searchCard(s,i,rows)).join('')+'</div>':samples.slice(0,3).map((s,i)=>clipCard(s,i,rows)).join('')+'<div class="rp-batchactions"><button type="button" disabled>Start over</button><button type="button" disabled>Send to Poster</button><button type="button" class="rp-primary" disabled>Render all</button></div>';
+        root.querySelectorAll('.rp-cardbody').forEach(el=>{el.style.gridTemplateColumns=model.cardLayout==='stack'?'1fr':'';});
+        if(globalThis.lucide) lucide.createIcons({attrs:{width:24,height:24}});
+      }
+      root.querySelectorAll('[data-direction]').forEach(b=>b.addEventListener('click',()=>{model.direction=b.dataset.direction;render();}));
+      root.querySelectorAll('[data-page]').forEach(b=>b.addEventListener('click',()=>{model.page=b.dataset.page;render();}));
+      root.querySelector('.rp-state').addEventListener('change',e=>{model.phase=e.target.value;render();});
+      root.querySelector('.rp-collapse').addEventListener('click',()=>{model.expanded=!model.expanded;render();});
+      render();
+      if(globalThis.Tweak) {
+        const tweak=new Tweak({container:root,onChange:render});
+        tweak.addSelect(model,'direction',{label:'Tracker placement',options:[{label:'A · Batch panel',value:'panel'},{label:'B · Card status',value:'card'},{label:'C · Side rail',value:'rail'}]});
+        tweak.addSelect(model,'cardLayout',{label:'Searcher card anatomy',options:[{label:'Preview beside text',value:'split'},{label:'Preview above text',value:'stack'}]});
+      }
+    })();
+  </script>
+</div>

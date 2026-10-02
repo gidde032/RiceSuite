@@ -95,3 +95,12 @@ at 30 Hz, and confirmed cuts or target reacquisition remain immediate.
   render chassis.
 - **Path 1** — 30+ min input → chunked extraction with global re-ranking. The
   full Opus-Clip problem.
+
+
+## RiceSuite progress update — 2026-10-01
+
+Issue #21 adds B’s compact staged bar to pull/transcribe and render/send, using
+actual coarse operation boundaries. Existing editor slots and the rendered
+preview design remain the reference. Permanent run history and server-restart
+observation recovery remain outside this increment; reconsider only with
+ordinary-use evidence. See SPEC’s RiceSuite staged progress section.

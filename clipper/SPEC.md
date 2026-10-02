@@ -277,3 +277,43 @@ model earns its keep. Revisit at build if desired.
 | D14 | Browser theme | Slate: dark carbon/grey chrome, rice-grey state accents, visual per-clip preset cards, symbol-only rice-and-shears mark | Makes the daily-driver review path faster to scan without changing behavior or adding editor features |
 | D15 | Subject crop | Local YuNet face detection at ingest; full-height 9:16 window with pan cap and universal strong lock: hold inside an outer 20% window-width zone, settle ordinary corrections at the inner 10% boundary, and interpolate them at 30 Hz; confirmed cuts, inferred face jumps, and track returns still snap (Level 5 ratified 2026-09-20). Face center stays inside the central 70% (tuned 2026-09-15); blur-pad when `face_rate < 0.80` or `safe_rate < 0.95`; per-clip `geometry` = `auto`/`blur_pad`/`crop`; kill criterion: fewer than 5 of 6 fixtures pass after two tuning rounds. The gate applies to the `speech` profile only (D16) | Ratified 2026-09-14, motion tuning amended 2026-09-20; [ADR-001](docs/adr/ADR-001-subject-crop.md) |
 | D16 | Music path | Per-clip `content` = `speech`/`music`, not remembered per slot. Music framing profile: no face-rate gate, hold through faceless spans, snap on cuts (scene 0.2, one shared pass with scores) and face return, static centered when no face; nearest-previous face between cuts, largest after a cut (both profiles). Lyric fallback: pasted block, chronological LCS anchors on whisper timings (amended 2026-09-18, #29; was `difflib`), interpolation between anchors, character-weighted fill below 25% anchors; word-level highlight survives; no new model. Kill: framing fewer than 4 of 5 music fixtures after one tuning round; lyrics visibly off on more than 2 of 5 | Ratified 2026-09-15; [ADR-002](docs/adr/ADR-002-music-path.md) |
+
+
+## RiceSuite staged progress (Issue #21, 2026-10-01)
+
+The [ratified feature contract](../docs/design/issue-21/feature-spec.md) and
+selected B reference own the compact operation bar. The existing card controls,
+slot defaults, transcript/lyrics layout, per-card status locations, and rendered
+9:16 preview remain the editor contract.
+
+One bar above intake/review shows operation, textual state, stage-specific count,
+and current clip/action. Finn accepted its normal document space and a short
+scroll to Download at some laptop sizes on 2026-10-01; existing slot/preview
+geometry remains unchanged. Pull reports actual importing/imported boundaries;
+transcription reports uploading/transcribing/ready; render-all reports music
+upload/render/rendered outcomes; send reports copying/copied and whole-batch
+publication. A failed render preserves other successful renders and holds
+automatic send. Confirmed handoff says the batch waits in Poster’s inbox.
+
+Pull and send accept an optional `observation_id` (8–64 letters, digits, `_`,
+`-`), independent of existing custody/idempotency keys. The read-only
+`GET /api/progress/{pull|send}/{observation_id}` observes only that exact attempt
+without acquiring the job/custody lock. Each process retains at most 64 attempts;
+terminal results are preferred for expiry. Duplicate observation ids are refused
+instead of replacing an attempt. Notification, start-recording, and completion
+observer errors cannot fail actual work. Existing keyed replay confirms the
+earlier result without writing another batch.
+If that keyed send is still running, HTTP 409 includes `send_in_progress: true`;
+the retry's observation is unconfirmed without claiming publication or failure
+of the earlier send. A later explicit keyed retry can confirm its result.
+
+The browser polls at 750 ms while observation is active, stops on a terminal
+outcome, and preserves its latest summary in tab-local session storage. A lost
+connection freezes the known values and reads may reconnect; observation never
+starts or retries a mutation. A same-process reload can reconnect to that tab’s
+exact attempt, while unavailable/expired or restarted-server observation says
+unknown. Existing workspace restoration and keyed retry behavior remain separate.
+There is no permanent history, database table, job system, restart recovery,
+new cancel action, or percentage estimate. Start over clears the summary under
+the existing confirmation/busy guard. Unrelated cache, lyric, player, and
+validation messages retain their own surfaces.

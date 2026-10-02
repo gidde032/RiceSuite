@@ -10,6 +10,7 @@ const statusEl = document.getElementById("status");
 const filterEl = document.getElementById("statusFilter");
 const profileEl = document.getElementById("profileSelect");
 const handoffBtn = document.getElementById("handoffBtn");
+const progressEl = document.getElementById("progress");
 
 // Which profile the review UI is scoped to. Persisted so a reload keeps it.
 const PROFILE_KEY = "ricesearcher.profile";
@@ -18,6 +19,122 @@ let profileRequest = 0;
 let sliceRequest = 0;
 let pendingMutations = 0;
 let handoffPending = false;
+const OPERATION_KEY = "ricesearcher.handoff.operation";
+let observed = null;
+let pollTimer = null;
+let observationGeneration = 0;
+let mutationInFlight = false;
+let lastAnnouncement = "";
+let refreshedOperation = "";
+const cardProgress = new Map();
+
+function rememberOperation() {
+  try { sessionStorage.setItem(OPERATION_KEY, JSON.stringify(observed)); } catch (_err) { /* storage can be disabled */ }
+}
+
+function stopObservation() {
+  observationGeneration += 1;
+  if (pollTimer !== null) clearTimeout(pollTimer);
+  pollTimer = null;
+}
+
+function renderOperation() {
+  if (!observed || !progressEl) return;
+  const snapshot = observed.snapshot;
+  const unknown = observed.unknown;
+  const complete = snapshot.status === "complete";
+  const failed = snapshot.status === "failed";
+  const unconfirmed = snapshot.status === "unconfirmed";
+  const committing = snapshot.stage === "committing" || snapshot.stage === "published";
+  const state = unknown || unconfirmed ? "? Result unknown" : failed ? "! Failed / held" : complete ? "✓ Complete" : committing ? "→ Handing off" : "• Working";
+  const count = snapshot.total ? snapshot.completed + " / " + snapshot.total + (complete && snapshot.batch_id ? " handed off" : " prepared") : "";
+  const current = snapshot.current;
+  let detail = unknown ? (snapshot.detail.startsWith("Operation unavailable") ? snapshot.detail : "Connection lost / result unknown. Last known progress retained; checking this operation only.") : snapshot.detail;
+  if (unconfirmed && snapshot.published) detail = "Batch " + snapshot.batch_id + " was published; final library confirmation failed. Check the batch before retry. " + snapshot.detail;
+  if (failed) {
+    const failedItem = snapshot.items.find((item) => item.state === "preparing" || item.state === "checking");
+    if (failedItem) detail = "Clip " + failedItem.position + " of " + snapshot.total + " — " + failedItem.title + ": " + snapshot.detail + ". Batch not handed off; remaining clips not attempted.";
+    else detail += " · Batch not handed off.";
+  }
+  if (!detail && current) detail = "Now: " + (snapshot.stage === "checking" ? "checking" : "preparing") + " clip " + current.position + " of " + snapshot.total + " — " + current.title;
+  if (!detail && committing) detail = "Handing off batch…";
+  if (!detail) detail = "Preparing selected clips…";
+  const text = state + count + detail + observed.profile;
+  if (text !== lastAnnouncement) {
+    progressEl.hidden = false;
+    progressEl.classList.toggle("error", failed || unknown || unconfirmed);
+    progressEl.replaceChildren(
+      el("div", { class: "progress-top" }, [
+        el("strong", {}, "Send selected to Clipper · " + observed.profile),
+        el("span", {}, state), el("span", { class: "progress-count" }, count),
+      ]), el("div", { class: "progress-detail" }, detail)
+    );
+    lastAnnouncement = text;
+  }
+  for (const [id, entry] of cardProgress) {
+    const item = snapshot.items.find((candidate) => candidate.id === id);
+    let text = "";
+    if (item && entry.profile === observed.profile && profileEl.value === observed.profile) {
+      if (unknown || unconfirmed) text = "Last known: " + item.state + " · result unknown";
+      else if (failed) text = item.state === "prepared" ? "Prepared · batch not confirmed handed off" : item.state === "waiting" || item.state === "checked" ? "Not attempted · batch held" : "Failed / held · " + snapshot.detail;
+      else text = complete ? (snapshot.batch_id ? "Handed off to Clipper" : "No batch handed off") : item.state === "prepared" ? "Prepared · waiting for batch handoff" : item.state === "waiting" || item.state === "checked" ? "Waiting for preparation" : "Preparing clip…";
+    }
+    if (entry.node.textContent !== text) entry.node.textContent = text;
+  }
+}
+
+async function refreshCompletedOperation() {
+  if (!observed || observed.snapshot.status !== "complete" || refreshedOperation === observed.id) return;
+  refreshedOperation = observed.id;
+  await loadProfiles();
+  await load(true);
+}
+
+async function pollOperation(generation = observationGeneration) {
+  const operation = observed;
+  if (!operation || generation !== observationGeneration) return;
+  try {
+    const res = await fetch("api/handoff/progress/" + encodeURIComponent(operation.id) + "?profile=" + encodeURIComponent(operation.profile));
+    if (generation !== observationGeneration) return;
+    if (res.status === 404 && !mutationInFlight) {
+      operation.unknown = true;
+      operation.snapshot.detail = "Operation unavailable; result unknown. Work is not retried.";
+      renderOperation();
+      // Unlike a transient read failure, an expired/restarted record cannot reconnect.
+      rememberOperation();
+      stopObservation();
+      handoffPending = false;
+      refreshInteractionState();
+      return;
+    }
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const snapshot = await res.json();
+    if (generation !== observationGeneration || snapshot.operation_id !== operation.id || snapshot.scope !== operation.profile) return;
+    operation.snapshot = snapshot;
+    operation.unknown = false;
+    rememberOperation();
+    renderOperation();
+    if (snapshot.status !== "active") {
+      stopObservation();
+      if (!mutationInFlight) { handoffPending = false; refreshInteractionState(); await refreshCompletedOperation(); }
+      return;
+    }
+  } catch (_err) {
+    if (generation !== observationGeneration) return;
+    operation.unknown = true;
+    rememberOperation();
+    renderOperation();
+  }
+  if (generation === observationGeneration) pollTimer = setTimeout(() => pollOperation(generation), 700);
+}
+
+function beginObservation(id, profile) {
+  stopObservation();
+  observed = { id, profile, unknown: false, snapshot: { status: "active", stage: "starting", items: [], total: 0, completed: 0, detail: "", batch_id: "" } };
+  rememberOperation();
+  renderOperation();
+  pollTimer = setTimeout(() => pollOperation(), 0);
+}
 
 profileEl.addEventListener("change", () => {
   localStorage.setItem(PROFILE_KEY, profileEl.value);
@@ -89,23 +206,39 @@ async function handoff() {
     return;
   }
   handoffPending = true;
+  mutationInFlight = true;
   refreshInteractionState();
-  setStatusMsg("writing handoff batch…");
+  const id = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : "attempt-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
+  beginObservation(id, profile);
   try {
     const res = await fetch("api/handoff", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profile }),
+      body: JSON.stringify({ profile, observation_id: id }),
     });
     const d = await res.json();
-    if (!res.ok) { setStatusMsg("handoff failed: " + (d.detail || res.status), true); return; }
-    if (!d.clip_count) { setStatusMsg("nothing selected to hand off", false); return; }
-    setStatusMsg("handed off " + d.clip_count + " clip(s) as " + d.batch_id, false);
-    await loadProfiles();  // refresh the selected count on the button
-    await load(true);  // handed-off slices leave the selected/candidate views
-  } catch (err) {
-    setStatusMsg("handoff failed: " + err.message, true);
+    if (res.ok) {
+      stopObservation();
+      observed.snapshot = { ...observed.snapshot, status: "complete", completed: d.clip_count, total: d.clip_count, batch_id: d.batch_id || "", detail: d.clip_count ? "Batch handed off to Clipper." : "Nothing selected or selection changed; no batch handed off." };
+      observed.unknown = false;
+      handoffPending = false;
+      rememberOperation();
+      renderOperation();
+      await refreshCompletedOperation();
+    } else {
+      // Even a server error may follow publication; read the exact attempt.
+      observed.unknown = observed.snapshot.status === "active";
+      renderOperation();
+    }
+  } catch (_err) {
+    observed.unknown = observed.snapshot.status === "active";
+    rememberOperation();
+    renderOperation();
   } finally {
-    handoffPending = false;
+    mutationInFlight = false;
+    if (observed.snapshot.status === "active") {
+      stopObservation();
+      await pollOperation();
+    } else { handoffPending = false; await refreshCompletedOperation(); }
     refreshInteractionState();
   }
 }
@@ -124,6 +257,7 @@ async function load(preserveStatus = false) {
     return;
   }
   const status = filterEl.value;
+  cardProgress.clear();
   listEl.replaceChildren(el("div", { class: "empty" }, "Loading slices…"));
   countEl.textContent = "";
   let url = "api/slices?profile=" + encodeURIComponent(profile);
@@ -152,7 +286,9 @@ async function load(preserveStatus = false) {
     );
     return;
   }
+  cardProgress.clear();
   listEl.replaceChildren(...slices.map(card));
+  renderOperation();
 }
 
 function isCurrentLoad(request, profile, status) {
@@ -160,7 +296,8 @@ function isCurrentLoad(request, profile, status) {
 }
 
 function card(s) {
-  const c = el("article", { class: "card", "data-status": s.status });
+  const c = el("article", { class: "card", "data-status": s.status, "data-slice-id": s.id });
+  const content = el("div", { class: "card-content" });
 
   // Left: video preview of the exact saved export window.
   const preview = el("div", { class: "preview" });
@@ -175,7 +312,7 @@ function card(s) {
   const windowLabel = el("div", { class: "win" },
     "selected " + fmt(s.target_in) + "–" + fmt(s.target_out) + "s");
   preview.append(windowLabel);
-  c.append(preview);
+  content.append(preview);
 
   // Right: metadata + gate controls.
   const meta = el("div", { class: "meta" });
@@ -324,9 +461,12 @@ function card(s) {
   actions.append(selectBtn, rejectBtn, resetBtn);
   // msg sits ABOVE the actions so the buttons anchor flush to the card bottom
   // (via .actions margin-top:auto) instead of leaving a dead gap beneath them.
-  meta.append(msg, actions);
+  const operationMsg = el("div", { class: "card-progress" });
+  cardProgress.set(s.id, { node: operationMsg, profile: s.profile_id });
+  meta.append(msg, operationMsg, actions);
 
-  c.append(meta);
+  content.append(meta);
+  c.append(content);
   return c;
 }
 
@@ -378,6 +518,18 @@ function el(tag, attrs, children) {
 async function init() {
   await loadProfiles();
   await load();
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(OPERATION_KEY));
+    if (saved && /^[A-Za-z0-9_-]{1,64}$/.test(saved.id) && typeof saved.profile === "string" && saved.snapshot) {
+      observed = saved;
+      renderOperation();
+      if (saved.snapshot.status === "active" || saved.unknown) {
+        handoffPending = true;
+        refreshInteractionState();
+        await pollOperation();
+      }
+    }
+  } catch (_err) { /* absent or invalid temporary observation */ }
 }
 
 init();

@@ -1,0 +1,174 @@
+{
+  "base": "bfa2d51",
+  "results": [
+    {
+      "pillar": "search",
+      "issues": [],
+      "columns": 1,
+      "width": 390,
+      "errors": []
+    },
+    {
+      "pillar": "clip",
+      "width": 390,
+      "mode": "speech",
+      "issues": [],
+      "baseline_issues": []
+    },
+    {
+      "pillar": "clip",
+      "width": 390,
+      "mode": "music",
+      "issues": [],
+      "baseline_issues": []
+    },
+    {
+      "pillar": "search",
+      "issues": [],
+      "columns": 1,
+      "width": 768,
+      "errors": []
+    },
+    {
+      "pillar": "clip",
+      "width": 768,
+      "mode": "speech",
+      "issues": [],
+      "baseline_issues": []
+    },
+    {
+      "pillar": "clip",
+      "width": 768,
+      "mode": "music",
+      "issues": [],
+      "baseline_issues": []
+    },
+    {
+      "pillar": "search",
+      "issues": [],
+      "columns": 1,
+      "width": 899,
+      "errors": []
+    },
+    {
+      "pillar": "clip",
+      "width": 899,
+      "mode": "speech",
+      "issues": [],
+      "baseline_issues": []
+    },
+    {
+      "pillar": "clip",
+      "width": 899,
+      "mode": "music",
+      "issues": [],
+      "baseline_issues": []
+    },
+    {
+      "pillar": "search",
+      "issues": [],
+      "columns": 2,
+      "width": 900,
+      "errors": []
+    },
+    {
+      "pillar": "clip",
+      "width": 900,
+      "mode": "speech",
+      "issues": [],
+      "baseline_issues": []
+    },
+    {
+      "pillar": "clip",
+      "width": 900,
+      "mode": "music",
+      "issues": [],
+      "baseline_issues": []
+    },
+    {
+      "pillar": "search",
+      "issues": [],
+      "columns": 2,
+      "width": 1024,
+      "errors": []
+    },
+    {
+      "pillar": "clip",
+      "width": 1024,
+      "mode": "speech",
+      "issues": [],
+      "baseline_issues": []
+    },
+    {
+      "pillar": "clip",
+      "width": 1024,
+      "mode": "music",
+      "issues": [],
+      "baseline_issues": []
+    },
+    {
+      "pillar": "search",
+      "issues": [],
+      "columns": 2,
+      "width": 1366,
+      "errors": []
+    },
+    {
+      "pillar": "clip",
+      "width": 1366,
+      "mode": "speech",
+      "issues": [],
+      "baseline_issues": []
+    },
+    {
+      "pillar": "clip",
+      "width": 1366,
+      "mode": "music",
+      "issues": [],
+      "baseline_issues": []
+    },
+    {
+      "pillar": "search",
+      "issues": [],
+      "columns": 2,
+      "width": 1440,
+      "errors": []
+    },
+    {
+      "pillar": "clip",
+      "width": 1440,
+      "mode": "speech",
+      "issues": [],
+      "baseline_issues": []
+    },
+    {
+      "pillar": "clip",
+      "width": 1440,
+      "mode": "music",
+      "issues": [],
+      "baseline_issues": []
+    },
+    {
+      "pillar": "search",
+      "issues": [],
+      "columns": 2,
+      "width": 1920,
+      "errors": []
+    },
+    {
+      "pillar": "clip",
+      "width": 1920,
+      "mode": "speech",
+      "issues": [],
+      "baseline_issues": []
+    },
+    {
+      "pillar": "clip",
+      "width": 1920,
+      "mode": "music",
+      "issues": [],
+      "baseline_issues": []
+    }
+  ],
+  "failures": []
+}
