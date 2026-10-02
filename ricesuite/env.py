@@ -236,7 +236,10 @@ def prepare_poster_dir(env: Mapping[str, str]) -> str:
     if Path(poster) == root / "poster":
         if root.is_symlink() or (root / "poster").is_symlink():
             raise SuiteConfigError("refusing a symlinked unified data root")
-        (root / "poster").mkdir(parents=True, exist_ok=True, mode=0o700)
+        try:
+            (root / "poster").mkdir(parents=True, exist_ok=True, mode=0o700)
+        except OSError as exc:
+            raise SuiteConfigError(f"cannot create {root / 'poster'}: {exc}") from exc
     return poster
 
 

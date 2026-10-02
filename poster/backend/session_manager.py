@@ -20,6 +20,7 @@ from playwright.async_api import async_playwright
 from backend import instagram_browser, tiktok_browser
 from backend.browser_common import url_matches_login_markers
 from backend.config import (
+    DATA_ROOT,
     HEALTH_CACHE_FILE,
     SLOT_IDS,
     SESSION_CHECK_TTL_S,
@@ -473,6 +474,9 @@ def main():
         sys.exit(1)
 
     command = sys.argv[1]
+    # Name the data root before any work, so a login cannot land in an
+    # unexpected directory unnoticed (#45).
+    print(f"Poster data: {DATA_ROOT}")
 
     if command == "status":
         show_status()

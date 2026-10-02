@@ -95,6 +95,9 @@ def _unified_root(tmp_path: Path) -> Path:
 def _import_paths_with(
     data_dir: str | None, base: dict[str, str] | None = None
 ) -> dict[str, str]:
+    # With no data_dir the child asks the suite, so it needs a hermetic base
+    # (_suite_environ); os.environ could reach the live ricesuite.env.
+    assert data_dir is not None or base is not None
     env = dict(os.environ if base is None else base)
     env.pop("RICEPOSTER_DATA_DIR", None)
     env["POST_MODE"] = "mock"
@@ -186,6 +189,7 @@ def test_session_manager_cli_saves_sessions_in_the_suite_data_location(tmp_path)
         cwd=PROJECT_ROOT, env=env, capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
+    assert f"Poster data: {root / 'poster'}" in result.stdout
     assert (root / "poster" / "sessions" / "instagram").is_dir()
     assert (root / "poster" / "sessions" / "tiktok").is_dir()
 
@@ -205,7 +209,7 @@ def test_a_suite_configuration_error_stops_the_import(tmp_path):
         _suite_environ(tmp_path, (f"RICESUITE_DATA_DIR={root}",))
     )
     assert result.returncode != 0
-    assert "RiceSuite data location" in result.stderr
+    assert "RiceSuite configuration" in result.stderr
     assert not (root / "poster").exists()
 
 
@@ -262,3 +266,44 @@ def test_ignoring_a_set_data_dir_is_reported_at_startup(monkeypatch):
 def test_unset_data_dir_reports_nothing_about_it(monkeypatch):
     monkeypatch.delenv("RICEPOSTER_DATA_DIR", raising=False)
     assert not any("RICEPOSTER_DATA_DIR" in p for p in config.check_startup_config())
+
+
+def _fake_suite(monkeypatch, suite_root: Path, poster: Path) -> None:
+    """Point suite_data_root at a fake suite, so no live config is read."""
+    import ricesuite
+    from ricesuite import env as suite_env
+
+    monkeypatch.setattr(ricesuite, "SUITE_ROOT", suite_root)
+    monkeypatch.setattr(
+        suite_env, "load", lambda: {"RICEPOSTER_DATA_DIR": str(poster)}
+    )
+    monkeypatch.setattr(suite_env, "prepare_poster_dir", lambda env: str(poster))
+
+
+def test_a_legacy_checkout_keeps_its_unresolved_path(tmp_path, monkeypatch):
+    """The suite resolves its root; Poster deliberately does not. On a legacy
+    install reached through a symlink, the session path string must stay the
+    checkout's, or Chrome opens a different, logged-out profile."""
+    real = tmp_path / "real"
+    (real / "poster").mkdir(parents=True)
+    link = tmp_path / "link"
+    link.symlink_to(real)
+    monkeypatch.setattr(config, "PROJECT_ROOT", link / "poster")
+    _fake_suite(monkeypatch, real, real / "poster")
+    assert config.suite_data_root() == str(link / "poster")
+
+
+def test_ricesuite_from_another_checkout_is_refused(tmp_path, monkeypatch):
+    """Its legacy default would name the other checkout's poster/."""
+    _fake_suite(monkeypatch, tmp_path / "other", tmp_path / "other" / "poster")
+    with pytest.raises(ValueError, match="another checkout"):
+        config.suite_data_root()
+
+
+def test_a_missing_ricesuite_package_is_reported(monkeypatch):
+    import ricesuite
+
+    monkeypatch.delattr(ricesuite, "env", raising=False)
+    monkeypatch.setitem(sys.modules, "ricesuite.env", None)
+    with pytest.raises(ValueError, match="pip install -e"):
+        config.suite_data_root()

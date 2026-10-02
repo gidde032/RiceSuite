@@ -84,6 +84,7 @@ session_manager.py :: main :: "  python -m backend.session_manager check        
 session_manager.py :: main :: f"  python -m backend.session_manager check --slot {eg}    # health-check one slot"
 session_manager.py :: main :: f"  (configured slots: {', '.join(SLOTS)})"
 session_manager.py :: main :: "  (⚠️  never run 'check' while a post is in progress)"
+session_manager.py :: main :: f"Poster data: {DATA_ROOT}"
 session_manager.py :: main :: "Specify a slot: python -m backend.session_manager check " f"--slot {_example_slot()}"
 session_manager.py :: main :: f"Invalid slot '{raw}'. Use {_slot_choices()}."
 session_manager.py :: main :: "Specify: python -m backend.session_manager clear <platform> <slot|all>"

@@ -73,12 +73,32 @@ def suite_data_root() -> str:
     of the suite data location (#45). The launcher and this function share
     ricesuite.env.prepare_poster_dir, so both resolve the same directory.
     """
-    from ricesuite import env as suite_env
-
     try:
-        return suite_env.prepare_poster_dir(suite_env.load())
+        from ricesuite import SUITE_ROOT
+        from ricesuite import env as suite_env
+    except ImportError as exc:
+        raise ValueError(
+            f"RICEPOSTER_DATA_DIR is unset and RiceSuite cannot be imported "
+            f"({exc}). Run `pip install -e .` from the RiceSuite root, or set "
+            f"RICEPOSTER_DATA_DIR."
+        ) from exc
+    # A ricesuite from another checkout would name that checkout's poster/.
+    if Path(SUITE_ROOT) != PROJECT_ROOT.resolve().parent:
+        raise ValueError(
+            f"ricesuite is imported from another checkout ({SUITE_ROOT}). "
+            f"Reinstall it from {PROJECT_ROOT.resolve().parent}, or set "
+            f"RICEPOSTER_DATA_DIR."
+        )
+    try:
+        poster = suite_env.prepare_poster_dir(suite_env.load())
     except suite_env.SuiteConfigError as exc:
-        raise ValueError(f"RiceSuite data location: {exc}") from exc
+        raise ValueError(f"RiceSuite configuration: {exc}") from exc
+    # The suite resolves its root; PROJECT_ROOT is deliberately unresolved.
+    # A legacy install keeps the checkout's own path string, so the session
+    # paths Chrome sees do not change.
+    if Path(poster).resolve() == PROJECT_ROOT.resolve():
+        return str(PROJECT_ROOT)
+    return poster
 
 
 # Data root (RiceSuite ADR-001 Q10). Browser sessions, debug screenshots,

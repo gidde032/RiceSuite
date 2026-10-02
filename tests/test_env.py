@@ -315,3 +315,16 @@ def test_prepare_poster_dir_refuses_a_symlinked_root(tmp_path):
             }
         )
     assert not (real / "poster").exists()
+
+
+def test_prepare_poster_dir_reports_an_unusable_path(tmp_path):
+    root = tmp_path / "suite"
+    root.mkdir()
+    (root / "poster").write_text("not a directory")
+    with pytest.raises(env.SuiteConfigError, match="cannot create"):
+        env.prepare_poster_dir(
+            {
+                "RICESUITE_DATA_DIR": str(root),
+                "RICEPOSTER_DATA_DIR": str(root / "poster"),
+            }
+        )
