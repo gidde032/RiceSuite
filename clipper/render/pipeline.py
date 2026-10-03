@@ -65,8 +65,8 @@ def _music_fades(start: float, duration: float | None) -> tuple[str, str]:
     """Return the (fade-in, fade-out) filters for added music (Issue #55).
 
     A segment that starts past 0 fades in over 0.5 s, so it does not cut in
-    mid-note. Every added track fades out over the last 1 s of the clip. A clip
-    shorter than 2 s halves both fades so they fit.
+    mid-note. Every added track fades out over the last 1 s of the clip. Each
+    fade is at most half the clip, so on a very short clip they cannot overlap.
     """
     if duration is None:
         return "", ""

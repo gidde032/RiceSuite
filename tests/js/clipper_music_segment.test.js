@@ -153,3 +153,52 @@ test("without a track the render sends start 0", async () => {
   assert.equal(body.music.start, 0);
   assert.equal(body.music.mode, "none");
 });
+
+// --- review repairs (PR #58) ---------------------------------------------------
+
+test("a track the browser cannot decode explains itself and renders from 0", () => {
+  const { js, ctx } = boot();
+  ctx.clip = card({ musicPreviewEl: media(NaN), musicStartEl: { value: "12", max: "0", disabled: true } });
+  js("clip.musicPreviewFailed = true; syncMusicStart(clip)");
+  assert.equal(ctx.clip.musicStartEl.value, "0");
+  assert.equal(ctx.clip.musicStartEl.disabled, true);
+  assert.equal(ctx.clip.musicPlayEl.disabled, true);
+  assert.match(ctx.clip.musicHintEl.textContent, /cannot preview/);
+});
+
+test("play waits until the clip length is known", () => {
+  const { js, ctx } = boot();
+  ctx.clip = card({ geoState: null, sourceVideoEl: media(NaN) });
+  js("syncMusicStart(clip)");
+  assert.equal(ctx.clip.musicPlayEl.disabled, true);
+  assert.equal(ctx.clip.musicStartEl.disabled, true);
+  assert.match(ctx.clip.musicHintEl.textContent, /clip length/);
+});
+
+test("stopping right after play is not reported as a playback failure", async () => {
+  const { js, ctx } = boot();
+  const abort = Object.assign(new Error("interrupted"), { name: "AbortError" });
+  const audio = Object.assign(media(180), { play() { return Promise.reject(abort); } });
+  ctx.clip = card({ musicPreviewEl: audio });
+  js("syncMusicStart(clip); playSegmentPreview(clip)");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.doesNotMatch(ctx.clip.musicHintEl.textContent, /cannot/);
+});
+
+test("only one card previews at a time", () => {
+  const { js, ctx } = boot();
+  ctx.a = card();
+  ctx.b = card({ ord: 2 });
+  js("clips.push(a, b); playSegmentPreview(a); playSegmentPreview(b)");
+  assert.equal(ctx.a.musicPreviewEl.paused, true);
+  assert.equal(ctx.a.segmentTimer, null);
+  assert.equal(ctx.b.musicPreviewEl.paused, false);
+});
+
+test("removing a card stops its preview", () => {
+  const { js, ctx } = boot();
+  ctx.clip = card({ el: { remove() {} } });
+  js("clips.push(clip); playSegmentPreview(clip); removeClip(clip)");
+  assert.equal(ctx.clip.musicPreviewEl.paused, true);
+  assert.equal(ctx.clip.segmentTimer, null);
+});

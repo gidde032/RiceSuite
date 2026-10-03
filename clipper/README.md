@@ -212,7 +212,7 @@ Set `RICECLIPPER_WHISPER_MODEL=tiny` for a quick first try.
 3. **Music (optional).** Attach an audio file, then choose to *replace* the
    original audio or *mix* the music under it. Move **Start at** to choose the part
    of the track to use, and click **Play segment** to hear it. Added music fades
-   in and out.
+   out over the last second, and fades in when it starts past 0.
 4. **Render all.** Each clip is rendered to 1080×1920 H.264/AAC mp4 and can be
    previewed and downloaded. Failed renders stay in the queue, so you can change
    their settings and click **Render all** again.

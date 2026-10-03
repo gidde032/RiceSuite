@@ -498,3 +498,13 @@ def test_a_real_header_frame_is_grabbed_from_a_photo(isolated_jobs):
     data = main.frame.grab_frame_b64(job.source_path, None, job.dir)
 
     assert base64.b64decode(data)[:2] == b"\xff\xd8"
+
+
+def test_music_start_sits_inside_the_card_template():
+    html = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text()
+    template = html.split('<template id="clip-card-template">', 1)[1]
+    template = template.split("</template>", 1)[0]
+
+    # A start change marks a finished render stale only while the slider is
+    # inside the card, whose input listener counts edits (Issue #55).
+    assert 'class="music-start"' in template

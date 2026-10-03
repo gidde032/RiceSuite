@@ -1,3 +1,4 @@
+import shutil
 import signal
 import subprocess
 from pathlib import Path
@@ -400,3 +401,98 @@ def test_render_passes_the_segment_start_to_ffmpeg(monkeypatch, tmp_path):
 
     cmd = calls[0]
     assert cmd[cmd.index("-ss") + 1] == "17.0"
+
+
+# --- review repairs (PR #58) -------------------------------------------------
+
+
+def _mean_db(path, start, length=0.1):
+    out = subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "info",
+            "-ss",
+            str(start),
+            "-t",
+            str(length),
+            "-i",
+            str(path),
+            "-af",
+            "volumedetect",
+            "-f",
+            "null",
+            "-",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stderr
+    return float(out.split("mean_volume:")[1].split("dB")[0])
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is unavailable")
+@pytest.mark.parametrize("start", [20.0, 90.0])
+def test_a_real_music_segment_renders_full_length_with_fades(tmp_path, start):
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=300:duration=60",
+            str(tmp_path / "m.mp3"),
+        ],
+        check=True,
+    )
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=gray:s=1080x1920:d=4",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(tmp_path / "src.mp4"),
+        ],
+        check=True,
+    )
+    req = RenderRequest(
+        captions_on=False,
+        music=MusicSettings(mode="replace", filename="m.mp3", start=start, volume=1.0),
+    )
+
+    out = render(tmp_path, tmp_path / "src.mp4", MediaInfo(1080, 1920, 4.0, False), req)
+
+    duration = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=duration",
+            "-of",
+            "csv=p=0",
+            str(out),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert abs(float(duration) - 4.0) < 0.05
+    if start > 60:
+        # A start past the track end is silence for the whole clip.
+        assert _mean_db(out, 0, 4.0) < -80
+    else:
+        steady = _mean_db(out, 2.0)
+        assert _mean_db(out, 0.0, 0.05) < steady - 6  # fading in
+        assert _mean_db(out, 3.85) < steady - 6  # fading out
