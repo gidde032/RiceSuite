@@ -262,3 +262,24 @@ def test_stale_note_shows_only_on_a_stale_render_that_is_not_rerendering():
     assert shown[frozenset({"is-stale"})] == "flex"
     assert shown[frozenset()] == "none"
     assert _find("result-stale")[0][-1] == "result-frame"
+
+
+def test_stale_note_matches_the_start_over_button():
+    # RiceSuite #52: the stale note uses the destructive style of Start over.
+    rules = _rules(_css())
+
+    def declared(selector: str) -> dict[str, str]:
+        found: dict[str, str] = {}
+        for media, selectors, declarations in rules:
+            if media is None and selector in selectors:
+                found.update(declarations)
+        return found
+
+    note = {**declared(".result-stale"), **declared(".result-stale span")}
+    button = {**declared("button"), **declared("#restart-btn")}
+    assert note["border"] == "1px solid var(--destructive)"
+    assert note["color"] == button["color"] == "var(--destructive)"
+    assert note["background"] == button["background"] == "var(--backdrop)"
+    assert note["border-radius"] == button["border-radius"] == "5px"
+    assert "font-family" not in note
+    assert note["font-size"] == "13px"
