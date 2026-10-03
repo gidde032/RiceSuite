@@ -324,7 +324,9 @@ def test_pipeline_blur_pads_a_photo_to_the_chosen_length(isolated_jobs, monkeypa
     graph = cmd[cmd.index("-filter_complex") + 1]
     assert "-loop" in cmd
     assert "boxblur" in graph
-    assert "[1:a]volume=0.35,apad,atrim=duration=9.0[aout]" in graph
+    assert (
+        "[1:a]volume=0.35,apad,afade=t=out:st=8.0:d=1,atrim=duration=9.0[aout]" in graph
+    )
     assert cmd[cmd.index("-t") + 1] == "9.0"
 
 

@@ -207,6 +207,15 @@
                   <output class="vol-label">0.35</output>
                 </label>
               </div>
+              <div class="music-segment">
+                <label class="vol music-start-field"><span>Start at</span>
+                  <input class="music-start" type="range" min="0" max="0" step="0.1" value="0" disabled aria-label="Music start point" />
+                  <output class="vol-label music-start-label">0:00</output>
+                </label>
+                <button class="music-play" type="button" disabled>▶ Play segment</button>
+                <audio class="music-preview" preload="metadata"></audio>
+              </div>
+              <p class="music-segment-hint hint">Choose a track to pick where it starts.</p>
             </div>
           </div>
         </div>

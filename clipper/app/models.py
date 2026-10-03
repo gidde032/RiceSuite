@@ -65,6 +65,10 @@ class LyricsResult(BaseModel):
     anchor_drift_warning: bool = False
 
 
+# Upper bound on a music segment start: 24 hours, far past any real track.
+MUSIC_START_MAX = 86400.0
+
+
 class MusicSettings(BaseModel):
     """Optional added-music track (SPEC.md D13)."""
 
@@ -73,6 +77,9 @@ class MusicSettings(BaseModel):
     volume: float = Field(default=0.35, ge=0.0, le=2.0)
     # Filename of a track previously uploaded to this job's work dir.
     filename: str | None = None
+    # Where the segment starts in the track, in seconds (Issue #55). The
+    # segment runs for the clip's length.
+    start: float = Field(default=0.0, ge=0.0, le=MUSIC_START_MAX, allow_inf_nan=False)
 
 
 class RenderRequest(BaseModel):

@@ -8,6 +8,12 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Music segment and preview** (RiceSuite [#55](https://github.com/gidde032/RiceSuite/issues/55),
+  SPEC D13). Pick where a music track starts with the **Start at** slider. The
+  slider keeps the whole segment inside the track. **Play segment** plays it for
+  the clip length; a video plays muted beside it. Added music now fades in over
+  0.5 s when it starts past 0, and fades out over the last 1 s of every clip.
+  The original audio does not fade.
 - **Photo clips** (RiceSuite [#54](https://github.com/gidde032/RiceSuite/issues/54),
   SPEC D17). Upload a PNG, JPEG, or WebP and set a length of 3–60 seconds.
   The photo renders as a blur-padded 1080×1920 clip with a header and optional
