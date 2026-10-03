@@ -86,6 +86,9 @@ only after a real-use burn-in passes.
 
 **Easier:** one command and one tab for the daily workflow; no Pull/Send
 plumbing clicks or mismatched handoff-dir settings; one repo, one venv, one CI.
+*(Since the amendments of 2026-09-29 and 2026-10-03, Poster's Pull and
+Clipper's Send are clicks again. See "Manual Poster ingest" and "Manual
+Clipper send" below.)*
 
 **Harder / accepted:** a launcher and gateway are new moving parts; three
 processes cost more memory than one; duplicated internals (two Whisper
@@ -191,7 +194,8 @@ except for a pointer here.
   unacknowledged and errored batches, and points to Pull from Clipper. The
   Pull button shows how many batches wait. The home view keeps its count.
 - **Unchanged:** Searcher → Clipper and Clipper → Poster transport (Clipper
-  still auto-sends a fully rendered batch to the handoff), the handoff
+  still auto-sends a fully rendered batch to the handoff; superseded
+  2026-10-03 by "Manual Clipper send" below), the handoff
   contracts, and all three human gates (Q3). Batches wait durably in the
   handoff folder until pulled.
 - The automatic path's no-replay request mode (`replay=0`) is removed: every

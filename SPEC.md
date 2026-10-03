@@ -16,13 +16,12 @@ root).
 
 RiceSuite is the three Rice pillars run as one local app: one `rice` command
 starts a single localhost front door (the gateway) and three supervised pillar
-processes sharing one Python environment. Batches move between pillars
-automatically over the existing filesystem handoff contracts. Clipper sends
-a batch to Poster's inbox only on the maintainer's Send click (ADR-001
-amendment of 2026-10-03), and the maintainer pulls from that inbox (ADR-001
-amendment of 2026-09-29). The three human
-judgement gates stay exactly where they are, and nothing is ever posted
-automatically.
+processes sharing one Python environment. Searcher batches reach Clipper
+automatically over the existing filesystem handoff contracts. Clipper sends a
+batch to Poster's inbox only on the maintainer's Send click (ADR-001 amendment
+of 2026-10-03). The maintainer pulls from that inbox (ADR-001 amendment of
+2026-09-29). The three human judgement gates stay exactly where they are,
+and nothing is ever posted automatically.
 
 **Success (ADR-001 Q9 burn-in exit):** at least 5 real posting days across at
 least 7 calendar days, each running the full chain (pull → select → render →
@@ -169,8 +168,9 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
   in their pages (transcript edits, headers and captions are browser state),
   so each consumer's page drives its own transport: Clipper polls a read-only
   inbox endpoint (`GET api/searcher-inbox`) and then performs exactly the pull
-  its button performs. Clipper sends only on the Send click. Poster polls `GET api/handoff/inbox` only to
-  report waiting batches; it never pulls from the poll.
+  its button performs. Clipper sends only on the Send click. Poster polls
+  `GET api/handoff/inbox` only to report waiting batches; it never pulls from
+  the poll.
   Clipper pulls only when nothing unsent would be displaced: the workspace is
   empty, or it holds exactly what was last sent (a later edit or re-render
   holds it). The Pull button follows the same rule, and one pull runs at a

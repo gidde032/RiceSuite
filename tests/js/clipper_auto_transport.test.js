@@ -433,7 +433,7 @@ test("W2-01: a Pull click with an unsent batch loaded pulls nothing", async () =
 
 test("W1-06: an edit to a rendered clip while another renders holds the send", async () => {
   const reply = held();
-  const { js, calls } = boot({
+  const { js, calls, byId } = bootWithButtons({
     "POST api/jobs/jA/render": { status: "done" },
     "POST api/jobs/jB/render": async () => {
       await reply.promise;
@@ -452,12 +452,13 @@ test("W1-06: an edit to a rendered clip while another renders holds the send", a
   await settle();
   await js("sendBatch()"); // the Send button refuses the stale render
   assert.equal(posts(calls, "api/handoff").length, 0);
+  assert.match(byId["batch-status"].textContent, /Clip 1 changed after its render/);
 });
 
 test("W1-06: an edit during a clip's own render holds the send until it renders again", async () => {
   const reply = held();
   const renderedHeaders = [];
-  const { js, calls } = boot({
+  const { js, calls, byId } = bootWithButtons({
     "POST api/jobs/jA/render": async (call) => {
       renderedHeaders.push(JSON.parse(call.body).header);
       await reply.promise;
@@ -475,6 +476,7 @@ test("W1-06: an edit during a clip's own render holds the send until it renders 
   await settle();
   await js("sendBatch()"); // the Send button refuses the stale render
   assert.equal(posts(calls, "api/handoff").length, 0);
+  assert.match(byId["batch-status"].textContent, /Clip 1 changed after its render/);
   // Rendered again, the MP4 matches what is sent.
   await js("handleRenderAll()");
   await settle();

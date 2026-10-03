@@ -1309,6 +1309,7 @@ $("send-handoff-btn").addEventListener("click", () => sendBatch());
 // Only the Send button sends (ADR-001 "Manual Clipper send", Issue #59). A
 // failed or unrendered clip, or one edited since its render, holds the whole
 // batch until it is rendered again (or removed): the button refuses it (W3-02).
+
 // Everything that would reach RicePoster: comparing it with what was sent
 // tells "nothing unsent" apart from "rendered or edited again after sending".
 function batchSnapshot() {

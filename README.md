@@ -14,8 +14,8 @@ The target shape is one `rice` command, one Slate front door with Search / Clip 
 Post tabs, three supervised pillar processes sharing one Python environment, and
 batches moving automatically from Search to Clip over the existing filesystem
 handoff contracts. You send each rendered batch with **Send to RicePoster**,
-and you pull it into Post with **Pull from Clipper**. All three human judgement gates stay, and nothing is ever posted
-automatically. The design contract is
+and you pull it into Post with **Pull from Clipper**. All three human judgement
+gates stay, and nothing is ever posted automatically. The design contract is
 [ADR-001](docs/adr/ADR-001-ricesuite-consolidation.md).
 
 ## Status
