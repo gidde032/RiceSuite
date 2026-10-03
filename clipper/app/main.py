@@ -12,6 +12,7 @@ import logging
 import shutil
 import uuid
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
@@ -29,6 +30,7 @@ from app import (  # noqa: E402
     handoff,
     header_gen,
     jobs,
+    photo,
     probe,
     searcher_pickup,
     send_keys,
@@ -152,6 +154,11 @@ def upload(file: UploadFile = File(...)) -> JobState:
     # Transcription is a separate call (/transcribe) so the client's File handle
     # is released immediately and the local blob preview doesn't contend with a
     # long-open upload request.
+    kind = photo.classify(file.filename, file.content_type)
+    if kind == "unsupported":
+        raise HTTPException(status_code=400, detail=_UNSUPPORTED_IMAGE)
+    if kind == "photo":
+        return _upload_photo(file)
     job = jobs.create_job()
     suffix = Path(file.filename or "clip.mp4").suffix or ".mp4"
     source = job.dir / f"source{suffix}"
@@ -177,6 +184,44 @@ def upload(file: UploadFile = File(...)) -> JobState:
     return job.state()
 
 
+_UNSUPPORTED_IMAGE = "unsupported image type: use PNG, JPEG, or WebP"
+_PHOTO_NO_TRANSCRIPT = "a photo has no transcript"
+
+
+def _upload_photo(file: UploadFile) -> JobState:
+    """Store a still photo as an upright PNG source (Issue #54)."""
+    job = jobs.create_job()
+    job.kind = "photo"
+    suffix = Path(file.filename or "").suffix.lower()
+    raw = job.dir / f"upload{suffix}"
+    source = job.dir / photo.PHOTO_SOURCE_NAME
+    try:
+        with jobs.job_operation_lock():
+            with raw.open("wb") as fh:
+                shutil.copyfileobj(file.file, fh)
+            try:
+                job.info = photo.normalize(raw, source)
+            finally:
+                raw.unlink(missing_ok=True)
+            job.source_path = source
+            job.status = "ready"
+    except photo.PhotoError as exc:
+        logger.warning("uploaded photo could not be read: %s", exc)
+        job.status = "error"
+        job.error = (
+            _UNSUPPORTED_IMAGE
+            if isinstance(exc, photo.UnsupportedPhotoError)
+            else "could not read image"
+        )
+        raise HTTPException(status_code=400, detail=job.error) from exc
+    except Exception as exc:
+        logger.exception("photo upload failed")
+        job.status = "error"
+        job.error = "upload failed"
+        raise HTTPException(status_code=500, detail=job.error) from exc
+    return job.state()
+
+
 @app.post("/api/jobs/{job_id}/transcribe", response_model=JobState)
 def transcribe_job(job_id: str) -> JobState:
     with jobs.job_operation_lock():
@@ -185,6 +230,8 @@ def transcribe_job(job_id: str) -> JobState:
             raise HTTPException(status_code=404, detail="job not found")
         if job.source_path is None:
             raise HTTPException(status_code=409, detail="no source uploaded")
+        if job.kind == "photo":
+            raise HTTPException(status_code=409, detail=_PHOTO_NO_TRANSCRIPT)
         if job.status in {"transcribing", "rendering"}:
             raise HTTPException(status_code=409, detail="job is already active")
 
@@ -221,6 +268,8 @@ def lyrics_job(job_id: str, req: LyricsRequest) -> LyricsResult:
         job = jobs.get_job(job_id)
         if job is None:
             raise HTTPException(status_code=404, detail="job not found")
+        if job.kind == "photo":
+            raise HTTPException(status_code=409, detail=_PHOTO_NO_TRANSCRIPT)
         if job.status in {"transcribing", "rendering"}:
             raise HTTPException(status_code=409, detail="job is already active")
         if job.info is None:
@@ -280,7 +329,9 @@ def _safe_thumbnail(job: jobs.Job) -> str:
     if job.source_path is None:
         return ""
     try:
-        return frame.grab_frame_b64(job.source_path, job.info, job.dir)
+        # A photo has one frame, so it is grabbed at 0 s, not ~1 s in.
+        info = None if job.kind == "photo" else job.info
+        return frame.grab_frame_b64(job.source_path, info, job.dir)
     except frame.FrameGrabError:
         logger.warning("header frame grab failed; using transcript only")
         return ""
@@ -366,6 +417,17 @@ def render_job(job_id: str, req: RenderRequest) -> JobState:
             raise HTTPException(status_code=409, detail="job not ready to render")
         if job.status not in {"ready", "done", "error"}:
             raise HTTPException(status_code=409, detail="job is not ready to render")
+        if job.kind == "photo":
+            # A photo has no captions and no crop plan: header and music only,
+            # blur-padded (or passed through at exactly 1080x1920).
+            req = req.model_copy(
+                update={
+                    "words": [],
+                    "captions_on": False,
+                    "geometry": "blur_pad",
+                    "content": "speech",
+                }
+            )
         plan_source = job.music_plan if req.content == "music" else job.crop_plan
         if req.geometry == "crop" and plan_source is None:
             raise HTTPException(
@@ -396,6 +458,8 @@ def render_job(job_id: str, req: RenderRequest) -> JobState:
         render_lock = job.render_lock
         source_path = job.source_path
         info = job.info
+        if job.kind == "photo":
+            info = replace(info, duration=float(req.photo_duration))
         work_dir = job.dir
 
     with render_lock:

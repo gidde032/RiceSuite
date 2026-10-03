@@ -342,6 +342,8 @@ function buildCard(clip) {
   clip.previewStatusEl = node.querySelector(".preview-status");
   clip.geoEl = node.querySelector(".geo-note");
   clip.sourceVideoEl = node.querySelector(".source-video");
+  clip.sourcePhotoEl = node.querySelector(".source-photo");
+  clip.photoLengthEl = node.querySelector(".photo-length-input");
   clip.headerEl = node.querySelector(".header-input");
   clip.headerGenerateEl = node.querySelector(".header-generate");
   clip.headerFeedbackEl = node.querySelector(".header-feedback");
@@ -377,8 +379,14 @@ function buildCard(clip) {
   node.querySelectorAll('.geometry input[type="radio"]').forEach((option) => {
     option.name = `geometry-${clip.localId}`;
   });
+  const lengthHelp = node.querySelector("#photo-length-help");
+  lengthHelp.id = `photo-length-help-${clip.localId}`;
+  clip.photoLengthEl.id = `photo-length-${clip.localId}`;
+  clip.photoLengthEl.setAttribute("aria-describedby", lengthHelp.id);
+  node.querySelector(".photo-length-label").htmlFor = clip.photoLengthEl.id;
   const headerHelp = node.querySelector("#header-help");
   headerHelp.id = `header-help-${clip.localId}`;
+  clip.headerHelpEl = headerHelp;
   clip.headerEl.id = `header-input-${clip.localId}`;
   clip.lyricsInputEl.id = `lyrics-input-${clip.localId}`;
   node.querySelector(".lyrics .field-label").htmlFor = clip.lyricsInputEl.id;
@@ -418,7 +426,7 @@ function buildCard(clip) {
   // the mode is still untouched, so a deliberate "replace" (or "none") stands.
   clip.musicInputEl.addEventListener("change", () => {
     if (clip.musicInputEl.files.length && !clip.musicModeTouched) {
-      clip.musicModeEl.value = "mix";
+      clip.musicModeEl.value = clip.isPhoto === true ? "replace" : "mix";
     }
   });
   clip.musicModeEl.addEventListener("change", () => { clip.musicModeTouched = true; });
@@ -440,12 +448,13 @@ function buildCard(clip) {
   };
   if (clip.file) {
     clip.sourceUrl = URL.createObjectURL(clip.file);
-    clip.sourceVideoEl.src = clip.sourceUrl;
+    if (isPhotoFile(clip.file)) applyPhotoCard(clip);
+    else clip.sourceVideoEl.src = clip.sourceUrl;
   } else if (clip.jobId) {
     // Pulled clip: no local blob — preview from the server's stored source.
     clip.sourceVideoEl.src = `api/jobs/${clip.jobId}/source`;
   }
-  clip.previewStatusEl.textContent = "Preview starts muted (unmute with the player controls).";
+  if (clip.isPhoto !== true) clip.previewStatusEl.textContent = "Preview starts muted (unmute with the player controls).";
 
   clip.outputVideoEl.onerror = () => {
     setClipStatus(clip, `Playback failed (${mediaErrText(clip.outputVideoEl)}). The file downloaded fine — use Download to save it.`, true);
@@ -454,8 +463,46 @@ function buildCard(clip) {
   $("clips").appendChild(node);
 }
 
+// A still photo (Issue #54): accepted by type, or by name when the browser
+// gives no type. The server decides in the end; see applyPhotoCard.
+function isPhotoFile(file) {
+  return /^image\//.test(file.type || "") || /\.(png|jpe?g|webp)$/i.test(file.name || "");
+}
+
+// Turn a card into a photo card: a still preview and a length field, music as
+// "No music" or "Add music" (a photo has no sound to mix under), and no
+// caption, content, geometry, transcript, or lyric controls (SPEC.md D17).
+// Only a photo card sets `isPhoto`, so every check compares it with `true`.
+function applyPhotoCard(clip) {
+  if (clip.isPhoto === true) return;
+  clip.isPhoto = true;
+  clip.el.classList.add("photo-card");
+  clip.sourceVideoEl.removeAttribute("src");
+  if (clip.sourceUrl) clip.sourcePhotoEl.src = clip.sourceUrl;
+  else if (clip.jobId) clip.sourcePhotoEl.src = `api/jobs/${clip.jobId}/source`;
+  clip.sourcePhotoEl.alt = `Source photo for ${clip.file ? clip.file.name : "this clip"}`;
+  clip.captionsToggleEl.checked = false;
+  clip.musicModeEl.innerHTML = '<option value="none">No music</option><option value="replace">Add music</option>';
+  clip.musicModeEl.value = clip.musicInputEl.files.length ? "replace" : "none";
+  clip.previewStatusEl.textContent = "";
+  clip.headerHelpEl.textContent =
+    "1–2 lines, burned into the top of the frame. Edit freely.";
+}
+
+// The photo's clip length in whole seconds, or null when it is out of range.
+function photoLength(clip) {
+  const raw = String(clip.photoLengthEl.value).trim();
+  if (!/^\d+$/.test(raw)) return null;
+  const seconds = Number(raw);
+  return seconds >= 3 && seconds <= 60 ? seconds : null;
+}
+
 function setGeoNote(clip, info) {
-  if (info.width === 1080 && info.height === 1920) {
+  if (info.kind === "photo") {
+    clip.geoEl.textContent = info.width === 1080 && info.height === 1920
+      ? "1080×1920 photo — perfect 9:16, passthrough."
+      : `${info.width}×${info.height} photo — will blur-pad to 1080×1920.`;
+  } else if (info.width === 1080 && info.height === 1920) {
     clip.geoEl.textContent = `${info.width}×${info.height} — perfect 9:16, passthrough.`;
   } else if (info.width && info.height) {
     clip.geoEl.textContent = `${info.width}×${info.height} — will use subject crop or blur-pad to 1080×1920.`;
@@ -882,6 +929,15 @@ async function ingestClip(clip) {
       }
       clip.jobId = updata.id;
       setGeoNote(clip, updata);
+      if (updata.kind === "photo") {
+        // A photo has nothing to transcribe: it is ready for review now.
+        applyPhotoCard(clip);
+        clip.geoState = updata;
+        clip.status = "ready";
+        setClipStatus(clip, "Ready — review & render");
+        updateRenderAllButton();
+        return;
+      }
     }
 
     clip.status = "transcribing";
@@ -962,7 +1018,9 @@ async function handleRenderAll() {
 // once the job reaches done with output, throw on error, return false on
 // timeout so the caller can report the original drop.
 async function pollRenderCompletion(clip) {
-  const duration = Number(clip.geoState && clip.geoState.duration) || 0;
+  const duration = clip.isPhoto === true
+    ? photoLength(clip) || 60
+    : Number(clip.geoState && clip.geoState.duration) || 0;
   const timeoutMs = Math.max(120, duration * 10) * 1000;
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -998,6 +1056,10 @@ async function renderClip(clip) {
   const mode = clip.musicModeEl.value;
   const musicFile = clip.musicInputEl.files[0];
   try {
+    const length = clip.isPhoto === true ? photoLength(clip) : null;
+    if (clip.isPhoto === true && length === null) {
+      throw new Error("Set the photo length to a whole number of seconds from 3 to 60.");
+    }
     let filename = null;
     if (mode !== "none" && musicFile) {
       setClipStatus(clip, "Uploading music…");
@@ -1024,6 +1086,7 @@ async function renderClip(clip) {
       content: radioValue(clip.contentEl),
       music: { mode: musicFile ? mode : "none", volume: Number(clip.musicVolumeEl.value), filename },
     };
+    if (clip.isPhoto === true) payload.photo_duration = length;
     let res;
     let data;
     try {

@@ -64,7 +64,7 @@ fallback and remains the only outbound network feature.
 
 ## Source-of-truth map
 
-- **`SPEC.md`** — v1 design, decision log (D1–D16), boundary/safety, tech stack.
+- **`SPEC.md`** — v1 design, decision log (D1–D17), boundary/safety, tech stack.
 - **`ROADMAP.md`** — post-v1 sequencing (Wave 1 / Wave 2 / deferred).
 - **`CHANGELOG.md`** — what actually shipped.
 - **`docs/spikes/`** — de-risking investigations and their pass/fail results.

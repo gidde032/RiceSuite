@@ -29,6 +29,10 @@ HeaderStyle = Literal["plain", "black_plate", "white_plate"]
 # Per-clip framing choice (ADR-001). "auto" follows the plan decision; "crop"
 # and "blur_pad" override it.
 Geometry = Literal["auto", "blur_pad", "crop"]
+JobKind = Literal["video", "photo"]
+# A photo clip's length bounds, in whole seconds (Issue #54, SPEC.md D17).
+PHOTO_MIN_SECONDS = 3
+PHOTO_MAX_SECONDS = 60
 
 
 class Word(BaseModel):
@@ -82,6 +86,8 @@ class RenderRequest(BaseModel):
     geometry: Geometry = "auto"
     content: Content = "speech"
     music: MusicSettings = Field(default_factory=MusicSettings)
+    # Clip length for a photo job. A video job ignores it.
+    photo_duration: int = Field(default=10, ge=PHOTO_MIN_SECONDS, le=PHOTO_MAX_SECONDS)
 
 
 class HeaderRequest(BaseModel):
@@ -132,6 +138,7 @@ class JobState(BaseModel):
 
     id: str
     status: Literal["transcribing", "ready", "rendering", "done", "error"]
+    kind: JobKind = "video"
     width: int | None = None
     height: int | None = None
     duration: float | None = None
