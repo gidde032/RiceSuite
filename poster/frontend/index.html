@@ -767,7 +767,8 @@
     padding: 20px;
   }
   .help-card[hidden] { display: none; }
-  .help-empty { font-size: 13px; color: var(--muted-grey); margin-bottom: 18px; }
+  .help-empty { font-size: 13px; color: var(--muted-grey); }
+  .help-empty:not(:empty) { margin-bottom: 18px; }
   .help-card h3 { font-size: 15px; color: var(--primary-text); margin-bottom: 4px; }
   .help-card .help-sub { font-size: 12px; color: var(--muted-grey); margin-bottom: 14px; }
   .help-card ul { list-style: none; display: flex; flex-direction: column; gap: 10px; }
@@ -1046,7 +1047,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
         <input type="text" placeholder="Search help topics…" aria-label="Search help topics" oninput="filterHelp(this.value)">
       </div>
-      <p class="help-empty" id="helpEmpty" role="status" hidden>No matching topics.</p>
+      <p class="help-empty" id="helpEmpty" aria-live="polite"></p>
       <div class="help-grid">
         <div class="help-card">
           <h3>Before you post</h3>
@@ -1055,7 +1056,7 @@
             <li>Media is relevant, vertical, and high quality.</li>
             <li>Captions are accurate and on-brand.</li>
             <li>Each account uses unique media.</li>
-            <li>Sessions show Ready for the platforms you intend to post to.</li>
+            <li>In browser mode, sessions show Ready for the platforms you intend to post to.</li>
             <li>Each account's platform toggles are on only where you intend to post.</li>
             <li>Spacing between posts is appropriate.</li>
           </ul>
@@ -1078,7 +1079,7 @@
           <ul>
             <li>Schedule one batch at a time to fire at a chosen local time.</li>
             <li>Posts within a run are spaced automatically between accounts.</li>
-            <li>A scheduled batch posts unattended — review captions first.</li>
+            <li>A scheduled batch posts unattended at the chosen time. Review captions and platform toggles first.</li>
           </ul>
         </div>
         <div class="help-card">
@@ -1106,8 +1107,9 @@
           <h3>Real-account safety</h3>
           <div class="help-sub">This tool posts to live Instagram and TikTok accounts.</div>
           <ul>
-            <li>Post All and Confirm Schedule act on real accounts immediately.</li>
-            <li>Review every caption and the target slot before posting.</li>
+            <li>Post All posts to real accounts at once.</li>
+            <li>Confirm Schedule queues a batch that posts unattended at the chosen time.</li>
+            <li>Review every caption and the target account before you post.</li>
             <li>Retained media and captions are kept locally for verification only.</li>
           </ul>
         </div>
@@ -1120,14 +1122,16 @@
             <li>Save the selection as a named roster. Pick a roster to switch to it.</li>
             <li>Set a caption default for each account.</li>
             <li>Replace swaps one account for another. Use its Accounts row or the ⋯ menu on its Review card.</li>
-            <li>When accounts change, each unposted draft moves to the account that takes its place.</li>
+            <li>When you replace an account, its unposted draft moves to the new account.</li>
+            <li>If no account takes its place, Review asks before it discards the draft.</li>
           </ul>
         </div>
         <div class="help-card">
           <h3>Platform toggles</h3>
-          <div class="help-sub">Leave a platform out and keep its session.</div>
+          <div class="help-sub">Switch a platform off and keep its session.</div>
           <ul>
             <li>Click the Instagram or TikTok tracker on an account to switch that platform off or on.</li>
+            <li>A platform with no saved session cannot be switched off.</li>
             <li>An off platform shows an amber Disabled state. The saved session is kept.</li>
             <li>Post All and Schedule leave an off platform out. The confirmation names the exact targets.</li>
             <li>A scheduled batch keeps the platform selection from the time you scheduled it.</li>
@@ -1142,7 +1146,8 @@
             <li>New Run, Pull from Clipper, and Restore save the drafts they replace.</li>
             <li>Restore last batch puts back their media, caption, transcript, style, and media type.</li>
             <li>The saved batch survives a page reload.</li>
-            <li>Drafts return by roster position. A caption on a different account takes that account's caption style.</li>
+            <li>Each draft returns to its roster position.</li>
+            <li>On a different account, the caption text stays and the style becomes that account's default.</li>
             <li>Restore checks that each media file is unchanged. It names each draft it cannot bring back.</li>
             <li>It asks before it overwrites unposted drafts. Press it again to undo.</li>
             <li>It never posts or schedules.</li>
@@ -3549,7 +3554,8 @@ function filterHelp(query) {
     card.hidden = !words.every(word => text.includes(word));
     if (!card.hidden) shown += 1;
   }
-  el('helpEmpty').hidden = shown > 0;
+  // A live region: screen readers announce the line when its text changes.
+  el('helpEmpty').textContent = shown ? '' : 'No matching topics.';
 }
 
 // --- Slate client-side navigation -------------------------------------------

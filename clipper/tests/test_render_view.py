@@ -282,3 +282,4 @@ def test_stale_note_matches_the_start_over_button():
     assert note["background"] == button["background"] == "var(--backdrop)"
     assert note["border-radius"] == button["border-radius"] == "5px"
     assert "font-family" not in note
+    assert note["font-size"] == "13px"
