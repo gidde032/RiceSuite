@@ -73,7 +73,7 @@ only after a real-use burn-in passes.
 | Q9 | Burn-in exit | ≥5 real posting days across ≥7 calendar days; each day the full chain (pull → select → render → live post) runs in RiceSuite; ≥1 scheduled batch fires on its own; no fallback to an old app was needed. During burn-in, old repos take critical fixes only, each ported into RiceSuite. |
 | Q10 | Burn-in data | RiceSuite uses existing data in place (Searcher library, Clipper work dir, Poster sessions/queue/history/media, both handoff dirs). Only one side runs at a time: the launcher refuses to start if an old app is serving on 8765 / 8000 / 1738. Poster's data root becomes configurable (required work, fact 5). Unifying data locations is post-burn-in. |
 | Q11 | UI | Shared Slate shell: top bar with Search / Clip / Post tabs plus a small **home view** showing batches waiting at each stage. Each tab serves the pillar's existing page, adjusted only so its API calls reach its own pillar (fact 4). No rebuilt single UI. |
-| Q12 | Batch advancement | **Searcher:** "Send selected" stays as the batch boundary; the batch appears in Clipper already transcribing, with no Pull click. **Clipper:** auto-sends the batch once every clip in it renders successfully; a failed render holds the batch until fixed and re-rendered. **Poster:** auto-ingests only when the draft workspace is empty; otherwise the batch waits in a visible inbox on the Post tab (preserves fact 6). Captions generate on ingest as today. *(Poster clause amended 2026-09-29: Poster ingests only on the maintainer's Pull. See "Manual Poster ingest" below.)* |
+| Q12 | Batch advancement | **Searcher:** "Send selected" stays as the batch boundary; the batch appears in Clipper already transcribing, with no Pull click. **Clipper:** auto-sends the batch once every clip in it renders successfully; a failed render holds the batch until fixed and re-rendered. **Poster:** auto-ingests only when the draft workspace is empty; otherwise the batch waits in a visible inbox on the Post tab (preserves fact 6). Captions generate on ingest as today. *(Poster clause amended 2026-09-29: Poster ingests only on the maintainer's Pull. See "Manual Poster ingest" below. Clipper clause amended 2026-10-03: Clipper sends only on the maintainer's Send click. See "Manual Clipper send" below.)* |
 | Q13 | Consolidation depth | Move-and-wire only. Behavior changes are limited to those ratified here (front door, auto-transport, single config, configurable data root). Deduplicating transcription, Slate CSS, and Anthropic clients, and any model changes, are post-burn-in Issues. Dependency alignment needed for one venv (fact 1) is in scope. |
 | Q14 | Config | One `ricesuite.env` at the suite root, preserving every existing variable name, a single `ANTHROPIC_API_KEY`. The launcher sets both handoff-directory variables itself so they cannot be mismatched. |
 | Q15 | Agent rules | Root `CLAUDE.md` with suite hard rules (never auto-post; only `poster/` touches posting; local-only; merge/release/deploy/visibility reserved to the maintainer). Each pillar directory keeps its own `CLAUDE.md`. An automated **boundary test** fails CI if `searcher/` or `clipper/` imports Playwright or any `poster` module. Same Issue → branch → draft PR → three cold reviewers workflow. Poster's gitignored `SPEC.md`/`CLAUDE.md` notes stay local and gitignored. |
@@ -86,6 +86,9 @@ only after a real-use burn-in passes.
 
 **Easier:** one command and one tab for the daily workflow; no Pull/Send
 plumbing clicks or mismatched handoff-dir settings; one repo, one venv, one CI.
+*(Since the amendments of 2026-09-29 and 2026-10-03, Poster's Pull and
+Clipper's Send are clicks again. See "Manual Poster ingest" and "Manual
+Clipper send" below.)*
 
 **Harder / accepted:** a launcher and gateway are new moving parts; three
 processes cost more memory than one; duplicated internals (two Whisper
@@ -191,7 +194,8 @@ except for a pointer here.
   unacknowledged and errored batches, and points to Pull from Clipper. The
   Pull button shows how many batches wait. The home view keeps its count.
 - **Unchanged:** Searcher → Clipper and Clipper → Poster transport (Clipper
-  still auto-sends a fully rendered batch to the handoff), the handoff
+  still auto-sends a fully rendered batch to the handoff; superseded
+  2026-10-03 by "Manual Clipper send" below), the handoff
   contracts, and all three human gates (Q3). Batches wait durably in the
   handoff folder until pulled.
 - The automatic path's no-replay request mode (`replay=0`) is removed: every
@@ -205,3 +209,28 @@ The same decision added **Restore last batch** to Poster's Review page, which
 is pillar-internal behaviour recorded in Issue #30 and Poster's changelog: it
 only fills drafts, never posts or schedules, and confirms before overwriting
 unposted drafts.
+
+## Manual Clipper send — 2026-10-03
+
+**Status: ratified by the maintainer** (RiceSuite Issue
+[#59](https://github.com/gidde032/RiceSuite/issues/59), 2026-10-03). This
+amends the Clipper clause of Q12. It also replaces the parenthesis "Clipper
+still auto-sends a fully rendered batch to the handoff" in "Manual Poster
+ingest" above. The Q12 row is unchanged except for a pointer here.
+
+- **Clipper never sends a batch on its own.** Only the maintainer's **Send to
+  RicePoster** click sends. A finished Render all, a clip removal, or any
+  other event does not send.
+- **The send rules are unchanged.** Send refuses a batch with an unrendered,
+  failed, or edited clip, and names those clips. It never sends part of a
+  batch. A second send of a sent batch asks first.
+- **Render all reports, then stops.** After a successful Render all, the
+  progress bar stays on Render all and reads "Send the batch to Poster when
+  ready."
+- **Unchanged:** Searcher → Clipper transport, the handoff contracts, and all
+  three human gates (Q3). Clipper pulls the next Searcher batch only when
+  nothing unsent would be displaced, so a rendered batch holds the workspace
+  until it is sent or discarded.
+
+**Reason:** the maintainer wants to decide when a batch leaves Clipper, as
+"Manual Poster ingest" lets them decide when it lands in Poster.

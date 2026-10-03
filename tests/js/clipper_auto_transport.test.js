@@ -1,7 +1,7 @@
-// Clipper's automatic transport (RiceSuite ADR-001 Q12), run against the real
-// clipper/web/app.js: a complete Searcher batch is pulled without a click only
-// when nothing unsent would be displaced, and a batch sends itself only once
-// every clip has rendered successfully.
+// Clipper's transport, run against the real clipper/web/app.js: a complete
+// Searcher batch is pulled without a click only when nothing unsent would be
+// displaced (RiceSuite ADR-001 Q12). A batch goes to RicePoster only on the
+// reviewer's Send click (ADR-001 "Manual Clipper send", Issue #59).
 "use strict";
 
 const test = require("node:test");
@@ -85,36 +85,32 @@ test("a loaded, unsent batch is never displaced by the next one", async () => {
   assert.equal(posts(calls, "api/pull-from-searcher").length, 0);
 });
 
-test("a batch sends itself once every clip has rendered, exactly once", async () => {
+test("#59: a fully rendered batch waits for the Send click", async () => {
   const { js, calls } = boot({
+    "POST api/jobs/jA/render": { status: "done" },
+    "POST api/jobs/jB/render": { status: "done" },
     "POST api/handoff": { batch_id: "out1", clip_count: 2 },
   });
-  js(`clips.push(${sendable("j1", "done")}, ${sendable("j2", "done")})`);
-  js("collectWords = () => []; radioValue = () => 'x';");
-  await js("maybeAutoSend()");
-  await js("maybeAutoSend()");
+  stubRender(js);
+  js(`clips.push(${renderable("jA", 1)}, ${renderable("jB", 2)})`);
+  await js("handleRenderAll()");
+  await settle();
+  assert.equal(js("clips.every(clipCurrent)"), true, "every clip rendered");
+  assert.equal(posts(calls, "api/handoff").length, 0, "nothing is sent without a click");
+  assert.equal(js("batchSent"), false);
+  await js("sendBatch()"); // the Send button
   const sent = posts(calls, "api/handoff");
   assert.equal(sent.length, 1);
-  assert.deepEqual(JSON.parse(sent[0].body).clips.map((c) => c.job_id), ["j1", "j2"]);
+  assert.deepEqual(JSON.parse(sent[0].body).clips.map((c) => c.job_id), ["jA", "jB"]);
   assert.equal(js("batchSent"), true);
 });
 
-test("a failed or unrendered clip holds the whole batch", async () => {
-  const { js, calls } = boot({ "POST api/handoff": { batch_id: "x", clip_count: 1 } });
-  js(`clips.push(${sendable("j1", "done")}, ${sendable("j2", "ready")})`);
-  js("collectWords = () => []; radioValue = () => 'x';");
-  await js("maybeAutoSend()");
-  js(`clips[1].status = "error"`);
-  await js("maybeAutoSend()");
-  assert.equal(posts(calls, "api/handoff").length, 0);
-});
-
-test("no automatic send while a render-all is still running", async () => {
-  const { js, calls } = boot({ "POST api/handoff": { batch_id: "x", clip_count: 1 } });
-  js(`clips.push(${sendable("j1", "done")}); batchBusy = true;`);
-  js("collectWords = () => []; radioValue = () => 'x';");
-  await js("maybeAutoSend()");
-  assert.equal(posts(calls, "api/handoff").length, 0);
+test("#59: only the Send button calls sendBatch", () => {
+  const calls = SOURCE.match(/\bsendBatch\(/g) || [];
+  // The definition and the button's click listener.
+  assert.equal(calls.length, 2, "a second caller of sendBatch would send without a click");
+  assert.match(SOURCE, /\$\("send-handoff-btn"\)\.addEventListener\("click", \(\) => sendBatch\(\)\)/);
+  assert.doesNotMatch(SOURCE, /maybeAutoSend/);
 });
 
 test("after a batch is sent, the next Searcher batch replaces it", async () => {
@@ -126,7 +122,7 @@ test("after a batch is sent, the next Searcher batch replaces it", async () => {
   });
   js(`clips.push(${sendable("j1", "done")})`);
   js("collectWords = () => []; radioValue = () => 'x';");
-  await js("maybeAutoSend()"); // sent exactly as it stands
+  await js("sendBatch()"); // sent exactly as it stands
   await js("autoPullFromSearcher()");
   await settle();
   assert.equal(posts(calls, "api/pull-from-searcher").length, 1);
@@ -155,24 +151,13 @@ test("work done after a send holds the workspace: nothing unsent is wiped", asyn
   });
   js(`clips.push(${sendable("j1", "done")})`);
   js("collectWords = () => []; radioValue = () => 'x';");
-  await js("maybeAutoSend()");
+  await js("sendBatch()");
   assert.equal(posts(calls, "api/handoff").length, 1);
-  // The reviewer edits the header and re-renders after the automatic send.
+  // The reviewer edits the header and re-renders after the send.
   js(`clips[0].headerEl.value = "a better header"; clips[0].renders = 1;`);
   await js("autoPullFromSearcher()");
   assert.equal(posts(calls, "api/pull-from-searcher").length, 0);
   assert.equal(js("clips.length"), 1);
-  // And the edited batch is not sent again behind the reviewer's back.
-  await js("maybeAutoSend()");
-  assert.equal(posts(calls, "api/handoff").length, 1);
-});
-
-test("a send already in flight is never started twice", async () => {
-  const { js, calls } = boot({ "POST api/handoff": { batch_id: "out1", clip_count: 1 } });
-  js(`clips.push(${sendable("j1", "done")})`);
-  js("collectWords = () => []; radioValue = () => 'x';");
-  // A click on Send and the automatic send racing, neither awaited first.
-  await js("Promise.all([sendBatch(), maybeAutoSend()])");
   assert.equal(posts(calls, "api/handoff").length, 1);
 });
 
@@ -184,7 +169,7 @@ test("sending an already-sent batch again needs the reviewer's confirmation", as
   );
   js(`clips.push(${sendable("j1", "done")})`);
   js("collectWords = () => []; radioValue = () => 'x';");
-  await js("maybeAutoSend()");
+  await js("sendBatch()");
   await js("sendBatch()"); // the Send button, clicked out of habit
   assert.equal(posts(calls, "api/handoff").length, 1);
   assert.equal(asked.length, 1);
@@ -223,7 +208,7 @@ test("any edit inside a clip card after a send holds the workspace", async () =>
   );
   js("collectWords = () => []; radioValue = () => 'x';");
   js(`clips.push({ jobId: "j1", status: "done" }); buildCard(clips[0]);`);
-  await js("maybeAutoSend()");
+  await js("sendBatch()");
   assert.equal(posts(calls, "api/handoff").length, 1);
   const edits = cardListeners.filter((l) => l.type === "input" || l.type === "change");
   assert.ok(edits.length >= 2, "the card must watch input and change events");
@@ -320,7 +305,7 @@ test("W1-01: a send whose reply was lost is retried with the same key", async ()
   });
   js(`clips.push(${sendable("j1", "done")})`);
   js("collectWords = () => []; radioValue = () => 'x';");
-  await js("maybeAutoSend()");
+  await js("sendBatch()");
   assert.equal(js("batchSent"), false);
   await js("sendBatch()"); // no confirm: the harness's confirm() throws
   assert.equal(bodies.length, 2);
@@ -343,7 +328,7 @@ test("W1-01: a confirmed second send of a sent batch uses a new key", async () =
   );
   js(`clips.push(${sendable("j1", "done")})`);
   js("collectWords = () => []; radioValue = () => 'x';");
-  await js("maybeAutoSend()");
+  await js("sendBatch()");
   await js("sendBatch()");
   assert.equal(bodies.length, 2);
   assert.notEqual(bodies[1].send_key, bodies[0].send_key);
@@ -448,7 +433,7 @@ test("W2-01: a Pull click with an unsent batch loaded pulls nothing", async () =
 
 test("W1-06: an edit to a rendered clip while another renders holds the send", async () => {
   const reply = held();
-  const { js, calls } = boot({
+  const { js, calls, byId } = bootWithButtons({
     "POST api/jobs/jA/render": { status: "done" },
     "POST api/jobs/jB/render": async () => {
       await reply.promise;
@@ -465,13 +450,15 @@ test("W1-06: an edit to a rendered clip while another renders holds the send", a
   reply.release();
   await run;
   await settle();
+  await js("sendBatch()"); // the Send button refuses the stale render
   assert.equal(posts(calls, "api/handoff").length, 0);
+  assert.match(byId["batch-status"].textContent, /Clip 1 changed after its render/);
 });
 
 test("W1-06: an edit during a clip's own render holds the send until it renders again", async () => {
   const reply = held();
   const renderedHeaders = [];
-  const { js, calls } = boot({
+  const { js, calls, byId } = bootWithButtons({
     "POST api/jobs/jA/render": async (call) => {
       renderedHeaders.push(JSON.parse(call.body).header);
       await reply.promise;
@@ -487,10 +474,13 @@ test("W1-06: an edit during a clip's own render holds the send until it renders 
   reply.release();
   await run;
   await settle();
+  await js("sendBatch()"); // the Send button refuses the stale render
   assert.equal(posts(calls, "api/handoff").length, 0);
+  assert.match(byId["batch-status"].textContent, /Clip 1 changed after its render/);
   // Rendered again, the MP4 matches what is sent.
   await js("handleRenderAll()");
   await settle();
+  await js("sendBatch()");
   const sent = posts(calls, "api/handoff");
   assert.equal(sent.length, 1);
   assert.deepEqual(renderedHeaders, ["first header", "a new header"]);
@@ -506,7 +496,7 @@ test("W1-06: a generated header after a render counts as an edit", async () => {
   js("collectWords = () => []; radioValue = () => 'x'; setHeaderGenStatus = () => {};");
   js("clips[0].headerGenerateEl = {}; clips[0].headerFeedbackEl = { value: '' };");
   await js("regenerateHeader(clips[0])");
-  await js("maybeAutoSend()");
+  await js("sendBatch()");
   assert.equal(posts(calls, "api/handoff").length, 0);
 });
 
@@ -523,13 +513,15 @@ test("W3-02: Send refuses a batch with a failed clip and names it", async () => 
   assert.match(byId["batch-status"].textContent, /Clip 2/);
 });
 
-test("W3-02: once the failed clip is removed, the rest of the batch sends", async () => {
+test("W3-02, #59: once the failed clip is removed, Send sends the rest", async () => {
   const { js, calls } = boot({ "POST api/handoff": { batch_id: "x", clip_count: 1 } });
   js(`clips.push(${sendable("j1", "done")}, ${sendable("j2", "ready")})`);
   js("collectWords = () => []; radioValue = () => 'x';");
   js("clips[1].el = { remove() {} }; updateCacheControls = () => {};");
   js("removeClip(clips[1])");
   await settle();
+  assert.equal(posts(calls, "api/handoff").length, 0, "a removal does not send");
+  await js("sendBatch()");
   const sent = posts(calls, "api/handoff");
   assert.equal(sent.length, 1);
   assert.deepEqual(JSON.parse(sent[0].body).clips.map((c) => c.job_id), ["j1"]);
@@ -580,11 +572,10 @@ test("S-1: a send refused as already sent holds the batch and names it", async (
   });
   js(`clips.push(${sendable("j1", "done")})`);
   js("collectWords = () => []; radioValue = () => 'x';");
-  await js("maybeAutoSend()");
+  await js("sendBatch()");
   assert.equal(js("batchSent"), true);
   assert.equal(js("sentBatchId"), "out1");
   assert.match(byId["batch-status"].textContent, /out1/);
-  await js("maybeAutoSend()");
   await js("autoPullFromSearcher()");
   assert.equal(posts(calls, "api/handoff").length, 1);
   assert.equal(posts(calls, "api/pull-from-searcher").length, 0, "the workspace stays held");
@@ -606,7 +597,7 @@ test("C-1: an edit after a lost send reply goes out as a new send, never a repla
   });
   js(`clips.push(${sendable("j1", "done")})`);
   js("collectWords = () => []; radioValue = () => 'x';");
-  await js("maybeAutoSend()");
+  await js("sendBatch()");
   // The reviewer fixes the header and renders the clip again.
   js(`clips[0].headerEl.value = "fixed header"; clips[0].edits = 1;
       clips[0].renderedEdits = 1; clips[0].renders = 1;`);

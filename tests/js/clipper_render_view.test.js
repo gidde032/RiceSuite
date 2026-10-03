@@ -224,16 +224,18 @@ for (const action of ["alignLyrics", "restoreTranscript"]) {
   });
 }
 
-test("Render all points at each clip's download, not below the batch", async () => {
-  const { js, ctx } = boot({ "POST api/jobs/j1/render": { status: "done" } });
+test("#59: Render all ends on its own bar and asks for the Send click", async () => {
+  const { js, ctx, calls } = boot({ "POST api/jobs/j1/render": { status: "done" } });
   ctx.clip = card(false);
-  js("messages = []; localProgress = (_operation, _state, completed, total, label, text) => messages.push({count: `${completed} / ${total} ${label}`, text}); maybeAutoSend = async () => {};");
+  js("messages = []; localProgress = (operation, state, completed, total, label, text) => messages.push({operation, state, count: `${completed} / ${total} ${label}`, text});");
   js("clips.push(clip)");
   await js("handleRenderAll()");
   const last = js("messages[messages.length - 1]");
+  assert.equal(last.operation, "Render all");
+  assert.equal(last.state, "✓ Complete");
   assert.equal(last.count, "1 / 1 rendered");
-  assert.match(last.text, /available in their existing frames/);
-  assert.doesNotMatch(last.text, /below/);
+  assert.equal(last.text, "Send the batch to Poster when ready.");
+  assert.equal(calls.filter((c) => c.path === "api/handoff").length, 0);
 });
 
 for (const dropped of [false, true]) {

@@ -5,10 +5,10 @@ const TABS = ["home", "search", "clip", "post"];
 const REFRESH_MS = 5000;
 
 // Every pillar page loads once, up front, and stays alive: batches move from
-// Search into Clip, and from Clip to Post's inbox, automatically only while
-// the Clip page is open (ADR-001 Q12); Post keeps its inbox count current
-// (Post itself pulls only on a click); and switching tabs must never
-// reload a page mid-task (e.g. Post during a run).
+// Search into Clip automatically only while the Clip page is open (ADR-001
+// Q12); Clip sends to Post's inbox and Post pulls only on a click; Post keeps
+// its inbox count current; and switching tabs must never reload a page
+// mid-task (e.g. Post during a run).
 function loadPillarPages() {
   for (const frame of document.querySelectorAll("iframe[data-src]")) {
     if (!frame.getAttribute("src")) frame.setAttribute("src", frame.dataset.src);

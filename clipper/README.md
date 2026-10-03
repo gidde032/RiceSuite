@@ -217,9 +217,9 @@ Set `RICECLIPPER_WHISPER_MODEL=tiny` for a quick first try.
 4. **Render all.** Each clip is rendered to 1080×1920 H.264/AAC mp4 and can be
    previewed and downloaded. Failed renders stay in the queue, so you can change
    their settings and click **Render all** again.
-5. **Send to RicePoster (optional).** This writes the rendered clips plus a
-   `manifest.json` as one batch directory under `RICECLIPPER_HANDOFF_DIR`. Only
-   local files are written. The contract is in
+5. **Send to RicePoster (optional).** Clipper never sends a batch on its own.
+   A click writes the rendered clips plus a `manifest.json` as one batch
+   directory under `RICECLIPPER_HANDOFF_DIR`. Only local files are written. The contract is in
    [`docs/integration/riceposter-handoff.md`](./docs/integration/riceposter-handoff.md).
 
 Uploaded sources, intermediate files, and renders stay in the local
