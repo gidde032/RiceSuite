@@ -324,7 +324,9 @@ def test_pipeline_blur_pads_a_photo_to_the_chosen_length(isolated_jobs, monkeypa
     graph = cmd[cmd.index("-filter_complex") + 1]
     assert "-loop" in cmd
     assert "boxblur" in graph
-    assert "[1:a]volume=0.35,apad,atrim=duration=9.0[aout]" in graph
+    assert (
+        "[1:a]volume=0.35,apad,afade=t=out:st=8.0:d=1,atrim=duration=9.0[aout]" in graph
+    )
     assert cmd[cmd.index("-t") + 1] == "9.0"
 
 
@@ -496,3 +498,13 @@ def test_a_real_header_frame_is_grabbed_from_a_photo(isolated_jobs):
     data = main.frame.grab_frame_b64(job.source_path, None, job.dir)
 
     assert base64.b64decode(data)[:2] == b"\xff\xd8"
+
+
+def test_music_start_sits_inside_the_card_template():
+    html = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text()
+    template = html.split('<template id="clip-card-template">', 1)[1]
+    template = template.split("</template>", 1)[0]
+
+    # A start change marks a finished render stale only while the slider is
+    # inside the card, whose input listener counts edits (Issue #55).
+    assert 'class="music-start"' in template

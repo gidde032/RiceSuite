@@ -34,7 +34,10 @@ At viewport widths of **881 px and above**, the editor has two rows:
    it; portrait clips can retain side letterboxing. Condense Content,
    Geometry, Header style, Burn captions, Caption style, and optional Music
    controls into short, consistently spaced rows. Keep Header and Generate in
-   the settings area.
+   the settings area. The Music row ends in a **Start at** slider and a **Play
+   segment** button (Issue #55). A **photo card** (Issue #54) shows a still
+   preview and a **Length** row, and hides Content, Geometry, Burn captions,
+   Caption style, the transcript, and the lyric pane.
    **Rendered column (Issue #20):** to the right of the settings, the upper
    row ends in the rendered clip, shown as a true **9:16** frame **540 px**
    tall (about 304 px wide) with the Download button under it. On a narrow
@@ -52,7 +55,8 @@ At viewport widths of **881 px and above**, the editor has two rows:
    to `header_margin_v` + 160 px of 1920) and the caption band (340 to 540 px
    up from the bottom) and offers no download. Any other edit after a render
    keeps that render on show, with Download, marked "Edited since this
-   render" until the clip renders again. A re-render keeps the last render in
+   render" until the clip renders again. Seeking or changing volume in either
+   video player is not an edit: it leaves the render current. A re-render keeps the last render in
    place, paused, dimmed and inert with a "Rendering…" note, and withholds the
    download until it finishes; Align and Restore wait for it to finish.
 2. **Lower row, Music:** generated transcript on the left and optional pasted

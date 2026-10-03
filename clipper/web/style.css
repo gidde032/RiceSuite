@@ -129,6 +129,11 @@ input[type="file"]::file-selector-button { margin-right: 10px; border: 1px solid
 .music-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--editor-space); }
 .vol { display: grid; min-height: 36px; grid-template-columns: auto minmax(0, 1fr) 46px; align-items: center; gap: var(--editor-space); color: var(--muted); font-family: Arial, sans-serif; font-size: 12px; }
 .vol input { width: 100%; accent-color: var(--rice); }
+/* Music segment (Issue #55): a start slider and a preview button. */
+.music-segment { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--editor-space); align-items: center; }
+.music-start-field { grid-template-columns: auto minmax(0, 1fr) 56px; }
+.music-play { white-space: nowrap; }
+.music-preview { display: none; }
 .vol-label { padding: 7px 5px; border: 1px solid var(--control-line); border-radius: 5px; color: var(--text); text-align: center; }
 
 /* Rendered clip (RiceSuite #20, variant C): a true 9:16 frame beside the

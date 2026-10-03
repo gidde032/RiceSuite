@@ -8,12 +8,25 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Music segment and preview** (RiceSuite [#55](https://github.com/gidde032/RiceSuite/issues/55),
+  SPEC D13). Pick where a music track starts with the **Start at** slider. The
+  slider keeps the whole segment inside the track. **Play segment** plays it for
+  the clip length; a video plays muted beside it. Added music now fades in over
+  0.5 s when it starts past 0, and fades out over the last 1 s of every clip.
+  The original audio does not fade.
 - **Photo clips** (RiceSuite [#54](https://github.com/gidde032/RiceSuite/issues/54),
   SPEC D17). Upload a PNG, JPEG, or WebP and set a length of 3–60 seconds.
   The photo renders as a blur-padded 1080×1920 clip with a header and optional
   music. A photo card has no captions, transcript, or lyrics. Clipper applies the
   EXIF rotation at upload and refuses images over 60 megapixels. A photo clip goes to RicePoster with a blank
   transcript, in the same batch as video clips.
+
+### Fixed
+- **Seeking a preview no longer marks a clip edited.** Dragging the seek bar or
+  volume slider of the source or rendered video sent `input` events to the card,
+  which counted them as edits. A rendered clip then showed "Edited since this
+  render", the batch held it, and a sent batch looked edited. Player controls no
+  longer count as edits; every review control still does.
 
 ### Changed
 - **Compact staged progress** (RiceSuite [#21](https://github.com/gidde032/RiceSuite/issues/21)).

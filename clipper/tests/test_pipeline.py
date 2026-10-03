@@ -1,12 +1,15 @@
+import shutil
 import signal
 import subprocess
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from app import process
 from app.models import MusicSettings, RenderRequest
 from app.probe import MediaInfo
+from render import pipeline
 from render.pipeline import (
     RenderError,
     _audio_graph,
@@ -57,7 +60,9 @@ def test_mix_graph_pads_each_input_and_trims_the_result():
 
     assert target == "[aout]"
     assert "[0:a]apad,atrim=duration=12.5[orig]" in stmts
-    assert "[1:a]volume=0.5,apad,atrim=duration=12.5[m]" in stmts
+    assert (
+        "[1:a]volume=0.5,apad,afade=t=out:st=11.5:d=1,atrim=duration=12.5[m]" in stmts
+    )
     assert any(
         "amix=inputs=2:duration=first:normalize=0,atrim=duration=12.5[aout]" in s
         for s in stmts
@@ -68,7 +73,9 @@ def test_replace_graph_keeps_short_music_regression_and_exact_duration():
     stmts, target = _audio_graph(_req("replace"), True, True, duration=12.5)
 
     assert target == "[aout]"
-    assert stmts == ["[1:a]volume=0.5,apad,atrim=duration=12.5[aout]"]
+    assert stmts == [
+        "[1:a]volume=0.5,apad,afade=t=out:st=11.5:d=1,atrim=duration=12.5[aout]"
+    ]
 
 
 def test_encode_threads_defaults_to_half_logical_cpus(monkeypatch):
@@ -309,3 +316,183 @@ def test_job_child_contains_traversal_and_absolute_paths(tmp_path):
         resolved = _job_child(job, evil)
         assert resolved.parent == job  # stays directly inside the job dir
     assert _job_child(job, "music.m4a").name == "music.m4a"
+
+
+# --- music segment and fades (Issue #55) -------------------------------------
+
+
+def _segment_req(start, mode="replace"):
+    return RenderRequest(
+        music=MusicSettings(mode=mode, volume=0.5, filename="m.mp3", start=start)
+    )
+
+
+def test_a_music_segment_past_zero_fades_in_and_out():
+    stmts, _ = _audio_graph(_segment_req(30.0), True, True, duration=12.5)
+
+    assert stmts == [
+        "[1:a]volume=0.5,afade=t=in:st=0:d=0.5,apad,"
+        "afade=t=out:st=11.5:d=1,atrim=duration=12.5[aout]"
+    ]
+
+
+def test_mixed_music_fades_but_the_original_audio_does_not():
+    stmts, _ = _audio_graph(_segment_req(5.0, "mix"), True, True, duration=12.5)
+
+    assert "[0:a]apad,atrim=duration=12.5[orig]" in stmts
+    assert any(s.startswith("[1:a]") and "afade=t=in" in s for s in stmts)
+
+
+def test_fades_fit_inside_a_very_short_clip():
+    stmts, _ = _audio_graph(_segment_req(5.0), True, True, duration=1.2)
+
+    assert "afade=t=in:st=0:d=0.5" in stmts[0]
+    assert "afade=t=out:st=0.6:d=0.6" in stmts[0]
+
+
+def test_ffmpeg_command_seeks_the_music_input_to_the_segment_start():
+    cmd = _ffmpeg_command(
+        "source.mp4",
+        "m.mp3",
+        False,
+        "[0:v]null[vout]",
+        "[aout]",
+        8.0,
+        music_start=42.5,
+    )
+
+    music = cmd.index("m.mp3")
+    assert cmd[music - 3 : music] == ["-ss", "42.5", "-i"]
+    assert cmd.index("source.mp4") < cmd.index("-ss")
+
+
+def test_ffmpeg_command_does_not_seek_music_that_starts_at_zero():
+    cmd = _ffmpeg_command(
+        "source.mp4", "m.mp3", False, "[0:v]null[vout]", "[aout]", 8.0
+    )
+
+    assert "-ss" not in cmd
+
+
+@pytest.mark.parametrize("bad", [-1.0, float("inf"), float("nan"), 86400.5])
+def test_music_start_rejects_negative_and_non_finite_values(bad):
+    with pytest.raises(ValidationError):
+        MusicSettings(start=bad)
+
+
+def test_render_passes_the_segment_start_to_ffmpeg(monkeypatch, tmp_path):
+    calls = []
+
+    class Done:
+        returncode = 0
+        stderr = ""
+
+    monkeypatch.setattr(
+        pipeline, "run_owned", lambda cmd, **kw: calls.append(cmd) or Done()
+    )
+    (tmp_path / "m.mp3").write_bytes(b"m")
+
+    render(
+        tmp_path,
+        tmp_path / "source.mp4",
+        MediaInfo(1080, 1920, 6.0, True),
+        _segment_req(17.0),
+    )
+
+    cmd = calls[0]
+    assert cmd[cmd.index("-ss") + 1] == "17.0"
+
+
+# --- review repairs (PR #58) -------------------------------------------------
+
+
+def _mean_db(path, start, length=0.1):
+    out = subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "info",
+            "-ss",
+            str(start),
+            "-t",
+            str(length),
+            "-i",
+            str(path),
+            "-af",
+            "volumedetect",
+            "-f",
+            "null",
+            "-",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stderr
+    return float(out.split("mean_volume:")[1].split("dB")[0])
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is unavailable")
+@pytest.mark.parametrize("start", [20.0, 90.0])
+def test_a_real_music_segment_renders_full_length_with_fades(tmp_path, start):
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=300:duration=60",
+            str(tmp_path / "m.mp3"),
+        ],
+        check=True,
+    )
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=gray:s=1080x1920:d=4",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(tmp_path / "src.mp4"),
+        ],
+        check=True,
+    )
+    req = RenderRequest(
+        captions_on=False,
+        music=MusicSettings(mode="replace", filename="m.mp3", start=start, volume=1.0),
+    )
+
+    out = render(tmp_path, tmp_path / "src.mp4", MediaInfo(1080, 1920, 4.0, False), req)
+
+    duration = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=duration",
+            "-of",
+            "csv=p=0",
+            str(out),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert abs(float(duration) - 4.0) < 0.05
+    if start > 60:
+        # A start past the track end is silence for the whole clip.
+        assert _mean_db(out, 0, 4.0) < -80
+    else:
+        steady = _mean_db(out, 2.0)
+        assert _mean_db(out, 0.0, 0.05) < steady - 6  # fading in
+        assert _mean_db(out, 3.85) < steady - 6  # fading out

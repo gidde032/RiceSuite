@@ -78,7 +78,8 @@ it can never read a half-written batch. No separate lock/marker file is needed.
   RicePoster maps it to a slot. There is deliberately no `slot`, `account`,
   `style`, or `schedule` field — those are posting-side policy.
 - `transcript` is plain text (already user-reviewed at touchpoint 2). Grounds
-  caption generation.
+  caption generation. A photo clip (SPEC D17) has no transcript, so this field
+  is the empty string; RicePoster then captions from the frame alone.
 - `header` is provenance only (already burned into the mp4); RicePoster may show
   it but does not act on it.
 - `presets` is provenance only (already baked into the render). It records which

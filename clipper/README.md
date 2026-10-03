@@ -25,7 +25,8 @@ explicit per-clip choice. The crop uses a stabilized strong lock: small face
 movements do not move the window, ordinary corrections move smoothly, and
 scene/target reacquisition cuts still snap immediately. Non-9:16 vertical input
 is blur-padded. Optional
-added music can replace or mix under the original audio.
+added music can replace or mix under the original audio, from a chosen start
+point in the track.
 
 Full scope, deferred roadmap, and the decision log are in [`SPEC.md`](./SPEC.md).
 
@@ -210,7 +211,9 @@ Set `RICECLIPPER_WHISPER_MODEL=tiny` for a quick first try.
    header style. For landscape clips, choose **auto**, **crop**, or
    **blur-pad**.
 3. **Music (optional).** Attach an audio file, then choose to *replace* the
-   original audio or *mix* the music under it.
+   original audio or *mix* the music under it. Move **Start at** to choose the part
+   of the track to use, and click **Play segment** to hear it. Added music fades
+   out over the last second, and fades in when it starts past 0.
 4. **Render all.** Each clip is rendered to 1080×1920 H.264/AAC mp4 and can be
    previewed and downloaded. Failed renders stay in the queue, so you can change
    their settings and click **Render all** again.

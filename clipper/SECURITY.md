@@ -1,7 +1,8 @@
 # Security & Privacy
 
 RiceClipper is a **local-first** tool. It runs on your machine, reads local
-video files, and writes local output files. It does **not** post, publish, or
+video, image, and audio files, and writes local output files. Pillow decodes
+uploaded photos; it refuses images over 60 megapixels before decoding them. It does **not** post, publish, or
 upload content anywhere. This document explains what leaves your machine (and
 what never does), how to handle secrets, and how to report a problem.
 

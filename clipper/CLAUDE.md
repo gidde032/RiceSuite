@@ -7,7 +7,8 @@ acting.
 
 RiceClipper is a standalone tool that turns short vertical or landscape videos
 into post-ready clips with word-synced burned-in captions and an on-screen
-header. A still photo becomes a header-and-music clip of a set length (SPEC D17). Landscape clips use a local single-subject crop with blur-pad fallback.
+header. A still photo becomes a header-and-music clip of a set length (SPEC
+D17). Landscape clips use a local single-subject crop with blur-pad fallback.
 That crop uses the universal Level-5 strong lock for speech and music: hold
 minor movement, interpolate ordinary correction at 30 Hz, and preserve
 immediate cut/target-reacquisition snaps.

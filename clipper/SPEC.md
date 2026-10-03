@@ -31,9 +31,10 @@ from longer video) sit directly on top of it.
 decode → transcribe (word-level) → word-highlight captions → manual on-screen
 header → normalize geometry (pass-through 9:16; subject crop or blur-pad for
 landscape, D15; music follow profile, D16) → optional pasted-lyric fallback
-(D16) → optional added-music track →
+(D16) → optional added-music track (start point and fades, D13) →
 export 1080×1920 H.264 — all through a local web review UI with a
-human-in-the-loop gate.
+human-in-the-loop gate. A still photo (D17) skips transcription and captions; it
+takes the header and music steps, then exports the same way.
 
 **Explicitly out of scope for the original v1 slice (see §7 for delivery status):**
 clip selection/extraction (Paths 2 & 1), active-speaker switching and zoom,
@@ -48,7 +49,7 @@ text editor, arbitrary font/color input, or user-authored preset persistence.
 ## 3. Boundary & safety note
 
 RiceClipper **performs no posting, publishing, or network upload of content**. It
-reads local video files and writes local output files. The "no live post without
+reads local video and image files and writes local output files. The "no live post without
 explicit approval" safety rule belongs to RicePoster and remains RicePoster's
 responsibility after it separately pulls from the implemented local handoff
 (§7, Wave 1). RiceClipper's only outbound network call is the implemented header
@@ -85,7 +86,10 @@ API key and an explicit UI action) and which generates text and posts nothing.
    selected compact plain-text or plate treatment, cleared above the caption
    zone.
 7. **Mix audio** — original audio passes through; if the user supplied a music
-   file, apply **replace** or **mix-under** (with a volume level). Because
+   file, apply **replace** or **mix-under** (with a volume level). The music
+   starts at the user's chosen point and runs for the clip length. It fades in
+   over 0.5 s when that point is past 0, and fades out over the last 1 s (D13).
+   Because
    caption timing is already baked to the timeline in seconds, adding music at
    this stage cannot affect sync, and the source speech transcribed in step 3 was
    never contaminated by music.
@@ -140,7 +144,10 @@ browser (`localStorage`, local-first), starting from the v1 Classic/Plain
 defaults, and editing a clip persists that slot's default for later batches. On
 the audio side, choosing a music file defaults the mode to *mix under original*
 while the mode is still untouched — a convenience default that never overrides a
-deliberate choice and adds no new mode (D13 unchanged).
+deliberate choice and adds no new mode (D13 unchanged). A photo card offers only
+*No music* and *Add music* (replace), at full volume, because a photo has no
+sound of its own (D17). Under the music controls, a **Start at** slider and a
+**Play segment** button choose and preview the part of the track to use (D13).
 
 Rerendering applies the currently selected styles. Each completed render uses a
 fresh media URL for both preview and Download, and output responses are not
@@ -277,7 +284,7 @@ model earns its keep. Revisit at build if desired.
 | D10 | Interface | FastAPI + vanilla HTML/JS localhost, review gate | Hosts override + header entry; matches RicePoster for easy merge |
 | D11 | Styling | One Tier-1 preset v1; style/position config Wave-2; Tier-3 deferred behind engine decision | Config is a time sink; template already parameterized for cheap later exposure |
 | D12 | Non-9:16 handling | Blur-pad fill as the **fallback and explicit choice**; subject crop when detection passes (D15) | Never loses content. The RicePoster "edge-crop failure" was withdrawn 2026-07-27 (TikTok trims edges itself); the surviving rule is a safe zone for the subject |
-| D13 | Music | Optional added audio; replace **or** mix-under toggle with volume slider; v1. Auto-ducking + vocal isolation deferred | Central to actual usage; cheap since encoding already exists; adding after sync can't affect timing |
+| D13 | Music | Optional added audio; replace **or** mix-under toggle with volume slider; v1. Segment start chosen per clip with an in-browser preview; the segment runs for the clip length. Added music fades in over 0.5 s when the start is past 0 and fades out over the last 1 s (amended 2026-10-03, RiceSuite [#55](https://github.com/gidde032/RiceSuite/issues/55)). Auto-ducking + vocal isolation deferred | Central to actual usage; cheap since encoding already exists; adding after sync can't affect timing. A song's opening is rarely the part a clip needs, and a mid-song cut sounds broken without a fade |
 | D14 | Browser theme | Slate: dark carbon/grey chrome, rice-grey state accents, visual per-clip preset cards, symbol-only rice-and-shears mark | Makes the daily-driver review path faster to scan without changing behavior or adding editor features |
 | D15 | Subject crop | Local YuNet face detection at ingest; full-height 9:16 window with pan cap and universal strong lock: hold inside an outer 20% window-width zone, settle ordinary corrections at the inner 10% boundary, and interpolate them at 30 Hz; confirmed cuts, inferred face jumps, and track returns still snap (Level 5 ratified 2026-09-20). Face center stays inside the central 70% (tuned 2026-09-15); blur-pad when `face_rate < 0.80` or `safe_rate < 0.95`; per-clip `geometry` = `auto`/`blur_pad`/`crop`; kill criterion: fewer than 5 of 6 fixtures pass after two tuning rounds. The gate applies to the `speech` profile only (D16) | Ratified 2026-09-14, motion tuning amended 2026-09-20; [ADR-001](docs/adr/ADR-001-subject-crop.md) |
 | D16 | Music path | Per-clip `content` = `speech`/`music`, not remembered per slot. Music framing profile: no face-rate gate, hold through faceless spans, snap on cuts (scene 0.2, one shared pass with scores) and face return, static centered when no face; nearest-previous face between cuts, largest after a cut (both profiles). Lyric fallback: pasted block, chronological LCS anchors on whisper timings (amended 2026-09-18, #29; was `difflib`), interpolation between anchors, character-weighted fill below 25% anchors; word-level highlight survives; no new model. Kill: framing fewer than 4 of 5 music fixtures after one tuning round; lyrics visibly off on more than 2 of 5 | Ratified 2026-09-15; [ADR-002](docs/adr/ADR-002-music-path.md) |

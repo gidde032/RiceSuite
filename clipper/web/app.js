@@ -327,13 +327,23 @@ function syncResultStale(clip) {
   clip.resultEl.classList.toggle("is-stale", clip.status === "done" && !clipCurrent(clip));
 }
 
+// A seek or volume drag on a player's built-in controls reaches the card as an
+// input event whose target is the <video> or <audio> element. Moving through
+// or listening to a clip changes nothing that renders, so it is not an edit.
+function isReviewEdit(event) {
+  const tag = String((event && event.target && event.target.tagName) || "").toUpperCase();
+  return tag !== "VIDEO" && tag !== "AUDIO";
+}
+
 function buildCard(clip) {
   const node = $("clip-card-template").content.firstElementChild.cloneNode(true);
   clip.el = node;
   // Every control in the card (captions, geometry, content, music, lyrics…)
   // bubbles its input/change events here, so any edit made after a send makes
   // the batch differ from what was sent and holds the workspace.
-  const markEdited = () => noteClipEdited(clip);
+  const markEdited = (event) => {
+    if (isReviewEdit(event)) noteClipEdited(clip);
+  };
   node.addEventListener("input", markEdited);
   node.addEventListener("change", markEdited);
   clip.reviewGridEl = node.querySelector(".review-grid");
@@ -363,6 +373,11 @@ function buildCard(clip) {
   clip.musicModeEl = node.querySelector(".music-mode");
   clip.musicVolumeEl = node.querySelector(".music-volume");
   clip.volLabelEl = node.querySelector(".vol-label");
+  clip.musicStartEl = node.querySelector(".music-start");
+  clip.musicStartLabelEl = node.querySelector(".music-start-label");
+  clip.musicPlayEl = node.querySelector(".music-play");
+  clip.musicPreviewEl = node.querySelector(".music-preview");
+  clip.musicHintEl = node.querySelector(".music-segment-hint");
   clip.resultEl = node.querySelector(".clip-result");
   clip.outputVideoEl = node.querySelector(".output-video");
   clip.downloadEl = node.querySelector(".download-link");
@@ -421,6 +436,18 @@ function buildCard(clip) {
 
   clip.musicVolumeEl.addEventListener("input", (e) => {
     clip.volLabelEl.textContent = Number(e.target.value).toFixed(2);
+    clip.musicPreviewEl.volume = Math.min(1, Number(e.target.value));
+  });
+  clip.musicInputEl.addEventListener("change", () => loadMusicPreview(clip));
+  clip.musicStartEl.addEventListener("input", () => {
+    stopSegmentPreview(clip);
+    clip.musicStartLabelEl.textContent = formatClock(Number(clip.musicStartEl.value));
+  });
+  clip.musicPlayEl.addEventListener("click", () => toggleSegmentPreview(clip));
+  clip.musicPreviewEl.addEventListener("ended", () => stopSegmentPreview(clip));
+  clip.photoLengthEl.addEventListener("input", () => {
+    stopSegmentPreview(clip);
+    syncMusicStart(clip);
   });
   // First music pick defaults the mode to "mix under original" — but only while
   // the mode is still untouched, so a deliberate "replace" (or "none") stands.
@@ -499,6 +526,104 @@ function photoLength(clip) {
   if (!/^\d+$/.test(raw)) return null;
   const seconds = Number(raw);
   return seconds >= 3 && seconds <= 60 ? seconds : null;
+}
+
+// --- music segment (Issue #55) ----------------------------------------------
+// The user picks where the track starts; the segment runs for the clip's
+// length. Preview plays the local file, so nothing uploads before render.
+
+function formatClock(seconds) {
+  const whole = Math.max(0, Math.floor(Number(seconds) || 0));
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
+}
+
+// The clip's length in seconds: the photo length, or the probed video length.
+function clipLength(clip) {
+  if (clip.isPhoto === true) return photoLength(clip) || 10;
+  return Number(clip.geoState && clip.geoState.duration) || Number(clip.sourceVideoEl.duration) || 0;
+}
+
+function loadMusicPreview(clip) {
+  stopSegmentPreview(clip);
+  if (clip.musicUrl) URL.revokeObjectURL(clip.musicUrl);
+  clip.musicUrl = null;
+  clip.musicPreviewFailed = false;
+  clip.musicStartEl.value = "0";
+  clip.musicStartLabelEl.textContent = formatClock(0);
+  const file = clip.musicInputEl.files[0];
+  if (file) {
+    clip.musicUrl = URL.createObjectURL(file);
+    clip.musicPreviewEl.onloadedmetadata = () => syncMusicStart(clip);
+    // A format the browser cannot decode still renders; it starts at 0.
+    clip.musicPreviewEl.onerror = () => {
+      clip.musicPreviewFailed = true;
+      syncMusicStart(clip);
+    };
+    clip.musicPreviewEl.src = clip.musicUrl;
+  } else {
+    clip.musicPreviewEl.removeAttribute("src");
+  }
+  syncMusicStart(clip);
+}
+
+// Bound the start so the whole segment fits inside the track. The controls
+// wait for both lengths: the track's (from the browser) and the clip's.
+function syncMusicStart(clip) {
+  const chosen = Boolean(clip.musicInputEl.files[0]);
+  const track = Number(clip.musicPreviewEl.duration);
+  const length = clipLength(clip);
+  const decoded = chosen && clip.musicPreviewFailed !== true && Number.isFinite(track) && track > 0;
+  const ready = decoded && length > 0;
+  const max = ready ? Math.max(0, Math.floor((track - length) * 10) / 10) : 0;
+  clip.musicStartEl.max = String(max);
+  if (Number(clip.musicStartEl.value) > max) clip.musicStartEl.value = String(max);
+  clip.musicStartEl.disabled = !ready || max === 0;
+  clip.musicPlayEl.disabled = !ready;
+  clip.musicStartLabelEl.textContent = formatClock(Number(clip.musicStartEl.value));
+  let hint;
+  if (!chosen) hint = "Choose a track to pick where it starts.";
+  else if (clip.musicPreviewFailed === true) hint = "This browser cannot preview the track. The render uses it from the start.";
+  else if (!decoded) hint = "Reading the track…";
+  else if (length <= 0) hint = "Waiting for the clip length…";
+  else if (max === 0) hint = "The track is no longer than the clip, so it plays from the start.";
+  else hint = `The segment plays for ${formatClock(length)}. The render fades it in and out.`;
+  clip.musicHintEl.textContent = hint;
+}
+
+function toggleSegmentPreview(clip) {
+  if (clip.segmentTimer) stopSegmentPreview(clip);
+  else playSegmentPreview(clip);
+}
+
+// Play the chosen segment for the clip's length. A video plays muted from its
+// start beside it, so the reviewer hears the music against the picture.
+function playSegmentPreview(clip) {
+  // One preview at a time across the batch.
+  clips.forEach((other) => { if (other !== clip && other.segmentTimer) stopSegmentPreview(other); });
+  const audio = clip.musicPreviewEl;
+  audio.currentTime = Number(clip.musicStartEl.value) || 0;
+  audio.volume = Math.min(1, Number(clip.musicVolumeEl.value));
+  if (clip.isPhoto !== true) {
+    clip.sourceVideoEl.muted = true;
+    clip.sourceVideoEl.currentTime = 0;
+    Promise.resolve(clip.sourceVideoEl.play()).catch(() => {});
+  }
+  clip.musicPlayEl.textContent = "■ Stop";
+  clip.segmentTimer = setTimeout(() => stopSegmentPreview(clip), clipLength(clip) * 1000);
+  Promise.resolve(audio.play()).catch((err) => {
+    // A Stop right after Play interrupts play(); that is not a failure.
+    if (err && err.name === "AbortError") return;
+    stopSegmentPreview(clip);
+    clip.musicHintEl.textContent = "This browser cannot play the track. The render still uses it.";
+  });
+}
+
+function stopSegmentPreview(clip) {
+  if (clip.segmentTimer) clearTimeout(clip.segmentTimer);
+  clip.segmentTimer = null;
+  clip.musicPreviewEl.pause();
+  if (clip.isPhoto !== true) clip.sourceVideoEl.pause();
+  clip.musicPlayEl.textContent = "▶ Play segment";
 }
 
 function setGeoNote(clip, info) {
@@ -662,6 +787,8 @@ function removeClip(clip) {
   if (ACTIVE_JOB_STATUSES.has(clip.status) || batchBusy) return;
   if (clip.sourceUrl) URL.revokeObjectURL(clip.sourceUrl);
   if (clip.outputUrl) URL.revokeObjectURL(clip.outputUrl);
+  if (clip.musicUrl) URL.revokeObjectURL(clip.musicUrl);
+  if (clip.segmentTimer) stopSegmentPreview(clip);
   clip.el.remove();
   const idx = clips.indexOf(clip);
   if (idx >= 0) clips.splice(idx, 1);
@@ -960,6 +1087,7 @@ async function ingestClip(clip) {
     clip.geoState = trdata;
     renderTranscript(clip);
     applyGeometry(clip, trdata);
+    syncMusicStart(clip);
     clip.status = "ready";
     setClipStatus(clip, "Ready — review & render");
     // Header generation is opt-in: nothing is sent to Anthropic automatically
@@ -1092,7 +1220,12 @@ async function renderClip(clip) {
       header_style: radioValue(clip.headerStyleEl),
       geometry: radioValue(clip.geometryEl),
       content: radioValue(clip.contentEl),
-      music: { mode: musicFile ? mode : "none", volume: Number(clip.musicVolumeEl.value), filename },
+      music: {
+        mode: musicFile ? mode : "none",
+        volume: Number(clip.musicVolumeEl.value),
+        filename,
+        start: musicFile ? Number(clip.musicStartEl.value) || 0 : 0,
+      },
     };
     if (clip.isPhoto === true) payload.photo_duration = length;
     let res;
@@ -1377,6 +1510,8 @@ function clearWorkspace() {
     });
     if (c.sourceUrl) URL.revokeObjectURL(c.sourceUrl);
     if (c.outputUrl) URL.revokeObjectURL(c.outputUrl);
+    if (c.musicUrl) URL.revokeObjectURL(c.musicUrl);
+    if (c.segmentTimer) stopSegmentPreview(c);
   });
   clips.length = 0;
   $("clips").innerHTML = "";

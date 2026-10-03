@@ -27,6 +27,8 @@ ASS_NAME = "captions.ass"
 HEADER_PNG = "header.png"
 OUTPUT_NAME = "output.mp4"
 PHOTO_FPS = 30
+MUSIC_FADE_IN_S = 0.5
+MUSIC_FADE_OUT_S = 1.0
 
 
 class RenderError(RuntimeError):
@@ -59,6 +61,23 @@ def _duration_arg(duration: float) -> str:
     return str(float(duration))
 
 
+def _music_fades(start: float, duration: float | None) -> tuple[str, str]:
+    """Return the (fade-in, fade-out) filters for added music (Issue #55).
+
+    A segment that starts past 0 fades in over 0.5 s, so it does not cut in
+    mid-note. Every added track fades out over the last 1 s of the clip. Each
+    fade is at most half the clip, so on a very short clip they cannot overlap.
+    """
+    if duration is None:
+        return "", ""
+    fade_in = min(MUSIC_FADE_IN_S, duration / 2)
+    fade_out = min(MUSIC_FADE_OUT_S, duration / 2)
+    in_filter = f",afade=t=in:st=0:d={fade_in:g}" if start > 0 else ""
+    out_start = _duration_arg(duration - fade_out)
+    out_filter = f",afade=t=out:st={out_start}:d={fade_out:g}"
+    return in_filter, out_filter
+
+
 def _audio_graph(
     req: RenderRequest,
     has_audio: bool,
@@ -69,28 +88,31 @@ def _audio_graph(
 
     When ``duration`` is supplied, every audio branch is padded and explicitly
     trimmed to the probed video duration. This keeps a short source or music
-    stream from deciding the output length.
+    stream from deciding the output length. Added music also fades in and out
+    (see ``_music_fades``); the original audio never fades.
     """
     mode = req.music.mode if has_music else "none"
     vol = req.music.volume
     duration_filter = ""
     if duration is not None:
         duration_filter = f",atrim=duration={_duration_arg(duration)}"
+    fade_in, fade_out = _music_fades(req.music.start, duration)
+    music = f"[1:a]volume={vol}{fade_in},apad{fade_out}{duration_filter}"
 
     if mode == "replace":
-        return [f"[1:a]volume={vol},apad{duration_filter}[aout]"], "[aout]"
+        return [f"{music}[aout]"], "[aout]"
     if mode == "mix" and has_audio:
         return (
             [
                 f"[0:a]apad{duration_filter}[orig]",
-                f"[1:a]volume={vol},apad{duration_filter}[m]",
+                f"{music}[m]",
                 "[orig][m]amix=inputs=2:duration=first:normalize=0"
                 f"{duration_filter}[aout]",
             ],
             "[aout]",
         )
     if mode == "mix":  # music but original is silent
-        return [f"[1:a]volume={vol},apad{duration_filter}[aout]"], "[aout]"
+        return [f"{music}[aout]"], "[aout]"
     # none
     if has_audio and duration is not None:
         return [f"[0:a]apad{duration_filter}[aout]"], "[aout]"
@@ -114,6 +136,7 @@ def _ffmpeg_command(
     audio_map: str | None,
     duration: float,
     still: bool = False,
+    music_start: float = 0.0,
 ) -> list[str]:
     """Build the ffmpeg command independently of process execution."""
     cmd = ["ffmpeg", "-y"]
@@ -123,6 +146,10 @@ def _ffmpeg_command(
         cmd += ["-loop", "1", "-framerate", str(PHOTO_FPS)]
     cmd += ["-i", str(source_path)]
     if music_path is not None:
+        if music_start > 0:
+            # Input seek: the music segment starts here and its timestamps
+            # restart at 0, so fades and trims count from the segment start.
+            cmd += ["-ss", _duration_arg(music_start)]
         cmd += ["-i", str(music_path)]
     if overlay_header:
         cmd += ["-i", HEADER_PNG]
@@ -267,6 +294,7 @@ def render(
         audio_map,
         info.duration,
         still=info.still,
+        music_start=req.music.start,
     )
     try:
         proc = run_owned(

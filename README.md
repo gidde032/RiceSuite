@@ -7,7 +7,7 @@ RiceSuite combines the three Rice pillars into one local app:
 | Directory | Pillar | Job |
 |---|---|---|
 | [`searcher/`](searcher/) | RiceSearcher | Acquire → transcribe → score → **human select** |
-| [`clipper/`](clipper/) | RiceClipper | Caption / header / 9:16 crop / music → **human review + render** |
+| [`clipper/`](clipper/) | RiceClipper | Caption / header / 9:16 crop / music / photo clips → **human review + render** |
 | [`poster/`](poster/) | RicePoster | **Human Post All / Schedule** to Instagram/TikTok |
 
 The target shape is one `rice` command, one Slate front door with Search / Clip /
