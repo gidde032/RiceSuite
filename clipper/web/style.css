@@ -142,8 +142,8 @@ input[type="file"]::file-selector-button { margin-right: 10px; border: 1px solid
 .guide-caption { bottom: calc(340 / 1920 * 100%); height: calc((540 - 340) / 1920 * 100%); align-items: flex-end; }
 .result-busy { align-items: flex-end; justify-content: center; padding: var(--editor-space); background: rgb(4 6 10 / 62%); color: var(--text); font-family: Arial, sans-serif; font-size: 12px; }
 .result-busy span { padding: 6px 10px; border: 1px solid var(--hairline); border-radius: 4px; background: var(--midground); }
-.result-stale { position: absolute; top: var(--editor-space); right: var(--editor-space); left: var(--editor-space); display: none; justify-content: center; font-family: Arial, sans-serif; font-size: 12px; }
-.result-stale span { padding: 6px 10px; border: 1px solid var(--danger); border-radius: 4px; background: var(--midground); color: var(--text); }
+.result-stale { position: absolute; top: var(--editor-space); right: var(--editor-space); left: var(--editor-space); display: none; justify-content: center; font-size: 13px; }
+.result-stale span { padding: 6px 12px; border: 1px solid var(--destructive); border-radius: 5px; background: var(--backdrop); color: var(--destructive); }
 .clip-result.is-empty .result-empty, .clip-result.is-busy .result-busy, .clip-result.is-stale:not(.is-busy) .result-stale { display: flex; }
 .clip-result.is-empty .output-video { visibility: hidden; }
 .clip-result .download-link { width: 100%; }
