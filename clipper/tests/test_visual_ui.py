@@ -257,10 +257,14 @@ def test_per_slot_saved_styles_seed_and_persist():
 def test_music_upload_auto_switches_to_mix_when_untouched():
     javascript = _js()
 
-    # Picking a music file defaults the mode to "mix" — but only while the mode
+    # Picking a music file defaults the mode to "mix" ("replace" on a photo,
+    # which has no sound to mix under) — but only while the mode
     # is still untouched, so a deliberate choice is respected.
     assert "musicModeTouched" in javascript
-    assert 'clip.musicModeEl.value = "mix"' in javascript
+    assert (
+        'clip.musicModeEl.value = clip.isPhoto === true ? "replace" : "mix"'
+        in javascript
+    )
     assert "!clip.musicModeTouched" in javascript
 
 

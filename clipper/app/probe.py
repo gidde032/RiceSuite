@@ -37,6 +37,8 @@ class MediaInfo:
     rotation: int = 0
     sample_aspect_ratio: float = 1.0
     field_order: str = "progressive"
+    # A still photo (Issue #54): the source is one image, looped at render.
+    still: bool = False
 
 
 def _ratio(value: object) -> float:

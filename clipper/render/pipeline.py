@@ -26,6 +26,7 @@ from render.header_image import has_emoji, render_header_png
 ASS_NAME = "captions.ass"
 HEADER_PNG = "header.png"
 OUTPUT_NAME = "output.mp4"
+PHOTO_FPS = 30
 
 
 class RenderError(RuntimeError):
@@ -112,9 +113,15 @@ def _ffmpeg_command(
     filter_complex: str,
     audio_map: str | None,
     duration: float,
+    still: bool = False,
 ) -> list[str]:
     """Build the ffmpeg command independently of process execution."""
-    cmd = ["ffmpeg", "-y", "-i", str(source_path)]
+    cmd = ["ffmpeg", "-y"]
+    if still:
+        # A still photo (Issue #54) loops as a constant-rate video input; the
+        # output ``-t`` below bounds its length.
+        cmd += ["-loop", "1", "-framerate", str(PHOTO_FPS)]
+    cmd += ["-i", str(source_path)]
     if music_path is not None:
         cmd += ["-i", str(music_path)]
     if overlay_header:
@@ -259,6 +266,7 @@ def render(
         filter_complex,
         audio_map,
         info.duration,
+        still=info.still,
     )
     try:
         proc = run_owned(

@@ -7,7 +7,7 @@ acting.
 
 RiceClipper is a standalone tool that turns short vertical or landscape videos
 into post-ready clips with word-synced burned-in captions and an on-screen
-header. Landscape clips use a local single-subject crop with blur-pad fallback.
+header. A still photo becomes a header-and-music clip of a set length (SPEC D17). Landscape clips use a local single-subject crop with blur-pad fallback.
 That crop uses the universal Level-5 strong lock for speech and music: hold
 minor movement, interpolate ordinary correction at 30 Hz, and preserve
 immediate cut/target-reacquisition snaps.
@@ -64,7 +64,7 @@ fallback and remains the only outbound network feature.
 
 ## Source-of-truth map
 
-- **`SPEC.md`** — v1 design, decision log (D1–D16), boundary/safety, tech stack.
+- **`SPEC.md`** — v1 design, decision log (D1–D17), boundary/safety, tech stack.
 - **`ROADMAP.md`** — post-v1 sequencing (Wave 1 / Wave 2 / deferred).
 - **`CHANGELOG.md`** — what actually shipped.
 - **`docs/spikes/`** — de-risking investigations and their pass/fail results.

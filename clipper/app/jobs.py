@@ -36,6 +36,8 @@ class Job:
     dir: Path
     source_path: Path | None = None
     info: MediaInfo | None = None
+    # "photo" for a still image (Issue #54); it has no transcript or crop plan.
+    kind: str = "video"
     words: list[Word] = field(default_factory=list)
     reference_words: list[Word] = field(default_factory=list)
     status: str = "transcribing"
@@ -58,6 +60,7 @@ class Job:
         return JobState(
             id=self.id,
             status=self.status,  # type: ignore[arg-type]
+            kind=self.kind,  # type: ignore[arg-type]
             width=self.info.width if self.info else None,
             height=self.info.height if self.info else None,
             duration=self.info.duration if self.info else None,
