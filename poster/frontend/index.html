@@ -766,6 +766,8 @@
     border-radius: 12px;
     padding: 20px;
   }
+  .help-card[hidden] { display: none; }
+  .help-empty { font-size: 13px; color: var(--muted-grey); margin-bottom: 18px; }
   .help-card h3 { font-size: 15px; color: var(--primary-text); margin-bottom: 4px; }
   .help-card .help-sub { font-size: 12px; color: var(--muted-grey); margin-bottom: 14px; }
   .help-card ul { list-style: none; display: flex; flex-direction: column; gap: 10px; }
@@ -1042,8 +1044,9 @@
       </div>
       <div class="help-search">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
-        <input type="text" placeholder="Search help topics…" aria-label="Search help topics">
+        <input type="text" placeholder="Search help topics…" aria-label="Search help topics" oninput="filterHelp(this.value)">
       </div>
+      <p class="help-empty" id="helpEmpty" role="status" hidden>No matching topics.</p>
       <div class="help-grid">
         <div class="help-card">
           <h3>Before you post</h3>
@@ -1051,8 +1054,9 @@
           <ul>
             <li>Media is relevant, vertical, and high quality.</li>
             <li>Captions are accurate and on-brand.</li>
-            <li>Each slot uses unique media.</li>
-            <li>Sessions show green for the platforms you intend to post to.</li>
+            <li>Each account uses unique media.</li>
+            <li>Sessions show Ready for the platforms you intend to post to.</li>
+            <li>Each account's platform toggles are on only where you intend to post.</li>
             <li>Spacing between posts is appropriate.</li>
           </ul>
         </div>
@@ -1062,7 +1066,9 @@
           <ul>
             <li>The AI drafts a caption from the frame it is shown plus your topic.</li>
             <li>Captions reflect scene details and intent.</li>
-            <li>Choose a style per slot; Regenerate or Undo as needed.</li>
+            <li>Each account has a caption default. Set it in Accounts.</li>
+            <li>Change the style on a draft, then Regenerate or Undo as needed.</li>
+            <li>If a draft's style no longer exists, the draft uses the account default, then the standard default.</li>
           </ul>
           <div class="help-example">From field to future.<br>Built on patience.<br>#RiceLife #FarmToFuture</div>
         </div>
@@ -1082,7 +1088,8 @@
             <div class="help-status-row"><span class="help-chip c-ok">Confirmed</span> Posted and confirmed on the platform.</div>
             <div class="help-status-row"><span class="help-chip c-warn">Unconfirmed</span> Submitted but not confirmed — check before reposting.</div>
             <div class="help-status-row"><span class="help-chip c-fail">Failed</span> Could not post. See the error reason.</div>
-            <div class="help-status-row"><span class="help-chip c-muted">Skipped</span> Not attempted (no caption or no session).</div>
+            <div class="help-status-row"><span class="help-chip c-muted">Skipped</span> Not attempted: no saved session, or the pre-flight check ruled the session out.</div>
+            <div class="help-status-row"><span class="help-chip c-muted">Disabled</span> You switched this platform off for the account. Not a failure.</div>
           </div>
         </div>
         <div class="help-card">
@@ -1093,7 +1100,6 @@
             <li>For a Failed result, read the error reason, fix, then retry.</li>
             <li>Wait the pacing interval before reposting to avoid rate limits.</li>
             <li>Interrupted batches and their media are retained as honest evidence in Queue.</li>
-            <li>Restore last batch brings back the drafts the last New Run, Pull or Restore replaced, while their media is still in the media library.</li>
           </ul>
         </div>
         <div class="help-card">
@@ -1103,6 +1109,54 @@
             <li>Post All and Confirm Schedule act on real accounts immediately.</li>
             <li>Review every caption and the target slot before posting.</li>
             <li>Retained media and captions are kept locally for verification only.</li>
+          </ul>
+        </div>
+        <div class="help-card">
+          <h3>Accounts &amp; rosters</h3>
+          <div class="help-sub">Choose which accounts post, and in what order.</div>
+          <ul>
+            <li>Accounts lists every saved account and its session status.</li>
+            <li>Pick the active accounts and their order for Review.</li>
+            <li>Save the selection as a named roster. Pick a roster to switch to it.</li>
+            <li>Set a caption default for each account.</li>
+            <li>Replace swaps one account for another. Use its Accounts row or the ⋯ menu on its Review card.</li>
+            <li>When accounts change, each unposted draft moves to the account that takes its place.</li>
+          </ul>
+        </div>
+        <div class="help-card">
+          <h3>Platform toggles</h3>
+          <div class="help-sub">Leave a platform out and keep its session.</div>
+          <ul>
+            <li>Click the Instagram or TikTok tracker on an account to switch that platform off or on.</li>
+            <li>An off platform shows an amber Disabled state. The saved session is kept.</li>
+            <li>Post All and Schedule leave an off platform out. The confirmation names the exact targets.</li>
+            <li>A scheduled batch keeps the platform selection from the time you scheduled it.</li>
+            <li>An account with both platforms off keeps its draft but does not post.</li>
+            <li>History records an off platform as Disabled.</li>
+          </ul>
+        </div>
+        <div class="help-card">
+          <h3>Restore last batch</h3>
+          <div class="help-sub">Bring back the drafts you replaced.</div>
+          <ul>
+            <li>New Run, Pull from Clipper, and Restore save the drafts they replace.</li>
+            <li>Restore last batch puts back their media, caption, transcript, style, and media type.</li>
+            <li>The saved batch survives a page reload.</li>
+            <li>Drafts return by roster position. A caption on a different account takes that account's caption style.</li>
+            <li>Restore checks that each media file is unchanged. It names each draft it cannot bring back.</li>
+            <li>It asks before it overwrites unposted drafts. Press it again to undo.</li>
+            <li>It never posts or schedules.</li>
+          </ul>
+        </div>
+        <div class="help-card">
+          <h3>Clipper handoff</h3>
+          <div class="help-sub">Move rendered clips from RiceClipper into Review.</div>
+          <ul>
+            <li>RiceClipper sends a rendered batch to RicePoster. The batch waits until you pull it.</li>
+            <li>The Pull from Clipper button shows how many batches wait, for example "Pull from Clipper · 2".</li>
+            <li>Only your click pulls a batch. A pull asks before it overwrites a draft.</li>
+            <li>The next pull recovers a batch that was pulled but not acknowledged.</li>
+            <li>Clear consumed batches in Local Media deletes archives already applied. It keeps each batch still needed for recovery.</li>
           </ul>
         </div>
       </div>
@@ -3482,6 +3536,20 @@ async function cancelQueueBatch(batchId) {
   } catch (e) {
     alert(`Failed: ${e.message}`);
   }
+}
+
+// --- Help search ------------------------------------------------------------
+// A card stays visible when its text holds every word of the query, in any
+// case. An empty query shows every card.
+function filterHelp(query) {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  let shown = 0;
+  for (const card of document.querySelectorAll('#view-help .help-card')) {
+    const text = card.textContent.toLowerCase();
+    card.hidden = !words.every(word => text.includes(word));
+    if (!card.hidden) shown += 1;
+  }
+  el('helpEmpty').hidden = shown > 0;
 }
 
 // --- Slate client-side navigation -------------------------------------------
