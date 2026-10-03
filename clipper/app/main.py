@@ -156,7 +156,7 @@ def upload(file: UploadFile = File(...)) -> JobState:
     # long-open upload request.
     kind = photo.classify(file.filename, file.content_type)
     if kind == "unsupported":
-        raise HTTPException(status_code=400, detail=_UNSUPPORTED_IMAGE)
+        raise HTTPException(status_code=400, detail=photo.UnsupportedPhotoError.detail)
     if kind == "photo":
         return _upload_photo(file)
     job = jobs.create_job()
@@ -184,7 +184,6 @@ def upload(file: UploadFile = File(...)) -> JobState:
     return job.state()
 
 
-_UNSUPPORTED_IMAGE = "unsupported image type: use PNG, JPEG, or WebP"
 _PHOTO_NO_TRANSCRIPT = "a photo has no transcript"
 
 
@@ -208,11 +207,7 @@ def _upload_photo(file: UploadFile) -> JobState:
     except photo.PhotoError as exc:
         logger.warning("uploaded photo could not be read: %s", exc)
         job.status = "error"
-        job.error = (
-            _UNSUPPORTED_IMAGE
-            if isinstance(exc, photo.UnsupportedPhotoError)
-            else "could not read image"
-        )
+        job.error = exc.detail
         raise HTTPException(status_code=400, detail=job.error) from exc
     except Exception as exc:
         logger.exception("photo upload failed")

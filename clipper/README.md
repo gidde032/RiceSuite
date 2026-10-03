@@ -1,7 +1,8 @@
 # RiceClipper
 
 Turns short (**under ~1 minute**) vertical or landscape videos into post-ready clips with
-**word-synced burned-in captions** and an **on-screen header**.
+**word-synced burned-in captions** and an **on-screen header**. A still photo
+(PNG, JPEG, or WebP) becomes a clip of a set length with a header and music.
 
 It is the render chassis for a larger clipping concept ("Path 3"): no clip
 *selection* intelligence yet — just clean captioning, header, and vertical export.
@@ -196,12 +197,12 @@ Set `RICECLIPPER_WHISPER_MODEL=tiny` for a quick first try.
 
 ## Using it
 
-1. **Add clips.** Choose one or more video files, or click **Pull from
-   RiceSearcher** to ingest the oldest batch waiting in
+1. **Add clips.** Choose one or more video or photo files, or click **Pull
+   from RiceSearcher** to ingest the oldest batch waiting in
    `RICECLIPPER_SEARCHER_INBOX`. If there is nothing there, it adds nothing.
-   Each clip becomes a review card and is transcribed automatically.
-   A photo (PNG, JPEG, or WebP) also becomes a card. Set its **Length**
-   (3–60 seconds). A photo has no captions; it takes a header and music.
+   Each file becomes a review card. A video is transcribed automatically. A
+   photo (PNG, JPEG, or WebP, under 60 megapixels) has no transcript or
+   captions: set its **Length** (3–60 seconds), and add a header and music.
 2. **Review.** Edit the transcript and choose a caption style. The eleven fixed
    presets include four lyric presets: paste lyrics, then click **Align** to
    time them to the audio, and use **Restore transcript** to go back. Type a

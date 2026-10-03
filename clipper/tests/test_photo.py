@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import base64
 import io
 import json
+import re
+import shutil
+import subprocess
+from pathlib import Path
 
 import pytest
 from fastapi import HTTPException, UploadFile
 from fastapi.testclient import TestClient
-from PIL import Image
+from PIL import Image, JpegImagePlugin
 from pydantic import ValidationError
 from starlette.datastructures import Headers
 
@@ -355,3 +360,139 @@ def test_a_photo_and_a_video_share_one_handoff_batch(
     assert [c["file"] for c in manifest["clips"]] == ["clip_1.mp4", "clip_2.mp4"]
     assert manifest["clips"][1]["transcript"] == ""
     assert (batch / "clip_2.mp4").read_bytes() == b"photo"
+
+
+# --- review repairs (PR #57) -------------------------------------------------
+
+
+def test_classify_trusts_a_photo_type_without_a_photo_name():
+    assert photo.classify("IMG", "image/jpeg") == "photo"
+    assert photo.classify("a.jfif", "image/jpeg") == "photo"
+    assert photo.classify("a.gif", "image/gif") == "unsupported"
+
+
+def test_normalize_scales_16_bit_grayscale_instead_of_clipping(tmp_path):
+    raw = tmp_path / "deep.png"
+    Image.new("I;16", (8, 8), 32768).save(raw)
+    dest = tmp_path / "source.png"
+
+    photo.normalize(raw, dest)
+
+    assert Image.open(dest).getpixel((0, 0)) == (128, 128, 128)
+
+
+def test_every_alpha_mode_is_flattened_onto_black():
+    for image in (
+        Image.new("PA", (2, 2), (0, 0)),
+        Image.new("RGBa", (2, 2), (255, 255, 255, 0)),
+        Image.new("LA", (2, 2), (255, 0)),
+    ):
+        image.putpalette([255, 255, 255] * 256) if image.mode == "PA" else None
+        assert photo._opaque(image).getpixel((0, 0)) == (0, 0, 0), image.mode
+
+
+def test_normalize_refuses_an_image_over_the_pixel_cap(tmp_path, monkeypatch):
+    monkeypatch.setattr(photo, "MAX_PIXELS", 100)
+    raw = tmp_path / "huge.png"
+    raw.write_bytes(_image_bytes(size=(20, 20)))
+
+    with pytest.raises(photo.PhotoError) as exc_info:
+        photo.normalize(raw, tmp_path / "source.png")
+
+    assert "too large" in exc_info.value.detail
+
+
+def test_normalize_draft_decodes_a_jpeg_near_the_size_cap(tmp_path, monkeypatch):
+    seen = []
+    real_draft = JpegImagePlugin.JpegImageFile.draft
+
+    def spy(self, mode, size):
+        seen.append(size)
+        return real_draft(self, mode, size)
+
+    monkeypatch.setattr(JpegImagePlugin.JpegImageFile, "draft", spy)
+    raw = tmp_path / "big.jpg"
+    raw.write_bytes(_image_bytes("JPEG", size=(64, 48)))
+
+    photo.normalize(raw, tmp_path / "source.png")
+
+    assert seen == [(photo.MAX_EDGE, photo.MAX_EDGE)]
+
+
+def test_upload_reports_an_oversize_photo(isolated_jobs, monkeypatch):
+    monkeypatch.setattr(photo, "MAX_PIXELS", 100)
+    with pytest.raises(HTTPException) as exc_info:
+        main.upload(_upload(_image_bytes(size=(20, 20)), "quote.png"))
+
+    assert exc_info.value.status_code == 400
+    assert "too large" in exc_info.value.detail
+
+
+def test_photo_length_field_is_hidden_on_video_cards():
+    css = (Path(__file__).resolve().parents[1] / "web" / "style.css").read_text()
+
+    # `.field-row` sets display: grid with the same specificity, so the hide
+    # rule must outrank it or every video card shows a Length field.
+    assert re.search(r"\.field-row\.photo-length\s*{[^}]*display:\s*none", css)
+    shown = re.search(
+        r"\.photo-card \.field-row\.photo-length\s*{[^}]*display:\s*grid", css
+    )
+    assert shown
+
+
+def test_photo_cards_hide_every_caption_control():
+    css = (Path(__file__).resolve().parents[1] / "web" / "style.css").read_text()
+    rule = re.search(r"([^{}]*\.photo-card \.text-row[^{}]*){([^}]*)}", css)
+
+    assert rule and "display: none" in rule.group(2)
+    for name in ("content", "geometry", "captions-row", "caption-style", "text-row"):
+        assert f".photo-card .{name}" in rule.group(1), name
+
+
+def test_photo_length_input_sits_inside_the_card_template():
+    html = (Path(__file__).resolve().parents[1] / "web" / "index.html").read_text()
+    template = html.split('<template id="clip-card-template">', 1)[1]
+    template = template.split("</template>", 1)[0]
+
+    # The card listens for input/change on itself, so a Length edit marks a
+    # finished render stale only while the field is inside the card.
+    assert 'class="photo-length-input"' in template
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is unavailable")
+def test_a_real_photo_render_is_1080x1920_at_the_chosen_length(isolated_jobs):
+    state = main.upload(_upload(_image_bytes("JPEG", size=(1200, 800)), "q.jpg"))
+
+    main.render_job(state.id, RenderRequest(header="Hook", photo_duration=4))
+
+    out = jobs.get_job(state.id).output_path
+    probe = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=width,height:format=duration",
+            "-of",
+            "json",
+            str(out),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    data = json.loads(probe.stdout)
+    assert (data["streams"][0]["width"], data["streams"][0]["height"]) == (1080, 1920)
+    assert abs(float(data["format"]["duration"]) - 4.0) < 0.1
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is unavailable")
+def test_a_real_header_frame_is_grabbed_from_a_photo(isolated_jobs):
+    state = _photo_job(isolated_jobs)
+    job = jobs.get_job(state.id)
+
+    data = main.frame.grab_frame_b64(job.source_path, None, job.dir)
+
+    assert base64.b64decode(data)[:2] == b"\xff\xd8"

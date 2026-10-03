@@ -12,7 +12,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   SPEC D17). Upload a PNG, JPEG, or WebP and set a length of 3–60 seconds.
   The photo renders as a blur-padded 1080×1920 clip with a header and optional
   music. A photo card has no captions, transcript, or lyrics. Clipper applies the
-  EXIF rotation at upload. A photo clip goes to RicePoster with a blank
+  EXIF rotation at upload and refuses images over 60 megapixels. A photo clip goes to RicePoster with a blank
   transcript, in the same batch as video clips.
 
 ### Changed

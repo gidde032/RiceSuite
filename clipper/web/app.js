@@ -463,10 +463,10 @@ function buildCard(clip) {
   $("clips").appendChild(node);
 }
 
-// A still photo (Issue #54): accepted by type, or by name when the browser
-// gives no type. The server decides in the end; see applyPhotoCard.
+// A still photo (Issue #54): a PNG, JPEG, or WebP by type, or by name when the
+// browser gives no type. The server decides in the end; see applyPhotoCard.
 function isPhotoFile(file) {
-  return /^image\//.test(file.type || "") || /\.(png|jpe?g|webp)$/i.test(file.name || "");
+  return /^image\/(png|jpeg|webp)$/i.test(file.type || "") || /\.(png|jpe?g|webp)$/i.test(file.name || "");
 }
 
 // Turn a card into a photo card: a still preview and a length field, music as
@@ -484,6 +484,10 @@ function applyPhotoCard(clip) {
   clip.captionsToggleEl.checked = false;
   clip.musicModeEl.innerHTML = '<option value="none">No music</option><option value="replace">Add music</option>';
   clip.musicModeEl.value = clip.musicInputEl.files.length ? "replace" : "none";
+  // The music is a photo's only sound, so it starts at full level, not at
+  // the level for mixing under a video's own audio.
+  clip.musicVolumeEl.value = "1";
+  clip.volLabelEl.textContent = "1.00";
   clip.previewStatusEl.textContent = "";
   clip.headerHelpEl.textContent =
     "1–2 lines, burned into the top of the frame. Edit freely.";
@@ -1040,6 +1044,14 @@ async function pollRenderCompletion(clip) {
 }
 
 async function renderClip(clip) {
+  // Check the photo length before touching the card, so a bad value leaves
+  // the last render on show and sends nothing.
+  const length = clip.isPhoto === true ? photoLength(clip) : null;
+  if (clip.isPhoto === true && length === null) {
+    clip.error = "Set the photo length to a whole number of seconds from 3 to 60.";
+    setClipStatus(clip, clip.error, true);
+    return false;
+  }
   clip.renderUnknown = false;
   clip.status = "rendering";
   // Keep the last render in its frame, paused, dimmed and inert, with no
@@ -1056,10 +1068,6 @@ async function renderClip(clip) {
   const mode = clip.musicModeEl.value;
   const musicFile = clip.musicInputEl.files[0];
   try {
-    const length = clip.isPhoto === true ? photoLength(clip) : null;
-    if (clip.isPhoto === true && length === null) {
-      throw new Error("Set the photo length to a whole number of seconds from 3 to 60.");
-    }
     let filename = null;
     if (mode !== "none" && musicFile) {
       setClipStatus(clip, "Uploading music…");

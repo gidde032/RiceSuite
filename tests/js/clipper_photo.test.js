@@ -131,3 +131,39 @@ test("a photo length outside 3-60 whole seconds stops the render", async () => {
     assert.match(ctx.clip.error, /3 to 60/);
   }
 });
+
+// --- review repairs (PR #57) ---------------------------------------------------
+
+test("only PNG, JPEG, and WebP types count as photos", () => {
+  const { js, ctx } = boot({});
+  ctx.files = [
+    { name: "anim.gif", type: "image/gif" },
+    { name: "phone.heic", type: "image/heic" },
+    { name: "IMG", type: "image/jpeg" },
+  ];
+  assert.deepEqual(Array.from(js("files.map(isPhotoFile)")), [false, false, true]);
+});
+
+test("an invalid length keeps the last render on show", async () => {
+  const { js, ctx, calls } = boot({
+    "POST api/jobs/p1/render": () => [200, { status: "done" }],
+  });
+  const resultEl = { classList: classes() };
+  const outputVideoEl = { src: "api/jobs/p1/output", pause() {}, load() {}, removeAttribute() {} };
+  ctx.clip = card({ jobId: "p1", status: "done", renders: 1, resultEl, outputVideoEl, photoLengthEl: { value: "99" } });
+  js("applyPhotoCard(clip)");
+  assert.equal(await js("renderClip(clip)"), false);
+  assert.equal(calls.some((c) => c.path === "api/jobs/p1/render"), false);
+  assert.equal(ctx.clip.status, "done");
+  assert.equal(ctx.clip.resultEl.classList.contains("is-empty"), false);
+  assert.equal(ctx.clip.outputVideoEl.src, "api/jobs/p1/output");
+  assert.match(ctx.clip.error, /3 to 60/);
+});
+
+test("a photo card starts its music at full volume", () => {
+  const { js, ctx } = boot({});
+  ctx.clip = card({ musicVolumeEl: { value: "0.35" }, volLabelEl: { textContent: "0.35" } });
+  js("applyPhotoCard(clip)");
+  assert.equal(ctx.clip.musicVolumeEl.value, "1");
+  assert.equal(ctx.clip.volLabelEl.textContent, "1.00");
+});
