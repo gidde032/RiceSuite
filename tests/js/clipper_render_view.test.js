@@ -264,3 +264,18 @@ for (const dropped of [false, true]) {
     assert.equal(new Set(urls).size, 3, "each completed render needs a fresh media URL");
   });
 }
+
+// A seek or volume drag on a player's built-in controls reaches the card as an
+// input event from the <video> or <audio> element. Moving through a clip is not
+// a review edit, so it must not mark the render stale or hold the batch.
+test("player controls are not review edits; card controls are", () => {
+  const { js, ctx } = boot({});
+  ctx.events = [
+    { target: { tagName: "VIDEO" } },
+    { target: { tagName: "AUDIO" } },
+    { target: { tagName: "TEXTAREA" } },
+    { target: { tagName: "INPUT" } },
+    { target: { tagName: "SELECT" } },
+  ];
+  assert.deepEqual(Array.from(js("events.map(isReviewEdit)")), [false, false, true, true, true]);
+});

@@ -21,6 +21,13 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   EXIF rotation at upload and refuses images over 60 megapixels. A photo clip goes to RicePoster with a blank
   transcript, in the same batch as video clips.
 
+### Fixed
+- **Seeking a preview no longer marks a clip edited.** Dragging the seek bar or
+  volume slider of the source or rendered video sent `input` events to the card,
+  which counted them as edits. A rendered clip then showed "Edited since this
+  render", the batch held it, and a sent batch looked edited. Player controls no
+  longer count as edits; every review control still does.
+
 ### Changed
 - **Compact staged progress** (RiceSuite [#21](https://github.com/gidde032/RiceSuite/issues/21)).
   Pull/import, transcription, render-all/music upload, and send share a bar above

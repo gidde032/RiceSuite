@@ -327,13 +327,23 @@ function syncResultStale(clip) {
   clip.resultEl.classList.toggle("is-stale", clip.status === "done" && !clipCurrent(clip));
 }
 
+// A seek or volume drag on a player's built-in controls reaches the card as an
+// input event whose target is the <video> or <audio> element. Moving through
+// or listening to a clip changes nothing that renders, so it is not an edit.
+function isReviewEdit(event) {
+  const tag = String((event && event.target && event.target.tagName) || "").toUpperCase();
+  return tag !== "VIDEO" && tag !== "AUDIO";
+}
+
 function buildCard(clip) {
   const node = $("clip-card-template").content.firstElementChild.cloneNode(true);
   clip.el = node;
   // Every control in the card (captions, geometry, content, music, lyrics…)
   // bubbles its input/change events here, so any edit made after a send makes
   // the batch differ from what was sent and holds the workspace.
-  const markEdited = () => noteClipEdited(clip);
+  const markEdited = (event) => {
+    if (isReviewEdit(event)) noteClipEdited(clip);
+  };
   node.addEventListener("input", markEdited);
   node.addEventListener("change", markEdited);
   clip.reviewGridEl = node.querySelector(".review-grid");
