@@ -17,8 +17,10 @@ root).
 RiceSuite is the three Rice pillars run as one local app: one `rice` command
 starts a single localhost front door (the gateway) and three supervised pillar
 processes sharing one Python environment. Batches move between pillars
-automatically over the existing filesystem handoff contracts, up to Poster's
-inbox, which the maintainer pulls from (ADR-001 amendment of 2026-09-29). The three human
+automatically over the existing filesystem handoff contracts. Clipper sends
+a batch to Poster's inbox only on the maintainer's Send click (ADR-001
+amendment of 2026-10-03), and the maintainer pulls from that inbox (ADR-001
+amendment of 2026-09-29). The three human
 judgement gates stay exactly where they are, and nothing is ever posted
 automatically.
 
@@ -36,7 +38,7 @@ and no fallback to an old app needed.
 | Gateway | One localhost-only HTTP port; routes each tab to its own pillar | Q6, Q11 |
 | Slate shell | Top bar with Search / Clip / Post tabs, plus a home view of batches waiting at each stage | Q11 |
 | Pillars | `searcher/`, `clipper/`, `poster/`, each its own process, unchanged except as ADR-001 overrides | Q6, Q13 |
-| Transport | Filesystem handoffs, auto-ingested by Clipper; Poster ingests on the maintainer's Pull | Q7, Q12 (amended 2026-09-29) |
+| Transport | Filesystem handoffs, auto-ingested by Clipper; Clipper sends on the maintainer's Send click; Poster ingests on the maintainer's Pull | Q7, Q12 (amended 2026-09-29 and 2026-10-03) |
 | Config | One `ricesuite.env` at the suite root | Q14 |
 
 ### 2.1 Ports
@@ -135,7 +137,7 @@ Each requirement is written so a test can check it. "The launcher" means the
   batches not yet ingested by Clipper, Clipper batches not yet sent or held by
   a failed render, and batches waiting in Poster's inbox.
 
-### Automatic transport (Q12, Poster clause amended 2026-09-29)
+### Automatic transport (Q12, Poster clause amended 2026-09-29, Clipper clause amended 2026-10-03)
 
 The handoff contracts are unchanged: batch schema, `manifest.json` written
 last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
@@ -145,15 +147,16 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
   automatically, with no Pull click, and its clips start transcribing.
   Incomplete batches (no manifest) are never ingested. A batch id already
   ingested is never ingested twice.
-- **FR-13 Clipper → Poster.** Clipper sends a batch automatically only when
-  every clip in it has rendered successfully. A failed render holds the whole
-  batch until the clip is fixed and re-rendered; then the batch sends. A clip
+- **FR-13 Clipper → Poster.** Clipper sends a batch only when the maintainer
+  clicks **Send to RicePoster**, never on its own, even when every clip has
+  rendered (ADR-001 amendment "Manual Clipper send", 2026-10-03). After a
+  successful Render all, the progress bar reads "Send the batch to Poster when
+  ready." Send refuses while any clip is unrendered, failed, or edited since
+  its render, names those clips, and never sends part of a batch. A clip
   edited after its render request (any card control, or a generated header)
   counts as unrendered until it renders again, so the MP4 always matches the
-  header and transcript sent with it. The Send button follows the same rule:
-  it refuses while any clip is unrendered, failed, or edited since its render,
-  names those clips, and never sends part of a batch. Removing a clip from the
-  batch is the reviewer's way to send the rest.
+  header and transcript sent with it. Removing a clip from the batch is the
+  reviewer's way to send the rest.
 - **FR-14 Poster ingest.** A complete Clipper batch is ingested only when the
   maintainer clicks **Pull from Clipper**, never on its own, even when Poster's
   draft workspace is empty (ADR-001 amendment "Manual Poster ingest",
@@ -166,14 +169,14 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
   in their pages (transcript edits, headers and captions are browser state),
   so each consumer's page drives its own transport: Clipper polls a read-only
   inbox endpoint (`GET api/searcher-inbox`) and then performs exactly the pull
-  or send its button performs. Poster polls `GET api/handoff/inbox` only to
+  its button performs. Clipper sends only on the Send click. Poster polls `GET api/handoff/inbox` only to
   report waiting batches; it never pulls from the poll.
   Clipper pulls only when nothing unsent would be displaced: the workspace is
   empty, or it holds exactly what was last sent (a later edit or re-render
   holds it). The Pull button follows the same rule, and one pull runs at a
   time, whether the button or the timer started it. One Searcher batch stays
-  one Clipper batch; a batch sends itself at most once, and sending it again
-  takes the reviewer's confirmation.
+  one Clipper batch. Sending a sent batch again takes the reviewer's
+  confirmation.
   Clipper sends each clip to Poster once: a send that holds a clip already
   sent gets 409 with `already_sent`, unless the reviewer confirmed a second
   send (`resend: true`), so a second tab or a reload cannot send a batch
@@ -279,7 +282,7 @@ draft PR, stacked.
 |---|---|---|---|
 | 1 Foundation | #1 | This spec, one venv with aligned pins, `RICEPOSTER_DATA_DIR`, `ricesuite.env` loader, boundary test, one CI | Every pillar runs and passes its gates from one environment and one CI |
 | 2 Front door | #2 | `rice` CLI, supervisor, gateway, Slate shell and home view, port refusals, stop rules | One command, one tab for the daily workflow (manual Pull/Send still used) |
-| 3 Auto-transport | #3 | FR-12 – FR-16, full-chain mock-mode test | Batches flow between tabs with no plumbing clicks (Post's Pull is manual since the ADR-001 amendment of 2026-09-29) |
+| 3 Auto-transport | #3 | FR-12 – FR-16, full-chain mock-mode test | Batches flow between tabs with no plumbing clicks (Post's Pull is manual since the ADR-001 amendment of 2026-09-29; Clipper's Send is manual since the amendment of 2026-10-03) |
 
 ## 7. Out of scope (post-burn-in Issues)
 

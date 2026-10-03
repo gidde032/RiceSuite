@@ -124,7 +124,7 @@ assert client.get("/api/searcher-inbox").json()["batches"] == []
 for job_id in ids:                                               # human review + render
     r = client.post(f"/api/jobs/{job_id}/render", json={"words": [], "header": "Hi"})
     assert r.status_code == 200 and r.json()["status"] == "done", r.text
-sent = client.post("/api/handoff", json={"clips": [                # automatic send
+sent = client.post("/api/handoff", json={"clips": [                # human Send click (#59)
     {"job_id": j, "position": i + 1, "transcript": "hello world", "header": "Hi",
      "caption_style": "classic", "header_style": "plain"} for i, j in enumerate(ids)]})
 assert sent.status_code == 200, sent.text

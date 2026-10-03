@@ -304,8 +304,10 @@ scroll to Download at some laptop sizes on 2026-10-01; existing slot/preview
 geometry remains unchanged. Pull reports actual importing/imported boundaries;
 transcription reports uploading/transcribing/ready; render-all reports music
 upload/render/rendered outcomes; send reports copying/copied and whole-batch
-publication. A failed render preserves other successful renders and holds
-automatic send. Confirmed handoff says the batch waits in Poster’s inbox.
+publication. A failed render preserves other successful renders and names the
+held clip. A successful Render all reads “Send the batch to Poster when
+ready.” Only the Send to RicePoster click sends (RiceSuite #59). Confirmed
+handoff says the batch waits in Poster’s inbox.
 
 Pull and send accept an optional `observation_id` (8–64 letters, digits, `_`,
 `-`), independent of existing custody/idempotency keys. The read-only

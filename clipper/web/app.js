@@ -800,7 +800,6 @@ function removeClip(clip) {
   }
   updateRenderAllButton();
   updateCacheControls();
-  maybeAutoSend();
 }
 
 // --- auto-header generation -------------------------------------------------
@@ -1133,17 +1132,16 @@ async function handleRenderAll() {
   const heldAfterRender = clips.filter((c) => !clipCurrent(c));
   const unknownRenders = failedRenders.filter((c) => c.renderUnknown);
   const heldDetail = unknownRenders.length
-    ? `Render result unknown for ${unknownRenders.map((c) => `Clip ${c.ord}`).join(", ")}; work may still be running. Automatic send held.`
+    ? `Render result unknown for ${unknownRenders.map((c) => `Clip ${c.ord}`).join(", ")}; work may still be running.`
     : failedRenders.length
-    ? `${failedRenders.length} failed: ${failedRenders.map((c) => `Clip ${c.ord} — ${c.error}`).join("; ")}. Automatic send held.`
-    : heldAfterRender.length ? `${heldAfterRender.map(heldReason).join("; ")}. Automatic send held.`
-      : "Rendered clips are available in their existing frames.";
+    ? `${failedRenders.length} failed: ${failedRenders.map((c) => `Clip ${c.ord} — ${c.error}`).join("; ")}.`
+    : heldAfterRender.length ? `${heldAfterRender.map(heldReason).join("; ")}.`
+      : "Send the batch to Poster when ready.";
   localProgress("Render all", unknownRenders.length ? "? Connection lost / result unknown" : heldAfterRender.length ? "! Held / failed" : "✓ Complete", ok, clips.length, "rendered", heldDetail, heldAfterRender.length > 0);
   $("batch-status").textContent =
     ok === targets.length
       ? `Rendered ${ok} clip${ok === 1 ? "" : "s"}. Download from each clip's frame.`
       : `Rendered ${ok} of ${targets.length}; see the per-clip errors above.`;
-  await maybeAutoSend();
 }
 
 // Poll GET /api/jobs/{id} after a dropped render fetch (Issue #30). Return true
@@ -1308,11 +1306,9 @@ function clearResult(clip) {
 
 $("send-handoff-btn").addEventListener("click", () => sendBatch());
 
-// Automatic send (RiceSuite ADR-001 Q12): once every clip in the batch has
-// rendered successfully, send it exactly as the button would. A failed or
-// unrendered clip, or one edited since its render, holds the whole batch until
-// it is rendered again (or removed); the button refuses it too (W3-02).
-// Rendering itself stays a human action.
+// Only the Send button sends (ADR-001 "Manual Clipper send", Issue #59). A
+// failed or unrendered clip, or one edited since its render, holds the whole
+// batch until it is rendered again (or removed): the button refuses it (W3-02).
 // Everything that would reach RicePoster: comparing it with what was sent
 // tells "nothing unsent" apart from "rendered or edited again after sending".
 function batchSnapshot() {
@@ -1330,17 +1326,6 @@ function batchSnapshot() {
   );
 }
 
-function batchReadyToSend() {
-  return (
-    !batchSent &&
-    !sendInFlight &&
-    !batchBusy &&
-    !ingesting &&
-    clips.length > 0 &&
-    clips.every(clipCurrent)
-  );
-}
-
 // Why a clip holds the batch, for the reviewer.
 function heldReason(c) {
   if (c.status === "done") return `Clip ${c.ord} changed after its render`;
@@ -1348,11 +1333,7 @@ function heldReason(c) {
   return `Clip ${c.ord} is not rendered`;
 }
 
-async function maybeAutoSend() {
-  if (batchReadyToSend()) await sendBatch({ automatic: true });
-}
-
-async function sendBatch({ automatic = false } = {}) {
+async function sendBatch() {
   if (sendInFlight) return;
   if (!clips.some((c) => c.jobId && c.status === "done")) {
     setBatchStatus("Render clips before sending to RicePoster.", true);
@@ -1370,7 +1351,6 @@ async function sendBatch({ automatic = false } = {}) {
   }
   const done = clips;
   if (
-    !automatic &&
     batchSent &&
     !window.confirm(
       `This batch was already sent to RicePoster as ${sentBatchId}. Send it again as a new batch?`,
@@ -1441,11 +1421,7 @@ async function sendBatch({ automatic = false } = {}) {
     sentSnapshot = data.replayed ? sendKeySnapshot : snapshot;
     sendKey = "";
     sendKeySnapshot = null;
-    const how = data.replayed
-      ? "The earlier send had arrived: sent"
-      : automatic
-        ? "Every clip rendered — sent"
-        : "Sent";
+    const how = data.replayed ? "The earlier send had arrived: sent" : "Sent";
     localProgress("Send to Poster", "✓ Complete", n, n, "handed off", `${how} batch ${data.batch_id}; waiting in Poster's inbox.`);
   } catch (err) {
     const lost = answered

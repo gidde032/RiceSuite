@@ -29,6 +29,11 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   longer count as edits; every review control still does.
 
 ### Changed
+- **Send to RicePoster is manual only** (RiceSuite [#59](https://github.com/gidde032/RiceSuite/issues/59)).
+  Clipper no longer sends a batch on its own when every clip renders. Click
+  **Send to RicePoster** to send it. After a successful Render all, the progress
+  bar reads "Send the batch to Poster when ready." Held and failed render
+  summaries no longer end with "Automatic send held."
 - **Compact staged progress** (RiceSuite [#21](https://github.com/gidde032/RiceSuite/issues/21)).
   Pull/import, transcription, render-all/music upload, and send share a bar above
   the existing review cards, with actual clip identity, stage counts, and held

@@ -88,7 +88,7 @@ test('copy failure and published ambiguity use distinct outcomes', () => {
   assert.match(h.element('progress-state').textContent, /Result unknown/);
 });
 
-test('render failure preserves successful output and holds automatic send', async () => {
+test('render failure preserves successful output and names the held clip (#59)', async () => {
   const h = harness();
   h.run(`clips.push({ord:1, jobId:'one',status:'ready'}, {ord:2,jobId:'two',status:'ready'});
     renderClip = async (clip) => { if (clip.ord === 1) {clip.status='done'; clip.renderedEdits=0; return true;} clip.error='synthetic render failure'; return false; };
@@ -98,7 +98,7 @@ test('render failure preserves successful output and holds automatic send', asyn
   assert.equal(h.run('clips[0].status'), 'done');
   assert.equal(h.element('progress-count').textContent, '1 / 2 rendered');
   assert.match(h.element('progress-current').textContent, /Clip 2 — synthetic render failure/);
-  assert.match(h.element('progress-current').textContent, /Automatic send held/);
+  assert.doesNotMatch(h.element('progress-current').textContent, /[Aa]utomatic send/);
 });
 
 test('lost send response keeps key; explicit retry confirms without duplicate send key', async () => {
@@ -144,7 +144,7 @@ test('a lost transcription response is unknown without automatically repeating t
   assert.match(h.element('progress-current').textContent, /work may still be running/);
 });
 
-test('edited output and unresolved renders hold send with an honest final summary', async () => {
+test('edited output and unresolved renders give an honest final summary', async () => {
   for (const unknown of [false, true]) {
     const h = harness();
     h.context.unknown = unknown;
@@ -154,12 +154,12 @@ test('edited output and unresolved renders hold send with an honest final summar
       refreshCacheInfo = async () => {};`);
     h.context.fetch = async () => { throw Error('send must remain held'); };
     await h.run('handleRenderAll()');
-    assert.match(h.element('progress-current').textContent, /Automatic send held/);
+    assert.doesNotMatch(h.element('progress-current').textContent, /[Aa]utomatic send/);
     assert.match(h.element('progress-current').textContent, unknown ? /result unknown/ : /changed after its render/);
   }
 });
 
-test('an upstream transcription failure holds send without becoming a render failure', async () => {
+test('an upstream transcription failure is not reported as a render failure', async () => {
   const h = harness();
   h.run(`clips.push({ord:1, jobId:'one',status:'ready'},
     {ord:2,jobId:'two',status:'error',error:'Transcription decoder failed'});
@@ -170,7 +170,7 @@ test('an upstream transcription failure holds send without becoming a render fai
   assert.equal(h.element('progress-count').textContent, '1 / 2 rendered');
   assert.match(h.element('progress-current').textContent, /Clip 2.*Transcription decoder failed/);
   assert.doesNotMatch(h.element('progress-current').textContent, /failed to render/);
-  assert.match(h.element('progress-current').textContent, /Automatic send held/);
+  assert.doesNotMatch(h.element('progress-current').textContent, /[Aa]utomatic send/);
 });
 
 test('a pending keyed retry remains unknown before publication and later replay confirms once', async () => {
