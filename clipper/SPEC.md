@@ -31,9 +31,10 @@ from longer video) sit directly on top of it.
 decode → transcribe (word-level) → word-highlight captions → manual on-screen
 header → normalize geometry (pass-through 9:16; subject crop or blur-pad for
 landscape, D15; music follow profile, D16) → optional pasted-lyric fallback
-(D16) → optional added-music track →
+(D16) → optional added-music track (start point and fades, D13) →
 export 1080×1920 H.264 — all through a local web review UI with a
-human-in-the-loop gate.
+human-in-the-loop gate. A still photo (D17) skips transcription and captions; it
+takes the header and music steps, then exports the same way.
 
 **Explicitly out of scope for the original v1 slice (see §7 for delivery status):**
 clip selection/extraction (Paths 2 & 1), active-speaker switching and zoom,
@@ -48,7 +49,7 @@ text editor, arbitrary font/color input, or user-authored preset persistence.
 ## 3. Boundary & safety note
 
 RiceClipper **performs no posting, publishing, or network upload of content**. It
-reads local video files and writes local output files. The "no live post without
+reads local video and image files and writes local output files. The "no live post without
 explicit approval" safety rule belongs to RicePoster and remains RicePoster's
 responsibility after it separately pulls from the implemented local handoff
 (§7, Wave 1). RiceClipper's only outbound network call is the implemented header
@@ -85,7 +86,10 @@ API key and an explicit UI action) and which generates text and posts nothing.
    selected compact plain-text or plate treatment, cleared above the caption
    zone.
 7. **Mix audio** — original audio passes through; if the user supplied a music
-   file, apply **replace** or **mix-under** (with a volume level). Because
+   file, apply **replace** or **mix-under** (with a volume level). The music
+   starts at the user's chosen point and runs for the clip length. It fades in
+   over 0.5 s when that point is past 0, and fades out over the last 1 s (D13).
+   Because
    caption timing is already baked to the timeline in seconds, adding music at
    this stage cannot affect sync, and the source speech transcribed in step 3 was
    never contaminated by music.
@@ -140,7 +144,10 @@ browser (`localStorage`, local-first), starting from the v1 Classic/Plain
 defaults, and editing a clip persists that slot's default for later batches. On
 the audio side, choosing a music file defaults the mode to *mix under original*
 while the mode is still untouched — a convenience default that never overrides a
-deliberate choice and adds no new mode (D13 unchanged).
+deliberate choice and adds no new mode (D13 unchanged). A photo card offers only
+*No music* and *Add music* (replace), at full volume, because a photo has no
+sound of its own (D17). Under the music controls, a **Start at** slider and a
+**Play segment** button choose and preview the part of the track to use (D13).
 
 Rerendering applies the currently selected styles. Each completed render uses a
 fresh media URL for both preview and Download, and output responses are not

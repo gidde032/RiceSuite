@@ -25,7 +25,8 @@ explicit per-clip choice. The crop uses a stabilized strong lock: small face
 movements do not move the window, ordinary corrections move smoothly, and
 scene/target reacquisition cuts still snap immediately. Non-9:16 vertical input
 is blur-padded. Optional
-added music can replace or mix under the original audio.
+added music can replace or mix under the original audio, from a chosen start
+point in the track.
 
 Full scope, deferred roadmap, and the decision log are in [`SPEC.md`](./SPEC.md).
 

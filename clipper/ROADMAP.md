@@ -61,6 +61,9 @@ at 30 Hz, and confirmed cuts or target reacquisition remain immediate.
 
 ## Wave 2 — early additions
 
+- **Music waveform** (RiceSuite [#56](https://github.com/gidde032/RiceSuite/issues/56))
+  — draw the track's waveform in the segment picker, so the user can see where
+  to start.
 - **User-authored caption presets and finer controls** — custom font/color
   entry, arbitrary position controls, and persistent saved presets remain
   deferred until the bounded built-in choices prove insufficient.
