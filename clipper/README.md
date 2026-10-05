@@ -4,16 +4,14 @@ Turns short (**under ~1 minute**) vertical or landscape videos into post-ready c
 **word-synced burned-in captions** and an **on-screen header**. A still photo
 (PNG, JPEG, or WebP) becomes a clip of a set length with a header and music.
 
-It is the render chassis for a larger clipping concept ("Path 3"): no clip
-*selection* intelligence yet — just clean captioning, header, and vertical export.
-It is a standalone project, distinct from **RicePoster** (the posting harness),
-with an implemented local-filesystem handoff that RicePoster can pull from.
+It is the render pillar of RiceSuite: the **Clip** tab. RiceSearcher selects
+the clips, and RicePoster posts them. Clipper never posts. For daily use, run
+`rice` from the suite root (see the [RiceSuite README](../README.md)). The
+sections below cover this pillar alone.
 
-> **Status: v1 slice implemented; hardening, bounded visual presets, Slate UI,
-> fixed lyric-caption presets, and Wave-1 auto-header complete.** End-to-end rendering and shutdown
-> cleanup are verified with a libass-enabled ffmpeg. The design is recorded in
-> [`SPEC.md`](./SPEC.md). Burn-in requires an ffmpeg with libass (see setup) —
-> the stock Homebrew formula omits it.
+> **Status: in use as part of RiceSuite.** The design is recorded in
+> [`SPEC.md`](./SPEC.md). Caption burn-in requires an ffmpeg with libass (see
+> setup); the stock Homebrew formula omits it.
 
 ## What it does (v1)
 

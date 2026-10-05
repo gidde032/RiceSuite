@@ -12,7 +12,7 @@ Windows browsing instructions are for a data copy under a Windows user's home; R
 
 ## Explicit maintainer migration
 
-The migration commands copy and verify fixtures in CI; **no live migration or browser-profile continuity check has been performed by the implementation agent**. The maintainer runs these commands on the actual machine after review. Close RiceSuite, all old apps and workers, and browser windows using the Rice profiles. The CLI refuses known listeners, leftover suite processes, and Chrome processes advertising the relevant profile path. Keep them stopped from plan through cutover. Do not use a shell-exported pillar path override during migration; put intentional custom paths in `ricesuite.env` so they can be inventoried and switched. The command never stops a process for you.
+The maintainer ran this migration on the live machine on 2026-09-29 and confirmed real sessions from the new location. The steps below remain for any other installation with legacy paths. CI checks the commands against fixtures only. Close RiceSuite, all legacy apps and workers, and browser windows using the Rice profiles. The CLI refuses known listeners, leftover suite processes, and Chrome processes advertising the relevant profile path. Keep them stopped from plan through cutover. Do not use a shell-exported pillar path override during migration; put intentional custom paths in `ricesuite.env` so they can be inventoried and switched. The command never stops a process for you.
 
 ```bash
 rice data plan                    # lists sources, destination, bytes and free space

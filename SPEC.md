@@ -1,6 +1,7 @@
 # RiceSuite — Suite Specification
 
-**Status:** draft for maintainer review (Phase 1, #1). Derived strictly from
+**Status:** current. RiceSuite is the supported app; burn-in passed on
+2026-10-05. Derived strictly from
 [ADR-001](docs/adr/ADR-001-ricesuite-consolidation.md). Where this document and
 the ADR disagree, the ADR wins and this document is wrong.
 
@@ -23,10 +24,8 @@ of 2026-10-03). The maintainer pulls from that inbox (ADR-001 amendment of
 2026-09-29). The three human judgement gates stay exactly where they are,
 and nothing is ever posted automatically.
 
-**Success (ADR-001 Q9 burn-in exit):** at least 5 real posting days across at
-least 7 calendar days, each running the full chain (pull → select → render →
-live post) in RiceSuite, with at least one scheduled batch firing on its own,
-and no fallback to an old app needed.
+**Burn-in:** passed on 2026-10-05 (ADR-001 amendment "Burn-in complete;
+public"). The original repositories are superseded.
 
 ## 2. Architecture
 
@@ -48,10 +47,10 @@ and no fallback to an old app needed.
 | Searcher (internal) | 8791 | 127.0.0.1 |
 | Clipper (internal) | 8792 | 127.0.0.1 |
 | Poster (internal) | 8793 | 127.0.0.1 |
-| Old apps (must be free, see FR-4) | 8765 / 8000 / 1738 | — |
+| Legacy apps (must be free, see FR-4) | 8765 / 8000 / 1738 | — |
 
-Internal ports differ from the old apps' ports so that a running old app and
-RiceSuite can never be mistaken for each other.
+Internal ports differ from the legacy apps' ports so that a running legacy app
+and RiceSuite can never be mistaken for each other.
 
 ## 3. Functional requirements
 
@@ -94,9 +93,9 @@ Each requirement is written so a test can check it. "The launcher" means the
     `X-Content-Type-Options: nosniff` and CSP `default-src 'none'; sandbox`,
     so such a file opened directly runs no script as a suite origin (#38).
 - **FR-4** The launcher refuses to start, and exits non-zero naming the port,
-  if anything is accepting connections on 8765, 8000 or 1738 (an old app may be
-  running; only one side runs at a time, Q10). It also refuses if a suite port
-  in §2.1 is already taken.
+  if anything is accepting connections on 8765, 8000 or 1738. A legacy app
+  started by mistake could otherwise write to the same data (Q10). It also
+  refuses if a suite port in §2.1 is already taken.
 - **FR-5** The supervisor restarts a pillar whose process exits unexpectedly,
   with backoff, and records the restart. The other pillars are not
   restarted.
@@ -284,16 +283,17 @@ draft PR, stacked.
 | 2 Front door | #2 | `rice` CLI, supervisor, gateway, Slate shell and home view, port refusals, stop rules | One command, one tab for the daily workflow (manual Pull/Send still used) |
 | 3 Auto-transport | #3 | FR-12 – FR-16, full-chain mock-mode test | Batches flow between tabs with no plumbing clicks (Post's Pull is manual since the ADR-001 amendment of 2026-09-29; Clipper's Send is manual since the amendment of 2026-10-03) |
 
-## 7. Out of scope (post-burn-in Issues)
+## 7. Follow-ups
 
-Background login service (#4, Q18); deduplicating transcription (#5), Slate CSS
-(#6) and Anthropic clients (#7); model upgrades (#8); desktop wrapper (#9);
-unified data directory (#10). Hosted or LAN deployment is excluded outright
-(fact 3).
+- Delivered: deduplicated transcription (#5), Slate CSS (#6) and Anthropic
+  clients (#7), and the unified data directory (#10, §8).
+- Settled: model choice (#8) is set in `ricesuite.env`.
+- Not wanted: a background login service (#4, Q18). RiceSuite runs in the
+  foreground.
+- Open: a desktop wrapper (#9).
+- Excluded: hosted or LAN deployment (fact 3).
 
-The 2026-09-29 post-burn-in amendment to ADR-001 authorizes #5, #6, #7, and
-#10 as follow-ups. Their implementation and delivery state belongs to their
-Issues and draft PRs; this original phase outline remains the v0.1 contract.
+The phase outline in §6 is the delivery history of v0.1.
 
 ## 8. Post-burn-in data amendment (#10)
 

@@ -70,7 +70,7 @@ only after a real-use burn-in passes.
 | Q6 | Process model | One front door (gateway) + three separate pillar processes supervised by the launcher, one shared venv. Crash isolation protects Poster's scheduler; existing test suites stay valid. |
 | Q7 | Transport | Keep the filesystem handoff contracts unchanged; each consumer auto-ingests when a complete batch (`manifest.json` present) appears. No shared database or in-memory queue. *(Poster's ingest amended 2026-09-29: manual only. See "Manual Poster ingest" below.)* |
 | Q8 | Repo import | Monorepo with full history of each pillar under `searcher/`, `clipper/`, `poster/`, imported **only from GitHub `main`** (never the `-OG` folders). |
-| Q9 | Burn-in exit | ≥5 real posting days across ≥7 calendar days; each day the full chain (pull → select → render → live post) runs in RiceSuite; ≥1 scheduled batch fires on its own; no fallback to an old app was needed. During burn-in, old repos take critical fixes only, each ported into RiceSuite. |
+| Q9 | Burn-in exit | ≥5 real posting days across ≥7 calendar days; each day the full chain (pull → select → render → live post) runs in RiceSuite; ≥1 scheduled batch fires on its own; no fallback to an old app was needed. During burn-in, old repos take critical fixes only, each ported into RiceSuite. *(Closed 2026-10-05: burn-in passed. See "Burn-in complete; public" below.)* |
 | Q10 | Burn-in data | RiceSuite uses existing data in place (Searcher library, Clipper work dir, Poster sessions/queue/history/media, both handoff dirs). Only one side runs at a time: the launcher refuses to start if an old app is serving on 8765 / 8000 / 1738. Poster's data root becomes configurable (required work, fact 5). Unifying data locations is post-burn-in. |
 | Q11 | UI | Shared Slate shell: top bar with Search / Clip / Post tabs plus a small **home view** showing batches waiting at each stage. Each tab serves the pillar's existing page, adjusted only so its API calls reach its own pillar (fact 4). No rebuilt single UI. |
 | Q12 | Batch advancement | **Searcher:** "Send selected" stays as the batch boundary; the batch appears in Clipper already transcribing, with no Pull click. **Clipper:** auto-sends the batch once every clip in it renders successfully; a failed render holds the batch until fixed and re-rendered. **Poster:** auto-ingests only when the draft workspace is empty; otherwise the batch waits in a visible inbox on the Post tab (preserves fact 6). Captions generate on ingest as today. *(Poster clause amended 2026-09-29: Poster ingests only on the maintainer's Pull. See "Manual Poster ingest" below. Clipper clause amended 2026-10-03: Clipper sends only on the maintainer's Send click. See "Manual Clipper send" below.)* |
@@ -80,7 +80,7 @@ only after a real-use burn-in passes.
 | Q16 | Quality gates | One CI keeps every pillar's current gates and coverage floor (90 / 85 / 43), none weakened, no averaged floor. Add suite-level tests for launcher, gateway, and auto-transport, plus one **full-chain mock-mode test** (local file → select → render → Poster draft; `POST_MODE=mock`; no network, no posting). |
 | Q17 | Crash / stop | Launcher auto-restarts a crashed pillar. A Poster post in flight at crash time is recorded **unconfirmed** and never auto-retried. `rice stop` refuses while a post is running unless `--force`, and warns when a scheduled batch is due. |
 | Q18 | Background running | v1 runs in the foreground only while open (as today). An optional login service is a post-burn-in Issue. |
-| Q19 | Repo visibility | Private during burn-in. Going public, simultaneously with archiving the old repos, is a maintainer-only action. |
+| Q19 | Repo visibility | Private during burn-in. Going public, simultaneously with archiving the old repos, is a maintainer-only action. *(Closed 2026-10-05: public since 2026-09-26. See "Burn-in complete; public" below.)* |
 
 ## Consequences
 
@@ -96,6 +96,8 @@ wrappers, three Slate copies) persist until post-burn-in cleanup; during
 burn-in, critical fixes land twice.
 
 ## Open items this decision depends on
+
+*(All closed 2026-10-05. See "Burn-in complete; public" below.)*
 
 1. **Fingerprint parity (burn-in day 0, maintainer-run):** run
    `tools/probe_fingerprint.py --all-slots` from the old RicePoster and from
@@ -234,3 +236,28 @@ ingest" above. The Q12 row is unchanged except for a pointer here.
 
 **Reason:** the maintainer wants to decide when a batch leaves Clipper, as
 "Manual Poster ingest" lets them decide when it lands in Poster.
+
+## Burn-in complete; public — 2026-10-05
+
+**Status: ratified by the maintainer** (2026-10-05, with PR
+[#60](https://github.com/gidde032/RiceSuite/pull/60)). This closes Q9, Q19,
+and the open items above. The Q9 and Q19 rows are unchanged except for a
+pointer here.
+
+- **Burn-in passed.** The maintainer declares the Q9 burn-in complete.
+  RiceSuite is the supported app for daily use. Q9's "critical fixes only"
+  rule for the old repos ends.
+- **The repository is public** since 2026-09-26.
+- **The original repositories are superseded.** `gidde032/RiceSearcher`,
+  `gidde032/RiceClipper`, and `gidde032/RicePoster` get no fixes. All work,
+  Issues, and pull requests go to RiceSuite. Their deprecation PRs and their
+  archiving stay maintainer-only actions (root `CLAUDE.md` rule 4).
+- **Open items.** Item 1, the fingerprint parity probe, no longer gates
+  anything, because RiceSuite is now the only app in use. Item 2's Issues are
+  resolved: #5, #6, #7, and #10 are delivered, #4 is closed as not wanted, and
+  #8 is settled by model settings in `ricesuite.env`. Only #9, the desktop
+  wrapper, stays open.
+- **Unchanged:** the launcher still refuses to start while anything answers
+  on the old apps' ports (8765 / 8000 / 1738). The guard now protects against
+  a legacy app started by mistake. All three human gates (Q3) and the suite
+  hard rules stay.
