@@ -1,4 +1,4 @@
-"""Ports and the "only one side runs at a time" check (ADR-001 Q10, SPEC §2.1)."""
+"""Ports and the legacy-app port guard (ADR-001 Q10, SPEC §2.1 and FR-4)."""
 
 from __future__ import annotations
 
@@ -6,8 +6,9 @@ import socket
 
 HOST = "127.0.0.1"
 
-# The old apps' ports. If anything answers on one of these, an old app may be
-# running against the same live data, so RiceSuite refuses to start.
+# The legacy apps' ports. If anything answers on one of these, a legacy app may
+# be running, so RiceSuite refuses to start. The guard prevents an accidental
+# double run (ADR-001 amendment "Burn-in complete; public").
 LEGACY_PORTS: dict[int, str] = {
     8765: "RiceSearcher",
     8000: "RiceClipper",
@@ -40,8 +41,8 @@ def startup_conflicts(
     if suite_ports is None:
         suite_ports = [GATEWAY_PORT, *PILLAR_PORTS.values()]
     problems = [
-        f"port {port} is in use — is the old {name} app running? Stop it first "
-        f"(RiceSuite and the old apps share live data; only one side runs at a time)."
+        f"port {port} is in use — is the legacy {name} app running? Stop it "
+        f"first. This guard prevents an accidental double run."
         for port, name in sorted(legacy.items())
         if is_listening(port)
     ]
