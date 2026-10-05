@@ -1,15 +1,20 @@
 # RiceSearcher
 
-Content-sourcing pillar of the Rice harness. On-demand pull discovery +
+The content-sourcing pillar of RiceSuite: the **Search** tab. For daily use,
+run `rice` from the suite root (see the [RiceSuite README](../README.md)). The
+sections below cover this pillar alone.
+
+On-demand pull discovery +
 transcript-driven extraction into a scored, moment-deduplicated candidate-slice
 library, handed off to RiceClipper for rendering. **Never posts, publishes, or
 uploads content; local-first.** See [SPEC.md](SPEC.md) (decisions D1–D9) and
 [ADR-001.md](ADR-001.md) (the three-pillar boundary).
 
-> Status: **v1.0.0 — phases 1–5 complete.** The complete RiceSearcher-side v1
-> flow is available: acquire/transcribe → score/dedup → review/select → handoff.
-> See [CHANGELOG.md](CHANGELOG.md) for release notes and [ROADMAP.md](ROADMAP.md)
-> for routed-forward work.
+> Status: **in use as part of RiceSuite.** The full flow is available:
+> acquire/transcribe → score/dedup → review/select → handoff. See
+> [CHANGELOG.md](CHANGELOG.md) for changes and
+> [RiceSuite Issues](https://github.com/gidde032/RiceSuite/issues) for planned
+> work.
 
 ## How it works
 

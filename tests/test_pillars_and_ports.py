@@ -71,6 +71,11 @@ def test_startup_refuses_when_an_old_app_port_answers():
         sock.close()
     assert len(problems) == 1
     assert str(port) in problems[0] and "RicePoster" in problems[0]
+    # Burn-in is over (ADR-001 amendment of 2026-10-05): the guard prevents
+    # an accidental double run; it no longer describes shared live data.
+    assert "accidental double run" in problems[0]
+    assert "share live data" not in problems[0]
+    assert "only one side runs" not in problems[0]
 
 
 def test_startup_refuses_when_a_suite_port_is_taken():

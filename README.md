@@ -8,21 +8,21 @@ RiceSuite combines the three Rice pillars into one local app:
 |---|---|---|
 | [`searcher/`](searcher/) | RiceSearcher | Acquire → transcribe → score → **human select** |
 | [`clipper/`](clipper/) | RiceClipper | Caption / header / 9:16 crop / music / photo clips → **human review + render** |
-| [`poster/`](poster/) | RicePoster | **Human Post All / Schedule** to Instagram/TikTok |
+| [`poster/`](poster/) | RicePoster | Pull clips → generate captions → **human post / schedule** to Instagram/TikTok |
 
-The target shape is one `rice` command, one Slate front door with Search / Clip /
-Post tabs, three supervised pillar processes sharing one Python environment, and
-batches moving automatically between pillars over the existing filesystem
-handoff contracts, up to Post's inbox, where you pull them with **Pull from
-Clipper**. All three human judgement gates stay, and nothing is ever posted
-automatically. The design contract is
+One `rice` command starts a Slate front door with Search / Clip / Post tabs and
+three supervised pillar processes that share one Python environment. Login once with Poster's session manager and start posting immediately.
+Batches move automatically from Search to Clip over filesystem handoffs. You send each rendered batch with **Send to RicePoster**,
+and you pull it into Post with **Pull from Clipper**. All three human judgement
+gates stay, and nothing is ever posted automatically. The design contract is
 [ADR-001](docs/adr/ADR-001-ricesuite-consolidation.md).
 
 ## Status
 
-**Burn-in candidate, not yet supported.** The original repositories
-(`gidde032/RiceSearcher`, `gidde032/RiceClipper`, `gidde032/RicePoster`) remain
-the supported apps until the burn-in in ADR-001 Q9 passes.
+RiceSuite is the supported app for daily use. Burn-in passed on 2026-10-05.
+The original repositories (`gidde032/RiceSearcher`, `gidde032/RiceClipper`,
+`gidde032/RicePoster`) are superseded and get no fixes. Open Issues and pull
+requests here.
 
 ## Run
 
@@ -33,14 +33,14 @@ rice stop       # refuses while Post is posting; --force overrides
 ```
 
 `rice` starts a localhost-only gateway on port 8790 and the three pillars on
-8791–8793, restarts a pillar that crashes, and refuses to start while anything
-answers on the old apps' ports (8765 / 8000 / 1738): RiceSuite and the old apps
-share live data, so only one side runs at a time. Ctrl-C runs the same safety
-check as `rice stop`; press it twice to force. See [SPEC.md](SPEC.md) §2–3.
+8791–8793. It restarts a pillar that crashes. It refuses to start while
+anything answers on the legacy apps' ports (8765 / 8000 / 1738), because a
+legacy app started by mistake could write to the same data. Ctrl-C runs the
+same safety check as `rice stop`; press it twice to force. See
+[SPEC.md](SPEC.md) §2–3.
 
-Fresh installations keep application data under `~/.ricesuite` by default.
-Existing installations retain their legacy locations until an explicit
-maintainer migration. Run `rice data location` to see effective paths; see
+RiceSuite keeps application data under `~/.ricesuite` by default. An
+installation with legacy data paths keeps them until an explicit migration. Run `rice data location` to see effective paths; see
 [Data location and migration](docs/data-migration.md) for the offline
 plan, copy, cutover and rollback commands and Finder/File Explorer directions.
 
@@ -109,7 +109,8 @@ Each page loads that asset before its own stylesheet; see
 Each pillar's full public history was imported from its repository's GitHub
 `main` and rewritten into its subdirectory. `#N` references in imported commit
 messages, docs, and code comments point to Issues and PRs **in the original
-repository** of that pillar, not to this repository.
+repository** of that pillar, not to this repository. Read each pillar's RiceSuite
+README to understand the full set up and functionality of each.
 
 ## Licence
 

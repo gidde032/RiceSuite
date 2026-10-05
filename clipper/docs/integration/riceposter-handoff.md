@@ -14,8 +14,10 @@ Let a day's clips flow from RiceClipper to RicePoster with no manual export,
 rename, or re-upload — while preserving exactly three human touchpoints:
 
 1. **[manual]** upload clips to RiceClipper → auto batch-transcribe
-2. **[manual]** review transcripts + headers, approve render → auto-render → auto-handoff
-3. *(auto)* RicePoster ingests, assigns slots, writes captions
+2. **[manual]** review transcripts + headers, approve render → render →
+   **Send to RicePoster** (RiceSuite #59: Clipper never sends on its own)
+3. **[manual]** **Pull from Clipper** in RicePoster, which assigns slots and
+   writes captions (RiceSuite ADR-001 amendment of 2026-09-29)
 4. **[manual]** final caption review → **Post All**
 
 ## Design principles

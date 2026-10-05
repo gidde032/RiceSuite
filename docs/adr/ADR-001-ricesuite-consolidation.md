@@ -56,7 +56,8 @@ command**, a **single Slate front door** in front of **three supervised
 pillar processes sharing one Python environment**, batches moving
 **automatically over the existing filesystem handoff contracts**, in **one
 monorepo imported with history**. The three original repositories are archived
-only after a real-use burn-in passes.
+only after a real-use burn-in passes. *(Burn-in passed 2026-10-05. See
+"Burn-in complete; public" below.)*
 
 ## Settled choices
 
@@ -65,27 +66,30 @@ only after a real-use burn-in passes.
 | Q1 | Goals (ranked) | One front door > seamless flow > one codebase. Public one-install is a nice-to-have, not a driver. |
 | Q2 | Audience | Maintainer first, but stays cloneable and installable from GitHub on macOS and Linux (keep first-time-user install quality). |
 | Q3 | Human gates | All three judgement gates stay (Searcher select, Clipper review/render, Poster Post All/Schedule). Only transport between them is automated. **Never auto-post.** |
-| Q4 | Old repos | RiceSuite is the product. The three repos stay supported until the burn-in (Q9) passes, then are archived read-only and pointed at RiceSuite; open issues are transferred. Pillars may still run alone as a developer convenience, not a supported mode. |
+| Q4 | Old repos | RiceSuite is the product. The three repos stay supported until the burn-in (Q9) passes, then are archived read-only and pointed at RiceSuite; open issues are transferred. Pillars may still run alone as a developer convenience, not a supported mode. *(Burn-in passed 2026-10-05; the repos are superseded. See "Burn-in complete; public" below.)* |
 | Q5 | Runtime | Local server + browser tab, started by one `rice` command. A desktop wrapper can come later on top. Hosted/cloud is excluded (fact 3). |
 | Q6 | Process model | One front door (gateway) + three separate pillar processes supervised by the launcher, one shared venv. Crash isolation protects Poster's scheduler; existing test suites stay valid. |
 | Q7 | Transport | Keep the filesystem handoff contracts unchanged; each consumer auto-ingests when a complete batch (`manifest.json` present) appears. No shared database or in-memory queue. *(Poster's ingest amended 2026-09-29: manual only. See "Manual Poster ingest" below.)* |
 | Q8 | Repo import | Monorepo with full history of each pillar under `searcher/`, `clipper/`, `poster/`, imported **only from GitHub `main`** (never the `-OG` folders). |
-| Q9 | Burn-in exit | ≥5 real posting days across ≥7 calendar days; each day the full chain (pull → select → render → live post) runs in RiceSuite; ≥1 scheduled batch fires on its own; no fallback to an old app was needed. During burn-in, old repos take critical fixes only, each ported into RiceSuite. |
-| Q10 | Burn-in data | RiceSuite uses existing data in place (Searcher library, Clipper work dir, Poster sessions/queue/history/media, both handoff dirs). Only one side runs at a time: the launcher refuses to start if an old app is serving on 8765 / 8000 / 1738. Poster's data root becomes configurable (required work, fact 5). Unifying data locations is post-burn-in. |
+| Q9 | Burn-in exit | ≥5 real posting days across ≥7 calendar days; each day the full chain (pull → select → render → live post) runs in RiceSuite; ≥1 scheduled batch fires on its own; no fallback to an old app was needed. During burn-in, old repos take critical fixes only, each ported into RiceSuite. *(Closed 2026-10-05: burn-in passed. See "Burn-in complete; public" below.)* |
+| Q10 | Burn-in data | RiceSuite uses existing data in place (Searcher library, Clipper work dir, Poster sessions/queue/history/media, both handoff dirs). Only one side runs at a time: the launcher refuses to start if an old app is serving on 8765 / 8000 / 1738. Poster's data root becomes configurable (required work, fact 5). Unifying data locations is post-burn-in. *(Data unified 2026-09-29; the port guard now protects against a legacy app started by mistake. See "Post-burn-in amendment" and "Burn-in complete; public" below.)* |
 | Q11 | UI | Shared Slate shell: top bar with Search / Clip / Post tabs plus a small **home view** showing batches waiting at each stage. Each tab serves the pillar's existing page, adjusted only so its API calls reach its own pillar (fact 4). No rebuilt single UI. |
-| Q12 | Batch advancement | **Searcher:** "Send selected" stays as the batch boundary; the batch appears in Clipper already transcribing, with no Pull click. **Clipper:** auto-sends the batch once every clip in it renders successfully; a failed render holds the batch until fixed and re-rendered. **Poster:** auto-ingests only when the draft workspace is empty; otherwise the batch waits in a visible inbox on the Post tab (preserves fact 6). Captions generate on ingest as today. *(Poster clause amended 2026-09-29: Poster ingests only on the maintainer's Pull. See "Manual Poster ingest" below.)* |
+| Q12 | Batch advancement | **Searcher:** "Send selected" stays as the batch boundary; the batch appears in Clipper already transcribing, with no Pull click. **Clipper:** auto-sends the batch once every clip in it renders successfully; a failed render holds the batch until fixed and re-rendered. **Poster:** auto-ingests only when the draft workspace is empty; otherwise the batch waits in a visible inbox on the Post tab (preserves fact 6). Captions generate on ingest as today. *(Poster clause amended 2026-09-29: Poster ingests only on the maintainer's Pull. See "Manual Poster ingest" below. Clipper clause amended 2026-10-03: Clipper sends only on the maintainer's Send click. See "Manual Clipper send" below.)* |
 | Q13 | Consolidation depth | Move-and-wire only. Behavior changes are limited to those ratified here (front door, auto-transport, single config, configurable data root). Deduplicating transcription, Slate CSS, and Anthropic clients, and any model changes, are post-burn-in Issues. Dependency alignment needed for one venv (fact 1) is in scope. |
 | Q14 | Config | One `ricesuite.env` at the suite root, preserving every existing variable name, a single `ANTHROPIC_API_KEY`. The launcher sets both handoff-directory variables itself so they cannot be mismatched. |
 | Q15 | Agent rules | Root `CLAUDE.md` with suite hard rules (never auto-post; only `poster/` touches posting; local-only; merge/release/deploy/visibility reserved to the maintainer). Each pillar directory keeps its own `CLAUDE.md`. An automated **boundary test** fails CI if `searcher/` or `clipper/` imports Playwright or any `poster` module. Same Issue → branch → draft PR → three cold reviewers workflow. Poster's gitignored `SPEC.md`/`CLAUDE.md` notes stay local and gitignored. |
 | Q16 | Quality gates | One CI keeps every pillar's current gates and coverage floor (90 / 85 / 43), none weakened, no averaged floor. Add suite-level tests for launcher, gateway, and auto-transport, plus one **full-chain mock-mode test** (local file → select → render → Poster draft; `POST_MODE=mock`; no network, no posting). |
 | Q17 | Crash / stop | Launcher auto-restarts a crashed pillar. A Poster post in flight at crash time is recorded **unconfirmed** and never auto-retried. `rice stop` refuses while a post is running unless `--force`, and warns when a scheduled batch is due. |
 | Q18 | Background running | v1 runs in the foreground only while open (as today). An optional login service is a post-burn-in Issue. |
-| Q19 | Repo visibility | Private during burn-in. Going public, simultaneously with archiving the old repos, is a maintainer-only action. |
+| Q19 | Repo visibility | Private during burn-in. Going public, simultaneously with archiving the old repos, is a maintainer-only action. *(Closed 2026-10-05: public since 2026-09-26. See "Burn-in complete; public" below.)* |
 
 ## Consequences
 
 **Easier:** one command and one tab for the daily workflow; no Pull/Send
 plumbing clicks or mismatched handoff-dir settings; one repo, one venv, one CI.
+*(Since the amendments of 2026-09-29 and 2026-10-03, Poster's Pull and
+Clipper's Send are clicks again. See "Manual Poster ingest" and "Manual
+Clipper send" below.)*
 
 **Harder / accepted:** a launcher and gateway are new moving parts; three
 processes cost more memory than one; duplicated internals (two Whisper
@@ -93,6 +97,8 @@ wrappers, three Slate copies) persist until post-burn-in cleanup; during
 burn-in, critical fixes land twice.
 
 ## Open items this decision depends on
+
+*(All closed 2026-10-05. See "Burn-in complete; public" below.)*
 
 1. **Fingerprint parity (burn-in day 0, maintainer-run):** run
    `tools/probe_fingerprint.py --all-slots` from the old RicePoster and from
@@ -191,7 +197,8 @@ except for a pointer here.
   unacknowledged and errored batches, and points to Pull from Clipper. The
   Pull button shows how many batches wait. The home view keeps its count.
 - **Unchanged:** Searcher → Clipper and Clipper → Poster transport (Clipper
-  still auto-sends a fully rendered batch to the handoff), the handoff
+  still auto-sends a fully rendered batch to the handoff; superseded
+  2026-10-03 by "Manual Clipper send" below), the handoff
   contracts, and all three human gates (Q3). Batches wait durably in the
   handoff folder until pulled.
 - The automatic path's no-replay request mode (`replay=0`) is removed: every
@@ -205,3 +212,54 @@ The same decision added **Restore last batch** to Poster's Review page, which
 is pillar-internal behaviour recorded in Issue #30 and Poster's changelog: it
 only fills drafts, never posts or schedules, and confirms before overwriting
 unposted drafts.
+
+## Manual Clipper send — 2026-10-03
+
+**Status: ratified by the maintainer** (RiceSuite Issue
+[#59](https://github.com/gidde032/RiceSuite/issues/59), 2026-10-03). This
+amends the Clipper clause of Q12. It also replaces the parenthesis "Clipper
+still auto-sends a fully rendered batch to the handoff" in "Manual Poster
+ingest" above. The Q12 row is unchanged except for a pointer here.
+
+- **Clipper never sends a batch on its own.** Only the maintainer's **Send to
+  RicePoster** click sends. A finished Render all, a clip removal, or any
+  other event does not send.
+- **The send rules are unchanged.** Send refuses a batch with an unrendered,
+  failed, or edited clip, and names those clips. It never sends part of a
+  batch. A second send of a sent batch asks first.
+- **Render all reports, then stops.** After a successful Render all, the
+  progress bar stays on Render all and reads "Send the batch to Poster when
+  ready."
+- **Unchanged:** Searcher → Clipper transport, the handoff contracts, and all
+  three human gates (Q3). Clipper pulls the next Searcher batch only when
+  nothing unsent would be displaced, so a rendered batch holds the workspace
+  until it is sent or discarded.
+
+**Reason:** the maintainer wants to decide when a batch leaves Clipper, as
+"Manual Poster ingest" lets them decide when it lands in Poster.
+
+## Burn-in complete; public — 2026-10-05
+
+**Status: ratified by the maintainer** (2026-10-05, with PR
+[#60](https://github.com/gidde032/RiceSuite/pull/60)). This closes Q9, Q19,
+and the open items above. The Q9 and Q19 rows are unchanged except for a
+pointer here.
+
+- **Burn-in passed.** The maintainer declares the Q9 burn-in complete.
+  RiceSuite is the supported app for daily use. Q9's "critical fixes only"
+  rule for the old repos ends.
+- **The repository is public** since 2026-09-26.
+- **The original repositories are superseded.** `gidde032/RiceSearcher`,
+  `gidde032/RiceClipper`, and `gidde032/RicePoster` get no fixes. All work,
+  Issues, and pull requests go to RiceSuite. Their deprecation PRs, their
+  archiving, and any Issue transfer (Q4) stay maintainer-only actions (root
+  `CLAUDE.md` rule 4).
+- **Open items.** Item 1, the fingerprint parity probe, no longer gates
+  anything, because RiceSuite is now the only app in use. Item 2's Issues are
+  resolved: #5, #6, #7, and #10 are delivered, #4 is closed as not wanted, and
+  #8 is settled by model settings in `ricesuite.env`. Only #9, the desktop
+  wrapper, stays open.
+- **Unchanged:** the launcher still refuses to start while anything answers
+  on the old apps' ports (8765 / 8000 / 1738). The guard now protects against
+  a legacy app started by mistake. All three human gates (Q3) and the suite
+  hard rules stay.

@@ -1,6 +1,7 @@
 # RiceSuite — Suite Specification
 
-**Status:** draft for maintainer review (Phase 1, #1). Derived strictly from
+**Status:** current. RiceSuite is the supported app; burn-in passed on
+2026-10-05. Derived strictly from
 [ADR-001](docs/adr/ADR-001-ricesuite-consolidation.md). Where this document and
 the ADR disagree, the ADR wins and this document is wrong.
 
@@ -16,16 +17,15 @@ root).
 
 RiceSuite is the three Rice pillars run as one local app: one `rice` command
 starts a single localhost front door (the gateway) and three supervised pillar
-processes sharing one Python environment. Batches move between pillars
-automatically over the existing filesystem handoff contracts, up to Poster's
-inbox, which the maintainer pulls from (ADR-001 amendment of 2026-09-29). The three human
-judgement gates stay exactly where they are, and nothing is ever posted
-automatically.
+processes sharing one Python environment. Searcher batches reach Clipper
+automatically over the existing filesystem handoff contracts. Clipper sends a
+batch to Poster's inbox only on the maintainer's Send click (ADR-001 amendment
+of 2026-10-03). The maintainer pulls from that inbox (ADR-001 amendment of
+2026-09-29). The three human judgement gates stay exactly where they are,
+and nothing is ever posted automatically.
 
-**Success (ADR-001 Q9 burn-in exit):** at least 5 real posting days across at
-least 7 calendar days, each running the full chain (pull → select → render →
-live post) in RiceSuite, with at least one scheduled batch firing on its own,
-and no fallback to an old app needed.
+**Burn-in:** passed on 2026-10-05 (ADR-001 amendment "Burn-in complete;
+public"). The original repositories are superseded.
 
 ## 2. Architecture
 
@@ -36,7 +36,7 @@ and no fallback to an old app needed.
 | Gateway | One localhost-only HTTP port; routes each tab to its own pillar | Q6, Q11 |
 | Slate shell | Top bar with Search / Clip / Post tabs, plus a home view of batches waiting at each stage | Q11 |
 | Pillars | `searcher/`, `clipper/`, `poster/`, each its own process, unchanged except as ADR-001 overrides | Q6, Q13 |
-| Transport | Filesystem handoffs, auto-ingested by Clipper; Poster ingests on the maintainer's Pull | Q7, Q12 (amended 2026-09-29) |
+| Transport | Filesystem handoffs, auto-ingested by Clipper; Clipper sends on the maintainer's Send click; Poster ingests on the maintainer's Pull | Q7, Q12 (amended 2026-09-29 and 2026-10-03) |
 | Config | One `ricesuite.env` at the suite root | Q14 |
 
 ### 2.1 Ports
@@ -47,10 +47,10 @@ and no fallback to an old app needed.
 | Searcher (internal) | 8791 | 127.0.0.1 |
 | Clipper (internal) | 8792 | 127.0.0.1 |
 | Poster (internal) | 8793 | 127.0.0.1 |
-| Old apps (must be free, see FR-4) | 8765 / 8000 / 1738 | — |
+| Legacy apps (must be free, see FR-4) | 8765 / 8000 / 1738 | — |
 
-Internal ports differ from the old apps' ports so that a running old app and
-RiceSuite can never be mistaken for each other.
+Internal ports differ from the legacy apps' ports so that a running legacy app
+and RiceSuite can never be mistaken for each other.
 
 ## 3. Functional requirements
 
@@ -93,9 +93,9 @@ Each requirement is written so a test can check it. "The launcher" means the
     `X-Content-Type-Options: nosniff` and CSP `default-src 'none'; sandbox`,
     so such a file opened directly runs no script as a suite origin (#38).
 - **FR-4** The launcher refuses to start, and exits non-zero naming the port,
-  if anything is accepting connections on 8765, 8000 or 1738 (an old app may be
-  running; only one side runs at a time, Q10). It also refuses if a suite port
-  in §2.1 is already taken.
+  if anything is accepting connections on 8765, 8000 or 1738. A legacy app
+  started by mistake could otherwise write to the same data (Q10). It also
+  refuses if a suite port in §2.1 is already taken.
 - **FR-5** The supervisor restarts a pillar whose process exits unexpectedly,
   with backoff, and records the restart. The other pillars are not
   restarted.
@@ -135,7 +135,7 @@ Each requirement is written so a test can check it. "The launcher" means the
   batches not yet ingested by Clipper, Clipper batches not yet sent or held by
   a failed render, and batches waiting in Poster's inbox.
 
-### Automatic transport (Q12, Poster clause amended 2026-09-29)
+### Automatic transport (Q12, Poster clause amended 2026-09-29, Clipper clause amended 2026-10-03)
 
 The handoff contracts are unchanged: batch schema, `manifest.json` written
 last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
@@ -145,15 +145,16 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
   automatically, with no Pull click, and its clips start transcribing.
   Incomplete batches (no manifest) are never ingested. A batch id already
   ingested is never ingested twice.
-- **FR-13 Clipper → Poster.** Clipper sends a batch automatically only when
-  every clip in it has rendered successfully. A failed render holds the whole
-  batch until the clip is fixed and re-rendered; then the batch sends. A clip
+- **FR-13 Clipper → Poster.** Clipper sends a batch only when the maintainer
+  clicks **Send to RicePoster**, never on its own, even when every clip has
+  rendered (ADR-001 amendment "Manual Clipper send", 2026-10-03). After a
+  successful Render all, the progress bar reads "Send the batch to Poster when
+  ready." Send refuses while any clip is unrendered, failed, or edited since
+  its render, names those clips, and never sends part of a batch. A clip
   edited after its render request (any card control, or a generated header)
   counts as unrendered until it renders again, so the MP4 always matches the
-  header and transcript sent with it. The Send button follows the same rule:
-  it refuses while any clip is unrendered, failed, or edited since its render,
-  names those clips, and never sends part of a batch. Removing a clip from the
-  batch is the reviewer's way to send the rest.
+  header and transcript sent with it. Removing a clip from the batch is the
+  reviewer's way to send the rest.
 - **FR-14 Poster ingest.** A complete Clipper batch is ingested only when the
   maintainer clicks **Pull from Clipper**, never on its own, even when Poster's
   draft workspace is empty (ADR-001 amendment "Manual Poster ingest",
@@ -166,14 +167,15 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
   in their pages (transcript edits, headers and captions are browser state),
   so each consumer's page drives its own transport: Clipper polls a read-only
   inbox endpoint (`GET api/searcher-inbox`) and then performs exactly the pull
-  or send its button performs. Poster polls `GET api/handoff/inbox` only to
-  report waiting batches; it never pulls from the poll.
+  its button performs. Clipper sends only on the Send click. Poster polls
+  `GET api/handoff/inbox` only to report waiting batches; it never pulls from
+  the poll.
   Clipper pulls only when nothing unsent would be displaced: the workspace is
   empty, or it holds exactly what was last sent (a later edit or re-render
   holds it). The Pull button follows the same rule, and one pull runs at a
   time, whether the button or the timer started it. One Searcher batch stays
-  one Clipper batch; a batch sends itself at most once, and sending it again
-  takes the reviewer's confirmation.
+  one Clipper batch. Sending a sent batch again takes the reviewer's
+  confirmation.
   Clipper sends each clip to Poster once: a send that holds a clip already
   sent gets 409 with `already_sent`, unless the reviewer confirmed a second
   send (`resend: true`), so a second tab or a reload cannot send a batch
@@ -279,18 +281,19 @@ draft PR, stacked.
 |---|---|---|---|
 | 1 Foundation | #1 | This spec, one venv with aligned pins, `RICEPOSTER_DATA_DIR`, `ricesuite.env` loader, boundary test, one CI | Every pillar runs and passes its gates from one environment and one CI |
 | 2 Front door | #2 | `rice` CLI, supervisor, gateway, Slate shell and home view, port refusals, stop rules | One command, one tab for the daily workflow (manual Pull/Send still used) |
-| 3 Auto-transport | #3 | FR-12 – FR-16, full-chain mock-mode test | Batches flow between tabs with no plumbing clicks (Post's Pull is manual since the ADR-001 amendment of 2026-09-29) |
+| 3 Auto-transport | #3 | FR-12 – FR-16, full-chain mock-mode test | Batches flow between tabs with no plumbing clicks (Post's Pull is manual since the ADR-001 amendment of 2026-09-29; Clipper's Send is manual since the amendment of 2026-10-03) |
 
-## 7. Out of scope (post-burn-in Issues)
+## 7. Follow-ups
 
-Background login service (#4, Q18); deduplicating transcription (#5), Slate CSS
-(#6) and Anthropic clients (#7); model upgrades (#8); desktop wrapper (#9);
-unified data directory (#10). Hosted or LAN deployment is excluded outright
-(fact 3).
+- Delivered: deduplicated transcription (#5), Slate CSS (#6) and Anthropic
+  clients (#7), and the unified data directory (#10, §8).
+- Settled: model choice (#8) is set in `ricesuite.env`.
+- Not wanted: a background login service (#4, Q18). RiceSuite runs in the
+  foreground.
+- Open: a desktop wrapper (#9).
+- Excluded: hosted or LAN deployment (fact 3).
 
-The 2026-09-29 post-burn-in amendment to ADR-001 authorizes #5, #6, #7, and
-#10 as follow-ups. Their implementation and delivery state belongs to their
-Issues and draft PRs; this original phase outline remains the v0.1 contract.
+The phase outline in §6 is the delivery history of v0.1.
 
 ## 8. Post-burn-in data amendment (#10)
 

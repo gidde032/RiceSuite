@@ -6,6 +6,10 @@ serves a single-page UI; Playwright drives real Chrome
 sessions to do the posting; the Anthropic API writes captions in a consistent
 house style. Runs entirely on your machine — nothing is deployed.
 
+It is the posting pillar of RiceSuite: the **Post** tab, and the only pillar
+that posts. For daily use, run `rice` from the suite root (see the
+[RiceSuite README](../README.md)). The sections below cover this pillar alone.
+
 ## Prerequisites
 
 - Python **3.12–3.14**. CI runs the suite on 3.12 (the required check) and

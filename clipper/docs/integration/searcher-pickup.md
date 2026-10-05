@@ -56,21 +56,22 @@ carried for future use.
 - The ingested clips become normal review jobs; the human reviews and renders,
   then "Send to RicePoster" writes the separate `~/riceclipper-handoff` as before.
 
-## Automatic pull and send (RiceSuite, ADR-001 Q12)
+## Automatic pull, manual send (RiceSuite, ADR-001 Q12 as amended)
 
 The review page polls `GET /api/searcher-inbox` (read-only, no job lock).
 When a complete batch is waiting and nothing unsent would be displaced (the
 workspace is empty, or it holds a batch that was fully rendered and sent), the
 page performs the same pull as the button and starts transcribing. "Nothing
 unsent" means the workspace holds exactly what was last sent; an edit or
-re-render after sending holds it. One Searcher batch is one Clipper batch.
+re-render after sending holds it. A rendered batch that is not sent also
+holds it. One Searcher batch is one Clipper batch.
 The **Pull** button follows the same rule, and only one pull runs at a time.
-Once every clip in the batch has rendered successfully, the page sends it to
-RicePoster exactly as **Send to RicePoster** would, once; a failed or
+The page never sends a batch on its own (RiceSuite #59). Only a **Send to
+RicePoster** click sends, after every clip has rendered. A failed or
 unrendered clip, or one edited since its render, holds the batch until it is
-rendered again or removed, and sending an already-sent batch again asks first.
-The **Send** button refuses such a batch too and names the clips; it never
-sends part of a batch. Rendering itself stays a human action.
+rendered again or removed. The **Send** button refuses such a batch and names
+the clips; it never sends part of a batch. Sending an already-sent batch again
+asks first. Rendering stays a human action.
 
 A pull removes the Searcher batch, so Clipper records it as **open** in its
 work root until it is sent or discarded. `GET /api/workspace` returns an open
