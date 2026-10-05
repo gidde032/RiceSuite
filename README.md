@@ -33,10 +33,11 @@ rice stop       # refuses while Post is posting; --force overrides
 ```
 
 `rice` starts a localhost-only gateway on port 8790 and the three pillars on
-8791–8793, and restarts a pillar that crashes. It refuses to start while
-anything answers on the legacy apps' ports (8765 / 8000 / 1738). A legacy app
-started by mistake could otherwise write to the same data. Ctrl-C runs the same safety
-check as `rice stop`; press it twice to force. See [SPEC.md](SPEC.md) §2–3.
+8791–8793. It restarts a pillar that crashes. It refuses to start while
+anything answers on the legacy apps' ports (8765 / 8000 / 1738), because a
+legacy app started by mistake could write to the same data. Ctrl-C runs the
+same safety check as `rice stop`; press it twice to force. See
+[SPEC.md](SPEC.md) §2–3.
 
 RiceSuite keeps application data under `~/.ricesuite` by default. An
 installation with legacy data paths keeps them until an explicit migration. Run `rice data location` to see effective paths; see
