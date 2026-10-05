@@ -8,11 +8,11 @@ RiceSuite combines the three Rice pillars into one local app:
 |---|---|---|
 | [`searcher/`](searcher/) | RiceSearcher | Acquire → transcribe → score → **human select** |
 | [`clipper/`](clipper/) | RiceClipper | Caption / header / 9:16 crop / music / photo clips → **human review + render** |
-| [`poster/`](poster/) | RicePoster | **Human Post All / Schedule** to Instagram/TikTok |
+| [`poster/`](poster/) | RicePoster | Pull clips → generate captions → **human post / schedule** to Instagram/TikTok |
 
 One `rice` command starts a Slate front door with Search / Clip / Post tabs and
-three supervised pillar processes that share one Python environment. Batches
-move automatically from Search to Clip over filesystem handoffs. You send each rendered batch with **Send to RicePoster**,
+three supervised pillar processes that share one Python environment. Login once with Poster's session manager and start posting immediately.
+Batches move automatically from Search to Clip over filesystem handoffs. You send each rendered batch with **Send to RicePoster**,
 and you pull it into Post with **Pull from Clipper**. All three human judgement
 gates stay, and nothing is ever posted automatically. The design contract is
 [ADR-001](docs/adr/ADR-001-ricesuite-consolidation.md).
@@ -109,7 +109,8 @@ Each page loads that asset before its own stylesheet; see
 Each pillar's full public history was imported from its repository's GitHub
 `main` and rewritten into its subdirectory. `#N` references in imported commit
 messages, docs, and code comments point to Issues and PRs **in the original
-repository** of that pillar, not to this repository.
+repository** of that pillar, not to this repository. Read each pillar's RiceSuite
+README to understand the full set up and functionality of each.
 
 ## Licence
 
