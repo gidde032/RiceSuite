@@ -249,10 +249,13 @@ block up when needed, and draws a block taller than that space at a smaller
 size until it fits. The libass fallback header is moved up by its estimated
 height in the same way.
 
+The fallback's estimate includes the outline and plate padding. Its text and
+plate share a fixed position, so captions cannot move the plate independently.
+
 **Live preview.** `POST /api/jobs/{id}/header-preview` returns the same PNG the
 render overlays (a data URL), its drawn box, and the "face near header"
 warning re-checked for that box. It writes no files. The editor asks for it
-250 ms after the last change to the text or controls (a reply that a newer
+250 ms after the last change to the text, controls, Geometry, or Content (a reply that a newer
 request overtook is dropped) and draws it over the source preview, scaled to
 the output frame as the render will frame the clip. A 9:16 source shows its
 whole picture. A clip that blur-pads (every photo that is not 1080×1920, a
@@ -269,12 +272,17 @@ position is a slider. Choosing a style card fills in the look (colours,
 outline, shadow, and plate) and keeps position, size, font, alignment, and
 spacing; **Reset header** returns every control to the chosen style's values.
 The look is saved per slot in the browser, with the caption and header styles
-(§5.1).
+(§5.1). Removing a clip renumbers the remaining slots to match their handoff
+positions, keeping each surviving clip's current look and saving it under its
+new slot. Card identifiers remain stable.
 
 **Face-near-header zone.** A crop plan keeps each face box's vertical span. The
 plan's stored warning, computed at ingest before any header exists, uses the
 default header's span (`header_margin_v` to `header_margin_v` + 160 px). The
-preview re-checks the zone against the clip's drawn header, so the warning
+preview accepts the selected `geometry` and re-checks the zone against the
+clip's drawn header using the resolved framing for each content plan. For
+blur-pad, it uses the foreground's fitted size and centred position, rather
+than treating the source as filling the output height. The warning
 follows its position and size, and a clip with no header gets no header
 warning. Plans saved before #65 keep their ingest warning.
 

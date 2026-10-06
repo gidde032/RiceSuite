@@ -38,6 +38,7 @@ from app import (  # noqa: E402
 )
 from app.models import (  # noqa: E402
     HEADER_MAX_CHARS,
+    CropPlan,
     HandoffRequest,
     HeaderPreviewRequest,
     HeaderRequest,
@@ -543,13 +544,28 @@ def header_preview(job_id: str, req: HeaderPreviewRequest) -> dict:
             image = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
             box = [drawn.left, drawn.top, drawn.right, drawn.bottom]
             span = (drawn.top, drawn.bottom)
+
+    def plan_warning(plan: CropPlan | None) -> str | None:
+        if plan is None or job.info is None:
+            return framing.header_warning(plan, span)
+        resolved = geometry.resolve_geometry(
+            req.geometry, plan, job.info.width, job.info.height
+        )
+        return framing.header_warning(
+            plan,
+            span,
+            source_w=job.info.width,
+            source_h=job.info.height,
+            resolved_geometry=resolved,
+        )
+
     return {
         "image": image,
         "box": box,
         "note": note,
         "warnings": {
-            "crop_plan": framing.header_warning(job.crop_plan, span),
-            "music_plan": framing.header_warning(job.music_plan, span),
+            "crop_plan": plan_warning(job.crop_plan),
+            "music_plan": plan_warning(job.music_plan),
         },
     }
 

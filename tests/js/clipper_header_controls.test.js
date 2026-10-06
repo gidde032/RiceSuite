@@ -102,6 +102,50 @@ test("an edited look is saved for its slot and seeds the next clip in that slot"
   assert.equal(js('seedHeaderLook(1, "plain")').y, 210); // other slots untouched
 });
 
+test("removing an earlier clip compacts the surviving look onto its handoff slot", () => {
+  const { js, ctx, local } = boot();
+  local.setItem(SLOT_KEY, JSON.stringify({
+    1: { headerLook: { ...js('headerPreset("plain")'), y: 310 } },
+    2: { headerLook: { ...js('headerPreset("plain")'), y: 640 } },
+  }));
+  const first = card({
+    localId: 11, ord: 1, status: "ready", file: { name: "first.mp4" },
+    el: element(), titleEl: element(),
+  });
+  first.titleEl.id = "clip-title-11";
+  first.titleEl.textContent = "Clip 1 — first.mp4";
+  const survivor = card({
+    localId: 12, ord: 2, status: "ready", file: { name: "second.mp4" },
+    el: element(), titleEl: element(),
+  });
+  survivor.titleEl.id = "clip-title-12";
+  survivor.titleEl.textContent = "Clip 2 — second.mp4";
+  survivor.headerLook = js('seedHeaderLook(2, "plain")');
+  survivor.headerStyleEl = { querySelector: () => ({ value: "plain" }) };
+  survivor.captionStyleEl = { querySelector: () => ({ value: "classic" }) };
+  ctx.first = first;
+  ctx.survivor = survivor;
+  js("clips.push(first, survivor)");
+
+  js("removeClip(first)");
+  assert.equal(survivor.ord, 1);
+  assert.equal(survivor.titleEl.textContent, "Clip 1 — second.mp4");
+  assert.equal(survivor.titleEl.id, "clip-title-12");
+  assert.equal(survivor.localId, 12);
+  assert.equal(survivor.headerLook.y, 640);
+  assert.equal(slotStore(local)["1"].headerLook.y, 640);
+  js("clipSeq = 12");
+  const nextIdentity = js("allocateClipIdentity()");
+  assert.equal(nextIdentity.localId, 13);
+  assert.equal(nextIdentity.ord, 2);
+
+  // A subsequent edit should save against handoff position 1. The next batch's
+  // first clip must pick up this surviving clip's look, not the old slot-1 look.
+  js("setHeaderLook(survivor, { ...survivor.headerLook, y: 650 })");
+  assert.equal(slotStore(local)["1"].headerLook.y, 650);
+  assert.equal(js('seedHeaderLook(1, "plain")').y, 650);
+});
+
 test("a saved field of the wrong type falls back to the preset", () => {
   const { js, local } = boot();
   local.setItem(SLOT_KEY, JSON.stringify({ 2: { headerLook: { y: "low", size: 50 } } }));
@@ -164,6 +208,43 @@ test("a burst of edits sends one preview request", async () => {
   assert.equal(body.header_look.y, 210);
   assert.equal(ctx.clip.headerPreviewEl.src, "data:image/png;base64,AA");
   assert.equal(ctx.clip.headerPreviewWindowEl.hidden, false);
+});
+
+test("a header preview request carries the clip's geometry choice", async () => {
+  const { js, ctx, calls } = boot({
+    "POST api/jobs/j1/header-preview": () => [200, { image: null, warnings: {} }],
+  });
+  ctx.clip = card({ geometryEl: { querySelector: () => ({ value: "crop" }) } });
+  ctx.clip.headerLook = js('headerPreset("plain")');
+  await js("requestHeaderPreview(clip)");
+  const body = JSON.parse(calls.find((c) => c.path === "api/jobs/j1/header-preview").body);
+  assert.equal(body.geometry, "crop");
+});
+
+test("geometry and content changes refresh one debounced preview", async () => {
+  const { js, ctx, calls, timers } = boot({
+    "POST api/jobs/j1/header-preview": () => [200, { image: null, warnings: {} }],
+  });
+  let geometry = "auto";
+  let content = "speech";
+  ctx.clip = card({
+    geometryEl: { querySelector: () => ({ value: geometry }) },
+    contentEl: { querySelector: () => ({ value: content }) },
+    geoState: null,
+  });
+
+  js("handleGeometryChange(clip)");
+  geometry = "crop";
+  content = "music";
+  js("handleContentChange(clip)");
+  const live = timers.filter((timer) => timer.live);
+  assert.equal(live.length, 1);
+  live[0].fn();
+  await settle();
+
+  const preview = calls.find((call) => call.path === "api/jobs/j1/header-preview");
+  assert.ok(preview);
+  assert.equal(JSON.parse(preview.body).geometry, "crop");
 });
 
 test("no preview is requested before the clip has a job", () => {

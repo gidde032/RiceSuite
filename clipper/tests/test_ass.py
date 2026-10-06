@@ -8,6 +8,7 @@ from render.ass import (
     StyleConfig,
     _ass_time,
     build_ass,
+    fallback_span,
     style_for_presets,
 )
 from tests._util import words
@@ -188,3 +189,39 @@ def test_fallback_header_is_a_minimal_text_line_at_the_header_position():
     assert line.startswith("Style: HeaderFallback,Impact,60,&H0000CCFF,")
     # BorderStyle 1 (no plate), outline 2, no shadow, top-left, MarginV 500.
     assert line.endswith(",1,2,0,7,80,80,500,1")
+
+
+@pytest.mark.parametrize("plate,padding,outline", [("solid", 40, 2), ("none", 0, 8)])
+@pytest.mark.parametrize("y", [0, 1380])
+def test_fallback_span_includes_the_background_and_outline(plate, padding, outline, y):
+    style = replace(
+        StyleConfig(),
+        header_margin_v=y,
+        header_font_size=60,
+        header_plate=plate,
+        header_padding=padding,
+        header_outline=outline,
+    )
+    top, bottom = fallback_span("One\nTwo", style)
+    edge = max(padding if plate != "none" else 0, outline)
+    assert bottom - top == 120 + 2 * edge
+    assert top >= 0
+    assert bottom <= 1380
+
+
+def test_fallback_text_and_background_have_the_same_fixed_position():
+    import re
+
+    ass = build_ass(
+        words(("ordinary", 0.0, 0.5), ("people", 0.5, 1.0)),
+        fallback_header="One\nTwo",
+        duration=1.0,
+        style=replace(StyleConfig(), header_plate="solid", header_padding=40),
+    )
+    events = [line for line in ass.splitlines() if ",HeaderFallback" in line]
+    positions = [re.search(r"\\pos\((\d+),(\d+)\)", line) for line in events]
+    assert len(positions) == 2
+    assert all(positions), (
+        "fixed positions keep libass from moving the plate for captions"
+    )
+    assert positions[0].groups() == positions[1].groups()

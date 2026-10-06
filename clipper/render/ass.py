@@ -314,9 +314,19 @@ _ALIGN_TOP = {"left": 7, "center": 8, "right": 9}
 
 
 def fallback_span(header: str, style: StyleConfig) -> tuple[int, int]:
-    """The libass fallback header's estimated (top, bottom), in output px."""
+    """Estimated outer bounds of the fallback text, outline, and plate."""
     top = _fallback_margin_v(header, style)
-    return top, top + _fallback_lines(header, style) * style.header_font_size
+    edge = _fallback_edge(style)
+    return top - edge, top + _fallback_lines(
+        header, style
+    ) * style.header_font_size + edge
+
+
+def _fallback_edge(style: StyleConfig) -> int:
+    return max(
+        style.header_outline,
+        style.header_padding if style.header_plate != "none" else 0,
+    )
 
 
 def _fallback_lines(header: str, style: StyleConfig) -> int:
@@ -326,7 +336,7 @@ def _fallback_lines(header: str, style: StyleConfig) -> int:
 
 
 def _fallback_margin_v(header: str, style: StyleConfig) -> int:
-    """The fallback header's top, moved up so it ends above the caption zone.
+    """The text's top, with the full outline/plate above the caption zone.
 
     libass wraps the text itself, so the height is estimated: the explicit
     lines, each wrapped at about half an em per character over the 920 px
@@ -334,8 +344,10 @@ def _fallback_margin_v(header: str, style: StyleConfig) -> int:
     """
     lines = _fallback_lines(header, style)
     caption_top = style.play_res_y - CAPTION_ZONE_PX
+    edge = _fallback_edge(style)
     return max(
-        0, min(style.header_margin_v, caption_top - lines * style.header_font_size)
+        edge,
+        min(style.header_margin_v, caption_top - lines * style.header_font_size - edge),
     )
 
 
@@ -346,6 +358,12 @@ def _fallback_header(
 
     No rounded corners or shadow; a translucent plate keeps its opacity.
     """
+    x = {"left": 80, "center": style.play_res_x // 2, "right": style.play_res_x - 80}[
+        style.header_align
+    ]
+    # A shared explicit position disables libass collision handling. Otherwise
+    # captions on the plate's layer can move the box away from its text.
+    text = f"{{\\pos({x},{_fallback_margin_v(header, style)})}}{_escape(header)}"
     style_line = (
         f"Style: HeaderFallback,{family},{style.header_font_size},"
         f"{_style_color(style.header_color)},{_style_color(style.header_color)},"
@@ -356,7 +374,7 @@ def _fallback_header(
     )
     events = [
         f"Dialogue: 1,{_ass_time(0)},{_ass_time(duration)},"
-        f"HeaderFallback,,0,0,0,,{_escape(header)}"
+        f"HeaderFallback,,0,0,0,,{text}"
     ]
     lines = [style_line]
     if style.header_plate != "none":
@@ -375,7 +393,7 @@ def _fallback_header(
         events.insert(
             0,
             f"Dialogue: 0,{_ass_time(0)},{_ass_time(duration)},"
-            f"HeaderFallbackPlate,,0,0,0,,{_escape(header)}",
+            f"HeaderFallbackPlate,,0,0,0,,{text}",
         )
     return lines, events
 

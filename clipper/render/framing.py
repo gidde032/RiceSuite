@@ -13,6 +13,8 @@ See ``docs/design/subject-crop-spec.md`` (Framing policy).
 
 from __future__ import annotations
 
+from typing import Literal
+
 from app.models import Content, CropPlan, CropReason, CropSample, TrackSample
 from render.ass import CAPTION_ZONE_PX, StyleConfig
 
@@ -40,6 +42,7 @@ DEFAULT_HEADER_SPAN = (StyleConfig().header_margin_v, HEADER_ZONE_PX)
 WARN_FRACTION = 0.20
 
 # Output height the header/caption zones are defined against.
+_OUTPUT_W = 1080
 _OUTPUT_H = 1920
 # Central-window margin on each side, from SAFE_FRACTION.
 _SAFE_MARGIN = (1.0 - SAFE_FRACTION) / 2.0
@@ -325,15 +328,46 @@ def zone_warning(
 
 
 def header_warning(
-    plan: CropPlan | None, header_span: tuple[float, float] | None
+    plan: CropPlan | None,
+    header_span: tuple[float, float] | None,
+    *,
+    source_w: int | None = None,
+    source_h: int | None = None,
+    resolved_geometry: Literal["pass", "blur_pad", "crop"] | None = None,
 ) -> str | None:
     """The plan's warning, re-checked against the clip's drawn header.
 
     A plan saved before RiceSuite #65 has no face spans; its ingest warning
-    stands.
+    stands. When the preview supplies the source dimensions and resolved render
+    geometry, face spans are projected onto the output canvas first. Without
+    them, retain the original full-height crop mapping for existing callers.
     """
     if plan is None:
         return None
     if not plan.face_spans:
         return plan.warning
-    return zone_warning(plan.face_spans, plan.window_h, header_span)
+
+    if (
+        source_w is None
+        or source_h is None
+        or source_w <= 0
+        or source_h <= 0
+        or resolved_geometry is None
+    ):
+        return zone_warning(plan.face_spans, plan.window_h, header_span)
+
+    if resolved_geometry in {"pass", "crop"}:
+        scale = _OUTPUT_H / source_h
+        offset_y = 0.0
+    else:
+        # blur_pad keeps the whole foreground and fits it inside the output;
+        # the background fills the rest. Mirror scale=decrease and the centred
+        # overlay used by render.geometry.blur_pad_statements.
+        scale = min(_OUTPUT_W / source_w, _OUTPUT_H / source_h)
+        offset_y = (_OUTPUT_H - source_h * scale) / 2.0
+
+    output_spans = [
+        (offset_y + top * scale, offset_y + bottom * scale)
+        for top, bottom in plan.face_spans
+    ]
+    return zone_warning(output_spans, _OUTPUT_H, header_span)

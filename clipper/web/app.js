@@ -15,7 +15,7 @@
 const $ = (id) => document.getElementById(id);
 
 const clips = []; // clip objects (see makeClip)
-let clipSeq = 0; // monotonic counter for stable ordinals
+let clipSeq = 0; // monotonically assigned ids for stable card identifiers
 let ingesting = false; // upload+transcribe queue is draining
 let batchBusy = false; // render-all in progress
 let clearInProgress = false;
@@ -25,6 +25,13 @@ let sentSnapshot = null; // batchSnapshot() at the moment it was sent
 let sendInFlight = false;
 let sendKey = ""; // reused when a send whose reply never came is retried
 let sendKeySnapshot = null; // batchSnapshot() when sendKey was made
+
+// DOM ids and radio-group names stay unique for this page lifetime, while the
+// ordinal follows the clip's current position in the batch/handoff.
+function allocateClipIdentity() {
+  clipSeq += 1;
+  return { localId: clipSeq, ord: clips.length + 1 };
+}
 
 // This tab's own pull state, kept in sessionStorage so it survives a reload of
 // this tab and no other (W1-02, review S-1): the Searcher batch the workspace
@@ -243,6 +250,7 @@ function headerPreviewPayload(clip) {
     header: clip.headerEl.value,
     header_style: radioValue(clip.headerStyleEl),
     header_look: clip.headerLook,
+    geometry: clip.geometryEl ? radioValue(clip.geometryEl) : "auto",
   };
 }
 
@@ -612,6 +620,20 @@ function setRadioDisabled(group, disabled) {
   });
 }
 
+function handleGeometryChange(clip) {
+  scheduleHeaderPreview(clip);
+  placeHeaderPreview(clip);
+}
+
+function handleContentChange(clip) {
+  const isMusic = radioValue(clip.contentEl) === "music";
+  clip.lyricsEl.hidden = !isMusic;
+  clip.reviewGridEl.classList.toggle("music-review", isMusic);
+  if (clip.geoState) applyGeometry(clip, clip.geoState);
+  scheduleHeaderPreview(clip);
+  placeHeaderPreview(clip); // the music plan may frame it differently
+}
+
 // --- clip cards -------------------------------------------------------------
 
 // Any edit after a render leaves that render on show but marks it stale, in
@@ -758,7 +780,7 @@ function buildCard(clip) {
   for (const event of ["loadeddata", "seeked", "timeupdate", "pause"]) {
     clip.sourceVideoEl.addEventListener(event, () => placeHeaderPreview(clip));
   }
-  clip.geometryEl.addEventListener("change", () => placeHeaderPreview(clip));
+  clip.geometryEl.addEventListener("change", () => handleGeometryChange(clip));
   clip.sourcePhotoEl.addEventListener("load", () => placeHeaderPreview(clip));
   // The source box resizes with the window and with the settings column (it
   // grows when Adjust header opens), so the preview follows its size.
@@ -767,13 +789,7 @@ function buildCard(clip) {
     follow.observe(clip.sourceVideoEl);
     follow.observe(clip.sourcePhotoEl);
   }
-  clip.contentEl.addEventListener("change", () => {
-    const isMusic = radioValue(clip.contentEl) === "music";
-    clip.lyricsEl.hidden = !isMusic;
-    clip.reviewGridEl.classList.toggle("music-review", isMusic);
-    if (clip.geoState) applyGeometry(clip, clip.geoState);
-    placeHeaderPreview(clip); // the music plan may frame it differently
-  });
+  clip.contentEl.addEventListener("change", () => handleContentChange(clip));
 
   clip.musicVolumeEl.addEventListener("input", (e) => {
     clip.volLabelEl.textContent = Number(e.target.value).toFixed(2);
@@ -1128,6 +1144,23 @@ async function restoreTranscript(clip) {
   }
 }
 
+function compactClipOrdinals() {
+  clips.forEach((clip, index) => {
+    const ord = index + 1;
+    if (clip.ord === ord) return;
+    clip.ord = ord;
+
+    const clipName = clip.file ? clip.file.name : (clip.name || "Searcher clip");
+    if (clip.titleEl) clip.titleEl.textContent = `Clip ${ord} — ${clipName}`;
+
+    // This clip now occupies a different handoff slot. Carry its current
+    // choices into that slot so edits and the next batch use the visible look.
+    if (clip.captionStyleEl) rememberSlotStyle(ord, "caption", radioValue(clip.captionStyleEl));
+    if (clip.headerStyleEl) rememberSlotStyle(ord, "header", radioValue(clip.headerStyleEl));
+    if (clip.headerLook) rememberSlotStyle(ord, "headerLook", clip.headerLook);
+  });
+}
+
 function removeClip(clip) {
   if (ACTIVE_JOB_STATUSES.has(clip.status) || batchBusy) return;
   if (clip.sourceUrl) URL.revokeObjectURL(clip.sourceUrl);
@@ -1136,7 +1169,10 @@ function removeClip(clip) {
   if (clip.segmentTimer) stopSegmentPreview(clip);
   clip.el.remove();
   const idx = clips.indexOf(clip);
-  if (idx >= 0) clips.splice(idx, 1);
+  if (idx >= 0) {
+    clips.splice(idx, 1);
+    compactClipOrdinals();
+  }
   if (clips.length === 0) {
     $("batch-panel").classList.add("hidden");
     $("upload-panel").classList.remove("hidden");
@@ -1212,10 +1248,8 @@ function addFiles(fileList) {
   $("upload-panel").classList.add("hidden");
   $("batch-panel").classList.remove("hidden");
   for (const file of files) {
-    clipSeq += 1;
     const clip = {
-      localId: clipSeq,
-      ord: clips.length + 1,
+      ...allocateClipIdentity(),
       file,
       jobId: null,
       status: "queued",
@@ -1247,10 +1281,8 @@ function addPulledJobs(pulled, batchId = "") {
   $("upload-panel").classList.add("hidden");
   $("batch-panel").classList.remove("hidden");
   for (const state of pulled) {
-    clipSeq += 1;
     const clip = {
-      localId: clipSeq,
-      ord: clips.length + 1,
+      ...allocateClipIdentity(),
       file: null,
       name: state.title || "Searcher clip",
       jobId: state.id,

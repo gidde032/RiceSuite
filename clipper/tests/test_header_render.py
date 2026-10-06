@@ -164,7 +164,7 @@ def test_png_failure_falls_back_to_a_libass_text_header(
 
     ass = (tmp_path / "captions.ass").read_text()
     assert "Style: HeaderFallback," in ass
-    assert ",HeaderFallback,,0,0,0,,Still here" in ass
+    assert ",HeaderFallback,,0,0,0,,{\\pos(540,210)}Still here" in ass
     assert "overlay" not in _filter(captured["cmd"])
     assert notes and "disk full" in notes[0]
 
@@ -701,6 +701,86 @@ def test_a_header_too_tall_for_its_space_shrinks_to_fit():
     assert box.bottom <= 1920 - framing.CAPTION_ZONE_PX
 
 
+@pytest.mark.skipif(not _has_libass(), reason="ffmpeg with libass is unavailable")
+@pytest.mark.parametrize("captions_on", [False, True])
+def test_rendered_fallback_plate_stays_with_its_text_above_captions(
+    tmp_path, monkeypatch, captions_on
+):
+    """Check the actual basic renderer, including its box padding and collisions."""
+
+    def no_png(*args, **kwargs):
+        raise RuntimeError("exercise the basic header renderer")
+
+    monkeypatch.setattr(pipeline, "render_header_png", no_png)
+    source = tmp_path / "source.mp4"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=1080x1920:r=2:d=2",
+            "-pix_fmt",
+            "yuv420p",
+            str(source),
+        ],
+        check=True,
+    )
+    req = RenderRequest(
+        header="One\nTwo",
+        captions_on=captions_on,
+        header_look={
+            "y": 1380,
+            "size": 60,
+            "plate": "solid",
+            "plate_color": "FF0000",
+            "outline": 0,
+            "plate_padding": 40,
+        },
+        words=[
+            {"text": text, "start": i * 0.4, "end": (i + 1) * 0.4}
+            for i, text in enumerate("ordinary people change the world".split())
+        ],
+    )
+    output = pipeline.render(tmp_path, source, VERTICAL, req)
+    frame_bytes = subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-i",
+            str(output),
+            "-frames:v",
+            "1",
+            "-f",
+            "image2pipe",
+            "-vcodec",
+            "png",
+            "-",
+        ],
+        check=True,
+        capture_output=True,
+    ).stdout
+    frame = Image.open(io.BytesIO(frame_bytes)).convert("RGB")
+    red, green, blue = frame.split()
+    mask = ImageChops.multiply(
+        red.point(lambda value: 255 if value > 180 else 0),
+        ImageChops.lighter(green, blue).point(lambda value: 255 if value < 80 else 0),
+    )
+    plate = mask.getbbox()
+    assert plate is not None
+    assert plate[3] <= 1920 - framing.CAPTION_ZONE_PX
+    # White header text must lie inside its red background, not above a detached box.
+    white = ImageChops.darker(red, ImageChops.darker(green, blue))
+    white = white.point(lambda value: 255 if value > 220 else 0)
+    header = white.crop((0, 0, 1080, 1380)).getbbox()
+    assert header is not None
+    assert plate[1] <= header[1] < header[3] <= plate[3]
+
+
 def test_fallback_header_is_kept_above_the_caption_zone():
     from dataclasses import replace
 
@@ -779,8 +859,14 @@ def test_fallback_header_keeps_the_plate():
     fields = plate.split(",")
     # BorderStyle 3 box in black at 75% opacity (ASS alpha 0x40), 16 px padding.
     assert fields[5] == "&H40000000" and fields[15:17] == ["3", "16"]
-    assert "Dialogue: 0,0:00:00.00,0:00:01.00,HeaderFallbackPlate,,0,0,0,,Hook" in black
-    assert "Dialogue: 1,0:00:00.00,0:00:01.00,HeaderFallback,,0,0,0,,Hook" in black
+    assert (
+        "Dialogue: 0,0:00:00.00,0:00:01.00,HeaderFallbackPlate,,0,0,0,,"
+        "{\\pos(540,210)}Hook" in black
+    )
+    assert (
+        "Dialogue: 1,0:00:00.00,0:00:01.00,HeaderFallback,,0,0,0,,"
+        "{\\pos(540,210)}Hook" in black
+    )
 
     plain = build_ass(
         [],
@@ -856,3 +942,81 @@ def test_a_generated_header_is_trimmed_to_the_request_limit(isolated_jobs, monke
     assert 0 < len(header) <= HEADER_MAX_CHARS
     assert header == header.strip() and not header.endswith("wor")
     RenderRequest(header=header)  # renders without a 422
+
+
+@pytest.mark.parametrize(
+    (
+        "geometry",
+        "header_top",
+        "expected_crop_warning",
+        "expected_music_warning",
+    ),
+    [
+        ("auto", 712, None, "header_zone"),
+        ("auto", 867, "header_zone", None),
+        ("blur_pad", 712, None, None),
+        ("blur_pad", 867, "header_zone", "header_zone"),
+        ("crop", 712, "header_zone", "header_zone"),
+        ("crop", 867, None, None),
+    ],
+)
+def test_preview_warning_uses_the_resolved_geometry_for_each_plan(
+    isolated_jobs,
+    monkeypatch,
+    geometry,
+    header_top,
+    expected_crop_warning,
+    expected_music_warning,
+):
+    from types import SimpleNamespace
+
+    job = _ready_job(MediaInfo(width=1920, height=1080, duration=2.0, has_audio=False))
+    face = TrackSample(t=0.0, cx=960, cy=410, w=100, h=40)
+    track = [face, None, None, None, None]
+    times = [i * 0.2 for i in range(len(track))]
+    job.crop_plan = framing.plan_crop(
+        track, [], 1920, 1080, sample_times=times
+    )  # auto resolves to blur-pad at this face rate
+    job.music_plan = framing.plan_crop(
+        track, [], 1920, 1080, sample_times=times, profile="music"
+    )  # auto resolves to crop for the music profile
+
+    monkeypatch.setattr(
+        main,
+        "header_png_bytes",
+        lambda *_args, **_kwargs: (
+            b"png",
+            SimpleNamespace(
+                left=100,
+                top=header_top,
+                right=500,
+                bottom=header_top + 28,
+            ),
+        ),
+    )
+    response = _preview(job.id, {"header": "Hook", "geometry": geometry})
+
+    assert response.status_code == 200
+    assert response.json()["warnings"] == {
+        "crop_plan": expected_crop_warning,
+        "music_plan": expected_music_warning,
+    }
+
+
+def test_preview_caption_warning_uses_fitted_geometry(isolated_jobs):
+    job = _ready_job(MediaInfo(width=1920, height=1080, duration=2.0, has_audio=False))
+    face = TrackSample(t=0.0, cx=960, cy=950, w=100, h=100)
+    track = [face, None, None, None, None]
+    times = [i * 0.2 for i in range(len(track))]
+    job.crop_plan = framing.plan_crop(track, [], 1920, 1080, sample_times=times)
+    job.music_plan = framing.plan_crop(
+        track, [], 1920, 1080, sample_times=times, profile="music"
+    )
+
+    response = _preview(job.id, {"geometry": "auto"})
+
+    assert response.status_code == 200
+    assert response.json()["warnings"] == {
+        "crop_plan": None,
+        "music_plan": "caption_zone",
+    }

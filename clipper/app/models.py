@@ -133,6 +133,10 @@ class HeaderFields(BaseModel):
 class HeaderPreviewRequest(HeaderFields):
     """Body of ``POST /api/jobs/{id}/header-preview``."""
 
+    # Header warnings depend on the geometry the render will use, including
+    # whether auto resolves to the crop plan's crop or blur-pad decision.
+    geometry: Geometry = "auto"
+
 
 class RenderRequest(HeaderFields):
     """The human-in-the-loop render payload from the review gate."""

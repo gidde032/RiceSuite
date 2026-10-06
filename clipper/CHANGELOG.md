@@ -57,6 +57,14 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   automatic-pull timer, never pulls, and leaves the progress bar alone.
 
 ### Fixed
+- **Basic header backgrounds stay with their text.** The libass fallback uses
+  a fixed shared position and includes plate padding and outlines when keeping
+  the header above captions.
+- **Face warnings follow blur-pad framing.** Header preview warnings use the
+  selected geometry and refresh when Geometry or Content changes.
+- **Removing a clip keeps saved styles in the correct slot.** Remaining clips
+  are renumbered to match their Poster handoff positions, preserving their
+  current header controls and saving defaults under the new slot.
 - **A lost render request no longer passes for a finished render** (RiceSuite
   [#49](https://github.com/gidde032/RiceSuite/issues/49)). After a lost render
   reply, the page polled job state and took any finished output as success. If
