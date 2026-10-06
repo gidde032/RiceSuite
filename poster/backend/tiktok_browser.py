@@ -7,6 +7,7 @@ Requires saved browser sessions (login state) per account.
 
 import asyncio
 import os
+import re
 import shutil
 from contextlib import AsyncExitStack
 from datetime import datetime, timezone
@@ -850,9 +851,18 @@ def _diagnostic_url(url) -> str | None:
     return urlunsplit((parts.scheme, host, parts.path, "", ""))[:DIAGNOSTIC_TEXT_MAX_CHARS]
 
 
+# A URL quoted in an error line, split before its query or fragment.
+# Playwright quotes the URL that interrupted a navigation in full.
+_QUOTED_URL_QUERY = re.compile(r"([A-Za-z][A-Za-z0-9+.-]*://[^\s\"'?#]*)[?#][^\s\"']*")
+
+
 def _error_first_line(error) -> str | None:
+    """First line of the error, with the query and fragment dropped from any
+    URL it quotes (as for page_url), cut to DIAGNOSTIC_TEXT_MAX_CHARS."""
     lines = str(error).strip().splitlines()
-    return lines[0][:DIAGNOSTIC_TEXT_MAX_CHARS] if lines else None
+    if not lines:
+        return None
+    return _QUOTED_URL_QUERY.sub(r"\1", lines[0])[:DIAGNOSTIC_TEXT_MAX_CHARS]
 
 
 async def _save_post_diagnostics(page, account_key, outcome, stage, started, timings, error=None,
@@ -860,8 +870,8 @@ async def _save_post_diagnostics(page, account_key, outcome, stage, started, tim
     """Local screenshot and bounded metadata; never persist captions or DOM.
 
     The URL is read before the screenshot, as close to the failure as
-    possible; settled_url is where the upload page settled, so the two show
-    whether the page moved afterwards. Error text is kept only for the
+    possible; settled_url is where the settle wait ended, so the two show
+    whether the URL changed afterwards. Error text is kept only for the
     stages listed in DIAGNOSTIC_ERROR_TEXT_STAGES.
     """
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")

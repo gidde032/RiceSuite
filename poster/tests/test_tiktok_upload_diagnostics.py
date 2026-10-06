@@ -6,9 +6,12 @@ the error type, so neither the error text nor the page the browser had
 reached could be read back. These tests drive the real post_media through
 the recording fake browser; no browser or profile is involved.
 """
+import asyncio
 import inspect
 import json
 import re
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from playwright.async_api import Error as PlaywrightError
@@ -145,6 +148,7 @@ def test_unconfirmed_post_records_the_url_and_no_error(
 
     assert rec.lines[-1] == "RETURN 'tt_post_unconfirmed_A'"
     meta = _only_diagnostics(tmp_path)
+    assert meta["settled_url"] == UPLOAD_URL
     assert meta["page_url"] == UPLOAD_URL
     assert meta["error_type"] is None
     assert meta["error_message"] is None
@@ -167,6 +171,70 @@ def test_error_text_is_only_recorded_before_the_caption_is_entered(allow_browser
     assert tiktok_browser.DIAGNOSTIC_ERROR_TEXT_STAGES <= before_caption
     assert "send_media" in tiktok_browser.DIAGNOSTIC_ERROR_TEXT_STAGES
     assert "open_upload_page" in tiktok_browser.DIAGNOSTIC_ERROR_TEXT_STAGES
+
+
+def test_no_stage_from_enter_caption_on_records_error_text(tmp_path, allow_browser_post_media):
+    """The list alone proves nothing unless _save_post_diagnostics consults
+    it. recheck_caption re-raises the editor text just as enter_caption
+    does, and a stage added later must be withheld until it is listed."""
+    stages = list(dict.fromkeys(_post_media_stages_in_order()))
+    withheld = stages[stages.index("enter_caption"):] + ["a_stage_added_later"]
+    assert "recheck_caption" in withheld
+    error = Exception(f"TikTok caption verification failed: editor text: {CAPTION!r}")
+    page = SimpleNamespace(url=UPLOAD_URL, screenshot=AsyncMock())
+
+    for stage in withheld + ["send_media"]:
+        asyncio.run(tiktok_browser._save_post_diagnostics(
+            page, stage, "failed", stage, tiktok_browser.monotonic(), {}, error))
+
+    metas = {json.loads(p.read_text())["stage"]: p.read_text()
+             for p in tmp_path.glob("debug_tt_post_*.json")}
+    assert set(metas) == set(withheld) | {"send_media"}
+    for stage in withheld:
+        meta = json.loads(metas[stage])
+        assert meta["error_type"] == "Exception", stage
+        assert meta["error_message"] is None, stage
+        assert CAPTION not in metas[stage], stage
+    # The control: a listed stage does keep the text, so the check above
+    # is not passing because nothing is ever recorded.
+    assert json.loads(metas["send_media"])["error_message"].startswith("TikTok caption")
+
+
+def test_error_message_drops_the_query_from_a_quoted_url(
+    monkeypatch, tmp_sessions, media, tmp_path, allow_browser_post_media
+):
+    """Playwright quotes the URL that interrupted a navigation, query and
+    all; the query must not reach the JSON through the error text either."""
+    first = ('Page.goto: Navigation to "https://www.tiktok.com/upload" is interrupted by '
+             'another navigation to "https://www.tiktok.com/login?redirect_url='
+             'https%3A%2F%2Fwww.tiktok.com%2Fupload&lang=en#top"')
+
+    async def _interrupted(page, account_key):
+        raise PlaywrightError(first + '\nCall log:\n  - navigating to "https://www.tiktok.com/upload"')
+
+    monkeypatch.setattr(tiktok_browser, "_open_upload_page", _interrupted)
+    _run(monkeypatch, media, _script())
+
+    meta = _only_diagnostics(tmp_path)
+    assert meta["stage"] == "open_upload_page"
+    assert meta["error_message"] == (
+        'Page.goto: Navigation to "https://www.tiktok.com/upload" is interrupted by '
+        'another navigation to "https://www.tiktok.com/login"'
+    )
+    dumped = json.dumps(meta)
+    assert "redirect_url" not in dumped and "lang=en" not in dumped and "#top" not in dumped
+
+
+@pytest.mark.parametrize("message, expected", [
+    ("net::ERR_ABORTED at https://www.tiktok.com/upload?x=1 while loading",
+     "net::ERR_ABORTED at https://www.tiktok.com/upload while loading"),
+    ("frame was detached from chrome-error://chromewebdata/#x",
+     "frame was detached from chrome-error://chromewebdata/"),
+    # Text that is not a URL keeps its punctuation.
+    ("Why? Upload failed #2", "Why? Upload failed #2"),
+])
+def test_error_first_line_strips_queries_only_from_urls(message, expected):
+    assert tiktok_browser._error_first_line(Exception(message)) == expected
 
 
 # --- the URL format -------------------------------------------------------
@@ -216,8 +284,9 @@ def _spy_send_time(monkeypatch):
 def test_file_is_sent_only_after_a_redirect_chain_settles(
     monkeypatch, tmp_sessions, media, allow_browser_post_media
 ):
-    """/upload hands over to TikTok Studio at 4s, which rewrites its own
-    query at 5.5s. The old fixed 5s sent the file mid-chain."""
+    """A redirect chain whose last URL change lands at 5.5s. In the iframe
+    layout the upload frame is found at once, so the old fixed 5s sent the
+    file before the chain had ended."""
     def url(now):
         if now < 4.0:
             return UPLOAD_URL
@@ -226,9 +295,10 @@ def test_file_is_sent_only_after_a_redirect_chain_settles(
         return "https://www.tiktok.com/tiktokstudio/upload?from=upload&lang=en"
 
     sent_at = _spy_send_time(monkeypatch)
-    rec = _run(monkeypatch, media, _script(url=url))
+    rec = _run(monkeypatch, media, _script(url=url, wait_for_selector={}))
 
     assert rec.lines[-1] == "RETURN 'tt_post_ok_A'"
+    assert "content_frame()" in rec.text()  # the iframe layout, as described
     # Last change at 5.5s, then 2s unchanged (decision record on #62).
     assert len(sent_at) == 1 and 7.5 <= sent_at[0] <= 8.0
 
@@ -236,8 +306,10 @@ def test_file_is_sent_only_after_a_redirect_chain_settles(
 def test_login_redirect_after_the_old_5s_is_caught_before_upload(
     monkeypatch, tmp_sessions, media, tmp_path, allow_browser_post_media
 ):
-    """Studio at 4s bounces to login at 5.5s: the old flow read the URL
-    once at 5s, saw Studio and sent the file into a dying page."""
+    """Studio at 4s bounces to login at 5.5s. The old flow read the URL
+    once, at 5s, saw Studio and passed the login check, so the run failed
+    later and less clearly (on a real page, at send_media) instead of as an
+    expired session."""
     login = "https://www.tiktok.com/login?redirect_url=https%3A%2F%2Fwww.tiktok.com%2Fupload"
 
     def url(now):

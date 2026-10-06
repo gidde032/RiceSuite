@@ -179,12 +179,14 @@ published as a tagged release or GitHub Release.
   four times while sending the video, each time with a bare Playwright `Error`
   and a blank screenshot, and the debug JSON held only the error type. The
   JSON now also records `page_url` (the page at the failure), `settled_url`
-  (where the upload page settled) and `error_message` (the first line of the
+  (where the settle wait ended) and `error_message` (the first line of the
   error, up to 200 characters, only for failures before the caption is
-  entered). Both URLs drop the query string and fragment. The fixed 5 s pause
-  after the upload page loads is now a floor: the file is sent once the URL has
-  also stayed the same for 2 s, so a redirect finishes first. A page still
-  navigating at 15 s is logged and used as before. This guards against an
+  entered). Both URLs, and any URL quoted in the error, drop the query string
+  and fragment. The fixed 5 s pause after the upload page loads is now a floor:
+  the file is sent once the URL has also stayed the same for 2 s, so a redirect
+  that has already changed the URL finishes first (one still loading is not
+  visible to this check). A URL still changing at 15 s is logged and used as
+  before. This guards against an
   early redirect; it is not a confirmed fix for those four failures, which
   the new fields are there to explain.
 - A draft with a removed caption style no longer fails Regenerate (RiceSuite
