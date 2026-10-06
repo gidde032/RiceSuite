@@ -241,13 +241,16 @@ test("#59: Render all ends on its own bar and asks for the Send click", async ()
 for (const dropped of [false, true]) {
   test(`changed caption styles refresh preview and download${dropped ? " after a lost render response" : ""}`, async () => {
     const requests = [];
+    let job = { status: "ready", has_output: false, render_id: null };
     const { js, ctx } = boot({
+      // The render completes; with `dropped`, only its reply is lost.
       "POST api/jobs/j1/render": (call) => {
         requests.push(JSON.parse(call.body));
+        job = { status: "done", has_output: true, render_id: requests.at(-1).render_id };
         if (dropped && requests.length > 1) throw new Error("response lost");
-        return [200, { status: "done", has_output: true }];
+        return [200, job];
       },
-      "GET api/jobs/j1": { status: "done", has_output: true },
+      "GET api/jobs/j1": () => [200, job],
     });
     ctx.clip = card(false);
     let selected = "clean";
@@ -266,6 +269,126 @@ for (const dropped of [false, true]) {
     assert.equal(new Set(urls).size, 3, "each completed render needs a fresh media URL");
   });
 }
+
+// --- Issue #49: after a lost reply, only this render's completion counts ----
+// Clipper records the render id of the render it accepts. A request that never
+// arrived leaves an earlier render's id (and output) in the job state.
+
+const RENDER_ID = /^[A-Za-z0-9_-]{8,64}$/;
+const jobPolls = (calls) => calls.filter((c) => c.method === "GET" && c.path === "api/jobs/j1").length;
+
+// A Clipper that renders every request it receives. `lose(n)` decides, per
+// request, whether it is lost "before" it arrives, its reply is lost "after"
+// it completes, or neither.
+function renderServer(lose = () => null, routes = {}) {
+  const received = [];
+  let job = { status: "ready", has_output: false, render_id: null };
+  const booted = boot({
+    "POST api/jobs/j1/render": (call) => {
+      const fate = lose(received.length + 1);
+      if (fate === "before") throw new TypeError("Failed to fetch");
+      received.push(JSON.parse(call.body));
+      job = { status: "done", has_output: true, render_id: received.at(-1).render_id };
+      if (fate === "after") throw new TypeError("network connection lost");
+      return [200, job];
+    },
+    "GET api/jobs/j1": () => [200, job],
+    ...routes,
+  });
+  return { ...booted, received, setJob: (next) => { job = next; } };
+}
+
+test("#49: each render request carries its own render id", async () => {
+  const { js, ctx, received } = renderServer();
+  ctx.clip = card(false);
+  await js("renderClip(clip)");
+  await js("renderClip(clip)");
+  assert.equal(received.length, 2);
+  assert.match(String(received[0].render_id), RENDER_ID);
+  assert.match(String(received[1].render_id), RENDER_ID);
+  assert.notEqual(received[0].render_id, received[1].render_id);
+});
+
+test("#49: a rerender lost before it reached Clipper never passes for its completion", async () => {
+  // Clipper keeps the Clean render's id; the Punch request never arrives.
+  const { js, ctx, calls, received } = renderServer((n) => (n === 2 ? "before" : null));
+  ctx.clip = card(false);
+  let selected = "clean";
+  ctx.clip.captionStyleEl = { querySelector: () => ({ value: selected }) };
+  assert.equal(await js("renderClip(clip)"), true);
+  selected = "punch";
+  js("noteClipEdited(clip)");
+
+  assert.equal(await js("renderClip(clip)"), false, "the Clean output is not the Punch render");
+  assert.equal(js("clipCurrent(clip)"), false);
+  assert.equal(ctx.clip.status, "ready");
+  assert.match(ctx.clip.error, /Clipper has no record of this render; render it again/);
+  assert.equal(ctx.clip.renderUnknown, false, "job state shows no record of the request");
+  assert.deepEqual(state(ctx.clip), { empty: true, busy: false, video: "", download: "" });
+  assert.equal(jobPolls(calls), 4, "decided after four job reads, about 12 s");
+  assert.equal(received.length, 1, "the lost render is never re-sent on its own");
+
+  // The Punch edit cannot reach Poster.
+  js("clips.push(clip)");
+  await js("sendBatch()");
+  assert.equal(calls.filter((c) => c.path === "api/handoff").length, 0);
+});
+
+test("#49: an earlier render's error does not stand in for a lost request", async () => {
+  const { js, ctx, setJob } = renderServer(() => "before");
+  setJob({ status: "error", error: "an earlier failure", has_output: false, render_id: "earlier-0001" });
+  ctx.clip = card(false);
+  assert.equal(await js("renderClip(clip)"), false);
+  assert.match(ctx.clip.error, /no record of this render/);
+});
+
+test("#49: a render that completed but lost its reply recovers with one request", async () => {
+  const { js, ctx, received } = renderServer(() => "after");
+  ctx.clip = card(false);
+  assert.equal(await js("renderClip(clip)"), true);
+  assert.equal(js("clipCurrent(clip)"), true);
+  assert.equal(received.length, 1);
+});
+
+test("#49: a render still running after its reply was lost is followed to the end", async () => {
+  let polls = 0;
+  let sent = null;
+  const { js, ctx } = boot({
+    "POST api/jobs/j1/render": (call) => {
+      sent = JSON.parse(call.body).render_id;
+      throw new TypeError("network connection lost");
+    },
+    "GET api/jobs/j1": () => {
+      polls += 1;
+      return [200, polls <= 6
+        ? { status: "rendering", has_output: false, render_id: sent }
+        : { status: "done", has_output: true, render_id: sent }];
+    },
+  });
+  ctx.clip = card(false);
+  assert.equal(await js("renderClip(clip)"), true);
+  assert.equal(polls, 7);
+});
+
+test("#49: a request Clipper accepts a moment late is still recognised", async () => {
+  let polls = 0;
+  let sent = null;
+  const { js, ctx } = boot({
+    "POST api/jobs/j1/render": (call) => {
+      sent = JSON.parse(call.body).render_id;
+      throw new TypeError("network connection lost");
+    },
+    "GET api/jobs/j1": () => {
+      polls += 1;
+      return [200, polls <= 2
+        ? { status: "done", has_output: true, render_id: "earlier-0001" }
+        : { status: "done", has_output: true, render_id: sent }];
+    },
+  });
+  ctx.clip = card(false);
+  assert.equal(await js("renderClip(clip)"), true);
+  assert.equal(polls, 3);
+});
 
 // A seek or volume drag on a player's built-in controls reaches the card as an
 // input event from the <video> or <audio> element. Moving through a clip is not

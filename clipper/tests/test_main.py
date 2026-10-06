@@ -358,6 +358,130 @@ def test_failed_render_can_be_retried(monkeypatch, isolated_jobs):
     assert result.error is None
 
 
+# --- Issue #49: a job names the render it last accepted ---------------------
+# The page polls job state after a lost render reply. The render id lets it
+# tell its own render's completion from an earlier output.
+
+
+def test_accepted_render_reports_its_render_id(monkeypatch, isolated_jobs):
+    job = _ready_render_job()
+    monkeypatch.setattr(main, "render", lambda work_dir, *a, **k: work_dir / "o.mp4")
+
+    result = main.render_job(job.id, RenderRequest(render_id="attempt-0001"))
+
+    assert result.render_id == "attempt-0001"
+    assert main.get_job(job.id).render_id == "attempt-0001"
+
+
+def test_render_id_shows_while_rendering_and_a_refused_render_keeps_it(
+    monkeypatch, isolated_jobs
+):
+    job = _ready_render_job()
+    in_render = threading.Event()
+    release = threading.Event()
+
+    def blocking_render(work_dir, *args, **kwargs):
+        in_render.set()
+        release.wait(timeout=5)
+        out = work_dir / "output.mp4"
+        out.write_bytes(b"out")
+        return out
+
+    monkeypatch.setattr(main, "render", blocking_render)
+    worker = threading.Thread(
+        target=main.render_job, args=(job.id, RenderRequest(render_id="first-0001"))
+    )
+    worker.start()
+    try:
+        assert in_render.wait(timeout=5)
+        polled = main.get_job(job.id)
+        assert (polled.status, polled.render_id) == ("rendering", "first-0001")
+
+        with pytest.raises(HTTPException) as exc_info:
+            main.render_job(job.id, RenderRequest(render_id="second-0002"))
+        assert exc_info.value.status_code == 409
+        assert main.get_job(job.id).render_id == "first-0001"
+    finally:
+        release.set()
+        worker.join()
+    assert main.get_job(job.id).render_id == "first-0001"
+
+
+def test_failed_render_reports_its_render_id(monkeypatch, isolated_jobs):
+    job = _ready_render_job()
+    monkeypatch.setattr(
+        main,
+        "render",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("ffmpeg disappeared")),
+    )
+
+    with pytest.raises(HTTPException):
+        main.render_job(job.id, RenderRequest(render_id="broken-0001"))
+
+    state = main.get_job(job.id)
+    assert (state.status, state.render_id) == ("error", "broken-0001")
+
+
+def test_render_without_an_id_clears_the_previous_one(monkeypatch, isolated_jobs):
+    # Job state must never credit a later render to an earlier render id.
+    job = _ready_render_job()
+    monkeypatch.setattr(main, "render", lambda work_dir, *a, **k: work_dir / "o.mp4")
+    main.render_job(job.id, RenderRequest(render_id="earlier-0001"))
+
+    main.render_job(job.id, RenderRequest())
+
+    assert main.get_job(job.id).render_id is None
+
+
+def test_job_state_never_pairs_a_new_render_id_with_the_old_outcome(
+    monkeypatch, isolated_jobs
+):
+    # GET /api/jobs/{id} reads job state without the job lock. A render
+    # accepted mid-read must not yield the earlier render's done+output under
+    # the new render's id (review: torn read).
+    job = _ready_render_job()
+    old = job.dir / "output.mp4"
+    old.write_bytes(b"clean")
+    job.status, job.output_path, job.render_id = "done", old, "earlier-0001"
+    in_render, release = threading.Event(), threading.Event()
+
+    def blocking_render(work_dir, *args, **kwargs):
+        in_render.set()
+        release.wait(timeout=5)
+        return work_dir / "output.mp4"
+
+    monkeypatch.setattr(main, "render", blocking_render)
+    worker = threading.Thread(
+        target=main.render_job, args=(job.id, RenderRequest(render_id="punch-0002"))
+    )
+
+    class AdmittedMidRead:
+        """The old output path; the new render is accepted during its stat."""
+
+        def exists(self):
+            worker.start()
+            assert in_render.wait(timeout=5)
+            return True
+
+    job.output_path = AdmittedMidRead()
+    try:
+        polled = main.get_job(job.id)
+    finally:
+        release.set()
+        if worker.is_alive():
+            worker.join()
+    if polled.render_id == "punch-0002":
+        assert (polled.status, polled.has_output) == ("rendering", False)
+    else:
+        assert polled.render_id == "earlier-0001"
+
+
+@pytest.mark.parametrize("bad", ["short", "x" * 65, "has space1", "slash/0001"])
+def test_render_request_rejects_unsafe_render_ids(bad):
+    with pytest.raises(ValidationError):
+        RenderRequest(render_id=bad)
+
+
 def test_render_request_rejects_unknown_visual_presets():
     with pytest.raises(ValidationError):
         RenderRequest(caption_style="not-a-style")

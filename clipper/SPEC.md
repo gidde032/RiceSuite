@@ -309,6 +309,25 @@ held clip. A successful Render all reads “Send the batch to Poster when
 ready.” Only the Send to RicePoster click sends (RiceSuite #59). Confirmed
 handoff says the batch waits in Poster’s inbox.
 
+A render whose reply is lost is checked against job state (Issue #30). Each
+render request carries a `render_id` (8–64 letters, digits, `_`, `-`). Clipper
+records it when it accepts the render, in memory only, and
+`GET /api/jobs/{id}` returns it with the status, error, and output it governs
+(RiceSuite #49). The page accepts only its own render's completion or error;
+an earlier output proves nothing. If four job reads (about 12 s) show another
+render before any shows this one, the card fails like any failed render
+("Clipper has no record of this render; render it again") and holds the batch
+until it renders again. Job reads wait on the job lock, as a render request
+does, so a request queued behind a transcription or header generation is not
+counted as lost. A render that completed but
+lost its reply recovers from job state, with no second request.
+
+While the workspace holds a batch that is not sent, a line under the batch
+actions names the Searcher batch waiting behind it and says it opens after this
+batch is sent or started over (RiceSuite #61). The line reads the read-only
+`GET /api/searcher-inbox` on the automatic-pull timer. It never pulls and does
+not change the progress bar.
+
 Pull and send accept an optional `observation_id` (8–64 letters, digits, `_`,
 `-`), independent of existing custody/idempotency keys. The read-only
 `GET /api/progress/{pull|send}/{observation_id}` observes only that exact attempt

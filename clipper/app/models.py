@@ -95,6 +95,10 @@ class RenderRequest(BaseModel):
     music: MusicSettings = Field(default_factory=MusicSettings)
     # Clip length for a photo job. A video job ignores it.
     photo_duration: int = Field(default=10, ge=PHOTO_MIN_SECONDS, le=PHOTO_MAX_SECONDS)
+    # The page names each render. Job state reports the id of the render it
+    # accepted, so a page that lost the reply can tell its own render's outcome
+    # from an earlier output (RiceSuite #49).
+    render_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{8,64}$")
 
 
 class HeaderRequest(BaseModel):
@@ -154,6 +158,9 @@ class JobState(BaseModel):
     error: str | None = None
     # True once an output mp4 exists for download.
     has_output: bool = False
+    # The ``render_id`` of the render this job last accepted; the status, error
+    # and output above belong to it once rendering ends (RiceSuite #49).
+    render_id: str | None = None
     # Subject-crop framing decision (ADR-001). Only set for landscape input.
     crop_plan: CropPlan | None = None
     music_plan: CropPlan | None = None

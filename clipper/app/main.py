@@ -450,6 +450,8 @@ def render_job(job_id: str, req: RenderRequest) -> JobState:
             jobs.persist_searcher_job(job)
         job.status = "rendering"
         job.error = None
+        # From here, job state reports this render's outcome (RiceSuite #49).
+        job.render_id = req.render_id
         render_lock = job.render_lock
         source_path = job.source_path
         info = job.info
