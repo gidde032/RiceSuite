@@ -393,3 +393,15 @@ def test_settled_url_is_null_before_the_upload_page_opens(
     assert meta["settled_url"] is None
     assert meta["page_url"] is None
     assert meta["error_message"] == "disk full"
+
+
+def test_error_first_line_stays_linear_on_a_long_unbroken_line():
+    """An unbounded scheme pattern backtracks quadratically through a long
+    run of letters (about 2 s at this length). The line is scanned before it
+    is cut to 200 characters, so the scan itself must stay cheap."""
+    import time
+
+    started = time.perf_counter()
+    result = tiktok_browser._error_first_line(Exception("a" * 60_000))
+    assert time.perf_counter() - started < 0.5
+    assert result == "a" * 200

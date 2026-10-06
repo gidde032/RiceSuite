@@ -852,8 +852,9 @@ def _diagnostic_url(url) -> str | None:
 
 
 # A URL quoted in an error line, split before its query or fragment.
-# Playwright quotes the URL that interrupted a navigation in full.
-_QUOTED_URL_QUERY = re.compile(r"([A-Za-z][A-Za-z0-9+.-]*://[^\s\"'?#]*)[?#][^\s\"']*")
+# Playwright quotes the URL that interrupted a navigation in full. The
+# scheme is bounded so a long run of letters cannot backtrack quadratically.
+_QUOTED_URL_QUERY = re.compile(r"([A-Za-z][A-Za-z0-9+.-]{0,31}://[^\s\"'?#]*)[?#][^\s\"']*")
 
 
 def _error_first_line(error) -> str | None:
