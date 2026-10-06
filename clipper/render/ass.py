@@ -9,8 +9,8 @@ Emits the caption layer described in SPEC.md §4-5:
 
 The header (§6) is drawn by Pillow (``render.header_image``) and overlaid by
 ffmpeg (RiceSuite #65). This script carries a header only as the fallback when
-that PNG render fails: a minimal text line in the chosen font, size, colour,
-outline, alignment, and position, without a plate or shadow.
+that PNG render fails: a minimal header in the chosen font, size, colour,
+outline, plate, alignment, and position, with square corners and no shadow.
 
 The module is pure standard library and side-effect free, so ASS generation is
 unit-testable without ffmpeg. ``StyleConfig`` is the parameterised template: the
@@ -60,6 +60,10 @@ class StyleConfig:
     header_line_spacing: float = 1.0
     header_margin_v: int = 210  # first line top, px from the top (Issue #20)
 
+
+# The bottom band of the 1920 px frame kept for captions (render.framing
+# re-exports it). The header is kept above it (RiceSuite #65).
+CAPTION_ZONE_PX = 540
 
 CAPTION_STYLE_NAMES = (
     "classic",
@@ -309,22 +313,71 @@ def _phrase_events(phrases: Sequence[Phrase], style: StyleConfig) -> list[str]:
 _ALIGN_TOP = {"left": 7, "center": 8, "right": 9}
 
 
+def fallback_span(header: str, style: StyleConfig) -> tuple[int, int]:
+    """The libass fallback header's estimated (top, bottom), in output px."""
+    top = _fallback_margin_v(header, style)
+    return top, top + _fallback_lines(header, style) * style.header_font_size
+
+
+def _fallback_lines(header: str, style: StyleConfig) -> int:
+    size = style.header_font_size
+    per_line = max(1, int((style.play_res_x - 160) / (size * 0.5)))
+    return sum(max(1, -(-len(part) // per_line)) for part in header.split("\n"))
+
+
+def _fallback_margin_v(header: str, style: StyleConfig) -> int:
+    """The fallback header's top, moved up so it ends above the caption zone.
+
+    libass wraps the text itself, so the height is estimated: the explicit
+    lines, each wrapped at about half an em per character over the 920 px
+    between the side margins.
+    """
+    lines = _fallback_lines(header, style)
+    caption_top = style.play_res_y - CAPTION_ZONE_PX
+    return max(
+        0, min(style.header_margin_v, caption_top - lines * style.header_font_size)
+    )
+
+
 def _fallback_header(
     header: str, duration: float, style: StyleConfig, family: str
-) -> tuple[str, list[str]]:
-    """A minimal libass header: text and edge only, at the header position."""
+) -> tuple[list[str], list[str]]:
+    """A minimal libass header: text, edge, and plate, at the header position.
+
+    No rounded corners or shadow; a translucent plate keeps its opacity.
+    """
     style_line = (
         f"Style: HeaderFallback,{family},{style.header_font_size},"
         f"{_style_color(style.header_color)},{_style_color(style.header_color)},"
         f"{_style_color(style.header_outline_color)},{_style_color('000000', 255)},"
         f"-1,0,0,0,100,100,0,0,1,{style.header_outline},0,"
-        f"{_ALIGN_TOP.get(style.header_align, 8)},80,80,{style.header_margin_v},1"
+        f"{_ALIGN_TOP.get(style.header_align, 8)},80,80,"
+        f"{_fallback_margin_v(header, style)},1"
     )
-    event = (
+    events = [
         f"Dialogue: 1,{_ass_time(0)},{_ass_time(duration)},"
         f"HeaderFallback,,0,0,0,,{_escape(header)}"
-    )
-    return style_line, [event]
+    ]
+    lines = [style_line]
+    if style.header_plate != "none":
+        # ASS BorderStyle 3 draws its box in OutlineColour, so the plate is a
+        # layer of its own under the text: a box with transparent text.
+        opacity = 100 if style.header_plate == "solid" else style.header_plate_opacity
+        box = _style_color(style.header_plate_color, 255 - round(opacity * 2.55))
+        clear = _style_color(style.header_color, 255)
+        lines.insert(
+            0,
+            f"Style: HeaderFallbackPlate,{family},{style.header_font_size},"
+            f"{clear},{clear},{box},{box},-1,0,0,0,100,100,0,0,"
+            f"3,{style.header_padding},0,{_ALIGN_TOP.get(style.header_align, 8)},"
+            f"80,80,{_fallback_margin_v(header, style)},1",
+        )
+        events.insert(
+            0,
+            f"Dialogue: 0,{_ass_time(0)},{_ass_time(duration)},"
+            f"HeaderFallbackPlate,,0,0,0,,{_escape(header)}",
+        )
+    return lines, events
 
 
 # --- top-level ---------------------------------------------------------------
@@ -356,10 +409,9 @@ def build_ass(
     header_style_lines: list[str] = []
     header_events: list[str] = []
     if fallback_header.strip():
-        line, header_events = _fallback_header(
+        header_style_lines, header_events = _fallback_header(
             fallback_header.strip(), duration, style, fallback_family
         )
-        header_style_lines = [line]
 
     phrases = group_words(words) if captions_on else []
     events = _phrase_events(phrases, style) + header_events

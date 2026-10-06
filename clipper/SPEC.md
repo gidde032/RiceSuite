@@ -216,12 +216,18 @@ libass scales an ASS `Fontsize` (ascent plus descent equals the size), lines
 wrap like libass `WrapStyle: 0` inside 80 px side margins, and the block is
 drawn at 4× and scaled down, so glyph advances do not add up. The installed
 Pillow has no raqm (no HarfBuzz shaping); on rendered frames the default plain
-header's width differs from libass by at most 2 px (0.3%).
+header's width differs from libass by at most 2 px (0.3%). Basic layout cannot
+shape or reorder text, and it has no per-glyph font fallback, so a header in a
+script that needs shaping (Arabic, Hebrew, Indic, or Southeast Asian scripts)
+or with a character the chosen font lacks (for example Hangul in Arial) is
+treated as a PNG failure and takes the fallback below.
 
-**Fallback.** If the PNG render fails (for example, no usable font), the render
-does not fail and does not drop the header. It burns a minimal libass text
-header (font family, size, colour, outline, alignment, and position; no plate
-or shadow), and job state reports why in `header_note`, which the card shows.
+**Fallback.** If the PNG render fails (for example, no usable font, or text
+Pillow cannot lay out), the render does not fail and does not drop the header.
+It burns a minimal libass header (font family, size, colour, outline, plate
+colour and opacity, padding, alignment, and position; square corners and no
+shadow), moved up when needed to end above the caption zone, and job state
+reports why in `header_note`, which the card shows.
 
 **Controls.** Per clip, saved per slot like the caption and header styles
 (§5.1): vertical position, size, a curated font list (Arial Bold by default;
@@ -233,7 +239,10 @@ opacity, corner radius, and padding, alignment, and line spacing. The three
 treatments are presets that fill in the controls. `RenderRequest.header_look`
 carries them with Pydantic bounds; without it, the `header_style` preset
 decides, as before. Header text is at most 200 characters. The renderer keeps
-the drawn block inside the frame and above the caption zone.
+the drawn block inside the frame and above the caption zone: it moves the
+block up when needed, and draws a block taller than that space at a smaller
+size until it fits. The libass fallback header is moved up by its estimated
+height in the same way.
 
 **Live preview.** `POST /api/jobs/{id}/header-preview` returns the same PNG the
 render overlays (a data URL), its drawn box, and the "face near header"
@@ -287,8 +296,8 @@ warning. Plans saved before #65 keep their ingest warning.
 - **Color-emoji burn-in (header-critical) — passed.** The macOS/CoreText libass
   path renders missing-glyph boxes for color emoji, so emoji headers use the
   Pillow PNG-overlay fallback documented in
-  [`docs/spikes/emoji-burn-in.md`](docs/spikes/emoji-burn-in.md). Captions and
-  text-only headers remain on the libass path.
+  [`docs/spikes/emoji-burn-in.md`](docs/spikes/emoji-burn-in.md). Since
+  RiceSuite #65 every header takes that path (§6.3); captions remain on libass.
 
 ## 9. Recorded defaults
 

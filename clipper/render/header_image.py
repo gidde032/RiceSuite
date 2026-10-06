@@ -14,17 +14,18 @@ frame and above the caption zone.
 from __future__ import annotations
 
 import io
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from PIL import Image
 
-from render.ass import StyleConfig
-from render.framing import CAPTION_ZONE_PX
+from render.ass import CAPTION_ZONE_PX, StyleConfig
 from render.text_image import TextFontError, TextLook, draw_block
 
 # Same side margins as the libass header had (MarginL/MarginR 80).
 SIDE_MARGIN_PX = 80
+# The smallest size a too-tall header shrinks to.
+MIN_FIT_SIZE = 12
 
 # Kept for callers that catch the old name.
 HeaderFontError = TextFontError
@@ -83,9 +84,23 @@ def header_layer(
     if not text:
         return HeaderLayer(frame, None)
 
-    block = draw_block(text, text_look(style), max_width=cw - 2 * SIDE_MARGIN_PX)
-    ox, oy = block.origin
-    ink = block.image.getchannel("A").getbbox() or (ox, oy, ox, oy)
+    caption_top = ch - CAPTION_ZONE_PX
+    look = text_look(style)
+    # A block taller than the space above the captions, or with a word wider
+    # than the frame, is drawn smaller until it fits, so no look within the
+    # request bounds runs into the captions or off the frame.
+    max_width = cw - 2 * SIDE_MARGIN_PX
+    for _ in range(8):
+        block = draw_block(text, look, max_width=max_width)
+        ox, oy = block.origin
+        ink = block.image.getchannel("A").getbbox() or (ox, oy, ox, oy)
+        height = ink[3] - ink[1]
+        # A word wider than the wrap width cannot wrap: it shrinks too.
+        fit = min(caption_top / max(1, height), max_width / max(1, block.width))
+        if fit >= 1 or look.size <= MIN_FIT_SIZE:
+            break
+        size = int(look.size * fit * 0.97)
+        look = replace(look, size=max(MIN_FIT_SIZE, min(size, look.size - 1)))
 
     if style.header_align == "left":
         x = SIDE_MARGIN_PX
@@ -95,7 +110,6 @@ def header_layer(
         x = (cw - block.width) // 2
 
     y = style.header_margin_v
-    caption_top = ch - CAPTION_ZONE_PX
     bottom = y - oy + ink[3]
     if bottom > caption_top:
         y -= bottom - caption_top

@@ -184,7 +184,7 @@ def test_fallback_header_is_a_minimal_text_line_at_the_header_position():
     ass = build_ass(
         [], fallback_header="Hook", duration=1.0, style=style, fallback_family="Impact"
     )
-    line = next(x for x in ass.splitlines() if x.startswith("Style: HeaderFallback"))
+    line = next(x for x in ass.splitlines() if x.startswith("Style: HeaderFallback,"))
     assert line.startswith("Style: HeaderFallback,Impact,60,&H0000CCFF,")
     # BorderStyle 1 (no plate), outline 2, no shadow, top-left, MarginV 500.
     assert line.endswith(",1,2,0,7,80,80,500,1")

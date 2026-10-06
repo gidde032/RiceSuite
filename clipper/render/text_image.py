@@ -22,6 +22,7 @@ import os
 import re
 import shutil
 import subprocess
+import unicodedata
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import cache, lru_cache
@@ -36,6 +37,16 @@ _EMOJI_RE = re.compile(
     "[\U0001f000-\U0001faff\U00002600-\U000027bf\U0001f1e6-\U0001f1ff"
     "\U00002300-\U000023ff\U00002b00-\U00002bff\U0000fe00-\U0000fe0f\U0000200d]"
 )
+
+# Scripts that basic layout cannot draw: they need joining, reordering, or
+# right-to-left placement (Arabic, Hebrew, Syriac, Thaana, N'Ko, the Indic
+# scripts, Thai, Lao, Tibetan, Myanmar, Khmer). libass shapes them.
+_NEEDS_SHAPING_RE = re.compile(
+    "[\u0590-\u08ff\u0900-\u0dff\u0e00-\u0fff\u1000-\u109f\u1780-\u17ff"
+    "\ufb1d-\ufdff\ufe70-\ufeff]"
+)
+# A codepoint no font maps, used to find a face's missing-glyph box.
+_NO_GLYPH_PROBE = "\U0010fffd"
 
 # Open-licence fonts committed with Clipper. RiceSuite #66 adds the first one.
 BUNDLED_FONTS_DIR = Path(__file__).resolve().parent / "fonts"
@@ -83,6 +94,10 @@ EMOJI_EM_SCALE = 1.15
 
 class TextFontError(RuntimeError):
     """A font needed to draw the text is missing on this host."""
+
+
+class TextLayoutError(RuntimeError):
+    """The text needs layout Pillow's basic engine cannot do, or glyphs the face lacks."""
 
 
 @dataclass(frozen=True)
@@ -327,6 +342,40 @@ def ass_font(ref: FontRef, size: float) -> ImageFont.FreeTypeFont:
     return _load(ref, size * 1000 / max(1, ascent + descent))
 
 
+def _missing_glyphs(font: ImageFont.FreeTypeFont, text: str) -> list[str]:
+    """Characters of ``text`` that ``font`` draws as its missing-glyph box."""
+    notdef = font.getmask(_NO_GLYPH_PROBE)
+    notdef_key = (notdef.size, bytes(notdef))
+    missing: list[str] = []
+    for ch in dict.fromkeys(text):
+        if ch.isspace() or unicodedata.category(ch) in {"Cc", "Cf", "Mn", "Me"}:
+            continue
+        mask = font.getmask(ch)
+        if (mask.size, bytes(mask)) == notdef_key:
+            missing.append(ch)
+    return missing
+
+
+def check_layout(text: str, font: ImageFont.FreeTypeFont) -> None:
+    """Raise :class:`TextLayoutError` when basic layout would draw ``text`` wrong.
+
+    Pillow here has no raqm, so it cannot shape or reorder complex scripts,
+    and it does no per-glyph font fallback. Either would draw a wrong header
+    silently, so the caller falls back to libass, which does both.
+    """
+    plain = "".join(chunk for kind, chunk in segment(text) if kind == "text")
+    if _NEEDS_SHAPING_RE.search(plain):
+        raise TextLayoutError(
+            "the header needs text shaping (Arabic, Hebrew, or an Indic or "
+            "Southeast Asian script), which Pillow here cannot do"
+        )
+    missing = _missing_glyphs(font, plain)
+    if missing:
+        raise TextLayoutError(
+            f"the header font has no glyph for {''.join(missing[:5])!r}"
+        )
+
+
 # --- emoji -------------------------------------------------------------------
 
 
@@ -383,7 +432,8 @@ def wrap(
 ) -> list[tuple[list, float]]:
     """Wrap ``text`` into lines the way libass ``WrapStyle: 0`` does.
 
-    Explicit newlines are hard breaks. Within a paragraph, words fill lines
+    Explicit newlines are hard breaks, and an empty paragraph is a blank line
+    (an empty ``parts_list``). Within a paragraph, words fill lines
     greedily, then each soft break moves left while that makes the two lines it
     separates closer in width (libass's "smart" wrap, upper line wider).
 
@@ -395,6 +445,7 @@ def wrap(
     for paragraph in text.split("\n"):
         words = [measure_word(w) for w in paragraph.split(" ") if w]
         if not words:
+            lines.append(([], 0.0))  # a blank line, as libass draws it
             continue
         # Greedy pass: break indices into ``words``.
         breaks: list[int] = []
@@ -498,6 +549,7 @@ def draw_block(text: str, look: TextLook, max_width: float) -> Block:
     k = SUPERSAMPLE
     ref = resolve_font(look.font)
     font = ass_font(ref, look.size * k)
+    check_layout(text, font)
     ascent, descent = font.getmetrics()
     line_h = ascent + descent  # == size * k, give or take rounding
     pitch = look.size * look.line_spacing * k
@@ -552,7 +604,9 @@ def draw_block(text: str, look: TextLook, max_width: float) -> Block:
     if look.plate != "none" and lines:
         mask = Image.new("L", out.size, 0)
         mdraw = ImageDraw.Draw(mask)
-        for (_parts, line_w), lx, ty in zip(lines, line_xs, line_tops, strict=True):
+        for (parts, line_w), lx, ty in zip(lines, line_xs, line_tops, strict=True):
+            if not parts:
+                continue  # a blank line has no plate
             mdraw.rounded_rectangle(
                 [lx - pad, ty - pad, lx + line_w + pad, ty + line_h + pad],
                 radius=look.plate_radius * k,

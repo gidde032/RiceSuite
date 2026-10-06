@@ -20,9 +20,13 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   Plain, Black plate, and White plate fill them in. `POST
   /api/jobs/{id}/header-preview` returns the exact header PNG and the "face
   near header" warning re-checked for that header, without writing a file. If
-  the PNG render fails, the clip gets a minimal libass text header and the card
-  says why (`header_note`), instead of a silent fallback. Header text is
-  limited to 200 characters.
+  the PNG render fails, the clip gets a minimal libass header (with its plate,
+  above the captions) and the card says why (`header_note`), instead of a
+  silent fallback. Text Pillow cannot lay out (Arabic, Hebrew, Indic scripts,
+  or a character the font lacks) takes that fallback too, since libass shapes
+  it. A header too tall or wide for its space is drawn smaller to fit. Header
+  text is limited to 200 characters; a longer generated header is trimmed at a
+  word boundary.
   In the editor (variant A, chosen 2026-10-06), an **Adjust header**
   disclosure under the header-style cards holds the controls, with a position
   slider. The header PNG is drawn over the source preview 250 ms after the last

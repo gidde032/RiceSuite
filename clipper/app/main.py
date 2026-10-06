@@ -48,7 +48,7 @@ from app.models import (  # noqa: E402
 )
 from app.process import terminate_all_owned_processes  # noqa: E402
 from render import frame, framing, geometry, subject, text_image  # noqa: E402
-from render.ass import HEADER_STYLE_NAMES, header_preset  # noqa: E402
+from render.ass import HEADER_STYLE_NAMES, fallback_span, header_preset  # noqa: E402
 from render.header_image import header_png_bytes  # noqa: E402
 from render.pipeline import render, style_for_request  # noqa: E402
 from transcribe import lyrics, whisper  # noqa: E402
@@ -370,7 +370,21 @@ def generate_header(job_id: str, req: HeaderRequest) -> dict:
             raise HTTPException(
                 status_code=502, detail="header generation failed"
             ) from exc
-        return {"header": header}
+        return {"header": _fit_header(header)}
+
+
+def _fit_header(header: str) -> str:
+    """Trim a generated header to the render limit at a word boundary.
+
+    The page sets a generated header in code, past the text box's limit, and
+    a longer header would fail every render and preview (RiceSuite #65).
+    """
+    header = header.strip()
+    if len(header) <= HEADER_MAX_CHARS:
+        return header
+    cut = header[: HEADER_MAX_CHARS + 1]
+    space = max(cut.rfind(" "), cut.rfind("\n"))
+    return (cut[:space] if space > 0 else cut[:HEADER_MAX_CHARS]).rstrip()
 
 
 @app.get("/api/jobs/{job_id}", response_model=JobState)
@@ -523,8 +537,7 @@ def header_preview(job_id: str, req: HeaderPreviewRequest) -> dict:
         logger.warning("header preview failed: %s", exc)
         note = f"The header will use the basic text renderer: {exc}"
         if req.header.strip():
-            top = style.header_margin_v
-            span = (top, top + framing.HEADER_BLOCK_MAX_PX)
+            span = fallback_span(req.header.strip(), style)
     else:
         if drawn is not None:
             image = "data:image/png;base64," + base64.b64encode(png).decode("ascii")

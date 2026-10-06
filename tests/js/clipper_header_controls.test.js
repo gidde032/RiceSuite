@@ -284,3 +284,50 @@ test("the face warning follows the header preview, not the ingest plan", () => {
   js("applyGeometry(clip, state)");
   assert.equal(warn.hidden, true);
 });
+
+// --- review repairs (PR #67) ------------------------------------------------------
+
+test("a saved look out of the request bounds takes the preset value", () => {
+  const { js, local } = boot();
+  local.setItem(SLOT_KEY, JSON.stringify({
+    2: { headerLook: { size: 120, font: "comic_sans", color: "red", plate_opacity: 0, y: 900, plate: "neon", line_spacing: 1.5 } },
+  }));
+  const look = js('seedHeaderLook(2, "plain")');
+  assert.equal(look.size, 42);
+  assert.equal(look.font, "arial");
+  assert.equal(look.color, "FFFFFF");
+  assert.equal(look.plate_opacity, 75);
+  assert.equal(look.plate, "none");
+  assert.equal(look.y, 900); // in bounds: kept
+  assert.equal(look.line_spacing, 1.5);
+});
+
+test("a lost render reply still reports the basic-header fallback", async () => {
+  let renderId = "";
+  const { js, ctx } = boot({
+    "POST api/jobs/j1/render": (call) => {
+      renderId = JSON.parse(call.body).render_id;
+      throw new TypeError("Failed to fetch");
+    },
+    "GET api/jobs/j1": () => [200, {
+      render_id: renderId, status: "done", has_output: true,
+      header_note: "The header used the basic text renderer: no font",
+    }],
+  });
+  ctx.setTimeout = (fn) => { fn(); return 0; };
+  ctx.clip = card({ statusEl: { textContent: "", className: "", setAttribute() {}, removeAttribute() {} } });
+  ctx.clip.headerLook = js('headerPreset("plain")');
+  assert.equal(await js("renderClip(clip)"), true);
+  assert.match(ctx.clip.statusEl.textContent, /basic header.*no font/);
+});
+
+test("a rejected render request explains itself instead of [object Object]", async () => {
+  const { js, ctx } = boot({
+    "POST api/jobs/j1/render": () => [422, { detail: [{ loc: ["body", "header"], msg: "String should have at most 200 characters" }] }],
+  });
+  ctx.clip = card({ statusEl: { textContent: "", className: "", setAttribute() {}, removeAttribute() {} } });
+  ctx.clip.headerLook = js('headerPreset("plain")');
+  assert.equal(await js("renderClip(clip)"), false);
+  assert.doesNotMatch(ctx.clip.statusEl.textContent, /object Object/);
+  assert.match(ctx.clip.statusEl.textContent, /header: String should have at most 200 characters/);
+});

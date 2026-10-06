@@ -97,6 +97,26 @@ const HEADER_PRESETS = {
   "white_plate": {"font": "arial", "size": 42, "color": "FFFFFF", "outline": 2, "outline_color": "000000", "shadow": false, "plate": "solid", "plate_color": "FFFFFF", "plate_opacity": 75, "plate_radius": 0, "plate_padding": 16, "align": "center", "line_spacing": 1.0, "y": 210}
 };
 // HEADER_PRESETS_END
+// The request bounds of each look key (app/models.py HeaderLook; a Clipper
+// test compares them). A saved slot look outside them takes the preset value.
+// HEADER_LOOK_RULES_BEGIN
+const HEADER_LOOK_RULES = {
+  "font": ["arial", "helvetica", "avenir", "futura", "impact", "arial_black", "din", "georgia"],
+  "size": [24, 96], "y": [0, 1380], "outline": [0, 8], "plate_opacity": [10, 100],
+  "plate_radius": [0, 40], "plate_padding": [0, 40], "line_spacing": [0.8, 2.0],
+  "plate": ["none", "solid", "translucent"], "align": ["left", "center", "right"]
+};
+// HEADER_LOOK_RULES_END
+const HEADER_COLOR_KEYS = ["color", "outline_color", "plate_color"];
+
+function headerLookValueOk(key, value) {
+  const rule = HEADER_LOOK_RULES[key];
+  if (HEADER_COLOR_KEYS.includes(key)) return typeof value === "string" && /^[0-9A-Fa-f]{6}$/.test(value);
+  if (!rule) return typeof value === "boolean";
+  if (typeof rule[0] === "string") return rule.includes(value);
+  return typeof value === "number" && Number.isFinite(value) && value >= rule[0] && value <= rule[1];
+}
+
 const HEADER_STYLE_KEYS = [
   "color", "outline", "outline_color", "shadow", "plate", "plate_color",
   "plate_opacity", "plate_radius", "plate_padding",
@@ -120,13 +140,16 @@ function headerPreset(name) {
 }
 
 // The look a slot starts from: its saved look, else its header style preset.
-// A saved field of the wrong type (an older or edited store) takes the preset.
+// A saved field of the wrong type or out of the request bounds (an older or
+// edited store) takes the preset value, so it cannot fail every render.
 function seedHeaderLook(ord, style) {
   const look = headerPreset(style);
   const saved = slotDefault(ord, "headerLook", null);
   if (!saved || typeof saved !== "object") return look;
   for (const key of Object.keys(look)) {
-    if (typeof saved[key] === typeof look[key]) look[key] = saved[key];
+    if (typeof saved[key] === typeof look[key] && headerLookValueOk(key, saved[key])) {
+      look[key] = HEADER_COLOR_KEYS.includes(key) ? saved[key].toUpperCase() : saved[key];
+    }
   }
   return look;
 }
@@ -1431,6 +1454,32 @@ const RENDER_NOT_RECEIVED = "Clipper has no record of this render; render it aga
 // Return true once this render is done with output; throw on its error, or
 // when reads keep showing another render (the request never arrived); return
 // false on timeout so the caller can report the original drop.
+// A finished render's status line. A header that fell back to libass says
+// why, even when the clip was edited during the render, so it is never
+// silent (RiceSuite #65).
+function setRenderedStatus(clip, headerNote) {
+  const basic = headerNote ? ` Rendered with a basic header. ${headerNote}` : "";
+  if (!clipCurrent(clip)) {
+    setClipStatus(clip, `Edited since its render. Render it again before it is sent.${basic}`, Boolean(basic));
+  } else if (basic) {
+    setClipStatus(clip, basic.trim(), true);
+  } else {
+    setClipStatus(clip, "Rendered ✓");
+  }
+}
+
+// A request's error detail as text. FastAPI sends a list for a 422.
+function requestErrorText(data, fallback) {
+  const detail = data && data.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail) && detail.length) {
+    return detail
+      .map((d) => `${(d.loc || []).filter((part) => part !== "body").join(".")}: ${d.msg}`)
+      .join("; ");
+  }
+  return fallback;
+}
+
 async function pollRenderCompletion(clip, renderId) {
   const duration = clip.isPhoto === true
     ? photoLength(clip) || 60
@@ -1454,7 +1503,10 @@ async function pollRenderCompletion(clip, renderId) {
       continue;
     }
     seen = true;
-    if (state.status === "done" && state.has_output) return true;
+    if (state.status === "done" && state.has_output) {
+      clip.headerNote = state.header_note || ""; // the reply that carried it was lost
+      return true;
+    }
     if (state.status === "error") throw new Error(state.error || "render failed");
   }
   return false;
@@ -1540,22 +1592,19 @@ async function renderClip(clip) {
         clip.renders = (clip.renders || 0) + 1;
         clip.renderedEdits = editsAtRender;
         clip.status = "done";
-        setClipStatus(clip, clipCurrent(clip) ? "Rendered ✓" : "Edited since its render. Render it again before it is sent.");
+        setRenderedStatus(clip, clip.headerNote);
         await showResult(clip);
         return true;
       }
       clip.renderUnknown = true;
       throw netErr;
     }
-    if (!res.ok) throw new Error(data.detail || "render failed");
+    if (!res.ok) throw new Error(requestErrorText(data, "render failed"));
 
     clip.renders = (clip.renders || 0) + 1;
     clip.renderedEdits = editsAtRender;
     clip.status = "done";
-    if (!clipCurrent(clip)) setClipStatus(clip, "Edited since its render. Render it again before it is sent.");
-    // The header fell back to libass: say why, so it is not silent (#65).
-    else if (data.header_note) setClipStatus(clip, `Rendered with a basic header. ${data.header_note}`, true);
-    else setClipStatus(clip, "Rendered ✓");
+    setRenderedStatus(clip, data.header_note);
     await showResult(clip);
     return true;
   } catch (err) {

@@ -45,9 +45,11 @@ def test_wrap_keeps_an_over_long_word_on_its_own_line():
     assert _words(lines) == ["a", "x" * 30, "b"]
 
 
-def test_wrap_skips_blank_paragraphs():
+def test_wrap_keeps_blank_paragraphs_as_blank_lines():
+    # libass draws "a\N\Nb" with a blank line between (RiceSuite #65 review).
     lines = wrap("a\n\nb", _fake_measure, space_w=1.0, max_width=1000)
-    assert len(lines) == 2
+    assert [parts for parts, _w in lines][1] == []
+    assert len(lines) == 3
 
 
 def test_has_emoji_detects_real_examples():

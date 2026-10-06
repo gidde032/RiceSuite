@@ -14,7 +14,7 @@ See ``docs/design/subject-crop-spec.md`` (Framing policy).
 from __future__ import annotations
 
 from app.models import Content, CropPlan, CropReason, CropSample, TrackSample
-from render.ass import StyleConfig
+from render.ass import CAPTION_ZONE_PX, StyleConfig
 
 # Sampling and motion policy (source_w-relative unless noted).
 SAMPLE_FPS = 5
@@ -37,7 +37,6 @@ SAFE_RATE_MIN = 0.95
 HEADER_BLOCK_MAX_PX = 160
 HEADER_ZONE_PX = StyleConfig().header_margin_v + HEADER_BLOCK_MAX_PX
 DEFAULT_HEADER_SPAN = (StyleConfig().header_margin_v, HEADER_ZONE_PX)
-CAPTION_ZONE_PX = 540
 WARN_FRACTION = 0.20
 
 # Output height the header/caption zones are defined against.

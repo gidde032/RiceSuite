@@ -682,3 +682,183 @@ def test_editor_controls_use_the_request_bounds():
         bounds = {type(m).__name__: m for m in fields[name].metadata}
         assert lo == bounds["Ge"].ge and hi == bounds["Le"].le, name
     assert 'maxlength="200"' in html
+
+
+# --- review repairs (PR #67) ------------------------------------------------------
+
+
+def test_a_header_too_tall_for_its_space_shrinks_to_fit():
+    """Within the request bounds, the drawn block still fits above the captions."""
+    _text_font_or_skip()
+    from dataclasses import replace
+
+    from render.ass import StyleConfig
+    from render.header_image import header_layer
+
+    style = replace(StyleConfig(), header_font_size=96, header_line_spacing=2.0)
+    box = header_layer("word " * 40, style).box
+    assert box.top >= 0
+    assert box.bottom <= 1920 - framing.CAPTION_ZONE_PX
+
+
+def test_fallback_header_is_kept_above_the_caption_zone():
+    from dataclasses import replace
+
+    from render.ass import StyleConfig
+
+    style = replace(StyleConfig(), header_margin_v=1380, header_font_size=60)
+    ass = build_ass([], fallback_header="One\nTwo", duration=1.0, style=style)
+    line = next(x for x in ass.splitlines() if x.startswith("Style: HeaderFallback"))
+    margin_v = int(line.split(",")[-2])
+    # Two 60 px lines must end above the caption zone at 1380.
+    assert margin_v + 2 * 60 <= 1920 - framing.CAPTION_ZONE_PX
+
+
+def test_a_word_wider_than_the_frame_shrinks_to_fit():
+    _text_font_or_skip()
+    from dataclasses import replace
+
+    from render.ass import StyleConfig
+    from render.header_image import SIDE_MARGIN_PX, header_layer
+
+    style = replace(StyleConfig(), header_font_size=96, header_align="left")
+    box = header_layer("#absolutelyunbelievablemoments", style).box
+    assert box.left >= SIDE_MARGIN_PX - 8
+    assert box.right <= 1080 - SIDE_MARGIN_PX + 8
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "مرحبا بالعالم",  # Arabic
+        "नमस्ते",  # Devanagari
+        "שלום",  # Hebrew
+    ],
+)
+def test_text_pillow_cannot_shape_falls_back_to_libass(tmp_path, captured, text):
+    """Basic layout cannot join, reorder, or shape these scripts: libass draws them."""
+    notes: list[str] = []
+    pipeline.render(
+        tmp_path,
+        tmp_path / "src.mp4",
+        VERTICAL,
+        RenderRequest(header=text),
+        notes=notes,
+    )
+    assert "overlay" not in _filter(captured["cmd"])
+    assert text in (tmp_path / "captions.ass").read_text()
+    assert notes and "shaping" in notes[0]
+
+
+def test_a_character_the_font_lacks_falls_back_to_libass(tmp_path, captured):
+    _text_font_or_skip()
+    from render import text_image
+
+    ref = text_image.resolve_font("arial")
+    font = text_image._load(ref, 40)
+    if not text_image._missing_glyphs(font, "진짜"):
+        pytest.skip("this host's default font has Hangul")
+    notes: list[str] = []
+    pipeline.render(
+        tmp_path,
+        tmp_path / "src.mp4",
+        VERTICAL,
+        RenderRequest(header="진짜 대박"),
+        notes=notes,
+    )
+    assert "overlay" not in _filter(captured["cmd"])
+    assert notes and "has no glyph" in notes[0]
+
+
+def test_fallback_header_keeps_the_plate():
+    from render.ass import style_for_presets
+
+    black = build_ass(
+        [],
+        fallback_header="Hook",
+        duration=1.0,
+        style=style_for_presets("classic", "black_plate"),
+    )
+    plate = next(
+        x for x in black.splitlines() if x.startswith("Style: HeaderFallbackPlate")
+    )
+    fields = plate.split(",")
+    # BorderStyle 3 box in black at 75% opacity (ASS alpha 0x40), 16 px padding.
+    assert fields[5] == "&H40000000" and fields[15:17] == ["3", "16"]
+    assert "Dialogue: 0,0:00:00.00,0:00:01.00,HeaderFallbackPlate,,0,0,0,,Hook" in black
+    assert "Dialogue: 1,0:00:00.00,0:00:01.00,HeaderFallback,,0,0,0,,Hook" in black
+
+    plain = build_ass(
+        [],
+        fallback_header="Hook",
+        duration=1.0,
+        style=style_for_presets("classic", "plain"),
+    )
+    assert "HeaderFallbackPlate" not in plain
+
+
+def test_editor_look_rules_match_the_request_bounds():
+    import json
+    import re
+    from typing import get_args
+
+    from app.models import HeaderLook
+
+    block = re.search(
+        r"// HEADER_LOOK_RULES_BEGIN\nconst HEADER_LOOK_RULES = (\{.*?\});\n"
+        r"// HEADER_LOOK_RULES_END",
+        _web("app.js"),
+        re.S,
+    )
+    rules = json.loads(block.group(1))
+    for name, rule in rules.items():
+        field = HeaderLook.model_fields[name]
+        if isinstance(rule[0], str):
+            assert rule == list(get_args(field.annotation)), name
+        else:
+            bounds = {type(m).__name__: m for m in field.metadata}
+            assert rule == [bounds["Ge"].ge, bounds["Le"].le], name
+
+
+def test_blank_lines_in_a_header_are_kept_like_libass():
+    _text_font_or_skip()
+    from render.header_image import header_layer
+    from render.text_image import wrap
+
+    assert len(wrap("a\n\nb", lambda w: (w, float(len(w))), 1.0, 100)) == 3
+    gap = (
+        header_layer("Top\n\nBottom").box.bottom
+        - header_layer("Top\nBottom").box.bottom
+    )
+    assert abs(gap - 42) <= 2  # one empty 42 px line
+
+
+def test_preview_fallback_zone_is_kept_above_the_captions(isolated_jobs, monkeypatch):
+    job = _ready_job(MediaInfo(width=1920, height=1080, duration=2.0, has_audio=False))
+    # The face spans output 1150-1363: above the caption zone and above an
+    # unclamped fallback at 1380, but under the clamped one at 1260-1380.
+    job.crop_plan = framing.plan_crop(_faces_at_output_top(1150), [], 1920, 1080)
+    job.music_plan = None
+
+    def broken(*_args, **_kwargs):
+        raise OSError("no font")
+
+    monkeypatch.setattr(main, "header_png_bytes", broken)
+    look = {"y": 1380, "size": 60}
+    res = _preview(job.id, {"header": "One\nTwo", "header_look": look}).json()
+    assert res["warnings"]["crop_plan"] == "header_zone"
+
+
+def test_a_generated_header_is_trimmed_to_the_request_limit(isolated_jobs, monkeypatch):
+    from app import header_gen
+    from app.models import HEADER_MAX_CHARS, HeaderRequest, Word
+
+    job = _ready_job()
+    job.words = [Word(text="hello", start=0.0, end=0.5)]
+    long = "word " * 60  # 300 characters
+    monkeypatch.setattr(header_gen, "generate_header", lambda *_a, **_k: long.strip())
+    monkeypatch.setattr(main, "_safe_thumbnail", lambda _job: "")
+    header = main.generate_header(job.id, HeaderRequest())["header"]
+    assert 0 < len(header) <= HEADER_MAX_CHARS
+    assert header == header.strip() and not header.endswith("wor")
+    RenderRequest(header=header)  # renders without a 422
