@@ -12,6 +12,7 @@ from contextlib import AsyncExitStack
 from datetime import datetime, timezone
 from pathlib import Path
 from time import monotonic
+from urllib.parse import urlsplit, urlunsplit
 from playwright.async_api import async_playwright, Page, BrowserContext, TimeoutError as PlaywrightTimeoutError
 
 import json
@@ -778,15 +779,63 @@ async def _await_upload_confirmation(page: Page, target, account_key: str) -> bo
         await asyncio.sleep(min(1.0, remaining))
 
 
+# Stages whose error text the debug JSON may hold (RiceSuite #62). From
+# enter_caption on, an error can quote the editor, which holds the caption,
+# so this names the earlier stages one by one: a stage added later records
+# its error type only until it is listed here.
+DIAGNOSTIC_ERROR_TEXT_STAGES = frozenset({
+    "prepare_media", "browser_start", "browser_context", "browser_page",
+    "open_upload_page", "resolve_target", "send_media", "dismiss_overlay",
+    "find_caption",
+})
+DIAGNOSTIC_TEXT_MAX_CHARS = 200
+
+
+def _diagnostic_url(url) -> str | None:
+    """The URL without its query string, fragment or credentials.
+
+    Keeps the scheme and host, so a failed navigation
+    (chrome-error://chromewebdata/) or a blank page (about:blank) cannot be
+    mistaken for a TikTok path.
+    """
+    if not url:
+        return None
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return None
+    host = parts.netloc.rpartition("@")[2]
+    return urlunsplit((parts.scheme, host, parts.path, "", ""))[:DIAGNOSTIC_TEXT_MAX_CHARS]
+
+
+def _error_first_line(error) -> str | None:
+    lines = str(error).strip().splitlines()
+    return lines[0][:DIAGNOSTIC_TEXT_MAX_CHARS] if lines else None
+
+
 async def _save_post_diagnostics(page, account_key, outcome, stage, started, timings, error=None):
-    """Local screenshot and bounded metadata; never persist captions or DOM."""
+    """Local screenshot and bounded metadata; never persist captions or DOM.
+
+    The URL is read before the screenshot, as close to the failure as
+    possible. Error text is kept only for the stages listed in
+    DIAGNOSTIC_ERROR_TEXT_STAGES.
+    """
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     stem = DEBUG_DIR / f"debug_tt_post_{account_key}_{stamp}_{outcome}"
+    try:
+        page_url = _diagnostic_url(page.url) if page is not None else None
+    except Exception:
+        page_url = None
     metadata = {
         "timestamp_utc": stamp, "slot": account_key, "outcome": outcome,
         "stage": stage, "elapsed_s": round(monotonic() - started, 3),
         "stage_timings_s": timings, "upload_cap_s": TT_UPLOAD_TIMEOUT_S,
+        "page_url": page_url,
         "error_type": type(error).__name__ if error else None,
+        "error_message": (
+            _error_first_line(error)
+            if error and stage in DIAGNOSTIC_ERROR_TEXT_STAGES else None
+        ),
     }
     try:
         if page is None:

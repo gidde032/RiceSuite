@@ -43,6 +43,7 @@ sleep 0.500
 page.evaluate(js#4880da5c '() => { const selectors = [ \'div[contenteditable="true"]\', \'')
 sleep 1.500
 locator("div[contenteditable='true']").first.inner_text() -> 'tt_upload_A'
+page.url -> 'https://www.tiktok.com/upload'
 page.screenshot(path='debug_tt_post_A_20260928T000000000000Z_failed.png', timeout=5000)
 locator("div.TUXModal-overlay, div[class*='TUXModal']").first.count() -> 0
 context.close()
