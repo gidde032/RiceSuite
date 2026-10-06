@@ -465,6 +465,14 @@ Check Instagram before retrying an unconfirmed post to avoid duplicates.
 
 ### TikTok slow-network diagnostics
 
+The file is sent only once the upload page's URL has held still: at least 5
+seconds after the page loads, and only after the URL has stayed the same for 2
+seconds. A redirect that has already changed the URL (to TikTok Studio, or to a
+login page) therefore finishes first. A navigation that is still loading has
+not changed the URL yet, so this wait cannot see it. A URL still changing after
+15 seconds is logged (`still navigating`) and used as it is; that alone never
+fails the post. A login page at that point fails it as an expired session.
+
 The caption is entered while the upload runs. Post is then clicked only once
 TikTok enables it, which it does when the upload finishes; the wait is capped
 at `TT_UPLOAD_TIMEOUT_S` seconds, and a timeout fails the post before anything
@@ -480,5 +488,23 @@ A Post button that never appears fails after 30 seconds.
 
 Failures and unconfirmed results save timestamped `debug_tt_post_<slot>_*`
 PNG screenshots and JSON metadata in `debug/`, with the same contents and
-cautions as the Instagram files above. Check TikTok before retrying an
-unconfirmed post to avoid duplicates.
+cautions as the Instagram files above. The TikTok JSON also names where the
+page was:
+
+- `settled_url`: the URL the settle wait ended on (null if the run failed
+  before the wait ended). If the wait reached its 15-second cap, the page had
+  not settled and this is only the URL at that moment; the console then logs
+  `still navigating`, and `stage_timings_s.open_upload_page` is at least 15;
+- `page_url`: the URL when the failure was recorded;
+- `error_message`: the first line of the error, up to 200 characters, for
+  failures before the caption is entered. Later failures record only the
+  error type, because their messages can quote the caption.
+
+Both URLs drop the query string, fragment and any credentials, but keep the
+scheme and host, so a blank or failed page (`about:blank`,
+`chrome-error://chromewebdata/`) is not mistaken for a TikTok page. A URL
+quoted inside `error_message` loses its query string and fragment too. A
+`settled_url` that differs from `page_url` means the URL changed after the
+wait ended. Equal URLs do not rule out a navigation: a reload, a change to the
+query string only, or a navigation inside the upload frame leaves them equal.
+Check TikTok before retrying an unconfirmed post to avoid duplicates.

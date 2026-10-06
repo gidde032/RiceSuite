@@ -7,11 +7,13 @@ Requires saved browser sessions (login state) per account.
 
 import asyncio
 import os
+import re
 import shutil
 from contextlib import AsyncExitStack
 from datetime import datetime, timezone
 from pathlib import Path
 from time import monotonic
+from urllib.parse import urlsplit, urlunsplit
 from playwright.async_api import async_playwright, Page, BrowserContext, TimeoutError as PlaywrightTimeoutError
 
 import json
@@ -460,14 +462,56 @@ async def login(account_key: str):
 # ---------------------------------------------------------------------------
 
 
-async def _open_upload_page(page: Page, account_key: str):
-    """Load the upload page and fail fast if the session is dead."""
+# The upload page can still be redirecting after domcontentloaded (to
+# TikTok Studio, or to a login page), so the file is sent only once the URL
+# has held still (RiceSuite #62). The fixed 5s sleep this replaced stays the
+# floor (CLAUDE.md § Intentional design). The cap only bounds a page that
+# keeps navigating: reaching it is logged, not a failure, so a URL TikTok
+# keeps rewriting cannot block posting.
+UPLOAD_PAGE_SETTLE_FLOOR_S = 5.0
+UPLOAD_PAGE_STABLE_S = 2.0
+UPLOAD_PAGE_POLL_S = 0.5
+UPLOAD_PAGE_SETTLE_CAP_S = 15.0
+
+
+async def _await_url_settled(page: Page, account_key: str) -> str:
+    """Return page.url once it has been unchanged for UPLOAD_PAGE_STABLE_S
+    and the floor has passed, or whatever it is at the cap.
+
+    State observation, not a user action, so it polls with plain sleeps
+    like _await_upload_ready rather than jittered ones.
+    """
+    started = monotonic()
+    url = page.url
+    changed_at = started
+    while True:
+        now = monotonic()
+        if now - started >= UPLOAD_PAGE_SETTLE_FLOOR_S and now - changed_at >= UPLOAD_PAGE_STABLE_S:
+            _log.info(f"[TikTok] {account_key}: upload page settled on {_diagnostic_url(url)}.")
+            return url
+        if now - started >= UPLOAD_PAGE_SETTLE_CAP_S:
+            _log.warning(
+                f"[TikTok] {account_key}: upload page still navigating after "
+                f"{UPLOAD_PAGE_SETTLE_CAP_S:g}s (now {_diagnostic_url(url)}); continuing."
+            )
+            return url
+        await asyncio.sleep(UPLOAD_PAGE_POLL_S)
+        current = page.url
+        if current != url:
+            url, changed_at = current, monotonic()
+
+
+async def _open_upload_page(page: Page, account_key: str) -> str:
+    """Load the upload page and return the URL it settled on."""
     # domcontentloaded completely ignores endless background tracking loops
     await page.goto("https://www.tiktok.com/upload", wait_until="domcontentloaded", timeout=60000)
     await page.wait_for_load_state("domcontentloaded")
-    await asyncio.sleep(5)
+    return await _await_url_settled(page, account_key)
 
-    if url_matches_login_markers(page.url, LOGIN_REDIRECT_MARKERS):
+
+def _check_upload_page_session(settled_url: str, account_key: str):
+    """Fail fast if the settled upload page is TikTok's login wall."""
+    if url_matches_login_markers(settled_url, LOGIN_REDIRECT_MARKERS):
         raise Exception(
             f"Session expired for {account_key}. Run login again: "
             f"python -m backend.session_manager login tiktok {account_key}"
@@ -778,15 +822,76 @@ async def _await_upload_confirmation(page: Page, target, account_key: str) -> bo
         await asyncio.sleep(min(1.0, remaining))
 
 
-async def _save_post_diagnostics(page, account_key, outcome, stage, started, timings, error=None):
-    """Local screenshot and bounded metadata; never persist captions or DOM."""
+# Stages whose error text the debug JSON may hold (RiceSuite #62). From
+# enter_caption on, an error can quote the editor, which holds the caption,
+# so this names the earlier stages one by one: a stage added later records
+# its error type only until it is listed here.
+DIAGNOSTIC_ERROR_TEXT_STAGES = frozenset({
+    "prepare_media", "browser_start", "browser_context", "browser_page",
+    "open_upload_page", "resolve_target", "send_media", "dismiss_overlay",
+    "find_caption",
+})
+DIAGNOSTIC_TEXT_MAX_CHARS = 200
+
+
+def _diagnostic_url(url) -> str | None:
+    """The URL without its query string, fragment or credentials.
+
+    Keeps the scheme and host, so a failed navigation
+    (chrome-error://chromewebdata/) or a blank page (about:blank) cannot be
+    mistaken for a TikTok path.
+    """
+    if not url:
+        return None
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return None
+    host = parts.netloc.rpartition("@")[2]
+    return urlunsplit((parts.scheme, host, parts.path, "", ""))[:DIAGNOSTIC_TEXT_MAX_CHARS]
+
+
+# A URL quoted in an error line, split before its query or fragment.
+# Playwright quotes the URL that interrupted a navigation in full. The
+# scheme is bounded so a long run of letters cannot backtrack quadratically.
+_QUOTED_URL_QUERY = re.compile(r"([A-Za-z][A-Za-z0-9+.-]{0,31}://[^\s\"'?#]*)[?#][^\s\"']*")
+
+
+def _error_first_line(error) -> str | None:
+    """First line of the error, with the query and fragment dropped from any
+    URL it quotes (as for page_url), cut to DIAGNOSTIC_TEXT_MAX_CHARS."""
+    lines = str(error).strip().splitlines()
+    if not lines:
+        return None
+    return _QUOTED_URL_QUERY.sub(r"\1", lines[0])[:DIAGNOSTIC_TEXT_MAX_CHARS]
+
+
+async def _save_post_diagnostics(page, account_key, outcome, stage, started, timings, error=None,
+                                 settled_url=None):
+    """Local screenshot and bounded metadata; never persist captions or DOM.
+
+    The URL is read before the screenshot, as close to the failure as
+    possible; settled_url is where the settle wait ended, so the two show
+    whether the URL changed afterwards. Error text is kept only for the
+    stages listed in DIAGNOSTIC_ERROR_TEXT_STAGES.
+    """
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     stem = DEBUG_DIR / f"debug_tt_post_{account_key}_{stamp}_{outcome}"
+    try:
+        page_url = _diagnostic_url(page.url) if page is not None else None
+    except Exception:
+        page_url = None
     metadata = {
         "timestamp_utc": stamp, "slot": account_key, "outcome": outcome,
         "stage": stage, "elapsed_s": round(monotonic() - started, 3),
         "stage_timings_s": timings, "upload_cap_s": TT_UPLOAD_TIMEOUT_S,
+        "settled_url": _diagnostic_url(settled_url),
+        "page_url": page_url,
         "error_type": type(error).__name__ if error else None,
+        "error_message": (
+            _error_first_line(error)
+            if error and stage in DIAGNOSTIC_ERROR_TEXT_STAGES else None
+        ),
     }
     try:
         if page is None:
@@ -843,6 +948,7 @@ async def post_media(
         stage = "prepare_media"
         timings = {}
         post_attempted = False
+        settled_url = None
 
         async def step(name, fn, *args):
             nonlocal stage
@@ -866,7 +972,8 @@ async def post_media(
             stage = "browser_page"
             page = context.pages[0] if context.pages else await step("browser_page", context.new_page)
 
-            await step("open_upload_page", _open_upload_page, page, account_key)
+            settled_url = await step("open_upload_page", _open_upload_page, page, account_key)
+            _check_upload_page_session(settled_url, account_key)
             target = await step("resolve_target", _resolve_upload_target, page)
             await step("send_media", _upload_media_file, target, upload_path)
             await step("dismiss_overlay", _dismiss_one_time_overlay, page)
@@ -888,7 +995,8 @@ async def post_media(
                 # Do NOT report success we didn't observe — the post may or
                 # may not be live; the caller/UI shows this as unconfirmed
                 _log.warning(f"[TikTok] Warning: no post confirmation seen for {account_key} within {TT_UPLOAD_TIMEOUT_S}s — result unconfirmed.")
-                await _save_post_diagnostics(page, account_key, "unconfirmed", stage, started, timings)
+                await _save_post_diagnostics(page, account_key, "unconfirmed", stage, started, timings,
+                                             settled_url=settled_url)
 
             # Write refreshed cookies back so the session self-sustains
             # (DESIGN-scheduling.md §3a). Only reached when the post did not
@@ -909,7 +1017,7 @@ async def post_media(
             )
             await _save_post_diagnostics(
                 page, account_key, "unconfirmed" if uncertain else "failed",
-                stage, started, timings, e,
+                stage, started, timings, e, settled_url=settled_url,
             )
             modal_text = await _describe_blocking_modal(page) if page is not None else ""
 

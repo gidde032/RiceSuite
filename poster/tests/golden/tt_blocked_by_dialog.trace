@@ -4,7 +4,26 @@ context.add_cookies(<1 cookies>)
 context.new_page()
 page.goto('https://www.tiktok.com/upload', wait_until='domcontentloaded', timeout=60000)
 page.wait_for_load_state('domcontentloaded')
-sleep 5.000
+page.url -> 'https://www.tiktok.com/upload'
+sleep 0.500
+page.url -> 'https://www.tiktok.com/upload'
+sleep 0.500
+page.url -> 'https://www.tiktok.com/upload'
+sleep 0.500
+page.url -> 'https://www.tiktok.com/upload'
+sleep 0.500
+page.url -> 'https://www.tiktok.com/upload'
+sleep 0.500
+page.url -> 'https://www.tiktok.com/upload'
+sleep 0.500
+page.url -> 'https://www.tiktok.com/upload'
+sleep 0.500
+page.url -> 'https://www.tiktok.com/upload'
+sleep 0.500
+page.url -> 'https://www.tiktok.com/upload'
+sleep 0.500
+page.url -> 'https://www.tiktok.com/upload'
+sleep 0.500
 page.url -> 'https://www.tiktok.com/upload'
 page.wait_for_selector("iframe[src*='upload']", timeout=10000)
 page.wait_for_selector("input[type='file']", state='attached', timeout=15000)
@@ -16,6 +35,7 @@ locator("div[data-placeholder*='caption']").count() -> 0
 locator("div[data-placeholder*='title']").count() -> 0
 locator('div.public-DraftEditor-content').count() -> 0
 locator("[class*='editor-container'] div[role='textbox']").count() -> 0
+page.url -> 'https://www.tiktok.com/upload'
 page.screenshot(path='debug_tt_post_A_20260928T000000000000Z_failed.png', timeout=5000)
 locator("div.TUXModal-overlay, div[class*='TUXModal']").first.count() -> 1
 locator("div.TUXModal-overlay, div[class*='TUXModal']").first.is_visible() -> True
