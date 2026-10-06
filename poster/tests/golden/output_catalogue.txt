@@ -106,6 +106,8 @@ tiktok_browser.py :: login :: "Once logged in and you see your feed, press Enter
 tiktok_browser.py :: login :: "(or type 'abort' + Enter to discard if the login didn't work)..."
 tiktok_browser.py :: login :: f"[TikTok] Session saved for '{account_key}'."
 tiktok_browser.py :: login :: f"[TikTok] Login aborted — discarded partial session for '{account_key}'."
+tiktok_browser.py :: _await_url_settled :: f"[TikTok] {account_key}: upload page settled on {_diagnostic_url(url)}."
+tiktok_browser.py :: _await_url_settled :: f"[TikTok] {account_key}: upload page still navigating after " f"{UPLOAD_PAGE_SETTLE_CAP_S:g}s (now {_diagnostic_url(url)}); continuing."
 tiktok_browser.py :: _resolve_upload_target :: "[TikTok] Intercepted upload panel inside iframe view context."
 tiktok_browser.py :: _resolve_upload_target :: "[TikTok] No iframe detected, interacting directly with main page layout."
 tiktok_browser.py :: _upload_media_file :: "[TikTok] Media file sent to picker layer. Upload continues in the background."

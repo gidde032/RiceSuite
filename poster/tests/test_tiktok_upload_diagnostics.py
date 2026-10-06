@@ -189,3 +189,135 @@ def test_diagnostic_url_drops_the_query_fragment_and_credentials(url, expected):
 def test_diagnostic_url_is_bounded():
     long_url = "data:text/html," + "a" * 1000
     assert len(tiktok_browser._diagnostic_url(long_url)) == 200
+
+
+# --- the upload page settles before the file is sent ------------------------
+#
+# The fixed 5s sleep in _open_upload_page became a wait for the URL to hold
+# still. Each test spies on the moment the file is handed to the picker,
+# read from the fake's virtual clock (run_traced patches the module's
+# monotonic).
+
+STUDIO_SETTLED = "https://www.tiktok.com/tiktokstudio/upload"
+
+
+def _spy_send_time(monkeypatch):
+    sent_at = []
+    real_upload = tiktok_browser._upload_media_file
+
+    async def _spy(target, upload_path):
+        sent_at.append(tiktok_browser.monotonic())
+        return await real_upload(target, upload_path)
+
+    monkeypatch.setattr(tiktok_browser, "_upload_media_file", _spy)
+    return sent_at
+
+
+def test_file_is_sent_only_after_a_redirect_chain_settles(
+    monkeypatch, tmp_sessions, media, allow_browser_post_media
+):
+    """/upload hands over to TikTok Studio at 4s, which rewrites its own
+    query at 5.5s. The old fixed 5s sent the file mid-chain."""
+    def url(now):
+        if now < 4.0:
+            return UPLOAD_URL
+        if now < 5.5:
+            return "https://www.tiktok.com/tiktokstudio/upload?from=upload"
+        return "https://www.tiktok.com/tiktokstudio/upload?from=upload&lang=en"
+
+    sent_at = _spy_send_time(monkeypatch)
+    rec = _run(monkeypatch, media, _script(url=url))
+
+    assert rec.lines[-1] == "RETURN 'tt_post_ok_A'"
+    # Last change at 5.5s, then 2s unchanged (decision record on #62).
+    assert len(sent_at) == 1 and 7.5 <= sent_at[0] <= 8.0
+
+
+def test_login_redirect_after_the_old_5s_is_caught_before_upload(
+    monkeypatch, tmp_sessions, media, tmp_path, allow_browser_post_media
+):
+    """Studio at 4s bounces to login at 5.5s: the old flow read the URL
+    once at 5s, saw Studio and sent the file into a dying page."""
+    login = "https://www.tiktok.com/login?redirect_url=https%3A%2F%2Fwww.tiktok.com%2Fupload"
+
+    def url(now):
+        if now < 4.0:
+            return UPLOAD_URL
+        return STUDIO_URL if now < 5.5 else login
+
+    sent_at = _spy_send_time(monkeypatch)
+    rec = _run(monkeypatch, media, _script(url=url))
+
+    assert rec.lines[-1].startswith("RAISED Exception: TikTok post failed for A: Session expired for A")
+    assert sent_at == []
+    meta = _only_diagnostics(tmp_path)
+    assert meta["stage"] == "open_upload_page"
+    assert meta["settled_url"] == "https://www.tiktok.com/login"
+
+
+def test_a_stable_page_still_waits_the_old_5s_floor(
+    monkeypatch, tmp_sessions, media, allow_browser_post_media
+):
+    """CLAUDE.md § Intentional design: a wait may grow, never shrink."""
+    sent_at = _spy_send_time(monkeypatch)
+    rec = _run(monkeypatch, media, _script())
+
+    assert rec.lines[-1] == "RETURN 'tt_post_ok_A'"
+    assert sent_at[0] >= 5.0
+    assert tiktok_browser.UPLOAD_PAGE_SETTLE_FLOOR_S >= 5.0
+
+
+def test_a_page_that_never_settles_is_used_at_the_cap_with_a_warning(
+    monkeypatch, tmp_sessions, media, capsys, allow_browser_post_media
+):
+    """Reaching the cap is not a failure: a URL TikTok keeps rewriting must
+    not block posting. It is logged, and the flow goes on as before."""
+    def url(now):
+        return f"{STUDIO_SETTLED}?tick={int(now)}"
+
+    sent_at = _spy_send_time(monkeypatch)
+    rec = _run(monkeypatch, media, _script(url=url))
+
+    assert rec.lines[-1] == "RETURN 'tt_post_ok_A'"
+    # The 15s cap from the decision record on #62, give or take one poll.
+    assert len(sent_at) == 1 and 15.0 <= sent_at[0] <= 15.5
+    out = capsys.readouterr().out
+    assert "still navigating" in out and "tick=" not in out
+
+
+def test_settled_url_shows_the_page_moved_after_settling(
+    monkeypatch, tmp_sessions, media, tmp_path, allow_browser_post_media
+):
+    """The #62 failure shape: the page settles on TikTok Studio, then
+    navigates away while the file uploads and the screenshot is blank."""
+    def url(now):
+        return STUDIO_URL if now < 6.0 else "chrome-error://chromewebdata/"
+
+    async def _navigates_away(target, upload_path):
+        await tiktok_browser.asyncio.sleep(3)
+        raise PlaywrightError("ElementHandle.set_input_files: Target page, context or browser has been closed")
+
+    monkeypatch.setattr(tiktok_browser, "_upload_media_file", _navigates_away)
+    _run(monkeypatch, media, _script(url=url))
+
+    meta = _only_diagnostics(tmp_path)
+    assert meta["stage"] == "send_media"
+    assert meta["settled_url"] == STUDIO_SETTLED
+    assert meta["page_url"] == "chrome-error://chromewebdata/"
+    assert meta["error_message"].startswith("ElementHandle.set_input_files: Target page")
+
+
+def test_settled_url_is_null_before_the_upload_page_opens(
+    monkeypatch, tmp_sessions, media, tmp_path, allow_browser_post_media
+):
+    def disk_full(src, dst):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(tiktok_browser.shutil, "copyfile", disk_full)
+    _run(monkeypatch, media, _script())
+
+    meta = _only_diagnostics(tmp_path)
+    assert meta["stage"] == "prepare_media"
+    assert meta["settled_url"] is None
+    assert meta["page_url"] is None
+    assert meta["error_message"] == "disk full"
