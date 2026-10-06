@@ -35,7 +35,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   Clean captions, after choosing Punch) was shown as current and could be sent.
   Each render now carries a `render_id`; job state reports the id of the render
   Clipper accepted, and the page accepts only its own. If job state shows no
-  record of the render for about 30 s, the card fails ("Clipper has no record
+  record of the render for about 12 s, the card fails ("Clipper has no record
   of this render; render it again"). A render that finished but lost its reply
   still recovers, with no second request.
 - **Seeking a preview no longer marks a clip edited.** Dragging the seek bar or

@@ -1145,9 +1145,9 @@ async function handleRenderAll() {
 }
 
 // Job reads that may show another render before this one counts as never
-// received (RiceSuite #49): about 30 s at one read every 3 s, long enough for a
-// request queued behind the job lock (a transcription or header generation).
-const RENDER_ADMIT_POLLS = 10;
+// received (RiceSuite #49): about 12 s at one read every 3 s. A request queued
+// behind the job lock is not miscounted: job reads wait on that lock too.
+const RENDER_ADMIT_POLLS = 4;
 const RENDER_NOT_RECEIVED = "Clipper has no record of this render; render it again";
 
 // Poll GET /api/jobs/{id} after a dropped render fetch (Issue #30). Job state
@@ -1619,12 +1619,15 @@ function showWaitingBatches(waiting) {
       : `${n} RiceSearcher batches are waiting (${waiting.map((b) => b.batch_id).join(", ")}). The oldest opens after you send this batch or start over.`;
 }
 
-// Timer ticks overlap. A newer read, or a cleared line, supersedes a read
-// still in flight, so a late reply cannot name a batch pulled meanwhile.
-let waitingRead = 0;
+// Timer ticks overlap. Clearing the line drops every read still in flight,
+// so a late reply cannot name a batch pulled meanwhile; an older reply never
+// replaces a newer one. A slow reply from a held workspace still shows.
+let waitingEpoch = 0; // bumped whenever the line is cleared
+let waitingReads = 0;
+let waitingShown = 0; // the newest read shown
 
 function clearWaitingBatches() {
-  waitingRead += 1;
+  waitingEpoch += 1;
   showWaitingBatches([]);
 }
 
@@ -1633,7 +1636,8 @@ async function noteWaitingBatches() {
     clearWaitingBatches();
     return;
   }
-  const read = ++waitingRead;
+  const epoch = waitingEpoch;
+  const read = ++waitingReads;
   let waiting;
   try {
     const res = await fetch("api/searcher-inbox");
@@ -1642,10 +1646,14 @@ async function noteWaitingBatches() {
   } catch {
     return;
   }
-  if (read !== waitingRead) return;
+  if (epoch !== waitingEpoch || read < waitingShown) return;
   // The batch may have been sent or cleared while the inbox was read.
-  if (pullInFlight || nothingUnsent()) clearWaitingBatches();
-  else showWaitingBatches(waiting);
+  if (pullInFlight || nothingUnsent()) {
+    clearWaitingBatches();
+    return;
+  }
+  waitingShown = read;
+  showWaitingBatches(waiting);
 }
 
 async function autoPullFromSearcher() {

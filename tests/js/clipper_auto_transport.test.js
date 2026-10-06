@@ -768,3 +768,45 @@ test("#61: an inbox read overtaken by a send and the next pull does not name the
   await settle();
   assert.deepEqual(cue(byId), { hidden: true, text: "" }, "b2 is open here, not waiting");
 });
+
+test("#61: inbox replies slower than the timer still show the line", async () => {
+  const replies = [];
+  const { js, byId } = bootWithButtons({
+    "GET api/searcher-inbox": () => new Promise((resolve) => replies.push(resolve)),
+  });
+  js(`clips.push(${sendable("j1", "ready")})`); // held: not rendered
+  js("collectWords = () => []; radioValue = () => 'x';");
+  const first = js("autoPullFromSearcher()");
+  await settle();
+  const second = js("autoPullFromSearcher()"); // the next tick starts before the reply
+  await settle();
+  replies[0]([200, { batches: [{ batch_id: "b2", clip_count: 1 }] }]);
+  await first;
+  await settle();
+  assert.equal(cue(byId).hidden, false, "a held read is not dropped for a newer one");
+  assert.match(cue(byId).text, /b2/);
+  replies[1]([200, { batches: [{ batch_id: "b2", clip_count: 1 }, { batch_id: "b3", clip_count: 2 }] }]);
+  await second;
+  await settle();
+  assert.match(cue(byId).text, /2 RiceSearcher batches/);
+});
+
+test("#61: an older reply never overwrites a newer one", async () => {
+  const replies = [];
+  const { js, byId } = bootWithButtons({
+    "GET api/searcher-inbox": () => new Promise((resolve) => replies.push(resolve)),
+  });
+  js(`clips.push(${sendable("j1", "ready")})`);
+  js("collectWords = () => []; radioValue = () => 'x';");
+  const first = js("autoPullFromSearcher()");
+  await settle();
+  const second = js("autoPullFromSearcher()");
+  await settle();
+  replies[1]([200, { batches: [{ batch_id: "b3", clip_count: 2 }] }]);
+  await second;
+  await settle();
+  replies[0]([200, { batches: [{ batch_id: "b2", clip_count: 1 }] }]);
+  await first;
+  await settle();
+  assert.match(cue(byId).text, /b3/);
+});
