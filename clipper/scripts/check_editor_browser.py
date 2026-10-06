@@ -297,6 +297,20 @@ CHECKS = r"""
     const el = clip.el.querySelector(selector);
     if (el && el.getClientRects().length) check(rect(el).height >= (matchMedia("(pointer: coarse)").matches ? 44 : 36), "target size " + selector);
   }
+  // Header controls (RiceSuite #65): open, every control is a full-size
+  // target inside the settings column, with no horizontal overflow.
+  const adjust = clip.el.querySelector(".header-adjust");
+  check(adjust && !adjust.open, "header controls start closed");
+  check(rect(adjust.querySelector("summary")).height >= (matchMedia("(pointer: coarse)").matches ? 44 : 36), "target size header summary");
+  adjust.open = true;
+  const editCol = rect(clip.el.querySelector(".edit-col"));
+  for (const el of adjust.querySelectorAll(".hc-grid .vol, .hc-grid .switch-label, .hc-grid select, .hc-grid button, .hc-grid input[type=color]")) {
+    const box = rect(el);
+    check(box.height >= (matchMedia("(pointer: coarse)").matches ? 44 : 36), "target size header control " + (el.className || el.tagName));
+    check(box.x >= editCol.x - 1 && box.right <= editCol.right + 1, "header control inside settings " + (el.className || el.tagName));
+  }
+  check(document.documentElement.scrollWidth <= innerWidth, "header controls add no horizontal overflow");
+  adjust.open = false;
   window.scrollTo(0, document.documentElement.scrollHeight);
   const paneBottom = mode === "music" ? rect(clip.lyricsEl).bottom : rect(clip.transcriptEl).bottom;
   check(paneBottom <= rect(document.querySelector(".batch-actions")).y + 1, "action bar clears editor at page end");

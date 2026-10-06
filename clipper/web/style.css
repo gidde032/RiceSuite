@@ -221,3 +221,30 @@ button:focus-visible, .primary:focus-visible, textarea:focus-visible, select:foc
 #progress-count { font-variant-numeric: tabular-nums; }
 #progress-current { margin-top: 4px; }
 .operation-progress.error { color: var(--danger); }
+
+/* Header controls and live preview (RiceSuite #65, variant A). The controls
+   sit in a disclosure under the style cards; the preview is the server's own
+   header PNG over the source's 9:16 frame. */
+.preview-col { position: relative; }
+.header-preview-window { position: absolute; overflow: hidden; pointer-events: none; }
+.header-preview-window.is-approx { outline: 1px dashed var(--rice); outline-offset: -1px; }
+.header-preview { display: block; width: 100%; height: 100%; }
+.header-adjust { margin-top: var(--editor-space); border: 1px solid var(--hairline); border-radius: 6px; background: var(--interior); }
+.header-adjust > summary { min-height: 36px; padding: calc(var(--editor-space) * 0.75) var(--editor-space); color: var(--text); font-size: 12px; font-weight: 560; letter-spacing: 0.02em; text-transform: uppercase; cursor: pointer; }
+.header-adjust > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.hc-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--editor-space); padding: 0 var(--editor-space) var(--editor-space); }
+.hc-wide { grid-column: 1 / -1; }
+.hc-grid .vol { grid-template-columns: 58px minmax(0, 1fr) 58px; }
+.hc-grid .hc-select { grid-template-columns: 58px minmax(0, 1fr); }
+.hc-grid .hc-select select { min-height: 36px; padding: 4px 8px; }
+.hc-grid .hc-colors { display: flex; align-items: center; gap: var(--editor-space); }
+.hc-grid .hc-colors > span { width: 58px; }
+.hc-grid .hc-colors > span + input + span { width: auto; }
+.hc-grid input[type="color"] { width: 40px; height: 36px; padding: 2px; border: 1px solid var(--control-line); border-radius: 4px; background: var(--backdrop); cursor: pointer; }
+.hc-grid .switch-label { min-height: 36px; font-size: 13px !important; }
+.hc-off { opacity: 0.4; pointer-events: none; }
+.hc-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--editor-space); }
+.hc-foot .hint { margin: 0; }
+.header-preview-note:empty { display: none; }
+@media (max-width: 620px) { .hc-grid { grid-template-columns: 1fr; } }
+@media (pointer: coarse) { .header-adjust > summary, .hc-grid input[type="color"], #batch-panel .hc-grid select { min-height: 44px; } .hc-grid input[type="color"] { height: 44px; } }

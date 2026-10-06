@@ -85,6 +85,241 @@ function rememberSlotStyle(ord, kind, value) {
   }
 }
 
+// --- header look (RiceSuite #65) ---------------------------------------------
+// Every header control, keyed like the server's HeaderLook. The block between
+// the markers must equal render.ass.header_preset (a Clipper test compares
+// them). A style card fills in the look keys below; position, size, font,
+// alignment and spacing stay where the reviewer put them.
+// HEADER_PRESETS_BEGIN
+const HEADER_PRESETS = {
+  "plain": {"font": "arial", "size": 42, "color": "FFFFFF", "outline": 2, "outline_color": "000000", "shadow": false, "plate": "none", "plate_color": "000000", "plate_opacity": 75, "plate_radius": 0, "plate_padding": 16, "align": "center", "line_spacing": 1.0, "y": 210},
+  "black_plate": {"font": "arial", "size": 42, "color": "FFFFFF", "outline": 0, "outline_color": "000000", "shadow": false, "plate": "translucent", "plate_color": "000000", "plate_opacity": 75, "plate_radius": 0, "plate_padding": 16, "align": "center", "line_spacing": 1.0, "y": 210},
+  "white_plate": {"font": "arial", "size": 42, "color": "FFFFFF", "outline": 2, "outline_color": "000000", "shadow": false, "plate": "solid", "plate_color": "FFFFFF", "plate_opacity": 75, "plate_radius": 0, "plate_padding": 16, "align": "center", "line_spacing": 1.0, "y": 210}
+};
+// HEADER_PRESETS_END
+const HEADER_STYLE_KEYS = [
+  "color", "outline", "outline_color", "shadow", "plate", "plate_color",
+  "plate_opacity", "plate_radius", "plate_padding",
+];
+// [look key, control class, value kind]
+const HEADER_CONTROLS = [
+  ["y", "hc-y", "int"], ["size", "hc-size", "int"], ["font", "hc-font", "text"],
+  ["color", "hc-color", "color"], ["outline_color", "hc-outline-color", "color"],
+  ["outline", "hc-outline", "int"], ["shadow", "hc-shadow", "check"],
+  ["plate", "hc-plate", "text"], ["plate_color", "hc-plate-color", "color"],
+  ["plate_opacity", "hc-opacity", "int"], ["plate_radius", "hc-radius", "int"],
+  ["plate_padding", "hc-padding", "int"], ["align", "hc-align", "text"],
+  ["line_spacing", "hc-spacing", "float"],
+];
+// Wait this long after the last edit before asking for a header preview.
+const HEADER_PREVIEW_DELAY_MS = 250;
+let headerFontAvailability = null;
+
+function headerPreset(name) {
+  return { ...(HEADER_PRESETS[name] || HEADER_PRESETS.plain) };
+}
+
+// The look a slot starts from: its saved look, else its header style preset.
+// A saved field of the wrong type (an older or edited store) takes the preset.
+function seedHeaderLook(ord, style) {
+  const look = headerPreset(style);
+  const saved = slotDefault(ord, "headerLook", null);
+  if (!saved || typeof saved !== "object") return look;
+  for (const key of Object.keys(look)) {
+    if (typeof saved[key] === typeof look[key]) look[key] = saved[key];
+  }
+  return look;
+}
+
+function writeHeaderControls(clip) {
+  for (const [key, , kind] of HEADER_CONTROLS) {
+    const el = clip.hcEls[key];
+    if (!el) continue;
+    if (kind === "check") el.checked = Boolean(clip.headerLook[key]);
+    else if (kind === "color") el.value = `#${String(clip.headerLook[key]).toLowerCase()}`;
+    else el.value = String(clip.headerLook[key]);
+  }
+  updateHeaderOutputs(clip);
+}
+
+function readHeaderControls(clip) {
+  const look = { ...clip.headerLook };
+  for (const [key, , kind] of HEADER_CONTROLS) {
+    const el = clip.hcEls[key];
+    if (!el) continue;
+    if (kind === "check") look[key] = Boolean(el.checked);
+    else if (kind === "color") look[key] = String(el.value).replace(/^#/, "").toUpperCase();
+    else if (kind === "int") look[key] = Math.round(Number(el.value));
+    else if (kind === "float") look[key] = Math.round(Number(el.value) * 100) / 100;
+    else look[key] = String(el.value);
+  }
+  return look;
+}
+
+function updateHeaderOutputs(clip) {
+  if (!clip.el || !clip.el.querySelector) return;
+  const look = clip.headerLook;
+  const out = (cls, text) => {
+    const el = clip.el.querySelector(`.${cls}`);
+    if (el) el.textContent = text;
+  };
+  out("hc-y-out", `${look.y} px`);
+  out("hc-size-out", `${look.size} px`);
+  out("hc-outline-out", `${look.outline} px`);
+  out("hc-opacity-out", `${look.plate_opacity}%`);
+  out("hc-radius-out", `${look.plate_radius} px`);
+  out("hc-padding-out", `${look.plate_padding} px`);
+  out("hc-spacing-out", `${Number(look.line_spacing).toFixed(2)}×`);
+  clip.el.querySelectorAll(".hc-plate-only").forEach((el) => {
+    const off = look.plate === "none" || (el.classList.contains("hc-opacity-only") && look.plate !== "translucent");
+    el.classList.toggle("hc-off", off);
+  });
+}
+
+// One header edit: keep the look, save it for the slot, and refresh the preview.
+function setHeaderLook(clip, look) {
+  clip.headerLook = look;
+  rememberSlotStyle(clip.ord, "headerLook", look);
+  updateHeaderOutputs(clip);
+  scheduleHeaderPreview(clip);
+}
+
+// A style card fills in the look keys and leaves the layout keys alone.
+function applyHeaderStylePreset(clip, style) {
+  const preset = headerPreset(style);
+  const look = { ...clip.headerLook };
+  for (const key of HEADER_STYLE_KEYS) look[key] = preset[key];
+  setHeaderLook(clip, look);
+  writeHeaderControls(clip);
+}
+
+function labelHeaderFonts(clip) {
+  if (!headerFontAvailability || !clip.hcEls || !clip.hcEls.font) return;
+  const options = clip.hcEls.font.querySelectorAll ? clip.hcEls.font.querySelectorAll("option") : [];
+  for (const option of options) {
+    if (!option.dataset.label) option.dataset.label = option.textContent;
+    const available = headerFontAvailability[option.value] !== false;
+    option.textContent = available ? option.dataset.label : `${option.dataset.label} (not installed: uses Arial Bold)`;
+  }
+}
+
+async function loadHeaderOptions() {
+  try {
+    const res = await fetch("api/header-options");
+    if (!res.ok) return;
+    const data = await res.json();
+    headerFontAvailability = Object.fromEntries((data.fonts || []).map((f) => [f.key, Boolean(f.available)]));
+    clips.forEach(labelHeaderFonts);
+  } catch {
+    /* the list still works; unavailable fonts just are not marked */
+  }
+}
+
+function headerPreviewPayload(clip) {
+  return {
+    header: clip.headerEl.value,
+    header_style: radioValue(clip.headerStyleEl),
+    header_look: clip.headerLook,
+  };
+}
+
+// Debounced: only the last edit in a burst asks the server.
+function scheduleHeaderPreview(clip) {
+  if (!clip.jobId) return;
+  clearTimeout(clip.headerPreviewTimer);
+  clip.headerPreviewTimer = setTimeout(() => requestHeaderPreview(clip), HEADER_PREVIEW_DELAY_MS);
+}
+
+function setHeaderPreviewNote(clip, text) {
+  if (clip.headerPreviewNoteEl) clip.headerPreviewNoteEl.textContent = text || "";
+}
+
+// Ask for the exact header PNG (RiceSuite #65). A reply that a newer request
+// overtook is dropped, so a slow reply cannot show an older look.
+async function requestHeaderPreview(clip) {
+  const seq = (clip.headerPreviewSeq || 0) + 1;
+  clip.headerPreviewSeq = seq;
+  let data;
+  try {
+    const res = await fetch(`api/jobs/${clip.jobId}/header-preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(headerPreviewPayload(clip)),
+    });
+    data = await res.json();
+    if (!res.ok) {
+      throw new Error(typeof data.detail === "string" ? data.detail : "a header setting is out of range");
+    }
+  } catch (err) {
+    if (seq !== clip.headerPreviewSeq) return;
+    showHeaderPreview(clip, null);
+    setHeaderPreviewNote(clip, `Header preview unavailable: ${err.message}`);
+    return;
+  }
+  if (seq !== clip.headerPreviewSeq) return;
+  clip.headerWarnings = data.warnings || null;
+  showHeaderPreview(clip, data.image || null);
+  setHeaderPreviewNote(clip, data.note || (clip.headerPreviewApprox
+    ? "Preview drawn in the centre 9:16 of this source; the render follows its framing."
+    : ""));
+  if (clip.geoState) applyGeometry(clip, clip.geoState);
+}
+
+function showHeaderPreview(clip, image) {
+  const win = clip.headerPreviewWindowEl;
+  if (!win || !clip.headerPreviewEl) return;
+  if (!image) {
+    win.hidden = true;
+    clip.headerPreviewEl.removeAttribute("src");
+    return;
+  }
+  clip.headerPreviewEl.src = image;
+  win.hidden = false;
+  placeHeaderPreview(clip);
+}
+
+// The output frame over the source as shown: the whole picture of a 9:16
+// source, else its centred 9:16 window (an approximation of the crop).
+function headerPreviewBox(media) {
+  const w = media.videoWidth || media.naturalWidth;
+  const h = media.videoHeight || media.naturalHeight;
+  const bw = media.clientWidth;
+  const bh = media.clientHeight;
+  if (!w || !h || !bw || !bh) return null;
+  const scale = Math.min(bw / w, bh / h);
+  const vw = w * scale;
+  const vh = h * scale;
+  const vx = media.offsetLeft + (media.clientLeft || 0) + (bw - vw) / 2;
+  const vy = media.offsetTop + (media.clientTop || 0) + (bh - vh) / 2;
+  const fh = Math.min(vh, (vw * 16) / 9);
+  const fw = (fh * 9) / 16;
+  return {
+    left: vx + (vw - fw) / 2,
+    top: vy + (vh - fh) / 2,
+    width: fw,
+    height: fh,
+    approx: Math.abs(w / h - 9 / 16) > 0.01,
+  };
+}
+
+function placeHeaderPreview(clip) {
+  const win = clip.headerPreviewWindowEl;
+  if (!win || win.hidden) return;
+  const media = clip.isPhoto === true ? clip.sourcePhotoEl : clip.sourceVideoEl;
+  const box = headerPreviewBox(media);
+  if (!box) {
+    win.style.visibility = "hidden";
+    return;
+  }
+  win.style.visibility = "";
+  win.style.left = `${box.left}px`;
+  win.style.top = `${box.top}px`;
+  win.style.width = `${box.width}px`;
+  win.style.height = `${box.height}px`;
+  win.classList.toggle("is-approx", box.approx);
+  clip.headerPreviewApprox = box.approx;
+}
+
 function anyClipActive() {
   return clips.some((c) => ACTIVE_JOB_STATUSES.has(c.status));
 }
@@ -359,6 +594,11 @@ function buildCard(clip) {
   clip.headerFeedbackEl = node.querySelector(".header-feedback");
   clip.headerGenStatusEl = node.querySelector(".header-gen-status");
   clip.headerStyleEl = node.querySelector(".header-style");
+  clip.headerPreviewWindowEl = node.querySelector(".header-preview-window");
+  clip.headerPreviewEl = node.querySelector(".header-preview");
+  clip.headerPreviewNoteEl = node.querySelector(".header-preview-note");
+  clip.hcEls = {};
+  for (const [key, cls] of HEADER_CONTROLS) clip.hcEls[key] = node.querySelector(`.${cls}`);
   clip.contentEl = node.querySelector(".content");
   clip.geometryEl = node.querySelector(".geometry");
   clip.captionsToggleEl = node.querySelector(".captions-toggle");
@@ -424,9 +664,37 @@ function buildCard(clip) {
   clip.captionStyleEl.addEventListener("change", () => {
     rememberSlotStyle(clip.ord, "caption", radioValue(clip.captionStyleEl));
   });
-  clip.headerStyleEl.addEventListener("change", () => {
+  clip.headerStyleEl.addEventListener("change", (event) => {
+    if (!event.target || event.target.type !== "radio") return; // a header control
     rememberSlotStyle(clip.ord, "header", radioValue(clip.headerStyleEl));
+    applyHeaderStylePreset(clip, radioValue(clip.headerStyleEl));
   });
+  // Header controls (RiceSuite #65): seeded from the slot, saved per slot.
+  clip.headerLook = seedHeaderLook(clip.ord, radioValue(clip.headerStyleEl));
+  writeHeaderControls(clip);
+  labelHeaderFonts(clip);
+  for (const [key] of HEADER_CONTROLS) {
+    const el = clip.hcEls[key];
+    if (!el) continue;
+    const onEdit = () => setHeaderLook(clip, readHeaderControls(clip));
+    el.addEventListener("input", onEdit);
+    el.addEventListener("change", onEdit);
+  }
+  node.querySelector(".hc-reset").addEventListener("click", () => {
+    setHeaderLook(clip, headerPreset(radioValue(clip.headerStyleEl)));
+    writeHeaderControls(clip);
+    noteClipEdited(clip);
+  });
+  clip.headerEl.addEventListener("input", () => scheduleHeaderPreview(clip));
+  clip.sourceVideoEl.addEventListener("loadedmetadata", () => placeHeaderPreview(clip));
+  clip.sourcePhotoEl.addEventListener("load", () => placeHeaderPreview(clip));
+  // The source box resizes with the window and with the settings column (it
+  // grows when Adjust header opens), so the preview follows its size.
+  if (typeof ResizeObserver === "function") {
+    const follow = new ResizeObserver(() => placeHeaderPreview(clip));
+    follow.observe(clip.sourceVideoEl);
+    follow.observe(clip.sourcePhotoEl);
+  }
   clip.contentEl.addEventListener("change", () => {
     const isMusic = radioValue(clip.contentEl) === "music";
     clip.lyricsEl.hidden = !isMusic;
@@ -488,6 +756,7 @@ function buildCard(clip) {
   };
 
   $("clips").appendChild(node);
+  if (clip.jobId) scheduleHeaderPreview(clip); // a pulled clip has a job already
 }
 
 // A still photo (Issue #54): a PNG, JPEG, or WebP by type, or by name when the
@@ -517,7 +786,7 @@ function applyPhotoCard(clip) {
   clip.volLabelEl.textContent = "1.00";
   clip.previewStatusEl.textContent = "";
   clip.headerHelpEl.textContent =
-    "1–2 lines, burned into the top of the frame. Edit freely.";
+    "1–2 lines, up to 200 characters, burned into the frame. Edit freely.";
 }
 
 // The photo's clip length in whole seconds, or null when it is out of range.
@@ -677,7 +946,10 @@ function applyGeometry(clip, state) {
   summaryEl.textContent =
     content === "music" ? _musicSummary(plan) : _speechSummary(plan, pct);
 
-  const warning = plan ? plan.warning : null;
+  // The header preview re-checks the zone for this clip's own header (#65).
+  const warnings = clip.headerWarnings;
+  const planKey = content === "music" ? "music_plan" : "crop_plan";
+  const warning = warnings && planKey in warnings ? warnings[planKey] : plan ? plan.warning : null;
   warnEl.classList.toggle("header-warning", warning === "header_zone");
   if (warning === "header_zone") {
     warnEl.textContent = "face near header";
@@ -833,6 +1105,7 @@ async function requestHeader(clip, { feedback = "", avoid = "" } = {}) {
     if (!res.ok) throw new Error(data.detail || "header generation failed");
     if (data.header) {
       clip.headerEl.value = data.header;
+      scheduleHeaderPreview(clip);
       clip.edits = (clip.edits || 0) + 1; // a new header needs a new render
     }
     setHeaderGenStatus(clip, "");
@@ -1059,6 +1332,7 @@ async function ingestClip(clip) {
       }
       clip.jobId = updata.id;
       setGeoNote(clip, updata);
+      scheduleHeaderPreview(clip);
       if (updata.kind === "photo") {
         // A photo has nothing to transcribe: it is ready for review now.
         applyPhotoCard(clip);
@@ -1086,6 +1360,7 @@ async function ingestClip(clip) {
     clip.geoState = trdata;
     renderTranscript(clip);
     applyGeometry(clip, trdata);
+    scheduleHeaderPreview(clip); // the crop plans now exist: re-check the zone
     syncMusicStart(clip);
     clip.status = "ready";
     setClipStatus(clip, "Ready — review & render");
@@ -1232,6 +1507,7 @@ async function renderClip(clip) {
       captions_on: clip.captionsToggleEl.checked,
       caption_style: radioValue(clip.captionStyleEl),
       header_style: radioValue(clip.headerStyleEl),
+      header_look: clip.headerLook,
       geometry: radioValue(clip.geometryEl),
       content: radioValue(clip.contentEl),
       music: {
@@ -1276,7 +1552,10 @@ async function renderClip(clip) {
     clip.renders = (clip.renders || 0) + 1;
     clip.renderedEdits = editsAtRender;
     clip.status = "done";
-    setClipStatus(clip, clipCurrent(clip) ? "Rendered ✓" : "Edited since its render. Render it again before it is sent.");
+    if (!clipCurrent(clip)) setClipStatus(clip, "Edited since its render. Render it again before it is sent.");
+    // The header fell back to libass: say why, so it is not silent (#65).
+    else if (data.header_note) setClipStatus(clip, `Rendered with a basic header. ${data.header_note}`, true);
+    else setClipStatus(clip, "Rendered ✓");
     await showResult(clip);
     return true;
   } catch (err) {
@@ -1725,6 +2004,7 @@ $("clear-cache-btn").addEventListener("click", async () => {
 });
 
 checkHealth();
+loadHeaderOptions();
 refreshCacheInfo();
 updateCacheControls();
 

@@ -141,8 +141,8 @@ Caption and header style are chosen per clip, seeded from a **per-slot saved
 default** rather than a universal pre-upload dropdown: each slot (the "Clip N"
 ordinal that maps to the RicePoster handoff position) remembers its style in the
 browser (`localStorage`, local-first), starting from the v1 Classic/Plain
-defaults, and editing a clip persists that slot's default for later batches. On
-the audio side, choosing a music file defaults the mode to *mix under original*
+defaults, and editing a clip persists that slot's default for later batches. The
+header controls (§6.3) are saved per slot the same way. On the audio side, choosing a music file defaults the mode to *mix under original*
 while the mode is still untouched — a convenience default that never overrides a
 deliberate choice and adds no new mode (D13 unchanged). A photo card offers only
 *No music* and *Add music* (replace), at full volume, because a photo has no
@@ -237,8 +237,20 @@ the drawn block inside the frame and above the caption zone.
 
 **Live preview.** `POST /api/jobs/{id}/header-preview` returns the same PNG the
 render overlays (a data URL), its drawn box, and the "face near header"
-warning re-checked for that box. It writes no files. The editor requests it,
-debounced, as the text or controls change and shows it scaled over the preview.
+warning re-checked for that box. It writes no files. The editor asks for it
+250 ms after the last change to the text or controls (a reply that a newer
+request overtook is dropped) and draws it over the source preview, scaled to
+the source's 9:16 frame. On a source that is not 9:16 it is drawn in the
+centred 9:16 window, outlined, as an approximation of the crop; the rendered
+clip shows the exact result.
+
+**Editor arrangement (variant A, chosen by Finn on 2026-10-06).** The controls
+sit in a closed **Adjust header** disclosure under the header-style cards, and
+position is a slider. Choosing a style card fills in the look (colours,
+outline, shadow, and plate) and keeps position, size, font, alignment, and
+spacing; **Reset header** returns every control to the chosen style's values.
+The look is saved per slot in the browser, with the caption and header styles
+(§5.1).
 
 **Face-near-header zone.** A crop plan keeps each face box's vertical span. The
 plan's stored warning, computed at ingest before any header exists, uses the

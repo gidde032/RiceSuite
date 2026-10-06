@@ -23,6 +23,12 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   the PNG render fails, the clip gets a minimal libass text header and the card
   says why (`header_note`), instead of a silent fallback. Header text is
   limited to 200 characters.
+  In the editor (variant A, chosen 2026-10-06), an **Adjust header**
+  disclosure under the header-style cards holds the controls, with a position
+  slider. The header PNG is drawn over the source preview 250 ms after the last
+  change, and the "face near header" badge follows it. A style card fills in
+  colours, outline, shadow, and plate, and keeps position, size, font,
+  alignment, and spacing. The controls are saved per slot.
 - **Music segment and preview** (RiceSuite [#55](https://github.com/gidde032/RiceSuite/issues/55),
   SPEC D13). Pick where a music track starts with the **Start at** slider. The
   slider keeps the whole segment inside the track. **Play segment** plays it for

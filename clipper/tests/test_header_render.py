@@ -621,3 +621,64 @@ def test_header_options_list_the_presets_and_fonts():
     assert data["fonts"][0]["key"] == "arial"
     assert all(isinstance(f["available"], bool) for f in data["fonts"])
     assert data["max_chars"] == 200
+
+
+# --- the editor mirrors the server (RiceSuite #65, variant A) -------------------
+
+
+def _web(name: str) -> str:
+    from pathlib import Path
+
+    return (Path(__file__).resolve().parents[1] / "web" / name).read_text()
+
+
+def test_editor_header_presets_match_the_server():
+    import json
+    import re
+
+    from render.ass import HEADER_STYLE_NAMES, header_preset
+
+    block = re.search(
+        r"// HEADER_PRESETS_BEGIN\nconst HEADER_PRESETS = (\{.*?\});\n// HEADER_PRESETS_END",
+        _web("app.js"),
+        re.S,
+    )
+    assert block, "app.js lost its HEADER_PRESETS block"
+    presets = json.loads(block.group(1))
+    assert presets == {name: header_preset(name) for name in HEADER_STYLE_NAMES}
+
+
+def test_editor_font_list_matches_the_curated_fonts():
+    import re
+
+    from render.text_image import FONT_CHOICES
+
+    select = re.search(
+        r'<select class="hc-font">(.*?)</select>', _web("index.html"), re.S
+    )
+    options = re.findall(r'<option value="([a-z_]+)">([^<]+)</option>', select.group(1))
+    assert options == [(key, choice.label) for key, choice in FONT_CHOICES.items()]
+
+
+def test_editor_controls_use_the_request_bounds():
+    import re
+
+    from app.models import HeaderLook
+
+    html = _web("index.html")
+    fields = HeaderLook.model_fields
+    for cls, name in [
+        ("hc-y", "y"),
+        ("hc-size", "size"),
+        ("hc-outline", "outline"),
+        ("hc-opacity", "plate_opacity"),
+        ("hc-radius", "plate_radius"),
+        ("hc-padding", "plate_padding"),
+        ("hc-spacing", "line_spacing"),
+    ]:
+        tag = re.search(rf'<input class="{cls}" type="range"([^>]*)/>', html).group(1)
+        lo = float(re.search(r'min="([^"]+)"', tag).group(1))
+        hi = float(re.search(r'max="([^"]+)"', tag).group(1))
+        bounds = {type(m).__name__: m for m in fields[name].metadata}
+        assert lo == bounds["Ge"].ge and hi == bounds["Le"].le, name
+    assert 'maxlength="200"' in html

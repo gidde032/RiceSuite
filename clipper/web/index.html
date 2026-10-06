@@ -80,6 +80,9 @@
         <div class="preview-col">
           <video class="source-video" controls playsinline muted></video>
           <img class="source-photo" alt="" />
+          <!-- Header preview (RiceSuite #65): the server's exact header PNG,
+               scaled over the source's 9:16 frame. -->
+          <div class="header-preview-window" hidden><img class="header-preview" alt="" /></div>
           <p class="geo-note hint"></p>
           <p class="preview-status status" role="status"></p>
         </div>
@@ -88,13 +91,13 @@
           <div class="field field-row">
             <label class="header-label">Header</label>
             <div>
-              <textarea class="header-input" rows="2" placeholder="Your on-screen hook…" aria-describedby="header-help"></textarea>
+              <textarea class="header-input" rows="2" maxlength="200" placeholder="Your on-screen hook…" aria-describedby="header-help"></textarea>
               <div class="header-gen">
                 <button class="header-generate" type="button" title="Generate a header from the frame + transcript">✨ Generate</button>
                 <input class="header-feedback" type="text" placeholder="Optional guidance for regenerate…" aria-label="Header regeneration guidance" />
               </div>
               <p class="header-gen-status status" role="status"></p>
-              <p id="header-help" class="hint">1–2 lines, burned into the top of the frame. Auto-filled after transcription; edit freely.</p>
+              <p id="header-help" class="hint">1–2 lines, up to 200 characters, burned into the frame. Auto-filled after transcription; edit freely.</p>
             </div>
           </div>
 
@@ -139,6 +142,7 @@
 
           <fieldset class="field choice-field header-style">
             <legend>Header style</legend>
+            <div class="header-style-body">
             <div class="choice-grid header-choice-grid">
               <label class="choice-card">
                 <input type="radio" name="header-style" value="plain" checked />
@@ -158,6 +162,46 @@
                 <span class="header-sample sample-white">Build systems,<br />not hustle</span>
                 <span class="choice-label">White plate</span>
               </label>
+            </div>
+            <!-- Header controls (RiceSuite #65, variant A). A style card fills
+                 in the look; position, size, font, alignment and spacing stay. -->
+            <details class="header-adjust">
+              <summary>Adjust header</summary>
+              <div class="hc-grid">
+                <label class="vol hc hc-wide"><span>Position</span><input class="hc-y" type="range" min="0" max="1380" step="2" value="210" /><output class="vol-label hc-y-out">210 px</output></label>
+                <label class="vol hc"><span>Size</span><input class="hc-size" type="range" min="24" max="96" step="1" value="42" /><output class="vol-label hc-size-out">42 px</output></label>
+                <label class="vol hc hc-select"><span>Font</span><select class="hc-font">
+                  <option value="arial">Arial Bold</option>
+                  <option value="helvetica">Helvetica Neue Bold</option>
+                  <option value="avenir">Avenir Next Heavy</option>
+                  <option value="futura">Futura Bold</option>
+                  <option value="impact">Impact</option>
+                  <option value="arial_black">Arial Black</option>
+                  <option value="din">DIN Condensed Bold</option>
+                  <option value="georgia">Georgia Bold</option>
+                </select></label>
+                <div class="vol hc hc-colors"><span>Text</span><input class="hc-color" type="color" value="#ffffff" aria-label="Text colour" /><span>Edge</span><input class="hc-outline-color" type="color" value="#000000" aria-label="Outline colour" /></div>
+                <label class="vol hc"><span>Outline</span><input class="hc-outline" type="range" min="0" max="8" step="1" value="2" /><output class="vol-label hc-outline-out">2 px</output></label>
+                <label class="switch-label hc"><input class="hc-shadow" type="checkbox" /><span>Soft shadow</span></label>
+                <label class="vol hc hc-select"><span>Plate</span><select class="hc-plate">
+                  <option value="none">None</option>
+                  <option value="solid">Solid</option>
+                  <option value="translucent">Translucent</option>
+                </select></label>
+                <div class="vol hc hc-colors hc-plate-only"><span>Fill</span><input class="hc-plate-color" type="color" value="#000000" aria-label="Plate colour" /></div>
+                <label class="vol hc hc-plate-only hc-opacity-only"><span>Opacity</span><input class="hc-opacity" type="range" min="10" max="100" step="5" value="75" /><output class="vol-label hc-opacity-out">75%</output></label>
+                <label class="vol hc hc-plate-only"><span>Corners</span><input class="hc-radius" type="range" min="0" max="40" step="1" value="0" /><output class="vol-label hc-radius-out">0 px</output></label>
+                <label class="vol hc hc-plate-only"><span>Padding</span><input class="hc-padding" type="range" min="0" max="40" step="1" value="16" /><output class="vol-label hc-padding-out">16 px</output></label>
+                <label class="vol hc hc-select"><span>Align</span><select class="hc-align">
+                  <option value="left">Left</option>
+                  <option value="center">Centre</option>
+                  <option value="right">Right</option>
+                </select></label>
+                <label class="vol hc"><span>Spacing</span><input class="hc-spacing" type="range" min="0.8" max="2" step="0.05" value="1" /><output class="vol-label hc-spacing-out">1.00×</output></label>
+                <div class="hc hc-wide hc-foot"><button class="hc-reset" type="button">Reset header</button><span class="hint">Saved for this clip's slot, like the header style.</span></div>
+              </div>
+            </details>
+            <p class="header-preview-note hint" role="status"></p>
             </div>
           </fieldset>
 
