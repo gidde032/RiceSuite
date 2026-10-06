@@ -216,11 +216,16 @@ libass scales an ASS `Fontsize` (ascent plus descent equals the size), lines
 wrap like libass `WrapStyle: 0` inside 80 px side margins, and the block is
 drawn at 4× and scaled down, so glyph advances do not add up. The installed
 Pillow has no raqm (no HarfBuzz shaping); on rendered frames the default plain
-header's width differs from libass by at most 2 px (0.3%). Basic layout cannot
-shape or reorder text, and it has no per-glyph font fallback, so a header in a
-script that needs shaping (Arabic, Hebrew, Indic, or Southeast Asian scripts)
-or with a character the chosen font lacks (for example Hangul in Arial) is
-treated as a PNG failure and takes the fallback below.
+header's width differs from libass by at most 2 px (0.3%). A character the
+chosen font lacks is drawn with the first fallback text font that has it
+(Arial Unicode or Apple Symbols on macOS; DejaVu Sans or Noto on Linux), so ★,
+✓, Hangul, and kana render beside colour emoji. A symbol in the emoji ranges
+that the colour-emoji font has no glyph for is drawn as text. A keycap (1️⃣) is
+drawn as its plain digit, because basic layout cannot place the keycap mark.
+Basic layout cannot shape or reorder text, so a header in a script that needs
+shaping (Arabic, Hebrew, Indic, or Southeast Asian scripts), or with a
+character no text font has, is treated as a PNG failure and takes the fallback
+below.
 
 **Fallback.** If the PNG render fails (for example, no usable font, or text
 Pillow cannot lay out), the render does not fail and does not drop the header.

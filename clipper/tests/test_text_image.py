@@ -5,7 +5,7 @@ import pytest
 from render import text_image
 from render.ass import style_for_presets
 from render.header_image import header_layer
-from render.text_image import has_emoji, segment, wrap
+from render.text_image import has_emoji, wrap
 
 
 def _fake_measure(word):
@@ -62,15 +62,6 @@ def test_has_emoji_false_for_plain_text():
     assert not has_emoji("just a normal header")
     assert not has_emoji("")
     assert not has_emoji("numbers 123 and symbols !?.")
-
-
-def test_segment_splits_text_and_emoji_runs():
-    runs = segment("pics\U0001f979")
-    assert runs == [("text", "pics"), ("emoji", "\U0001f979")]
-
-
-def test_segment_pure_text():
-    assert segment("hello") == [("text", "hello")]
 
 
 def test_plain_emoji_header_is_transparent_without_a_plate():
@@ -241,3 +232,77 @@ def test_ass_font_sizes_the_line_box_like_libass():
     font = text_image.ass_font(text_image.FontRef(path), 42)
     ascent, descent = font.getmetrics()
     assert abs((ascent + descent) - 42) <= 1
+
+
+# --- RiceSuite #65 review: symbols with no colour-emoji glyph -----------------------
+
+
+def test_symbols_without_an_emoji_glyph_go_to_the_text_font():
+    from render.text_image import split_runs
+
+    has = {"\U0001f602"}.__contains__
+    assert split_runs("Rated★★", has) == [("text", "Rated★★")]
+    assert split_runs("ok✓\U0001f602", has) == [
+        ("text", "ok✓"),
+        ("emoji", "\U0001f602"),
+    ]
+
+
+def test_joiners_and_selectors_stay_with_their_run():
+    from render.text_image import split_runs
+
+    has = {"❤", "\U0001f468", "\U0001f469"}.__contains__
+    # A heart with VS16 stays one emoji run; a ZWJ joins two emoji.
+    assert split_runs("❤️", has) == [("emoji", "❤️")]
+    assert split_runs("\U0001f468‍\U0001f469", has) == [
+        ("emoji", "\U0001f468‍\U0001f469")
+    ]
+    # A keycap is drawn as its plain digit: basic layout cannot place the mark.
+    assert split_runs("1\ufe0f\u20e3", has) == [("text", "1")]
+    assert split_runs("x\u20e3", has) == [("text", "x\u20e3")]
+
+
+def test_a_symbol_without_an_emoji_glyph_never_reaches_the_emoji_font(monkeypatch):
+    text_image.clear_font_caches()
+    if text_image._resolve_text_font() is None:
+        pytest.skip("no Pillow-compatible text font on this host")
+
+    def no_emoji(_cluster, _height):
+        raise AssertionError("a symbol was sent to the emoji font")
+
+    monkeypatch.setattr(text_image, "emoji_has_glyph", lambda _ch: False)
+    monkeypatch.setattr(text_image, "emoji_image", no_emoji)
+    look = text_image.TextLook()
+    try:
+        text_image.draw_block("Rated ★★★ ✓", look, 920)
+    except text_image.TextLayoutError as exc:
+        assert "has a glyph for" in str(exc)  # no text font has it: libass draws it
+
+
+def test_a_character_the_header_font_lacks_uses_a_fallback_text_font(monkeypatch):
+    text_image.clear_font_caches()
+    main = text_image._resolve_text_font()
+    if main is None:
+        pytest.skip("no Pillow-compatible text font on this host")
+    main_ref = text_image.FontRef(main)
+    if text_image._font_has(main_ref, "★"):
+        pytest.skip("this host's header font has ★ itself")
+    fallbacks = text_image._fallback_refs()
+    if not any(text_image._font_has(ref, "★") for ref in fallbacks):
+        pytest.skip("no fallback text font with ★ on this host")
+
+    ref = text_image.text_font_for("★", main_ref)
+    assert ref is not None and ref != main_ref
+    assert text_image.text_font_for("A", main_ref) == main_ref
+    # The block draws: no layout error, and the star has ink.
+    block = text_image.draw_block("★", text_image.TextLook(outline=0), 920)
+    assert block.image.getchannel("A").getbbox() is not None
+
+
+def test_text_runs_split_by_font():
+    from render.text_image import FontRef, font_runs
+
+    main, alt = FontRef("main"), FontRef("alt")
+    pick = {"★": alt}.get
+    runs = font_runs("ab★★c", lambda ch: pick(ch, main))
+    assert runs == [(main, "ab"), (alt, "★★"), (main, "c")]

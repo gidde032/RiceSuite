@@ -80,6 +80,18 @@ _EMOJI_FONT_CANDIDATES = [
     "/usr/share/fonts/google-noto-emoji/NotoColorEmoji.ttf",
     "/usr/share/fonts/noto/NotoColorEmoji.ttf",
 ]
+# Text fonts tried, in order, for a character the header font lacks (★, ✓,
+# Hangul, kana…): basic layout has no font fallback of its own.
+_FALLBACK_TEXT_FONTS = [
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+    "/System/Library/Fonts/Apple Symbols.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+    "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Bold.ttc",
+    "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
+]
 _LOADABLE_FONT_SUFFIXES = (".ttf", ".ttc", ".otf")
 _FONTCONFIG_TIMEOUT_S = 5
 # Candidate strike sizes, largest first (rendered high-res then scaled down).
@@ -159,23 +171,11 @@ class FontRef:
     index: int = 0
 
 
-# --- detection + segmentation ------------------------------------------------
+# --- detection ---------------------------------------------------------------
 
 
 def has_emoji(text: str) -> bool:
     return bool(_EMOJI_RE.search(text or ""))
-
-
-def segment(word: str) -> list[tuple[str, str]]:
-    """Split a word into consecutive ('text'|'emoji', chunk) runs."""
-    runs: list[tuple[str, str]] = []
-    for ch in word:
-        kind = "emoji" if _EMOJI_RE.match(ch) else "text"
-        if runs and runs[-1][0] == kind:
-            runs[-1] = (kind, runs[-1][1] + ch)
-        else:
-            runs.append((kind, ch))
-    return runs
 
 
 # --- font resolution ---------------------------------------------------------
@@ -278,6 +278,9 @@ def clear_font_caches() -> None:
     _resolve_text_font.cache_clear()
     _resolve_choice.cache_clear()
     _resolve_emoji_font.cache_clear()
+    emoji_has_glyph.cache_clear()
+    _fallback_refs.cache_clear()
+    _font_has.cache_clear()
     _load.cache_clear()
 
 
@@ -342,37 +345,126 @@ def ass_font(ref: FontRef, size: float) -> ImageFont.FreeTypeFont:
     return _load(ref, size * 1000 / max(1, ascent + descent))
 
 
-def _missing_glyphs(font: ImageFont.FreeTypeFont, text: str) -> list[str]:
+def _glyph_key(font: ImageFont.FreeTypeFont, ch: str, color: bool = False):
+    """How ``font`` draws ``ch``: its box and pixels, to compare glyphs."""
+    mode = "RGBA" if color else "L"
+    box = font.getbbox(ch, mode="RGBA" if color else "")
+    im = Image.new(mode, (max(1, box[2] - box[0]), max(1, box[3] - box[1])))
+    ImageDraw.Draw(im).text(
+        (-box[0], -box[1]),
+        ch,
+        font=font,
+        fill=None if color else 255,
+        embedded_color=color,
+    )
+    return box, im.tobytes()
+
+
+def _missing_glyphs(
+    font: ImageFont.FreeTypeFont, text: str, color: bool = False
+) -> list[str]:
     """Characters of ``text`` that ``font`` draws as its missing-glyph box."""
-    notdef = font.getmask(_NO_GLYPH_PROBE)
-    notdef_key = (notdef.size, bytes(notdef))
-    missing: list[str] = []
-    for ch in dict.fromkeys(text):
-        if ch.isspace() or unicodedata.category(ch) in {"Cc", "Cf", "Mn", "Me"}:
+    notdef = _glyph_key(font, _NO_GLYPH_PROBE, color)
+    return [
+        ch
+        for ch in dict.fromkeys(text)
+        if not ch.isspace()
+        and unicodedata.category(ch) not in {"Cc", "Cf"}
+        and _glyph_key(font, ch, color) == notdef
+    ]
+
+
+# Emoji variation selectors and the zero-width joiner join the run they
+# follow; in a text run they are dropped, since a text font has no glyph.
+_JOINERS = frozenset("\ufe0e\ufe0f\u200d")
+_KEYCAP = "\u20e3"
+_KEYCAP_BASES = frozenset("0123456789#*")
+
+
+def split_runs(word: str, emoji_glyph) -> list[tuple[str, str]]:
+    """Split a word into ('text'|'emoji', chunk) runs.
+
+    A character in the emoji ranges is drawn with the colour-emoji font only
+    when that font has a glyph for it (``emoji_glyph(ch)``); otherwise it is
+    text (★ U+2605, ✓ U+2713), so it is never drawn as a gap. A keycap
+    sequence is drawn as its plain digit.
+    """
+    runs: list[tuple[str, str]] = []
+    for ch in word:
+        if ch == _KEYCAP and runs and runs[-1][1][-1:] in _KEYCAP_BASES:
+            # Basic layout cannot place the keycap mark on its digit, so a
+            # keycap (1️⃣) is drawn as the plain digit.
             continue
-        mask = font.getmask(ch)
-        if (mask.size, bytes(mask)) == notdef_key:
-            missing.append(ch)
-    return missing
+        if ch in _JOINERS:
+            if runs and runs[-1][0] == "emoji":
+                runs[-1] = ("emoji", runs[-1][1] + ch)
+            continue
+        kind = "emoji" if _EMOJI_RE.match(ch) and emoji_glyph(ch) else "text"
+        if runs and runs[-1][0] == kind:
+            runs[-1] = (kind, runs[-1][1] + ch)
+        else:
+            runs.append((kind, ch))
+    return runs
 
 
-def check_layout(text: str, font: ImageFont.FreeTypeFont) -> None:
+@lru_cache(maxsize=512)
+def emoji_has_glyph(ch: str) -> bool:  # pragma: no cover - needs an emoji font
+    """True when the colour-emoji font draws ``ch`` (not its missing glyph)."""
+    path, strike = require_emoji_font()
+    return not _missing_glyphs(_load(FontRef(path), strike), ch, color=True)
+
+
+@lru_cache(maxsize=1)
+def _fallback_refs() -> tuple[FontRef, ...]:
+    return tuple(FontRef(p) for p in _FALLBACK_TEXT_FONTS if os.path.exists(p))
+
+
+@lru_cache(maxsize=4096)
+def _font_has(ref: FontRef, ch: str) -> bool:
+    """True when ``ref`` draws ``ch`` with a real glyph."""
+    return not _missing_glyphs(_load(ref, 40), ch)
+
+
+def text_font_for(ch: str, main: FontRef) -> FontRef | None:
+    """The face that draws ``ch``: the header font, else the first fallback
+    text font that has it, else None."""
+    if ch.isspace() or unicodedata.category(ch) in {"Cc", "Cf"} or _font_has(main, ch):
+        return main
+    return next((ref for ref in _fallback_refs() if _font_has(ref, ch)), None)
+
+
+def font_runs(text: str, pick) -> list[tuple[FontRef, str]]:
+    """Split ``text`` into (face, chunk) runs, ``pick(ch)`` choosing each face."""
+    runs: list[tuple[FontRef, str]] = []
+    for ch in text:
+        ref = pick(ch)
+        if runs and runs[-1][0] == ref:
+            runs[-1] = (ref, runs[-1][1] + ch)
+        else:
+            runs.append((ref, ch))
+    return runs
+
+
+def check_layout(text: str, main: FontRef) -> None:
     """Raise :class:`TextLayoutError` when basic layout would draw ``text`` wrong.
 
     Pillow here has no raqm, so it cannot shape or reorder complex scripts,
-    and it does no per-glyph font fallback. Either would draw a wrong header
-    silently, so the caller falls back to libass, which does both.
+    and a character no text font has would draw as a box. Either would be a
+    wrong header, so the caller falls back to libass, which shapes text and
+    finds fonts itself.
     """
-    plain = "".join(chunk for kind, chunk in segment(text) if kind == "text")
+    plain = "".join(
+        chunk for kind, chunk in split_runs(text, emoji_has_glyph) if kind == "text"
+    )
     if _NEEDS_SHAPING_RE.search(plain):
         raise TextLayoutError(
             "the header needs text shaping (Arabic, Hebrew, or an Indic or "
             "Southeast Asian script), which Pillow here cannot do"
         )
-    missing = _missing_glyphs(font, plain)
+    missing = [ch for ch in dict.fromkeys(plain) if text_font_for(ch, main) is None]
     if missing:
         raise TextLayoutError(
-            f"the header font has no glyph for {''.join(missing[:5])!r}"
+            f"no header font has a glyph for {''.join(missing[:5])!r}"
         )
 
 
@@ -549,7 +641,7 @@ def draw_block(text: str, look: TextLook, max_width: float) -> Block:
     k = SUPERSAMPLE
     ref = resolve_font(look.font)
     font = ass_font(ref, look.size * k)
-    check_layout(text, font)
+    check_layout(text, ref)
     ascent, descent = font.getmetrics()
     line_h = ascent + descent  # == size * k, give or take rounding
     pitch = look.size * look.line_spacing * k
@@ -560,15 +652,18 @@ def draw_block(text: str, look: TextLook, max_width: float) -> Block:
     def measure_word(word: str):
         parts = []
         width = 0.0
-        for kind, chunk in segment(word):
+        for kind, chunk in split_runs(word, emoji_has_glyph):
             if kind == "emoji":
                 img = emoji_image(chunk, emoji_h)
                 parts.append(("emoji", img, img.width))
                 width += img.width
             else:
-                w = font.getlength(chunk)
-                parts.append(("text", chunk, w))
-                width += w
+                pick = lambda ch: text_font_for(ch, ref) or ref  # noqa: E731
+                for face, run in font_runs(chunk, pick):
+                    run_font = font if face == ref else ass_font(face, look.size * k)
+                    w = run_font.getlength(run)
+                    parts.append(("text", run, w, run_font))
+                    width += w
         return parts, width
 
     lines = wrap(text, measure_word, space_w, max_width * k)
@@ -637,7 +732,7 @@ def draw_block(text: str, look: TextLook, max_width: float) -> Block:
                     draw.text(
                         (x, ty + ascent),
                         part[1],
-                        font=font,
+                        font=part[3],
                         anchor="ls",
                         fill=fill,
                         stroke_width=stroke,

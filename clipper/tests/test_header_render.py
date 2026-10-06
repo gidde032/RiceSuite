@@ -750,24 +750,18 @@ def test_text_pillow_cannot_shape_falls_back_to_libass(tmp_path, captured, text)
     assert notes and "shaping" in notes[0]
 
 
-def test_a_character_the_font_lacks_falls_back_to_libass(tmp_path, captured):
+def test_a_character_no_font_has_falls_back_to_libass(tmp_path, captured):
     _text_font_or_skip()
-    from render import text_image
-
-    ref = text_image.resolve_font("arial")
-    font = text_image._load(ref, 40)
-    if not text_image._missing_glyphs(font, "진짜"):
-        pytest.skip("this host's default font has Hangul")
     notes: list[str] = []
     pipeline.render(
         tmp_path,
         tmp_path / "src.mp4",
         VERTICAL,
-        RenderRequest(header="진짜 대박"),
+        RenderRequest(header="Private \ue000 use"),
         notes=notes,
     )
     assert "overlay" not in _filter(captured["cmd"])
-    assert notes and "has no glyph" in notes[0]
+    assert notes and "has a glyph for" in notes[0]
 
 
 def test_fallback_header_keeps_the_plate():

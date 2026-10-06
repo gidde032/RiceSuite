@@ -22,9 +22,11 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   near header" warning re-checked for that header, without writing a file. If
   the PNG render fails, the clip gets a minimal libass header (with its plate,
   above the captions) and the card says why (`header_note`), instead of a
-  silent fallback. Text Pillow cannot lay out (Arabic, Hebrew, Indic scripts,
-  or a character the font lacks) takes that fallback too, since libass shapes
-  it. A header too tall or wide for its space is drawn smaller to fit. Header
+  silent fallback. A character the header font lacks (★, ✓, Hangul, kana) is
+  drawn with a fallback text font, and a symbol the colour-emoji font lacks is
+  drawn as text instead of a gap; a keycap is drawn as its digit. Text Pillow
+  cannot lay out (Arabic, Hebrew, Indic scripts, or a character no font has)
+  takes the libass fallback, since libass shapes it. A header too tall or wide for its space is drawn smaller to fit. Header
   text is limited to 200 characters; a longer generated header is trimmed at a
   word boundary.
   In the editor (variant A, chosen 2026-10-06), an **Adjust header**
