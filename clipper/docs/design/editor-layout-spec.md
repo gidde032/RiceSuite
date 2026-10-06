@@ -77,9 +77,11 @@ controls in two columns (one column at 620 px and below): position slider,
 size, font, text and edge colours, outline, soft shadow, plate, fill, opacity,
 corners, padding, alignment, spacing, and Reset header. Every control meets the
 36 px target (44 px with a coarse pointer). The live header preview is the
-server's header PNG drawn over the source preview, in the source's 9:16
-frame; on a source that is not 9:16 it is drawn in the centred 9:16 window
-with a dashed outline, as an approximation of the crop. The rendered-clip
+server's header PNG drawn over the source preview, in the output frame as
+the render will frame the clip: the whole picture of a 9:16 source; for a
+blur-pad clip, a mock of the blur-pad output fitted in the source box, drawn
+from the current frame or photo; for a subject-crop clip, the centred 9:16
+window with a dashed outline, as an approximation of the moving crop. The rendered-clip
 column and the layout above are unchanged.
 
 The two text states share one transcript component and the same settings

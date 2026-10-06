@@ -254,9 +254,14 @@ render overlays (a data URL), its drawn box, and the "face near header"
 warning re-checked for that box. It writes no files. The editor asks for it
 250 ms after the last change to the text or controls (a reply that a newer
 request overtook is dropped) and draws it over the source preview, scaled to
-the source's 9:16 frame. On a source that is not 9:16 it is drawn in the
-centred 9:16 window, outlined, as an approximation of the crop; the rendered
-clip shows the exact result.
+the output frame as the render will frame the clip. A 9:16 source shows its
+whole picture. A clip that blur-pads (every photo that is not 1080×1920, a
+non-9:16 portrait or square video, and a landscape clip whose Geometry or plan
+resolves to blur-pad) shows a mock of the output under the header, inside the
+source box: the current frame blurred to cover 9:16, with the whole picture
+fitted on top (decided by Finn on 2026-10-06 in review). A subject-crop clip
+shows the header in the source's centred 9:16 window, outlined, as an
+approximation of the moving crop; the rendered clip shows the exact result.
 
 **Editor arrangement (variant A, chosen by Finn on 2026-10-06).** The controls
 sit in a closed **Adjust header** disclosure under the header-style cards, and

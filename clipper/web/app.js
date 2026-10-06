@@ -283,7 +283,7 @@ async function requestHeaderPreview(clip) {
   clip.headerWarnings = data.warnings || null;
   showHeaderPreview(clip, data.image || null);
   setHeaderPreviewNote(clip, data.note || (clip.headerPreviewApprox
-    ? "Preview drawn in the centre 9:16 of this source; the render follows its framing."
+    ? "Preview drawn in the centre 9:16 of this source; the render follows the subject crop."
     : ""));
   if (clip.geoState) applyGeometry(clip, clip.geoState);
 }
@@ -301,17 +301,54 @@ function showHeaderPreview(clip, image) {
   placeHeaderPreview(clip);
 }
 
-// The output frame over the source as shown: the whole picture of a 9:16
-// source, else its centred 9:16 window (an approximation of the crop).
-function headerPreviewBox(media) {
+// How the render will frame this clip, as render.geometry.resolve_geometry
+// decides it: exact 1080x1920 passes through, a photo always blur-pads, and
+// otherwise the Geometry choice and the content's plan decide.
+function previewGeometry(clip) {
+  const state = clip.geoState || {};
+  if (state.width === 1080 && state.height === 1920) return "pass";
+  if (clip.isPhoto === true) return "blur_pad";
+  const requested = clip.geometryEl ? radioValue(clip.geometryEl) : "auto";
+  const content = clip.contentEl ? radioValue(clip.contentEl) : "speech";
+  const plan = content === "music" ? state.music_plan : state.crop_plan;
+  if (requested === "blur_pad") return "blur_pad";
+  if (requested === "crop") return plan ? "crop" : "blur_pad";
+  return plan && plan.decision === "crop" ? "crop" : "blur_pad";
+}
+
+// The blur-pad output as the render builds it (render.geometry): the frame
+// blurred to cover 9:16, with the whole picture fitted and centred on top.
+function drawBlurPadMock(canvas, media, width, height) {
+  const w = media.videoWidth || media.naturalWidth;
+  const h = media.videoHeight || media.naturalHeight;
+  canvas.width = Math.max(1, Math.round(width));
+  canvas.height = Math.max(1, Math.round(height));
+  const c2d = canvas.getContext("2d");
+  if (!c2d || !w || !h) return;
+  const cover = Math.max(width / w, height / h);
+  c2d.save();
+  // boxblur=20:2 on the 1080 px frame, scaled to this canvas.
+  c2d.filter = `blur(${Math.max(1, (16 * width) / 1080)}px)`;
+  c2d.drawImage(media, (width - w * cover) / 2, (height - h * cover) / 2, w * cover, h * cover);
+  c2d.restore();
+  const fit = Math.min(width / w, height / h);
+  c2d.drawImage(media, (width - w * fit) / 2, (height - h * fit) / 2, w * fit, h * fit);
+}
+
+// The output frame over the source as shown. A blur-pad clip shows the whole
+// output frame fitted in the source box (drawn by drawBlurPadMock); otherwise
+// the frame is the whole picture of a 9:16 source, else its centred 9:16
+// window, an approximation of the moving subject crop.
+function headerPreviewBox(media, mode = "crop") {
   const w = media.videoWidth || media.naturalWidth;
   const h = media.videoHeight || media.naturalHeight;
   const bw = media.clientWidth;
   const bh = media.clientHeight;
-  if (!w || !h || !bw || !bh) return null;
+  if (!(w > 0 && h > 0 && bw > 0 && bh > 0)) return null; // not loaded or not laid out
+  const blurPad = mode === "blur_pad";
   const scale = Math.min(bw / w, bh / h);
-  const vw = w * scale;
-  const vh = h * scale;
+  const vw = blurPad ? bw : w * scale;
+  const vh = blurPad ? bh : h * scale;
   const vx = media.offsetLeft + (media.clientLeft || 0) + (bw - vw) / 2;
   const vy = media.offsetTop + (media.clientTop || 0) + (bh - vh) / 2;
   const fh = Math.min(vh, (vw * 16) / 9);
@@ -321,7 +358,7 @@ function headerPreviewBox(media) {
     top: vy + (vh - fh) / 2,
     width: fw,
     height: fh,
-    approx: Math.abs(w / h - 9 / 16) > 0.01,
+    approx: !blurPad && Math.abs(w / h - 9 / 16) > 0.01,
   };
 }
 
@@ -329,10 +366,16 @@ function placeHeaderPreview(clip) {
   const win = clip.headerPreviewWindowEl;
   if (!win || win.hidden) return;
   const media = clip.isPhoto === true ? clip.sourcePhotoEl : clip.sourceVideoEl;
-  const box = headerPreviewBox(media);
+  const mode = previewGeometry(clip);
+  const box = headerPreviewBox(media, mode);
   if (!box) {
     win.style.visibility = "hidden";
     return;
+  }
+  const base = clip.headerPreviewBaseEl;
+  if (base) {
+    base.hidden = mode !== "blur_pad";
+    if (mode === "blur_pad") drawBlurPadMock(base, media, box.width, box.height);
   }
   win.style.visibility = "";
   win.style.left = `${box.left}px`;
@@ -619,6 +662,7 @@ function buildCard(clip) {
   clip.headerStyleEl = node.querySelector(".header-style");
   clip.headerPreviewWindowEl = node.querySelector(".header-preview-window");
   clip.headerPreviewEl = node.querySelector(".header-preview");
+  clip.headerPreviewBaseEl = node.querySelector(".header-preview-base");
   clip.headerPreviewNoteEl = node.querySelector(".header-preview-note");
   clip.hcEls = {};
   for (const [key, cls] of HEADER_CONTROLS) clip.hcEls[key] = node.querySelector(`.${cls}`);
@@ -710,6 +754,11 @@ function buildCard(clip) {
   });
   clip.headerEl.addEventListener("input", () => scheduleHeaderPreview(clip));
   clip.sourceVideoEl.addEventListener("loadedmetadata", () => placeHeaderPreview(clip));
+  // A blur-pad mock shows the frame the video is on.
+  for (const event of ["loadeddata", "seeked", "timeupdate", "pause"]) {
+    clip.sourceVideoEl.addEventListener(event, () => placeHeaderPreview(clip));
+  }
+  clip.geometryEl.addEventListener("change", () => placeHeaderPreview(clip));
   clip.sourcePhotoEl.addEventListener("load", () => placeHeaderPreview(clip));
   // The source box resizes with the window and with the settings column (it
   // grows when Adjust header opens), so the preview follows its size.
@@ -723,6 +772,7 @@ function buildCard(clip) {
     clip.lyricsEl.hidden = !isMusic;
     clip.reviewGridEl.classList.toggle("music-review", isMusic);
     if (clip.geoState) applyGeometry(clip, clip.geoState);
+    placeHeaderPreview(clip); // the music plan may frame it differently
   });
 
   clip.musicVolumeEl.addEventListener("input", (e) => {

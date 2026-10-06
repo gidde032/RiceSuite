@@ -331,3 +331,71 @@ test("a rejected render request explains itself instead of [object Object]", asy
   assert.doesNotMatch(ctx.clip.statusEl.textContent, /object Object/);
   assert.match(ctx.clip.statusEl.textContent, /header: String should have at most 200 characters/);
 });
+
+// --- blur-pad preview (Finn's review decision on #65) ---------------------------------
+
+function geoCard(js, ctx, state, extra = {}) {
+  ctx.clip = card({
+    geoState: state,
+    geometryEl: { querySelector: () => ({ value: extra.geometry || "auto" }) },
+    contentEl: { querySelector: () => ({ value: extra.content || "speech" }) },
+    ...extra.card,
+  });
+  return js("previewGeometry(clip)");
+}
+
+test("the preview follows the render's framing", () => {
+  const { js, ctx } = boot();
+  const crop = { decision: "crop" };
+  const pad = { decision: "blur_pad" };
+  assert.equal(geoCard(js, ctx, { width: 1080, height: 1920 }), "pass");
+  assert.equal(geoCard(js, ctx, { width: 1080, height: 1350 }), "blur_pad");
+  assert.equal(geoCard(js, ctx, { width: 1920, height: 1080, crop_plan: crop }), "crop");
+  assert.equal(geoCard(js, ctx, { width: 1920, height: 1080, crop_plan: pad }), "blur_pad");
+  assert.equal(geoCard(js, ctx, { width: 1920, height: 1080, crop_plan: crop }, { geometry: "blur_pad" }), "blur_pad");
+  assert.equal(geoCard(js, ctx, { width: 1920, height: 1080, crop_plan: pad, music_plan: crop }, { content: "music" }), "crop");
+  assert.equal(geoCard(js, ctx, { width: 1920, height: 1080 }, { geometry: "crop" }), "blur_pad");
+  assert.equal(geoCard(js, ctx, { width: 1920, height: 1080, crop_plan: crop }, { card: { isPhoto: true } }), "blur_pad");
+});
+
+test("a blur-pad preview is the whole output frame fitted in the source box", () => {
+  const { js } = boot();
+  const box = js(`headerPreviewBox({ videoWidth: 1920, videoHeight: 1080, clientWidth: 400,
+    clientHeight: 360, offsetLeft: 0, offsetTop: 0 }, "blur_pad")`);
+  assert.equal(box.height, 360);
+  assert.equal(box.width, 202.5);
+  assert.equal(box.left, (400 - 202.5) / 2);
+  assert.equal(box.approx, false);
+});
+
+test("the blur-pad mock draws a cover fill and the fitted picture, like the render", () => {
+  const { js, ctx } = boot();
+  const calls = [];
+  const c2d = {
+    filter: "none",
+    drawImage: (...args) => calls.push({ filter: c2d.filter, args }),
+    fillRect() {},
+    save() {},
+    restore() { c2d.filter = "none"; },
+  };
+  ctx.canvas = { width: 0, height: 0, getContext: () => c2d };
+  ctx.media = { videoWidth: 1920, videoHeight: 1080 };
+  js("drawBlurPadMock(canvas, media, 180, 320)");
+  assert.equal(ctx.canvas.width, 180);
+  assert.equal(ctx.canvas.height, 320);
+  assert.equal(calls.length, 2);
+  // Background: scaled to cover (320/1080 tall), centred, blurred.
+  const [, bx, by, bw, bh] = calls[0].args;
+  assert.notEqual(calls[0].filter, "none");
+  assert.equal(Math.round(bh), 320);
+  assert.equal(Math.round(bw), Math.round((1920 * 320) / 1080));
+  assert.equal(Math.round(bx), Math.round((180 - bw) / 2));
+  assert.equal(by, 0);
+  // Foreground: fitted (180 wide), centred vertically, sharp.
+  const [, fx, fy, fw, fh] = calls[1].args;
+  assert.equal(calls[1].filter, "none");
+  assert.equal(fx, 0);
+  assert.equal(fw, 180);
+  assert.equal(Math.round(fh), Math.round((1080 * 180) / 1920));
+  assert.equal(Math.round(fy), Math.round((320 - fh) / 2));
+});

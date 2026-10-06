@@ -32,7 +32,9 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   In the editor (variant A, chosen 2026-10-06), an **Adjust header**
   disclosure under the header-style cards holds the controls, with a position
   slider. The header PNG is drawn over the source preview 250 ms after the last
-  change, and the "face near header" badge follows it. A style card fills in
+  change, in the frame the render will use: a blur-pad clip (every photo that
+  is not 9:16, for one) shows a mock of the blur-pad output under it. The
+  "face near header" badge follows the header. A style card fills in
   colours, outline, shadow, and plate, and keeps position, size, font,
   alignment, and spacing. The controls are saved per slot.
 - **Music segment and preview** (RiceSuite [#55](https://github.com/gidde032/RiceSuite/issues/55),
