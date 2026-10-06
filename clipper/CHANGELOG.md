@@ -34,10 +34,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   the request had never reached Clipper, the previous render (for example the
   Clean captions, after choosing Punch) was shown as current and could be sent.
   Each render now carries a `render_id`; job state reports the id of the render
-  Clipper accepted, and the page accepts only its own. A request that never
-  arrived fails the card within about 12 s ("the render request did not reach
-  Clipper; render it again"). A render that finished but lost its reply still
-  recovers, with no second request.
+  Clipper accepted, and the page accepts only its own. If job state shows no
+  record of the render for about 30 s, the card fails ("Clipper has no record
+  of this render; render it again"). A render that finished but lost its reply
+  still recovers, with no second request.
 - **Seeking a preview no longer marks a clip edited.** Dragging the seek bar or
   volume slider of the source or rendered video sent `input` events to the card,
   which counted them as edits. A rendered clip then showed "Edited since this

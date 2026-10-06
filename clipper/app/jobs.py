@@ -60,6 +60,11 @@ class Job:
     searcher_manifest: dict[str, object] | None = None
 
     def state(self) -> JobState:
+        # Read the render id first. Job reads take no lock, and a render
+        # admission records the id after it clears the status and output, so
+        # a read that sees a new id never pairs it with the previous render's
+        # outcome (RiceSuite #49).
+        render_id = self.render_id
         return JobState(
             id=self.id,
             status=self.status,  # type: ignore[arg-type]
@@ -71,7 +76,7 @@ class Job:
             words=self.words,
             error=self.error,
             has_output=bool(self.output_path and self.output_path.exists()),
-            render_id=self.render_id,
+            render_id=render_id,
             crop_plan=self.crop_plan,
             music_plan=self.music_plan,
         )

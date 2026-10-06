@@ -310,6 +310,7 @@ test("#49: each render request carries its own render id", async () => {
 });
 
 test("#49: a rerender lost before it reached Clipper never passes for its completion", async () => {
+  // Clipper keeps the Clean render's id; the Punch request never arrives.
   const { js, ctx, calls, received } = renderServer((n) => (n === 2 ? "before" : null));
   ctx.clip = card(false);
   let selected = "clean";
@@ -321,11 +322,10 @@ test("#49: a rerender lost before it reached Clipper never passes for its comple
   assert.equal(await js("renderClip(clip)"), false, "the Clean output is not the Punch render");
   assert.equal(js("clipCurrent(clip)"), false);
   assert.equal(ctx.clip.status, "ready");
-  assert.match(ctx.clip.error, /did not reach Clipper/);
-  assert.equal(ctx.clip.renderUnknown, false, "job state shows the request never arrived");
+  assert.match(ctx.clip.error, /Clipper has no record of this render; render it again/);
+  assert.equal(ctx.clip.renderUnknown, false, "job state shows no record of the request");
   assert.deepEqual(state(ctx.clip), { empty: true, busy: false, video: "", download: "" });
-  const polls = jobPolls(calls);
-  assert.ok(polls >= 1 && polls <= 4, `decided within a few polls (took ${polls})`);
+  assert.equal(jobPolls(calls), 10, "decided after ten job reads, about 30 s");
   assert.equal(received.length, 1, "the lost render is never re-sent on its own");
 
   // The Punch edit cannot reach Poster.
@@ -339,7 +339,7 @@ test("#49: an earlier render's error does not stand in for a lost request", asyn
   setJob({ status: "error", error: "an earlier failure", has_output: false, render_id: "earlier-0001" });
   ctx.clip = card(false);
   assert.equal(await js("renderClip(clip)"), false);
-  assert.match(ctx.clip.error, /did not reach Clipper/);
+  assert.match(ctx.clip.error, /no record of this render/);
 });
 
 test("#49: a render that completed but lost its reply recovers with one request", async () => {
@@ -362,6 +362,28 @@ test("#49: a render still running after its reply was lost is followed to the en
       polls += 1;
       return [200, polls <= 6
         ? { status: "rendering", has_output: false, render_id: sent }
+        : { status: "done", has_output: true, render_id: sent }];
+    },
+  });
+  ctx.clip = card(false);
+  assert.equal(await js("renderClip(clip)"), true);
+  assert.equal(polls, 7);
+});
+
+// A request can wait at Clipper behind the job lock (another tab's
+// transcription, a header being generated) before Clipper accepts it.
+test("#49: a request queued about 18 s behind the job lock is still recognised", async () => {
+  let polls = 0;
+  let sent = null;
+  const { js, ctx } = boot({
+    "POST api/jobs/j1/render": (call) => {
+      sent = JSON.parse(call.body).render_id;
+      throw new TypeError("network connection lost");
+    },
+    "GET api/jobs/j1": () => {
+      polls += 1;
+      return [200, polls <= 6
+        ? { status: "done", has_output: true, render_id: "earlier-0001" }
         : { status: "done", has_output: true, render_id: sent }];
     },
   });

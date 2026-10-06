@@ -1145,9 +1145,10 @@ async function handleRenderAll() {
 }
 
 // Job reads that may show another render before this one counts as never
-// received (RiceSuite #49): about 12 s at one read every 3 s.
-const RENDER_ADMIT_POLLS = 4;
-const RENDER_NOT_RECEIVED = "the render request did not reach Clipper; render it again";
+// received (RiceSuite #49): about 30 s at one read every 3 s, long enough for a
+// request queued behind the job lock (a transcription or header generation).
+const RENDER_ADMIT_POLLS = 10;
+const RENDER_NOT_RECEIVED = "Clipper has no record of this render; render it again";
 
 // Poll GET /api/jobs/{id} after a dropped render fetch (Issue #30). Job state
 // names the render Clipper last accepted, and only this render's outcome
@@ -1441,6 +1442,7 @@ async function sendBatch() {
     sentSnapshot = data.replayed ? sendKeySnapshot : snapshot;
     sendKey = "";
     sendKeySnapshot = null;
+    if (nothingUnsent()) clearWaitingBatches(); // the next batch is pulled, not held
     const how = data.replayed ? "The earlier send had arrived: sent" : "Sent";
     localProgress("Send to Poster", "✓ Complete", n, n, "handed off", `${how} batch ${data.batch_id}; waiting in Poster's inbox.`);
   } catch (err) {
@@ -1524,7 +1526,7 @@ function clearWorkspace() {
   sendKey = "";
   sendKeySnapshot = null;
   writeTab({ pulledBatchId: "" });
-  showWaitingBatches([]);
+  clearWaitingBatches();
   updateRenderAllButton();
   updateCacheControls();
 }
@@ -1617,11 +1619,21 @@ function showWaitingBatches(waiting) {
       : `${n} RiceSearcher batches are waiting (${waiting.map((b) => b.batch_id).join(", ")}). The oldest opens after you send this batch or start over.`;
 }
 
+// Timer ticks overlap. A newer read, or a cleared line, supersedes a read
+// still in flight, so a late reply cannot name a batch pulled meanwhile.
+let waitingRead = 0;
+
+function clearWaitingBatches() {
+  waitingRead += 1;
+  showWaitingBatches([]);
+}
+
 async function noteWaitingBatches() {
   if (pullInFlight || nothingUnsent()) {
-    showWaitingBatches([]);
+    clearWaitingBatches();
     return;
   }
+  const read = ++waitingRead;
   let waiting;
   try {
     const res = await fetch("api/searcher-inbox");
@@ -1630,8 +1642,10 @@ async function noteWaitingBatches() {
   } catch {
     return;
   }
+  if (read !== waitingRead) return;
   // The batch may have been sent or cleared while the inbox was read.
-  showWaitingBatches(pullInFlight || nothingUnsent() ? [] : waiting);
+  if (pullInFlight || nothingUnsent()) clearWaitingBatches();
+  else showWaitingBatches(waiting);
 }
 
 async function autoPullFromSearcher() {
@@ -1639,7 +1653,7 @@ async function autoPullFromSearcher() {
     await noteWaitingBatches();
     return;
   }
-  showWaitingBatches([]); // nothing unsent: the next batch is pulled, not held
+  clearWaitingBatches(); // nothing unsent: the next batch is pulled, not held
   if (readTab().pendingPullKey) {
     await pullNext({ automatic: true }); // a lost reply: same key, same batch
     return;

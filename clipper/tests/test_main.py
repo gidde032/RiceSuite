@@ -433,6 +433,49 @@ def test_render_without_an_id_clears_the_previous_one(monkeypatch, isolated_jobs
     assert main.get_job(job.id).render_id is None
 
 
+def test_job_state_never_pairs_a_new_render_id_with_the_old_outcome(
+    monkeypatch, isolated_jobs
+):
+    # GET /api/jobs/{id} reads job state without the job lock. A render
+    # accepted mid-read must not yield the earlier render's done+output under
+    # the new render's id (review: torn read).
+    job = _ready_render_job()
+    old = job.dir / "output.mp4"
+    old.write_bytes(b"clean")
+    job.status, job.output_path, job.render_id = "done", old, "earlier-0001"
+    in_render, release = threading.Event(), threading.Event()
+
+    def blocking_render(work_dir, *args, **kwargs):
+        in_render.set()
+        release.wait(timeout=5)
+        return work_dir / "output.mp4"
+
+    monkeypatch.setattr(main, "render", blocking_render)
+    worker = threading.Thread(
+        target=main.render_job, args=(job.id, RenderRequest(render_id="punch-0002"))
+    )
+
+    class AdmittedMidRead:
+        """The old output path; the new render is accepted during its stat."""
+
+        def exists(self):
+            worker.start()
+            assert in_render.wait(timeout=5)
+            return True
+
+    job.output_path = AdmittedMidRead()
+    try:
+        polled = main.get_job(job.id)
+    finally:
+        release.set()
+        if worker.is_alive():
+            worker.join()
+    if polled.render_id == "punch-0002":
+        assert (polled.status, polled.has_output) == ("rendering", False)
+    else:
+        assert polled.render_id == "earlier-0001"
+
+
 @pytest.mark.parametrize("bad", ["short", "x" * 65, "has space1", "slash/0001"])
 def test_render_request_rejects_unsafe_render_ids(bad):
     with pytest.raises(ValidationError):

@@ -314,9 +314,10 @@ render request carries a `render_id` (8–64 letters, digits, `_`, `-`). Clipper
 records it when it accepts the render, in memory only, and
 `GET /api/jobs/{id}` returns it with the status, error, and output it governs
 (RiceSuite #49). The page accepts only its own render's completion or error;
-an earlier output proves nothing. If four job reads (about 12 s) show another
-render before any shows this one, the request never arrived: the card fails like any failed
-render and holds the batch until it renders again. A render that completed but
+an earlier output proves nothing. If ten job reads (about 30 s, enough for a
+request queued behind the job lock) show another render before any shows this
+one, the card fails like any failed render ("Clipper has no record of this
+render; render it again") and holds the batch until it renders again. A render that completed but
 lost its reply recovers from job state, with no second request.
 
 While the workspace holds a batch that is not sent, a line under the batch

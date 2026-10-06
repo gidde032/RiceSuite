@@ -727,3 +727,44 @@ test("#61: the cue line lives in the batch panel, apart from the pull status", (
   assert.match(panel, /<p id="searcher-waiting" class="status" role="status" hidden><\/p>/);
   assert.doesNotMatch(SOURCE, /setPullStatus\([^)]*waiting/i);
 });
+
+test("#61: a successful send clears the cue at once", async () => {
+  const { js, byId } = bootWithButtons({
+    "GET api/searcher-inbox": { batches: [{ batch_id: "b2", clip_count: 1 }] },
+    "POST api/handoff": { batch_id: "out1", clip_count: 1 },
+  });
+  js(`clips.push(${sendable("j1", "done")})`);
+  js("collectWords = () => []; radioValue = () => 'x';");
+  await js("autoPullFromSearcher()");
+  assert.equal(cue(byId).hidden, false);
+  await js("sendBatch()");
+  assert.deepEqual(cue(byId), { hidden: true, text: "" }, "no tick needed");
+});
+
+test("#61: an inbox read overtaken by a send and the next pull does not name the loaded batch", async () => {
+  let releaseSlow;
+  let reads = 0;
+  const waiting = { batches: [{ batch_id: "b2", clip_count: 1 }] };
+  const { js, byId } = bootWithButtons({
+    "GET api/searcher-inbox": () => {
+      reads += 1;
+      if (reads === 1) return new Promise((resolve) => { releaseSlow = () => resolve([200, waiting]); });
+      return [200, waiting];
+    },
+    "POST api/handoff": { batch_id: "out1", clip_count: 1 },
+    "POST api/pull-from-searcher": { batch_id: "b2", clip_count: 1, jobs: [job("j2")] },
+    "POST api/jobs/j2/transcribe": { status: "ready", words: [] },
+  });
+  js(`clips.push(${sendable("j1", "done")})`);
+  js("collectWords = () => []; radioValue = () => 'x';");
+  const slow = js("autoPullFromSearcher()"); // held: this inbox read is slow
+  await settle();
+  await js("sendBatch()");
+  await js("autoPullFromSearcher()"); // the next tick: sent, so it pulls b2
+  await settle();
+  assert.deepEqual(jobIds(js), ["j2"]);
+  releaseSlow();
+  await slow;
+  await settle();
+  assert.deepEqual(cue(byId), { hidden: true, text: "" }, "b2 is open here, not waiting");
+});
