@@ -1,67 +1,85 @@
 # RiceClipper → RicePoster handoff contract
 
-**Status: contract RATIFIED. Producer side (RiceClipper writer) IMPLEMENTED;
-consumer side (RicePoster pickup) PENDING in that repo.**
-This is Wave-1 item #1 (`ROADMAP.md`). The producer half — writing a batch of
-clips + a manifest into the handoff directory — is implemented in RiceClipper
-(`app/handoff.py`, `POST /api/handoff`). The consumer half (RicePoster "Pull
-from Clipper") is a separate effort in the `clippingharness`/RicePoster repo
-under its own approval.
+**Status: implemented in RiceSuite.** RiceClipper writes completed batches to the
+shared filesystem handoff after the maintainer clicks **Send to RicePoster**.
+RicePoster stages a batch only after the maintainer clicks **Pull from Clipper**.
+The Post tab may poll and display the inbox count, but polling is read-only: it
+does not import a batch. The sender and receiver remain separate processes and
+exchange local files only.
 
-## Goal
+This contract covers RiceClipper → RicePoster. The current manual Send and Pull
+decisions are recorded in the suite
+[ADR-001 amendments](../../../docs/adr/ADR-001-ricesuite-consolidation.md).
 
-Let a day's clips flow from RiceClipper to RicePoster with no manual export,
-rename, or re-upload — while preserving exactly three human touchpoints:
+## Goal and user flow
 
-1. **[manual]** upload clips to RiceClipper → auto batch-transcribe
-2. **[manual]** review transcripts + headers, approve render → render →
-   **Send to RicePoster** (RiceSuite #59: Clipper never sends on its own)
-3. **[manual]** **Pull from Clipper** in RicePoster, which assigns slots and
-   writes captions (RiceSuite ADR-001 amendment of 2026-09-29)
-4. **[manual]** final caption review → **Post All**
+The filesystem handoff avoids manual export, rename, and re-upload while
+preserving the human choices around when a batch leaves Clipper and when it
+enters Poster:
+
+1. In Clipper, review the whole batch and render its clips. A batch may arrive
+   from Searcher through the separate Searcher → Clipper handoff, or the user
+   may upload local media.
+2. Click **Send to RicePoster** when the rendered batch is ready. Clipper does
+   not send automatically after a render or another workspace action.
+3. In Poster's Post tab, click **Pull from Clipper** when ready. That action
+   stages the oldest complete batch into Review, captures a frame from each
+   staged clip, and generates captions from each frame and its transcript using
+   Poster's configured Clipper ingest style.
+4. Review and edit the drafts, then choose **Post All** or **Schedule** through
+   Poster's normal human gates.
+
+The Pull action does not post or schedule. Clipper does not connect to Poster
+and does not carry account, slot, or posting fields.
 
 ## Design principles
 
-- **Filesystem pickup contract, not an API call.** RiceClipper only ever *writes
-  local files*. It never opens a connection to the posting tool and carries no
-  account, slot, or posting fields. This honors Hard Rule #1 and SPEC §3, keeps
-  either tool usable standalone, and matches both repos' existing intent
-  (RiceClipper's "pickup contract"; RicePoster's on-disk `queue_media/`
-  snapshot model).
-- **RicePoster owns all posting-side policy** — slot assignment, caption style,
-  caption generation, lifecycle after pickup.
-- **Transcript is the payload's value.** RiceClipper already has each clip's
-  word-level transcript — a far richer caption-grounding input than a single
-  frame or a typed topic, and one RicePoster cannot produce itself. It travels
-  in the manifest so RicePoster can generate content-grounded captions with zero
-  typing.
+- **Filesystem pickup, not a Clipper API call.** Clipper writes local files and
+  never contacts Poster's process or a posting surface.
+- **Poster owns posting-side policy.** The active account roster, caption style,
+  draft lifecycle, and posting decisions stay in Poster.
+- **The manifest preserves clip context.** The reviewed transcript, burned-in
+  header, and render presets travel as metadata. During an explicit Pull,
+  Poster uses the transcript and a captured frame as caption inputs; the user
+  reviews the generated caption in Review before posting or scheduling.
+- **A complete batch is visible atomically.** The consumer ignores a batch until
+  the producer has written `manifest.json`.
 
 ## Directory layout
 
-A single shared **handoff root** (configurable path on both sides; suggested
-default `~/riceclipper-handoff/`). RiceClipper writes; RicePoster reads.
+Each batch has its own directory:
 
 ```
 <handoff_root>/
-  batch_20260826_1432/
+  batch_20260826_1432_ab12/
     clip_1.mp4
     clip_2.mp4
-    clip_3.mp4
-    manifest.json        # written LAST — see atomicity below
+    manifest.json        # written last — see atomicity below
 ```
+
+The effective path depends on how RiceSuite is configured. A fresh Suite install
+uses `<configured data root>/handoff/clipper-to-poster`, which defaults to
+`~/.ricesuite/handoff/clipper-to-poster`. Suite sets Clipper's
+`RICECLIPPER_HANDOFF_DIR` and Poster's `HANDOFF_DIR` to the same path. Existing
+installations can retain the legacy `~/riceclipper-handoff` location until an
+explicit data cutover. Standalone Clipper and Poster also default to
+`~/riceclipper-handoff`; either side can be pointed elsewhere, but both settings
+must resolve to the same directory. Run `rice data location` to inspect the
+effective paths. See [RiceSuite data location and migration](../../../docs/data-migration.md)
+before moving existing data.
 
 ### Atomicity
 
-RiceClipper writes all `clip_N.mp4` files first and writes `manifest.json`
-**last**. RicePoster ignores any batch directory that has no `manifest.json`, so
-it can never read a half-written batch. No separate lock/marker file is needed.
+Clipper copies every rendered `clip_<position>.mp4` into a new batch directory,
+then writes `manifest.json` via atomic rename. Poster ignores batch directories
+without a manifest, so it cannot pick up a partially written batch.
 
 ## `manifest.json` schema
 
 ```json
 {
   "schema_version": 1,
-  "batch_id": "batch_20260826_1432",
+  "batch_id": "batch_20260826_1432_ab12",
   "created_at": "2026-08-26T14:32:00Z",
   "producer": "riceclipper",
   "clips": [
@@ -76,95 +94,80 @@ it can never read a half-written batch. No separate lock/marker file is needed.
 }
 ```
 
-- `position` (1-based) is the **only** routing signal. It defines pickup order;
-  RicePoster maps it to a slot. There is deliberately no `slot`, `account`,
-  `style`, or `schedule` field — those are posting-side policy.
-- `transcript` is plain text (already user-reviewed at touchpoint 2). Grounds
-  caption generation. A photo clip (SPEC D17) has no transcript, so this field
-  is the empty string; RicePoster then captions from the frame alone.
-- `header` is provenance only (already burned into the mp4); RicePoster may show
-  it but does not act on it.
-- `presets` is provenance only (already baked into the render). It records which
-  RiceClipper visual presets produced the clip; it never crosses the boundary as
-  behavior. Field may be omitted.
-- `schema_version` lets the consumer reject an unknown future shape loudly.
+- `position` preserves clip order. On Pull, Poster assigns clips in that order
+  to the current active account roster. The manifest does not name an account,
+  slot, caption style, or schedule.
+- `transcript` is plain text that was reviewed in Clipper. Poster uses it as
+  caption context alongside a frame captured from the staged video. A photo clip
+  (SPEC D17) has an empty transcript, so its frame supplies the visual context.
+- `header` is provenance; it is already burned into the video.
+- `presets` is provenance for the rendered video and does not change Poster
+  behavior. The field may be omitted.
+- `schema_version` lets Poster reject an unknown future shape.
 
-## Producer side — RiceClipper (IMPLEMENTED)
+## Producer side — RiceClipper (implemented; manual Send)
 
-After a batch is rendered, the review UI's **"Send to RicePoster"** button posts
-the done clips to `POST /api/handoff` (`app/handoff.py`). For each clip, in
-handoff order, it copies the rendered mp4 to `clip_<position>.mp4` under a fresh
-`batch_<ts>_<rand>/` in the handoff root, then writes `manifest.json` last via an
-atomic rename. The handoff root is `RICECLIPPER_HANDOFF_DIR` (default
-`~/riceclipper-handoff`). The client sends the reviewed transcript text, so no
-server-side batch object is needed. RiceClipper only writes here and does not
-manage the batch afterward; it is not the lifecycle owner.
+After the batch is rendered and reviewed, the maintainer clicks **Send to
+RicePoster**. The action calls `POST /api/handoff` (`app/handoff.py`) and writes
+the batch to `RICECLIPPER_HANDOFF_DIR`. It copies the rendered clips in position
+order, then writes the manifest last via atomic rename. Clipper only writes the
+batch and does not manage its later lifecycle.
 
-## Consumer side — RicePoster (PENDING — its own repo's authorization)
+The send rules are part of the current contract: Send refuses a batch with an
+unrendered, failed, or edited clip, and never sends only part of a batch. A
+second send of a sent batch asks first. A successful Render all stops at the
+send step and prompts the user to send when ready. These rules are recorded in
+the [Manual Clipper send ADR amendment](../../../docs/adr/ADR-001-ricesuite-consolidation.md).
 
-A "Pull from Clipper" action (or a light watcher) scans the handoff root for
-batch dirs containing a `manifest.json`.
+## Consumer side — RicePoster (implemented; manual Pull)
 
-**Selection order — oldest first (FIFO).** When multiple ready batches are
-present, RicePoster pulls the one with the oldest `created_at` / `batch_id`
-timestamp, one batch per pull. This keeps the day's clips in the order they were
-produced and makes a backlog drain predictably rather than in scan order.
+The Post tab polls `GET /api/handoff/inbox` to display waiting batches and an
+inbox count. This endpoint is read-only. Only the maintainer's **Pull from
+Clipper** click calls `POST /api/pull-from-clipper`; opening the page, an empty
+workspace, a completed run, or inbox polling does not import a batch. Pull asks
+before it overwrites unposted drafts.
 
-For each new `batch_id` (dedupe by `batch_id` so a batch is never ingested
-twice):
+A Pull stages the oldest complete batch, assigning its clips in `position`
+order to the current active account roster. A batch with more clips than active
+accounts is rejected. Poster records a durable receipt with the target accounts
+and file hashes, then moves the source batch to its retained
+`.riceposter-consumed/` archive. The browser applies the staged media to Review,
+captures a frame from each clip, and generates captions through the existing
+caption path using the transcript as topic and the configured
+`CLIPPER_INGEST_STYLE` (public default: `generic`). Caption generation is part
+of the user-started Pull flow; it does not start on page load or inbox polling.
 
-1. For each clip in ascending `position`, take the next slot from `SLOT_IDS`
-   (positional A/B/C…). Slots are interchangeable for the maintainer's use, so
-   ordinal assignment is sufficient.
-2. Copy the mp4 into `media/{slot}_{file}` (RicePoster's existing convention).
-3. Generate a caption using the configured default style — **`default-style`** —
-   with the clip's `transcript` as the content description. Style remains
-   overridable per the existing UI dropdown before Post All.
-4. Assemble a pending run and surface it in the normal review UI.
+The browser acknowledges the receipt after Review is prepared and caption
+generation completes. If that flow is interrupted, another explicit Pull
+replays the unacknowledged receipt and restores missing staged media. Poster
+keeps acknowledged source archives until the user runs **Clear consumed
+batches** in Local Media; that action removes only validated, acknowledged
+archives. Clipper never deletes handoff batches.
 
-**Post All is unchanged** — the human reviews captions and posts as today.
-
-### Lifecycle / cleanup ownership
-
-RicePoster owns the batch after a successful pull (mirroring its `queue_media`
-snapshot philosophy). RiceClipper never deletes a batch from the handoff root —
-it only ever writes.
-
-**Purge policy — remove only after all clips ingest successfully.** A batch dir
-is deleted from the handoff root only once **every** clip in it has been
-successfully ingested into RicePoster's own custody (copied into `media/`, and
-into the `queue_media/` snapshot for a scheduled batch). At that point the
-handoff copy is redundant — RicePoster holds its own copy and drives the rest of
-the lifecycle. If any clip in the batch fails to ingest, the **entire** batch dir
-is retained so the whole batch can be re-pulled without re-rendering; partial
-deletion never happens. Between pull and confirmed full ingest, `batch_id`
-dedupe prevents a re-pull from double-ingesting.
-
-> Note: "ingested" here means safely copied into RicePoster's custody, not
-> "posted." RicePoster already retains its own snapshot until every slot posts
-> (its existing `queue_media` guarantee), so retaining the handoff copy through
-> posting too would be redundant. If you'd rather the handoff copy survive until
-> posting is confirmed, that is a one-line change to this trigger.
-
-## Style default
-
-The daily workflow is built around the `default-style` caption style. RicePoster
-applies it as the pickup default via config (e.g. a handoff-ingest style
-setting), not hardcoded, so it can change later without a code edit. RiceClipper
-never learns what `default-style` is — style is entirely a posting-side concern.
+After Pull, the user reviews the captions and drafts in Poster's normal Review
+page and chooses **Post All** or **Schedule**. Handoff ingestion itself never
+posts or schedules.
 
 ## Configuration
 
 | Side | Setting | Meaning |
 | --- | --- | --- |
-| RiceClipper | handoff root path | Where batches are written |
-| RicePoster | handoff root path | Where batches are read |
-| RicePoster | default ingest caption style | Defaults to `default-style` |
+| RiceClipper | `RICECLIPPER_HANDOFF_DIR` | Directory where Clipper writes batches |
+| RicePoster | `HANDOFF_DIR` | Directory Poster reads; RiceSuite sets this to Clipper's same path |
+| RicePoster | `CLIPPER_INGEST_STYLE` | Caption style used for clips pulled from Clipper; public default is `generic` |
 
-## Explicitly out of this contract
+For a fresh RiceSuite data root, the shared handoff path is
+`<root>/handoff/clipper-to-poster` (default root: `~/.ricesuite`). A custom
+`RICESUITE_DATA_DIR` changes that root. Existing installs may still use the
+legacy path until cutover; use `rice data location` to check. In a standalone
+setup, both handoff variables default to `~/riceclipper-handoff`. If overriding
+either path outside RiceSuite, configure both sides to the same directory.
 
-- Auto-trigger (RiceClipper pinging RicePoster to skip the "Pull" click) —
-  optional Phase 3, layered on this same contract without changing it.
-- Scheduling of pulled batches — RicePoster's existing concern, unchanged.
-- Any RiceClipper awareness of accounts, platforms, or posting outcomes.
-```
+## Explicitly outside this contract
+
+- Automatic sending from Clipper after render, edit, or other workspace events.
+  Only **Send to RicePoster** creates a batch in the handoff.
+- Automatic Poster import on page load, when Review is empty, or after a run.
+  Inbox polling reports status only; only **Pull from Clipper** stages a batch.
+- Posting or scheduling from Clipper or from the handoff consumer. Those actions
+  remain behind Poster's human gates.

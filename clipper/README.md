@@ -59,7 +59,7 @@ configuration.
 
 | Requirement | Notes |
 | --- | --- |
-| **Python 3.11 – 3.14** | CI tests **3.12** (required check) and **3.14** (non-required job). The pinned dependencies install from wheels on 3.11–3.14. **3.10 and older will not work:** the code imports `datetime.UTC`, which is new in 3.11. macOS ships `/usr/bin/python3` as 3.9, so use a python.org, Homebrew, or pyenv interpreter. |
+| **Python 3.12–3.14** | The shared RiceSuite package requires Python **3.12 or newer**. CI tests **3.12** (required check) and **3.14** (non-required job); the pinned dependencies install from wheels on 3.12–3.14. Python 3.11 and older are outside the supported range; 3.10 and older also lack `datetime.UTC`, which this code imports. macOS ships `/usr/bin/python3` as 3.9, so use a python.org, Homebrew, or pyenv interpreter. |
 | **ffmpeg with libass** on `PATH` | Required only to render. Transcription, the UI, and the test suite run without it. See below. |
 | **macOS** (recommended) | This is the only platform verified end to end. Headers that contain **emoji** use Apple Color Emoji and macOS system fonts. On Linux, emoji headers need the distro's **Noto Color Emoji** (e.g. `fonts-noto-color-emoji`) plus Liberation Sans or DejaVu Sans. Other font locations are found through fontconfig. Text-only headers work anywhere through libass (see [Troubleshooting](#troubleshooting)). |
 | Disk / network for the first transcription | faster-whisper downloads the Whisper model (`small` by default, roughly 0.5 GB) from Hugging Face the first time you transcribe. |
@@ -231,7 +231,7 @@ original files or the Whisper model cache.
 | --- | --- |
 | Render fails; the startup log says *"This ffmpeg has no libass"*, or `/api/health` shows `"libass": false` | Your ffmpeg lacks libass. Install the tap build shown [above](#ffmpeg-with-libass). |
 | Startup log: *"ffmpeg/ffprobe not found on PATH"* | Install ffmpeg, or start the server from a shell where `which ffmpeg` works. |
-| `ImportError: cannot import name 'UTC' from 'datetime'` | The Python is older than 3.11. Recreate `.venv` with 3.11–3.14. |
+| `ImportError: cannot import name 'UTC' from 'datetime'` | Python is older than 3.11 and lacks `datetime.UTC`; RiceSuite's supported range starts at 3.12. Recreate `.venv` with Python 3.12–3.14. |
 | **✨ Generate** says `ANTHROPIC_API_KEY is not set` | The key isn't in the server's environment. Set it in the repo-root `.env` (or export it), then restart the server. Otherwise, type the header manually. |
 | `Unknown header style '…'` | `RICECLIPPER_HEADER_STYLE` names a file that isn't in `prompts/`. Only `generic-header` ships. |
 | Emoji header render fails: *"missing a renderable color-emoji font…"* or *"missing a text font…"* | The host has no font Pillow can use. On Linux, install `fonts-noto-color-emoji` (and `fonts-liberation` for the text font). The Homebrew Noto build (COLRv1) renders blank, so macOS relies on Apple Color Emoji. Or remove the emoji to render through libass. |

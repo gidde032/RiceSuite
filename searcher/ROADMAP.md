@@ -23,9 +23,7 @@ The five-phase ladder from `SPEC.md §9`. Each phase ends in a usable increment.
 
 - **Shared-media path matching** ([#19](https://github.com/gidde032/RiceSearcher/issues/19)) — protect shared files when persisted paths use different lexical spellings.
 - **Media UI behavior coverage** ([#20](https://github.com/gidde032/RiceSearcher/issues/20)) — extend the existing Node test harness to destructive confirmation and error flows.
-- **Offline scoring mode** ([#2](https://github.com/gidde032/RiceSearcher/issues/2)) — `score --offline` so the whole flow can be tried without an API key; in review.
 - **Offline/LLM score ordering** ([#5](https://github.com/gidde032/RiceSearcher/issues/5)) — offline heuristic and LLM scores share one sort order within a profile; decide the mixed-profile ordering policy.
-- **Type-check gate** ([#25](https://github.com/gidde032/RiceSearcher/issues/25)) — enforce mypy locally and in CI.
 
 ## Routed forward (tracked, not in the v1 arc)
 
@@ -35,5 +33,7 @@ The five-phase ladder from `SPEC.md §9`. Each phase ends in a usable increment.
 
 ## Completed follow-up work
 
+- ✅ **Offline scoring mode** ([#2](https://github.com/gidde032/RiceSearcher/issues/2)) — `score --offline` runs the flow with the heuristic scorer and records that results were not LLM-scored.
+- ✅ **Type-check gate** ([#25](https://github.com/gidde032/RiceSearcher/issues/25)) — `mypy` is configured for Python 3.12 and enforced locally and in CI.
 - ✅ **Taste spike** ([#6](https://github.com/gidde032/RiceSearcher/issues/6), closed 2026-09-11) — real-content scoring validation; the human select gate remains.
 - ✅ **RiceClipper "Pull from Searcher" consumer** ([#8](https://github.com/gidde032/RiceSearcher/issues/8), closed 2026-09-11) — Searcher-to-Clipper pickup delivered.

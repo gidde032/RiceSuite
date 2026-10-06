@@ -5,6 +5,12 @@ All notable changes to RiceSearcher are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Documentation
+
+- Updated the Searcher spec and roadmap to reflect the enforced 90% coverage
+  floor and the delivered offline scoring and mypy gate (RiceSuite
+  [#68](https://github.com/gidde032/RiceSuite/issues/68)).
+
 ### Added
 
 - Searcher review now fills the available width with two score-ordered cards per
