@@ -1144,15 +1144,25 @@ async function handleRenderAll() {
       : `Rendered ${ok} of ${targets.length}; see the per-clip errors above.`;
 }
 
-// Poll GET /api/jobs/{id} after a dropped render fetch (Issue #30). Return true
-// once the job reaches done with output, throw on error, return false on
-// timeout so the caller can report the original drop.
-async function pollRenderCompletion(clip) {
+// Job reads that may show another render before this one counts as never
+// received (RiceSuite #49): about 12 s at one read every 3 s.
+const RENDER_ADMIT_POLLS = 4;
+const RENDER_NOT_RECEIVED = "the render request did not reach Clipper; render it again";
+
+// Poll GET /api/jobs/{id} after a dropped render fetch (Issue #30). Job state
+// names the render Clipper last accepted, and only this render's outcome
+// counts: an earlier output or error proves nothing about it (RiceSuite #49).
+// Return true once this render is done with output; throw on its error, or
+// when reads keep showing another render (the request never arrived); return
+// false on timeout so the caller can report the original drop.
+async function pollRenderCompletion(clip, renderId) {
   const duration = clip.isPhoto === true
     ? photoLength(clip) || 60
     : Number(clip.geoState && clip.geoState.duration) || 0;
   const timeoutMs = Math.max(120, duration * 10) * 1000;
   const deadline = Date.now() + timeoutMs;
+  let seen = false; // Clipper has accepted this render
+  let otherReads = 0;
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 3000));
     let state;
@@ -1163,6 +1173,11 @@ async function pollRenderCompletion(clip) {
     } catch {
       continue; // transient error while polling — keep trying until the deadline
     }
+    if (state.render_id !== renderId) {
+      if (!seen && ++otherReads >= RENDER_ADMIT_POLLS) throw new Error(RENDER_NOT_RECEIVED);
+      continue;
+    }
+    seen = true;
     if (state.status === "done" && state.has_output) return true;
     if (state.status === "error") throw new Error(state.error || "render failed");
   }
@@ -1226,6 +1241,9 @@ async function renderClip(clip) {
       },
     };
     if (clip.isPhoto === true) payload.photo_duration = length;
+    // Names this render in job state, for recovery after a lost reply (#49).
+    const renderId = newSendKey();
+    payload.render_id = renderId;
     let res;
     let data;
     try {
@@ -1238,9 +1256,10 @@ async function renderClip(clip) {
     } catch (netErr) {
       // The render fetch dropped before a response. A long batch can outlast the
       // browser's patience while the server still finishes (Issue #30). Poll job
-      // state; treat done+output as success, error as failure, timeout as drop.
+      // state for this render: done+output is success, its error or a request
+      // that never arrived is failure, timeout is a drop (#49).
       lostProgress(`Render response lost for clip ${clip.ord}; checking its existing job state.`);
-      if (await pollRenderCompletion(clip)) {
+      if (await pollRenderCompletion(clip, renderId)) {
         clip.renders = (clip.renders || 0) + 1;
         clip.renderedEdits = editsAtRender;
         clip.status = "done";
@@ -1505,6 +1524,7 @@ function clearWorkspace() {
   sendKey = "";
   sendKeySnapshot = null;
   writeTab({ pulledBatchId: "" });
+  showWaitingBatches([]);
   updateRenderAllButton();
   updateCacheControls();
 }
@@ -1584,8 +1604,42 @@ async function noteOpenBatch() {
   }
 }
 
+// While the workspace holds a batch that is not sent, the next Searcher batch
+// waits behind it. Name it on its own line in the batch panel (RiceSuite #61):
+// the progress bar keeps the last operation's outcome, and the line never pulls.
+function showWaitingBatches(waiting) {
+  const line = $("searcher-waiting");
+  const n = waiting.length;
+  line.hidden = n === 0;
+  line.textContent = n === 0 ? ""
+    : n === 1
+      ? `RiceSearcher batch ${waiting[0].batch_id} (${waiting[0].clip_count} clip${waiting[0].clip_count === 1 ? "" : "s"}) is waiting. It opens after you send this batch or start over.`
+      : `${n} RiceSearcher batches are waiting (${waiting.map((b) => b.batch_id).join(", ")}). The oldest opens after you send this batch or start over.`;
+}
+
+async function noteWaitingBatches() {
+  if (pullInFlight || nothingUnsent()) {
+    showWaitingBatches([]);
+    return;
+  }
+  let waiting;
+  try {
+    const res = await fetch("api/searcher-inbox");
+    if (!res.ok) return; // an unreadable inbox is not an empty one: keep the line
+    waiting = (await res.json()).batches || [];
+  } catch {
+    return;
+  }
+  // The batch may have been sent or cleared while the inbox was read.
+  showWaitingBatches(pullInFlight || nothingUnsent() ? [] : waiting);
+}
+
 async function autoPullFromSearcher() {
-  if (!workspaceFree()) return;
+  if (!workspaceFree()) {
+    await noteWaitingBatches();
+    return;
+  }
+  showWaitingBatches([]); // nothing unsent: the next batch is pulled, not held
   if (readTab().pendingPullKey) {
     await pullNext({ automatic: true }); // a lost reply: same key, same batch
     return;

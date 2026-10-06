@@ -51,11 +51,13 @@ def test_review_ui_exposes_all_visual_choices_and_sends_them():
 def test_render_drop_falls_back_to_status_poll():
     # Issue #30: a dropped render fetch must poll job state instead of failing
     # outright. The poll helper, the job-state endpoint, and the done/error
-    # branches must all be present.
+    # branches must all be present. RiceSuite #49: only this render's state
+    # counts (behaviour: tests/js/clipper_render_view.test.js).
     javascript = _js()
 
-    assert "async function pollRenderCompletion(clip)" in javascript
-    assert "await pollRenderCompletion(clip)" in javascript
+    assert "async function pollRenderCompletion(clip, renderId)" in javascript
+    assert "await pollRenderCompletion(clip, renderId)" in javascript
+    assert "state.render_id !== renderId" in javascript
     assert "fetch(`api/jobs/${clip.jobId}`)" in javascript
     assert 'state.status === "done" && state.has_output' in javascript
     assert 'state.status === "error"' in javascript

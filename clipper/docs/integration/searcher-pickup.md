@@ -64,7 +64,9 @@ workspace is empty, or it holds a batch that was fully rendered and sent), the
 page performs the same pull as the button and starts transcribing. "Nothing
 unsent" means the workspace holds exactly what was last sent; an edit or
 re-render after sending holds it. A rendered batch that is not sent also
-holds it. One Searcher batch is one Clipper batch.
+holds it. One Searcher batch is one Clipper batch. While a batch holds the
+workspace, the page keeps reading the inbox and names the batch waiting behind
+it on a line under the batch actions (RiceSuite #61). That line never pulls.
 The **Pull** button follows the same rule, and only one pull runs at a time.
 The page never sends a batch on its own (RiceSuite #59). Only a **Send to
 RicePoster** click sends, after every clip has rendered. A failed or

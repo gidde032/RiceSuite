@@ -43,6 +43,9 @@ class Job:
     status: str = "transcribing"
     error: str | None = None
     output_path: Path | None = None
+    # The id of the render this job last accepted (RiceSuite #49). In memory
+    # only: after a restart no render can be confirmed by id, the safe side.
+    render_id: str | None = None
     # Per-job render lock (Issue #30). Held only while ``render()`` runs, so two
     # renders of the same job cannot overlap while the global lock stays free for
     # other jobs and for request-serving state reads.
@@ -68,6 +71,7 @@ class Job:
             words=self.words,
             error=self.error,
             has_output=bool(self.output_path and self.output_path.exists()),
+            render_id=self.render_id,
             crop_plan=self.crop_plan,
             music_plan=self.music_plan,
         )

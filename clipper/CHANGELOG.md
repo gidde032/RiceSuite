@@ -20,8 +20,24 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   music. A photo card has no captions, transcript, or lyrics. Clipper applies the
   EXIF rotation at upload and refuses images over 60 megapixels. A photo clip goes to RicePoster with a blank
   transcript, in the same batch as video clips.
+- **The next Searcher batch is named while it waits** (RiceSuite
+  [#61](https://github.com/gidde032/RiceSuite/issues/61)). While the workspace
+  holds a batch that is not sent, a line under the batch actions names the
+  Searcher batch waiting behind it: "RiceSearcher batch … is waiting. It opens
+  after you send this batch or start over." It reads the read-only inbox on the
+  automatic-pull timer, never pulls, and leaves the progress bar alone.
 
 ### Fixed
+- **A lost render request no longer passes for a finished render** (RiceSuite
+  [#49](https://github.com/gidde032/RiceSuite/issues/49)). After a lost render
+  reply, the page polled job state and took any finished output as success. If
+  the request had never reached Clipper, the previous render (for example the
+  Clean captions, after choosing Punch) was shown as current and could be sent.
+  Each render now carries a `render_id`; job state reports the id of the render
+  Clipper accepted, and the page accepts only its own. A request that never
+  arrived fails the card within about 12 s ("the render request did not reach
+  Clipper; render it again"). A render that finished but lost its reply still
+  recovers, with no second request.
 - **Seeking a preview no longer marks a clip edited.** Dragging the seek bar or
   volume slider of the source or rendered video sent `input` events to the card,
   which counted them as edits. A rendered clip then showed "Edited since this

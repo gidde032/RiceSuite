@@ -610,13 +610,15 @@ test("C-1: an edit after a lost send reply goes out as a new send, never a repla
 
 test("C-3: a render found done by polling after an edit is not shown as current", async () => {
   let js;
+  let sent = null;
   ({ js } = boot({
-    "POST api/jobs/jA/render": () => {
+    "POST api/jobs/jA/render": (call) => {
+      sent = JSON.parse(call.body).render_id; // it renders; the reply is lost
       throw new TypeError("network connection lost");
     },
     "GET api/jobs/jA": () => {
       js("clips[0].edits = 1"); // the reviewer edits while the page polls
-      return [200, { status: "done", has_output: true }];
+      return [200, { status: "done", has_output: true, render_id: sent }];
     },
   }));
   stubRender(js);
@@ -625,4 +627,103 @@ test("C-3: a render found done by polling after an edit is not shown as current"
   assert.equal(await js("renderClip(clips[0])"), true);
   const shown = JSON.parse(js("JSON.stringify(statuses)"));
   assert.match(shown[shown.length - 1], /Edited since/);
+});
+
+// --- Issue #61: name the Searcher batch waiting behind an unsent batch -------
+// The cue has its own line in the batch panel. It never pulls, and it leaves
+// the progress bar (Render all's outcome, #59) and the pull status alone.
+
+function heldWorkspace(inbox) {
+  let batches = inbox;
+  const booted = bootWithButtons({
+    "GET api/searcher-inbox": () => [200, { batches }],
+    "POST api/pull-from-searcher": () => [500, { detail: "must not be called" }],
+  });
+  booted.js(`clips.push(${sendable("j1", "done")})`); // rendered, not sent
+  booted.js("collectWords = () => []; radioValue = () => 'x';");
+  booted.js(`showProgress("Render all", "✓ Complete", "1 / 1 rendered", "Send the batch to Poster when ready.")`);
+  return { ...booted, setInbox: (next) => { batches = next; } };
+}
+
+const cue = (byId) => ({ hidden: byId["searcher-waiting"].hidden, text: byId["searcher-waiting"].textContent });
+
+test("#61: a held batch names the Searcher batch waiting behind it", async () => {
+  const { js, calls, byId } = heldWorkspace([{ batch_id: "b2", clip_count: 3 }]);
+  await js("autoPullFromSearcher()");
+  const shown = cue(byId);
+  assert.equal(shown.hidden, false);
+  assert.match(shown.text, /RiceSearcher batch b2 \(3 clips\) is waiting/);
+  assert.match(shown.text, /after you send this batch or start over/);
+  assert.equal(posts(calls, "api/pull-from-searcher").length, 0, "the cue never pulls");
+  assert.equal(byId["progress-current"].textContent, "Send the batch to Poster when ready.");
+  assert.equal(byId["progress-state"].textContent, "✓ Complete");
+  assert.equal(byId["pull-status"]?.textContent ?? "", "", "the cue does not use the pull status");
+});
+
+test("#61: several waiting batches are counted, oldest first", async () => {
+  const { js, byId } = heldWorkspace([
+    { batch_id: "b2", clip_count: 1 },
+    { batch_id: "b3", clip_count: 2 },
+  ]);
+  await js("autoPullFromSearcher()");
+  assert.match(cue(byId).text, /2 RiceSearcher batches are waiting \(b2, b3\)/);
+  assert.match(cue(byId).text, /oldest opens after you send this batch or start over/);
+});
+
+test("#61: the cue clears when nothing waits, and when the workspace is cleared", async () => {
+  const { js, byId, setInbox } = heldWorkspace([{ batch_id: "b2", clip_count: 1 }]);
+  await js("autoPullFromSearcher()");
+  assert.equal(cue(byId).hidden, false);
+  setInbox([]);
+  await js("autoPullFromSearcher()");
+  assert.deepEqual(cue(byId), { hidden: true, text: "" });
+
+  setInbox([{ batch_id: "b2", clip_count: 1 }]);
+  await js("autoPullFromSearcher()");
+  assert.equal(cue(byId).hidden, false);
+  js("clearWorkspace()"); // Start over
+  assert.deepEqual(cue(byId), { hidden: true, text: "" });
+});
+
+test("#61: an unreadable inbox keeps the last cue", async () => {
+  let reachable = true;
+  const { js, byId } = bootWithButtons({
+    "GET api/searcher-inbox": () => {
+      if (!reachable) throw new TypeError("Failed to fetch");
+      return [200, { batches: [{ batch_id: "b2", clip_count: 1 }] }];
+    },
+  });
+  js(`clips.push(${sendable("j1", "ready")})`);
+  js("collectWords = () => []; radioValue = () => 'x';");
+  await js("autoPullFromSearcher()");
+  const before = cue(byId);
+  assert.equal(before.hidden, false);
+  reachable = false;
+  await js("autoPullFromSearcher()");
+  assert.deepEqual(cue(byId), before);
+});
+
+test("#61: a sent batch shows no cue: the next batch is pulled, not held", async () => {
+  const { js, calls, byId } = bootWithButtons({
+    "GET api/searcher-inbox": { batches: [{ batch_id: "b2", clip_count: 1 }] },
+    "POST api/handoff": { batch_id: "out1", clip_count: 1 },
+  });
+  js(`clips.push(${sendable("j1", "ready")})`);
+  js("collectWords = () => []; radioValue = () => 'x';");
+  await js("autoPullFromSearcher()");
+  assert.equal(cue(byId).hidden, false, "held while j1 is not rendered");
+  js(`clips[0].status = "done"`);
+  await js("sendBatch()");
+  js("autoPullPausedUntil = Date.now() + 60000"); // an earlier pull failed
+  await js("autoPullFromSearcher()");
+  assert.equal(js("clips.length"), 1, "the sent batch stays until the next pull");
+  assert.equal(posts(calls, "api/pull-from-searcher").length, 0);
+  assert.deepEqual(cue(byId), { hidden: true, text: "" });
+});
+
+test("#61: the cue line lives in the batch panel, apart from the pull status", () => {
+  const html = fs.readFileSync(path.join(__dirname, "..", "..", "clipper", "web", "index.html"), "utf8");
+  const panel = html.slice(html.indexOf('id="batch-panel"'), html.indexOf("</section>", html.indexOf('id="batch-panel"')));
+  assert.match(panel, /<p id="searcher-waiting" class="status" role="status" hidden><\/p>/);
+  assert.doesNotMatch(SOURCE, /setPullStatus\([^)]*waiting/i);
 });
