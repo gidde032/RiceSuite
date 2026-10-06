@@ -104,7 +104,8 @@ probe.probe = lambda _p: MediaInfo(
 main.whisper.transcribe = lambda _p: [Word(text="hello", start=0.0, end=0.5),
                                       Word(text="world", start=0.5, end=1.0)]
 
-def fake_render(work_dir, source_path, info, req, plan=None):  # stands in for ffmpeg
+def fake_render(work_dir, source_path, info, req, plan=None, notes=None):
+    # Stands in for ffmpeg.
     out = Path(work_dir) / jobs.RENDERED_OUTPUT_FILENAME
     out.write_bytes(b"rendered " + Path(source_path).read_bytes()[:16])
     return out

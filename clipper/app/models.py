@@ -8,9 +8,9 @@ stays locked to the detected boundaries.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 CaptionStyle = Literal[
     "classic",
@@ -26,6 +26,17 @@ CaptionStyle = Literal[
     "baskerville",
 ]
 HeaderStyle = Literal["plain", "black_plate", "white_plate"]
+# The curated header fonts; keys of ``render.text_image.FONT_CHOICES``.
+HeaderFont = Literal[
+    "arial", "helvetica", "avenir", "futura", "impact", "arial_black", "din", "georgia"
+]
+HexColor = Annotated[str, Field(pattern=r"^[0-9A-Fa-f]{6}$"), AfterValidator(str.upper)]
+# Longest header the review gate accepts. A hook is one or two short lines.
+HEADER_MAX_CHARS = 200
+# Header top bounds, in output px. The renderer also keeps the whole drawn
+# block inside the frame and above the caption zone (RiceSuite #65).
+HEADER_Y_MIN = 0
+HEADER_Y_MAX = 1380
 # Per-clip framing choice (ADR-001). "auto" follows the plan decision; "crop"
 # and "blur_pad" override it.
 Geometry = Literal["auto", "blur_pad", "crop"]
@@ -82,14 +93,53 @@ class MusicSettings(BaseModel):
     start: float = Field(default=0.0, ge=0.0, le=MUSIC_START_MAX, allow_inf_nan=False)
 
 
-class RenderRequest(BaseModel):
+class HeaderLook(BaseModel):
+    """Per-clip header controls (RiceSuite #65).
+
+    The defaults are the Plain preset at the RiceSuite #20 position. Sizes are
+    in output px of the 1080x1920 frame; ``size`` is the line height.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    font: HeaderFont = "arial"
+    size: int = Field(default=42, ge=24, le=96)
+    y: int = Field(default=210, ge=HEADER_Y_MIN, le=HEADER_Y_MAX)
+    color: HexColor = "FFFFFF"
+    outline: int = Field(default=2, ge=0, le=8)
+    outline_color: HexColor = "000000"
+    shadow: bool = False
+    plate: Literal["none", "solid", "translucent"] = "none"
+    plate_color: HexColor = "000000"
+    plate_opacity: int = Field(default=75, ge=10, le=100)
+    plate_radius: int = Field(default=0, ge=0, le=40)
+    plate_padding: int = Field(default=16, ge=0, le=40)
+    align: Literal["left", "center", "right"] = "center"
+    line_spacing: float = Field(default=1.0, ge=0.8, le=2.0, allow_inf_nan=False)
+
+
+class HeaderFields(BaseModel):
+    """The header text and look, shared by render and preview requests.
+
+    ``header_look`` carries the controls. Without it, the ``header_style``
+    preset decides the look, as before RiceSuite #65.
+    """
+
+    header: str = Field(default="", max_length=HEADER_MAX_CHARS)
+    header_style: HeaderStyle = "plain"
+    header_look: HeaderLook | None = None
+
+
+class HeaderPreviewRequest(HeaderFields):
+    """Body of ``POST /api/jobs/{id}/header-preview``."""
+
+
+class RenderRequest(HeaderFields):
     """The human-in-the-loop render payload from the review gate."""
 
     words: list[Word] = Field(default_factory=list)
-    header: str = ""
     captions_on: bool = True
     caption_style: CaptionStyle = "classic"
-    header_style: HeaderStyle = "plain"
     geometry: Geometry = "auto"
     content: Content = "speech"
     music: MusicSettings = Field(default_factory=MusicSettings)
@@ -161,6 +211,9 @@ class JobState(BaseModel):
     # The ``render_id`` of the render this job last accepted; the status, error
     # and output above belong to it once rendering ends (RiceSuite #49).
     render_id: str | None = None
+    # Set when the last render drew the header with the libass fallback
+    # because the Pillow header failed (RiceSuite #65); says why.
+    header_note: str | None = None
     # Subject-crop framing decision (ADR-001). Only set for landscape input.
     crop_plan: CropPlan | None = None
     music_plan: CropPlan | None = None
@@ -215,6 +268,10 @@ class CropPlan(BaseModel):
     samples: list[CropSample] = Field(default_factory=list)
     warning: Literal["header_zone", "caption_zone"] | None = None
     profile: Content = "speech"
+    # (top, bottom) of each detected face box, in source px. The editor's
+    # "face near header" check reuses them for the clip's own header
+    # (RiceSuite #65). Empty on plans saved before that.
+    face_spans: list[tuple[float, float]] = Field(default_factory=list)
     # Zero preserves pre-tuning persisted plans. New plans use 30 Hz command
     # interpolation for ordinary movement while ``CropSample.snap`` remains hard.
     interpolation_fps: int = Field(default=0, ge=0, le=120)

@@ -8,6 +8,7 @@ render and download. RiceClipper performs NO posting or upload of content
 
 from __future__ import annotations
 
+import base64
 import logging
 import shutil
 import uuid
@@ -36,7 +37,9 @@ from app import (  # noqa: E402
     send_keys,
 )
 from app.models import (  # noqa: E402
+    HEADER_MAX_CHARS,
     HandoffRequest,
+    HeaderPreviewRequest,
     HeaderRequest,
     JobState,
     LyricsRequest,
@@ -44,9 +47,10 @@ from app.models import (  # noqa: E402
     RenderRequest,
 )
 from app.process import terminate_all_owned_processes  # noqa: E402
-from render import frame, geometry, subject  # noqa: E402
-from render.header_image import HeaderFontError  # noqa: E402
-from render.pipeline import render  # noqa: E402
+from render import frame, framing, geometry, subject, text_image  # noqa: E402
+from render.ass import HEADER_STYLE_NAMES, header_preset  # noqa: E402
+from render.header_image import header_png_bytes  # noqa: E402
+from render.pipeline import render, style_for_request  # noqa: E402
 from transcribe import lyrics, whisper  # noqa: E402
 
 logger = logging.getLogger("riceclipper")
@@ -450,6 +454,7 @@ def render_job(job_id: str, req: RenderRequest) -> JobState:
             jobs.persist_searcher_job(job)
         job.status = "rendering"
         job.error = None
+        job.header_note = None
         # From here, job state reports this render's outcome (RiceSuite #49).
         job.render_id = req.render_id
         render_lock = job.render_lock
@@ -460,16 +465,9 @@ def render_job(job_id: str, req: RenderRequest) -> JobState:
         work_dir = job.dir
 
     with render_lock:
+        notes: list[str] = []
         try:
-            out = render(work_dir, source_path, info, req, plan=plan)
-        except HeaderFontError as exc:
-            # An emoji header needs host fonts; say which one is missing so the
-            # user can install it or drop the emoji (Issue #3).
-            logger.warning("emoji header render failed: %s", exc)
-            with jobs.job_operation_lock():
-                job.status = "error"
-                job.error = str(exc)
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+            out = render(work_dir, source_path, info, req, plan=plan, notes=notes)
         except Exception as exc:
             logger.exception("render failed")
             with jobs.job_operation_lock():
@@ -479,10 +477,68 @@ def render_job(job_id: str, req: RenderRequest) -> JobState:
 
         with jobs.job_operation_lock():
             job.output_path = out
+            # A header that fell back to libass says why, e.g. a missing font
+            # the user can install (Issue #3, RiceSuite #65).
+            job.header_note = notes[0] if notes else None
             job.status = "done"
             if job.searcher_manifest is not None:
                 jobs.persist_searcher_job(job)
             return job.state()
+
+
+@app.get("/api/header-options")
+def header_options() -> dict:
+    """The header presets and curated fonts the editor's controls offer."""
+    return {
+        "presets": {name: header_preset(name) for name in HEADER_STYLE_NAMES},
+        "fonts": [
+            {
+                "key": key,
+                "label": choice.label,
+                "available": text_image.font_available(key),
+            }
+            for key, choice in text_image.FONT_CHOICES.items()
+        ],
+        "max_chars": HEADER_MAX_CHARS,
+    }
+
+
+@app.post("/api/jobs/{job_id}/header-preview")
+def header_preview(job_id: str, req: HeaderPreviewRequest) -> dict:
+    """Draw the header the render would burn in, for the editor preview.
+
+    Returns the same full-frame PNG the render overlays (as a data URL), its
+    drawn box in output px, and the "face near header" warning re-checked for
+    that box (RiceSuite #65). Nothing is written to disk.
+    """
+    job = jobs.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    style = style_for_request(req)
+    image = box = note = None
+    span: tuple[float, float] | None = None
+    try:
+        png, drawn = header_png_bytes(req.header, style)
+    except Exception as exc:
+        logger.warning("header preview failed: %s", exc)
+        note = f"The header will use the basic text renderer: {exc}"
+        if req.header.strip():
+            top = style.header_margin_v
+            span = (top, top + framing.HEADER_BLOCK_MAX_PX)
+    else:
+        if drawn is not None:
+            image = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
+            box = [drawn.left, drawn.top, drawn.right, drawn.bottom]
+            span = (drawn.top, drawn.bottom)
+    return {
+        "image": image,
+        "box": box,
+        "note": note,
+        "warnings": {
+            "crop_plan": framing.header_warning(job.crop_plan, span),
+            "music_plan": framing.header_warning(job.music_plan, span),
+        },
+    }
 
 
 @app.post("/api/handoff")

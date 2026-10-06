@@ -8,6 +8,21 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Header controls and a live header preview** (RiceSuite
+  [#65](https://github.com/gidde032/RiceSuite/issues/65), SPEC §6.3, D11).
+  Every header is now drawn by Pillow and overlaid, with or without emoji;
+  libass draws only the captions. The Pillow header matches the libass one it
+  replaces to within 2 px on rendered frames. Emoji headers now use the same
+  text size as text-only ones (they were drawn about 10% larger).
+  `RenderRequest.header_look` carries per-clip position, size, curated font,
+  colours, outline, soft shadow, plate (none, solid, or translucent, with
+  colour, opacity, corner radius, and padding), alignment, and line spacing;
+  Plain, Black plate, and White plate fill them in. `POST
+  /api/jobs/{id}/header-preview` returns the exact header PNG and the "face
+  near header" warning re-checked for that header, without writing a file. If
+  the PNG render fails, the clip gets a minimal libass text header and the card
+  says why (`header_note`), instead of a silent fallback. Header text is
+  limited to 200 characters.
 - **Music segment and preview** (RiceSuite [#55](https://github.com/gidde032/RiceSuite/issues/55),
   SPEC D13). Pick where a music track starts with the **Start at** slider. The
   slider keeps the whole segment inside the track. **Play segment** plays it for

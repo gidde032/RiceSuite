@@ -29,11 +29,14 @@ SCENE_MIN_SPEECH = 0.3
 SCENE_MIN_MUSIC = 0.2
 FACE_RATE_MIN = 0.80
 SAFE_RATE_MIN = 0.95
-# The header zone runs from the frame top to the bottom of the tallest 2-line
-# header with its plate: the emoji PNG path at 42 px ends 155 px below
-# ``header_margin_v`` (libass ends 100 px below). It moves with the header.
+# The "face near header" zone is the drawn header's own top-to-bottom span
+# (RiceSuite #65). At ingest no header is known yet, so the plan's stored
+# warning uses the default header's span: from ``header_margin_v`` down to the
+# bottom of a 2-line default header with its plate (160 px covers it). The
+# editor re-checks the zone for the clip's header through ``header_warning``.
 HEADER_BLOCK_MAX_PX = 160
 HEADER_ZONE_PX = StyleConfig().header_margin_v + HEADER_BLOCK_MAX_PX
+DEFAULT_HEADER_SPAN = (StyleConfig().header_margin_v, HEADER_ZONE_PX)
 CAPTION_ZONE_PX = 540
 WARN_FRACTION = 0.20
 
@@ -269,7 +272,10 @@ def plan_crop(
     else:
         decision, reason = "blur_pad", "low_safe_rate"
 
-    warning = _warning(face_records, source_h, n_face)
+    face_spans = [
+        (round(f.cy - f.h / 2, 1), round(f.cy + f.h / 2, 1)) for f, _ in face_records
+    ]
+    warning = zone_warning(face_spans, source_h, DEFAULT_HEADER_SPAN)
 
     return CropPlan(
         decision=decision,
@@ -282,23 +288,32 @@ def plan_crop(
         warning=warning,
         profile=profile,
         interpolation_fps=interpolation_fps,
+        face_spans=face_spans,
     )
 
 
-def _warning(
-    face_records: list[tuple[TrackSample, int]],
+def zone_warning(
+    face_spans: list[tuple[float, float]],
     source_h: int,
-    n_face: int,
+    header_span: tuple[float, float] | None,
 ) -> str | None:
     """Return the larger over-threshold zone hit, or None.
 
-    Zones are defined in output pixels; scale maps them back to source pixels.
+    ``face_spans`` are (top, bottom) face boxes in source px. ``header_span``
+    is the header's (top, bottom) in output px, or None when the clip has no
+    header. Zones are defined in output pixels; scale maps them back to source
+    pixels.
     """
+    if not face_spans or source_h <= 0:
+        return None
+    n_face = len(face_spans)
     scale = _OUTPUT_H / source_h
-    header_limit = HEADER_ZONE_PX / scale
     caption_limit = source_h - CAPTION_ZONE_PX / scale
-    header_hits = sum(1 for s, _ in face_records if s.cy - s.h / 2 < header_limit)
-    caption_hits = sum(1 for s, _ in face_records if s.cy + s.h / 2 > caption_limit)
+    header_hits = 0
+    if header_span is not None:
+        top, bottom = header_span[0] / scale, header_span[1] / scale
+        header_hits = sum(1 for t, b in face_spans if t < bottom and b > top)
+    caption_hits = sum(1 for _t, b in face_spans if b > caption_limit)
 
     candidates: list[tuple[str, int]] = []
     if header_hits / n_face > WARN_FRACTION:
@@ -308,3 +323,18 @@ def _warning(
     if not candidates:
         return None
     return max(candidates, key=lambda c: c[1])[0]
+
+
+def header_warning(
+    plan: CropPlan | None, header_span: tuple[float, float] | None
+) -> str | None:
+    """The plan's warning, re-checked against the clip's drawn header.
+
+    A plan saved before RiceSuite #65 has no face spans; its ingest warning
+    stands.
+    """
+    if plan is None:
+        return None
+    if not plan.face_spans:
+        return plan.warning
+    return zone_warning(plan.face_spans, plan.window_h, header_span)

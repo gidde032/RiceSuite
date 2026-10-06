@@ -1,14 +1,16 @@
 """Build an ASS subtitle script for RiceClipper.
 
-Emits a single ASS file carrying BOTH layers described in SPEC.md §4-6:
+Emits the caption layer described in SPEC.md §4-5:
 
 * **Captions** (§5, Tier-1) — ~4-5 word phrase blocks with a per-word colour
   highlight synced to the word timestamps. Implemented as one Dialogue event per
   active-word window; the whole phrase stays on screen while the highlight walks
   across it. Entirely native to libass (no scripting/second engine).
-* **Header** (§6.1) — the manual 1-2 line hook pinned to the top, using one of
-  the small built-in header treatments, present for the full clip and cleared
-  above the caption zone.
+
+The header (§6) is drawn by Pillow (``render.header_image``) and overlaid by
+ffmpeg (RiceSuite #65). This script carries a header only as the fallback when
+that PNG render fails: a minimal text line in the chosen font, size, colour,
+outline, alignment, and position, without a plate or shadow.
 
 The module is pure standard library and side-effect free, so ASS generation is
 unit-testable without ffmpeg. ``StyleConfig`` is the parameterised template: the
@@ -42,18 +44,21 @@ class StyleConfig:
     shadow: int = 3
     caption_margin_v: int = 340  # px up from the bottom (lower third)
 
-    # Header (top text or optional plate).
-    header_font: str = "Arial"
+    # Header (drawn by Pillow; RiceSuite #65). Sizes are ASS-equivalent px.
+    header_font: str = "arial"  # key into render.text_image.FONT_CHOICES
     header_font_size: int = 42
     header_color: str = "FFFFFF"
-    header_outline_color: str = "000000"
-    header_plate_color: str = "000000"
-    header_plate_alpha: int = 255  # ASS alpha: 0 opaque .. 255 transparent
-    header_padding: int = 0  # opaque-box padding around the text
-    header_border_style: int = 1  # 1 = outline, 3 = opaque box
     header_outline: int = 2
-    header_shadow: int = 2
-    header_margin_v: int = 210  # px down from the top (~11% of 1920px; Issue #20)
+    header_outline_color: str = "000000"
+    header_shadow: bool = False  # soft blurred drop shadow
+    header_plate: str = "none"  # "none" | "solid" | "translucent"
+    header_plate_color: str = "000000"
+    header_plate_opacity: int = 75  # percent, for a translucent plate
+    header_plate_radius: int = 0
+    header_padding: int = 16  # plate padding around each line
+    header_align: str = "center"  # "left" | "center" | "right"
+    header_line_spacing: float = 1.0
+    header_margin_v: int = 210  # first line top, px from the top (Issue #20)
 
 
 CAPTION_STYLE_NAMES = (
@@ -172,40 +177,57 @@ _CAPTION_PRESETS: dict[str, dict[str, object]] = {
     },
 }
 
+# The three header treatments are quick presets that fill in the header
+# controls. Each reproduces the libass look it had before RiceSuite #65: plain
+# white text with a 2 px black edge; white text on a 75% black plate; and white
+# text with a black edge on an opaque white plate. Plates are square (libass
+# drew square boxes) with 16 px padding.
 _HEADER_PRESETS: dict[str, dict[str, object]] = {
-    # Reference-matched default: compact white text with a black edge and no
-    # plate. The same 42px scale is used by all three header choices.
-    "plain": {
-        "header_color": "FFFFFF",
-        "header_outline_color": "000000",
-        "header_plate_color": "000000",
-        "header_plate_alpha": 255,
-        "header_padding": 0,
-        "header_border_style": 1,
-        "header_outline": 2,
-        "header_shadow": 2,
-    },
+    "plain": {},
     "black_plate": {
-        "header_color": "FFFFFF",
-        "header_outline_color": "000000",
+        "header_outline": 0,
+        "header_plate": "translucent",
         "header_plate_color": "000000",
-        "header_plate_alpha": 65,
-        "header_padding": 16,
-        "header_border_style": 3,
-        "header_outline": 2,
-        "header_shadow": 0,
+        "header_plate_opacity": 75,
     },
     "white_plate": {
-        "header_color": "FFFFFF",
-        "header_outline_color": "000000",
+        "header_plate": "solid",
         "header_plate_color": "FFFFFF",
-        "header_plate_alpha": 0,
-        "header_padding": 16,
-        "header_border_style": 3,
-        "header_outline": 2,
-        "header_shadow": 0,
     },
 }
+
+# ``HeaderLook`` (the request model) field -> ``StyleConfig`` field.
+HEADER_LOOK_FIELDS = {
+    "font": "header_font",
+    "size": "header_font_size",
+    "color": "header_color",
+    "outline": "header_outline",
+    "outline_color": "header_outline_color",
+    "shadow": "header_shadow",
+    "plate": "header_plate",
+    "plate_color": "header_plate_color",
+    "plate_opacity": "header_plate_opacity",
+    "plate_radius": "header_plate_radius",
+    "plate_padding": "header_padding",
+    "align": "header_align",
+    "line_spacing": "header_line_spacing",
+    "y": "header_margin_v",
+}
+
+
+def header_preset(name: str) -> dict[str, object]:
+    """The header controls a preset fills in, keyed by ``HeaderLook`` field."""
+    style = replace(StyleConfig(), **_HEADER_PRESETS.get(name, {}))
+    return {look: getattr(style, field) for look, field in HEADER_LOOK_FIELDS.items()}
+
+
+def apply_header_look(style: StyleConfig, look) -> StyleConfig:
+    """Return ``style`` with its header fields taken from ``look``.
+
+    ``look`` is a ``HeaderLook`` (or any object with its attributes).
+    """
+    values = {field: getattr(look, name) for name, field in HEADER_LOOK_FIELDS.items()}
+    return replace(style, **values)
 
 
 def style_for_presets(
@@ -284,22 +306,25 @@ def _phrase_events(phrases: Sequence[Phrase], style: StyleConfig) -> list[str]:
     return events
 
 
-def _header_event(
-    header: str,
-    duration: float,
-    style: StyleConfig,
-    *,
-    style_name: str = "Header",
-    layer: int = 1,
-) -> list[str]:
-    header = header.strip()
-    if not header:
-        return []
-    text = _escape(header)
-    return [
-        f"Dialogue: {layer},{_ass_time(0)},{_ass_time(duration)},"
-        f"{style_name},,0,0,0,,{text}"
-    ]
+_ALIGN_TOP = {"left": 7, "center": 8, "right": 9}
+
+
+def _fallback_header(
+    header: str, duration: float, style: StyleConfig, family: str
+) -> tuple[str, list[str]]:
+    """A minimal libass header: text and edge only, at the header position."""
+    style_line = (
+        f"Style: HeaderFallback,{family},{style.header_font_size},"
+        f"{_style_color(style.header_color)},{_style_color(style.header_color)},"
+        f"{_style_color(style.header_outline_color)},{_style_color('000000', 255)},"
+        f"-1,0,0,0,100,100,0,0,1,{style.header_outline},0,"
+        f"{_ALIGN_TOP.get(style.header_align, 8)},80,80,{style.header_margin_v},1"
+    )
+    event = (
+        f"Dialogue: 1,{_ass_time(0)},{_ass_time(duration)},"
+        f"HeaderFallback,,0,0,0,,{_escape(header)}"
+    )
+    return style_line, [event]
 
 
 # --- top-level ---------------------------------------------------------------
@@ -308,12 +333,17 @@ def _header_event(
 def build_ass(
     words: Sequence[WordLike],
     *,
-    header: str = "",
     captions_on: bool = True,
     duration: float,
     style: StyleConfig | None = None,
+    fallback_header: str = "",
+    fallback_family: str = "Arial",
 ) -> str:
-    """Render the complete ASS script for one clip."""
+    """Render the complete ASS script for one clip.
+
+    ``fallback_header`` is set only when the Pillow header failed; it adds the
+    minimal libass header in ``fallback_family``.
+    """
     style = style or StyleConfig()
 
     caption_style = (
@@ -323,55 +353,13 @@ def build_ass(
         f"{-1 if style.bold else 0},{-1 if style.italic else 0},0,0,100,100,0,0,"
         f"1,{style.outline},{style.shadow},2,60,60,{style.caption_margin_v},1"
     )
-    # BorderStyle 3 = opaque box; BorderStyle 1 = plain text with an outline.
-    header_box_color = _style_color(style.header_plate_color, style.header_plate_alpha)
-    header_outline_color = (
-        header_box_color
-        if style.header_border_style == 3
-        else _style_color(style.header_outline_color)
-    )
-    header_outline = (
-        style.header_padding if style.header_border_style == 3 else style.header_outline
-    )
-    header_style = (
-        f"Style: Header,{style.header_font},{style.header_font_size},"
-        f"{_style_color(style.header_color)},{_style_color(style.header_color)},"
-        f"{header_outline_color},{header_box_color},"
-        f"-1,0,0,0,100,100,0,0,"
-        f"{style.header_border_style},{header_outline},{style.header_shadow},"
-        f"8,80,80,{style.header_margin_v},1"
-    )
-    header_style_lines = [header_style]
-    header_events = _header_event(header, duration, style)
-
-    # ASS BorderStyle 3 uses OutlineColour for the box itself, so it cannot
-    # independently express a white plate plus a black text outline. The
-    # white-plate preset therefore gets two aligned layers: an opaque white
-    # box with transparent text, followed by white text with a black outline.
-    if (
-        style.header_border_style == 3
-        and style.header_plate_color == "FFFFFF"
-        and style.header_color == "FFFFFF"
-    ):
-        transparent = _style_color(style.header_color, 255)
-        header_plate_style = (
-            f"Style: HeaderPlate,{style.header_font},{style.header_font_size},"
-            f"{transparent},{transparent},{header_box_color},{header_box_color},"
-            f"-1,0,0,0,100,100,0,0,3,{style.header_padding},"
-            f"{style.header_shadow},8,80,80,{style.header_margin_v},1"
+    header_style_lines: list[str] = []
+    header_events: list[str] = []
+    if fallback_header.strip():
+        line, header_events = _fallback_header(
+            fallback_header.strip(), duration, style, fallback_family
         )
-        header_text_style = (
-            f"Style: Header,{style.header_font},{style.header_font_size},"
-            f"{_style_color(style.header_color)},{_style_color(style.header_color)},"
-            f"{_style_color(style.header_outline_color)},"
-            f"{_style_color('000000', 255)},"
-            f"-1,0,0,0,100,100,0,0,1,{style.header_outline},"
-            f"{style.header_shadow},8,80,80,{style.header_margin_v},1"
-        )
-        header_style_lines = [header_plate_style, header_text_style]
-        header_events = _header_event(
-            header, duration, style, style_name="HeaderPlate", layer=0
-        ) + _header_event(header, duration, style, style_name="Header", layer=1)
+        header_style_lines = [line]
 
     phrases = group_words(words) if captions_on else []
     events = _phrase_events(phrases, style) + header_events

@@ -150,6 +150,11 @@ def test_render_resolves_request_visual_presets(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "render.pipeline.run_owned", lambda *args, **kwargs: Completed()
     )
+    seen = []
+    monkeypatch.setattr(
+        "render.pipeline.render_header_png",
+        lambda _text, _path, style, **_kwargs: seen.append(style),
+    )
     request = RenderRequest(
         header="A compact header",
         caption_style="punch",
@@ -165,8 +170,9 @@ def test_render_resolves_request_visual_presets(monkeypatch, tmp_path):
 
     ass = (tmp_path / "captions.ass").read_text()
     assert "Style: Caption,Impact,92" in ass
-    assert "Style: Header,Arial,42" in ass
-    assert ",3,16,0,8,80,80,210,1" in ass
+    assert "Style: Header" not in ass  # Pillow draws the header (#65)
+    assert seen[0].header_plate == "solid"
+    assert seen[0].header_plate_color == "FFFFFF"
 
 
 def test_render_rejects_non_finite_duration(tmp_path):

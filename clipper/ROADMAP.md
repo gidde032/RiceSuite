@@ -64,9 +64,13 @@ at 30 Hz, and confirmed cuts or target reacquisition remain immediate.
 - **Music waveform** (RiceSuite [#56](https://github.com/gidde032/RiceSuite/issues/56))
   — draw the track's waveform in the segment picker, so the user can see where
   to start.
-- **User-authored caption presets and finer controls** — custom font/color
-  entry, arbitrary position controls, and persistent saved presets remain
-  deferred until the bounded built-in choices prove insufficient.
+- **User-authored caption presets and finer controls** — the header half
+  shipped in RiceSuite [#65](https://github.com/gidde032/RiceSuite/issues/65):
+  per-clip header position, size, curated font, colours, outline, shadow,
+  plate, alignment, and line spacing, saved per slot, with a live preview
+  (SPEC §6.3). Caption font/colour entry, caption position controls, and
+  persistent saved presets remain deferred until the bounded caption presets
+  prove insufficient.
 
 ## Deferred — longer-term
 

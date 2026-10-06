@@ -133,9 +133,9 @@ the DIN Condensed font with powder blue (`#A8C7E8`), and Baskerville with teal
 
 The UI also exposes three header treatments at the same compact,
 reference-matched scale: **Plain text**, **Black plate**, and **White plate**.
-Plain text is the default. Headers with emoji use the existing Pillow PNG
-overlay path and apply the same selected treatment; text-only headers remain on
-libass.
+Plain text is the default. Since RiceSuite #65 they are quick presets that fill
+in the per-clip header controls (§6.3), and every header, with or without
+emoji, is drawn by Pillow (§6.3); captions stay on libass.
 
 Caption and header style are chosen per clip, seeded from a **per-slot saved
 default** rather than a universal pre-upload dropdown: each slot (the "Clip N"
@@ -205,6 +205,48 @@ signal on a music-only clip with no transcript. The header is the single most
 visible line on the clip and the API cost is cents — the spot where a strong
 model earns its keep. Revisit at build if desired.
 
+### 6.3 Header rendering, controls, and live preview (RiceSuite #65)
+
+**One renderer.** Every non-empty header is drawn with Pillow to a full-frame
+transparent PNG (`render/header_image.py`, on the shared text and emoji module
+`render/text_image.py`) and composited after the captions with ffmpeg's
+`overlay`, with or without emoji. libass draws the captions only. The Pillow
+header reproduces the libass header it replaced: the font is scaled the way
+libass scales an ASS `Fontsize` (ascent plus descent equals the size), lines
+wrap like libass `WrapStyle: 0` inside 80 px side margins, and the block is
+drawn at 4× and scaled down, so glyph advances do not add up. The installed
+Pillow has no raqm (no HarfBuzz shaping); on rendered frames the default plain
+header's width differs from libass by at most 2 px (0.3%).
+
+**Fallback.** If the PNG render fails (for example, no usable font), the render
+does not fail and does not drop the header. It burns a minimal libass text
+header (font family, size, colour, outline, alignment, and position; no plate
+or shadow), and job state reports why in `header_note`, which the card shows.
+
+**Controls.** Per clip, saved per slot like the caption and header styles
+(§5.1): vertical position, size, a curated font list (Arial Bold by default;
+Helvetica Neue Bold, Avenir Next Heavy, Futura Bold, Impact, Arial Black, DIN
+Condensed Bold, Georgia Bold; a font missing on the host falls back to the
+default and is marked), text colour, outline width and colour, an optional
+soft blurred shadow, a plate (none, solid, or translucent) with colour,
+opacity, corner radius, and padding, alignment, and line spacing. The three
+treatments are presets that fill in the controls. `RenderRequest.header_look`
+carries them with Pydantic bounds; without it, the `header_style` preset
+decides, as before. Header text is at most 200 characters. The renderer keeps
+the drawn block inside the frame and above the caption zone.
+
+**Live preview.** `POST /api/jobs/{id}/header-preview` returns the same PNG the
+render overlays (a data URL), its drawn box, and the "face near header"
+warning re-checked for that box. It writes no files. The editor requests it,
+debounced, as the text or controls change and shows it scaled over the preview.
+
+**Face-near-header zone.** A crop plan keeps each face box's vertical span. The
+plan's stored warning, computed at ingest before any header exists, uses the
+default header's span (`header_margin_v` to `header_margin_v` + 160 px). The
+preview re-checks the zone against the clip's drawn header, so the warning
+follows its position and size, and a clip with no header gets no header
+warning. Plans saved before #65 keep their ingest warning.
+
 ## 7. Deferred roadmap (ordered)
 
 - **Wave 1 — fast-follow (the "first improvements" cluster):**
@@ -249,10 +291,11 @@ model earns its keep. Revisit at build if desired.
   throughput feature. The prior "single-clip, no batch" default is superseded;
   the per-clip human-in-the-loop gate is unchanged.
 - Header position: top-center, 210 px down from the top of the 1080×1920 frame
-  (~11%; `StyleConfig.header_margin_v`, was 450 px until RiceSuite #20). The
-  libass and emoji-PNG header paths both read it. The subject-crop "face near
-  header" warning zone is derived from it: the frame top down to the bottom of a
-  2-line header with its plate (`header_margin_v` + 160 px).
+  (~11%; `StyleConfig.header_margin_v`, was 450 px until RiceSuite #20). It is
+  the default of the per-clip position control (§6.3), and the top of the
+  header's first line box. The subject-crop ingest "face near header" zone is
+  derived from it (`header_margin_v` to `header_margin_v` + 160 px); the editor
+  re-checks the zone against the clip's own header (§6.3).
 - Future-header snapshot taken from an early frame (~1s in, or first non-black
   frame).
 - Tuned for sub-minute clips; no hard length cap enforced in v1.
@@ -263,7 +306,8 @@ model earns its keep. Revisit at build if desired.
 - **Frontend:** vanilla HTML/JS review UI.
 - **Transcription:** **faster-whisper** (word-level timestamps; small/medium model,
   seconds on CPU for sub-minute clips). WhisperX only if word sync looks loose.
-- **Rendering:** ffmpeg + libass (ASS subtitles), blur-pad filter, audio mix.
+- **Rendering:** ffmpeg + libass (ASS captions), Pillow header PNG overlay
+  (§6.3), blur-pad filter, audio mix.
 - **Header agent:** Anthropic Sonnet (vision), JSON-styled prompt; implemented in Wave 1.
 - **Output:** 1080×1920, H.264 / AAC, mp4.
 - Local-first throughout.
@@ -282,7 +326,7 @@ model earns its keep. Revisit at build if desired.
 | D8 | Caption style | Word-by-word highlight within ~4–5 word phrase groups; Tier-1 preset | The signature look; entirely native to libass |
 | D9 | Transcription | faster-whisper, local | Free, private, word timestamps built in; fits local-first setup |
 | D10 | Interface | FastAPI + vanilla HTML/JS localhost, review gate | Hosts override + header entry; matches RicePoster for easy merge |
-| D11 | Styling | One Tier-1 preset v1; style/position config Wave-2; Tier-3 deferred behind engine decision | Config is a time sink; template already parameterized for cheap later exposure |
+| D11 | Styling | One Tier-1 preset v1; style/position config Wave-2; Tier-3 deferred behind engine decision. **Amended 2026-10-06 (RiceSuite [#65](https://github.com/gidde032/RiceSuite/issues/65)):** the header gets per-clip style and position controls with a live preview, and every header is drawn by Pillow (§6.3). Caption style stays the fixed presets of §5.1 | Config is a time sink; template already parameterized for cheap later exposure. Two header renderers would need every control built twice, and they had already drifted apart |
 | D12 | Non-9:16 handling | Blur-pad fill as the **fallback and explicit choice**; subject crop when detection passes (D15) | Never loses content. The RicePoster "edge-crop failure" was withdrawn 2026-07-27 (TikTok trims edges itself); the surviving rule is a safe zone for the subject |
 | D13 | Music | Optional added audio; replace **or** mix-under toggle with volume slider; v1. Segment start chosen per clip with an in-browser preview; the segment runs for the clip length. Added music fades in over 0.5 s when the start is past 0 and fades out over the last 1 s (amended 2026-10-03, RiceSuite [#55](https://github.com/gidde032/RiceSuite/issues/55)). Auto-ducking + vocal isolation deferred | Central to actual usage; cheap since encoding already exists; adding after sync can't affect timing. A song's opening is rarely the part a clip needs, and a mid-song cut sounds broken without a fade |
 | D14 | Browser theme | Slate: dark carbon/grey chrome, rice-grey state accents, visual per-clip preset cards, symbol-only rice-and-shears mark | Makes the daily-driver review path faster to scan without changing behavior or adding editor features |

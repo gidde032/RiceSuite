@@ -953,24 +953,34 @@ def test_restore_transcript_success(isolated_jobs):
 
 
 def test_render_reports_missing_emoji_header_font(monkeypatch, isolated_jobs):
-    """Issue #3: the missing-font reason reaches the UI, not just the log."""
+    """Issue #3: the missing-font reason reaches the UI, not just the log.
+
+    Since RiceSuite #65 the render still succeeds with the libass fallback
+    header, and job state carries the reason.
+    """
     job = jobs.create_job()
     job.status = "ready"
     job.source_path = job.dir / "source.mp4"
     job.source_path.write_bytes(b"source")
     job.info = MediaInfo(1080, 1920, 1.0, False)
-    reason = "missing a renderable color-emoji font for the emoji header"
+    reason = "missing a renderable color-emoji font"
 
-    def fail(*_args, **_kwargs):
-        raise main.HeaderFontError(reason)
+    def fallback(work_dir, *_args, notes=None, **_kwargs):
+        notes.append(f"The header used the basic text renderer: {reason}")
+        out = work_dir / "output.mp4"
+        out.write_bytes(b"mp4")
+        return out
 
-    monkeypatch.setattr(main, "render", fail)
+    monkeypatch.setattr(main, "render", fallback)
 
-    with pytest.raises(HTTPException) as exc_info:
-        main.render_job(job.id, RenderRequest(header="hello \U0001f525"))
+    state = main.render_job(job.id, RenderRequest(header="hello \U0001f525"))
 
-    assert exc_info.value.status_code == 500
-    assert exc_info.value.detail == reason
-    assert job.status == "error"
-    assert job.error == reason
+    assert state.status == "done"
+    assert reason in state.header_note
     assert not jobs.has_active_jobs()
+
+    # The next clean render clears the note.
+    monkeypatch.setattr(
+        main, "render", lambda work_dir, *a, **k: work_dir / "output.mp4"
+    )
+    assert main.render_job(job.id, RenderRequest(header="hello")).header_note is None

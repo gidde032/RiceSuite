@@ -107,6 +107,12 @@ it via ffmpeg; captions stay on libass (they carry no emoji).
 **Built — 2026-08-24.** Path chosen: **PNG overlay**, implemented in
 `render/header_image.py` + wired into `render/pipeline.py`.
 
+**Superseded 2026-10-06 (RiceSuite #65):** every header now takes the PNG
+path, with or without emoji, and the text, emoji, wrap, and font code moved to
+the shared `render/text_image.py` (reused by the caption emoji rows, #66). The
+fallback on a PNG failure is now a minimal libass text header, reported in job
+state. See SPEC §6.3. The notes below describe the 2026-08-24 build.
+
 How it works:
 - `has_emoji(header)` gates it. **Text-only headers stay on the libass path
   unchanged**; only headers containing emoji use the overlay.
