@@ -173,6 +173,20 @@ published as a tagged release or GitHub Release.
 
 ### Fixed
 
+- TikTok upload failures name their cause, and the file waits for the upload
+  page to settle (RiceSuite
+  [#62](https://github.com/gidde032/RiceSuite/issues/62)). One account failed
+  four times while sending the video, each time with a bare Playwright `Error`
+  and a blank screenshot, and the debug JSON held only the error type. The
+  JSON now also records `page_url` (the page at the failure), `settled_url`
+  (where the upload page settled) and `error_message` (the first line of the
+  error, up to 200 characters, only for failures before the caption is
+  entered). Both URLs drop the query string and fragment. The fixed 5 s pause
+  after the upload page loads is now a floor: the file is sent once the URL has
+  also stayed the same for 2 s, so a redirect finishes first. A page still
+  navigating at 15 s is logged and used as before. This guards against an
+  early redirect; it is not a confirmed fix for those four failures, which
+  the new fields are there to explain.
 - A draft with a removed caption style no longer fails Regenerate (RiceSuite
   [#50](https://github.com/gidde032/RiceSuite/issues/50)). A replayed Clipper
   pull and Restore last batch kept the style that the draft was saved with.

@@ -465,6 +465,12 @@ Check Instagram before retrying an unconfirmed post to avoid duplicates.
 
 ### TikTok slow-network diagnostics
 
+The file is sent only once the upload page has settled: at least 5 seconds
+after it loads, and only after its URL has stayed the same for 2 seconds, so a
+redirect (to TikTok Studio, or to a login page) finishes first. A page still
+navigating after 15 seconds is logged and used as it is; that alone never fails
+the post. A login page at that point fails it as an expired session.
+
 The caption is entered while the upload runs. Post is then clicked only once
 TikTok enables it, which it does when the upload finishes; the wait is capped
 at `TT_UPLOAD_TIMEOUT_S` seconds, and a timeout fails the post before anything
@@ -480,5 +486,19 @@ A Post button that never appears fails after 30 seconds.
 
 Failures and unconfirmed results save timestamped `debug_tt_post_<slot>_*`
 PNG screenshots and JSON metadata in `debug/`, with the same contents and
-cautions as the Instagram files above. Check TikTok before retrying an
-unconfirmed post to avoid duplicates.
+cautions as the Instagram files above. The TikTok JSON also names where the
+page was:
+
+- `settled_url`: the URL the upload page settled on before the file was sent
+  (null if the run failed before that);
+- `page_url`: the URL when the failure was recorded;
+- `error_message`: the first line of the error, up to 200 characters, for
+  failures before the caption is entered. Later failures record only the
+  error type, because their messages can quote the caption.
+
+Both URLs drop the query string, fragment and any credentials, but keep the
+scheme and host, so a blank or failed page (`about:blank`,
+`chrome-error://chromewebdata/`) is not mistaken for a TikTok page. A
+`settled_url` that differs from `page_url` means the page navigated after it
+settled. Check TikTok before retrying an unconfirmed post to avoid
+duplicates.
