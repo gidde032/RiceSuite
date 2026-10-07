@@ -120,9 +120,15 @@ the file. A variable already exported in your shell always wins over the file.
 | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | *(none)* | Required by `score` (not `score --offline`). Nothing else calls a paid API. |
 | `RICESEARCHER_SCORER_MODEL` | `claude-haiku-4-5` | Scorer model (lowest cost). `score --model` overrides it. |
-| `RICESEARCHER_DATA_DIR` | `~/.ricesearcher` | Library (`library.sqlite3`), media cache (`cache/`), and profiles. |
+| `RICESEARCHER_DATA_DIR` | as `rice data location` | Library (`library.sqlite3`), media cache (`cache/`), and profiles. |
 | `RICESEARCHER_PROFILES_DIR` | `<data_dir>/profiles` | Where profile JSON files live. |
-| `RICESEARCHER_HANDOFF_DIR` | `~/ricesearcher-handoff` | Where handoff batches are written for RiceClipper. |
+| `RICESEARCHER_HANDOFF_DIR` | as `rice data location` | Where handoff batches are written for RiceClipper. |
+
+Unset or blank, the data and handoff paths come from `ricesuite.env` and the
+suite data location, exactly as `rice start` passes them: `~/.ricesuite/searcher`
+and `~/.ricesuite/handoff/searcher-to-clipper` after `rice data cutover` or on a
+fresh install, `~/.ricesearcher` and `~/ricesearcher-handoff` on a legacy one.
+`ricesuite.env` may also set `RICESEARCHER_PROFILES_DIR`. A shell export wins.
 | `RICESEARCHER_EMBED_MODEL` | `all-MiniLM-L6-v2` | sentence-transformers model used by `dedup`. |
 
 To try RiceSearcher without touching a real library or RiceClipper's inbox,

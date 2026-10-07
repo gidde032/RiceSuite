@@ -5,6 +5,14 @@ All notable changes to RiceSearcher are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Fixed
+
+- The standalone CLI (`ricesearcher score`, `profiles`, `handoff`, ...) now
+  uses the paths `rice data location` reports when `RICESEARCHER_DATA_DIR` or
+  `RICESEARCHER_HANDOFF_DIR` is unset. After `rice data cutover` it had kept
+  reading the stale `~/.ricesearcher` copy (RiceSuite
+  [#73](https://github.com/gidde032/RiceSuite/issues/73)).
+
 ### Documentation
 
 - Updated the Searcher spec and roadmap to reflect the enforced 90% coverage

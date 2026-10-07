@@ -10,6 +10,8 @@ import argparse
 import sys
 from collections.abc import Sequence
 
+from ricesuite.env import SuiteConfigError
+
 from ricesearcher.acquire.watchfolder import WatchFolderAcquirer
 from ricesearcher.acquire.ytdlp import YtDlpAcquirer
 from ricesearcher.beat.profile import (
@@ -365,7 +367,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     load_env_files()  # pick up ANTHROPIC_API_KEY from a local credentials.env/.env
     parser = build_parser()
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except SuiteConfigError as exc:
+        print(f"error: RiceSuite configuration: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":  # pragma: no cover

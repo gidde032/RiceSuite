@@ -9,18 +9,22 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from ricesuite import env as suite_env
+
+# Unset or blank, the data root and handoff root are what `rice data location`
+# reports (#73): ``<RICESUITE_DATA_DIR>/searcher`` after a cutover or on a fresh
+# install, ``~/.ricesearcher`` on a legacy one. ricesuite.env supplies them, so
+# the standalone CLI and `rice start` never disagree.
 _DATA_ENV = "RICESEARCHER_DATA_DIR"
-_DEFAULT_DATA_DIR = "~/.ricesearcher"
 
 # RiceSearcher's OWN handoff root (SPEC §7). It only ever *writes* here; RiceClipper
 # reads from it and writes its rendered output to the SEPARATE ~/riceclipper-handoff
 # (where RicePoster pulls). RiceSearcher and RicePoster never share a directory —
 # RiceClipper is the intermediary. Do NOT point this at ~/riceclipper-handoff.
 _HANDOFF_ENV = "RICESEARCHER_HANDOFF_DIR"
-_DEFAULT_HANDOFF_DIR = "~/ricesearcher-handoff"
 
 # Saved beat profiles (ADR-002). Defaults under the data root; override the
-# directory with this env var.
+# directory with this env var (in the shell or ricesuite.env).
 _PROFILES_ENV = "RICESEARCHER_PROFILES_DIR"
 
 
@@ -30,6 +34,8 @@ class Config:
 
     data_dir: Path
     handoff_dir: Path
+    # RICESEARCHER_PROFILES_DIR from ricesuite.env; the shell still wins.
+    profiles_override: Path | None = None
 
     @property
     def db_path(self) -> Path:
@@ -44,9 +50,11 @@ class Config:
     @property
     def profiles_dir(self) -> Path:
         """Saved beat profiles (ADR-002). Env-overridable directory."""
-        override = os.getenv(_PROFILES_ENV)
+        override = (os.getenv(_PROFILES_ENV) or "").strip()
         if override:
             return Path(override).expanduser()
+        if self.profiles_override is not None:
+            return self.profiles_override
         return self.data_dir / "profiles"
 
     def ensure_dirs(self) -> None:
@@ -56,10 +64,27 @@ class Config:
 
 
 def load_config() -> Config:
-    """Resolve config from the environment, expanding ``~``."""
-    data_dir = Path(os.getenv(_DATA_ENV) or _DEFAULT_DATA_DIR).expanduser()
-    handoff_dir = Path(os.getenv(_HANDOFF_ENV) or _DEFAULT_HANDOFF_DIR).expanduser()
-    return Config(data_dir=data_dir, handoff_dir=handoff_dir)
+    """Resolve paths as the RiceSuite launcher would, expanding ``~``.
+
+    The shell wins, then ricesuite.env, then the suite data location. The suite
+    is consulted only when a path is unset or blank, so explicit paths (as
+    `rice start` passes them) never depend on the rest of the suite config.
+    Otherwise raises ``ricesuite.env.SuiteConfigError`` when the suite
+    configuration is invalid (for example an interrupted cutover), exactly as
+    `rice start` refuses it.
+    """
+    data = (os.getenv(_DATA_ENV) or "").strip()
+    handoff = (os.getenv(_HANDOFF_ENV) or "").strip()
+    profiles = ""
+    if not (data and handoff):
+        suite = suite_env.load()
+        data, handoff = suite[_DATA_ENV], suite[_HANDOFF_ENV]
+        profiles = suite.get(_PROFILES_ENV, "").strip()
+    return Config(
+        data_dir=Path(data).expanduser(),
+        handoff_dir=Path(handoff).expanduser(),
+        profiles_override=Path(profiles).expanduser() if profiles else None,
+    )
 
 
 # Dotenv-style files loaded (from the current directory) before a command runs,

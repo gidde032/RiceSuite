@@ -51,6 +51,10 @@ def test_default_handoff_dir_is_ricesearcher_own(monkeypatch) -> None:
     monkeypatch.delenv("RICESEARCHER_HANDOFF_DIR", raising=False)
     from ricesearcher.config import load_config
 
+    # A fresh install (the hermetic HOME) uses the suite's unified stage
+    # directory (#73); the legacy ~/ricesearcher-handoff is pinned in
+    # test_suite_data_location.
     hd = load_config().handoff_dir
-    assert hd.name == "ricesearcher-handoff"
+    assert hd.name == "searcher-to-clipper"
     assert "riceclipper-handoff" not in str(hd)
+    assert "clipper-to-poster" not in str(hd)

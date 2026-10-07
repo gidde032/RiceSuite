@@ -36,6 +36,20 @@ def _hermetic_ricesearcher_env(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(key)
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_suite_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unset paths resolve through the suite config (#73); keep it in tmp_path.
+
+    A temporary HOME and an absent ricesuite.env stop any test from resolving
+    into the developer's real ~/.ricesuite or ~/.ricesearcher.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("RICESUITE_ENV", str(tmp_path / "ricesuite.env"))
+    monkeypatch.delenv("RICESUITE_DATA_DIR", raising=False)
+
+
 @pytest.fixture
 def media_file(tmp_path: Path) -> Path:
     """A tiny fake media file with real bytes for content hashing."""
