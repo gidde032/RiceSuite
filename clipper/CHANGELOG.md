@@ -15,6 +15,22 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   [#68](https://github.com/gidde032/RiceSuite/issues/68)).
 
 ### Added
+- **Caption emoji rows and the ✨ Suggest emoji picker** (RiceSuite
+  [#66](https://github.com/gidde032/RiceSuite/issues/66), SPEC §3, §5.1, D8).
+  A per-clip **Emoji** toggle, off by default and saved per slot, shows a row
+  of one or two colour emoji above or below some phrases: above when the
+  anchor word is on a phrase's top line (or the phrase has one line), below
+  otherwise. Picks are stored by word index, so text edits keep them; a
+  phrase shows its first anchor's pick. With any row shown, the captions rise
+  by one row for the whole clip, clear of the platforms' bottom interface, and
+  the caption zone grew from 540 to 760 px. Pillow draws one transparent
+  frame per phrase row; an `ffconcat` list (blank gaps, the last file
+  repeated, microsecond times so nothing drifts) is composited with a single
+  overlay, popping in with Motion. Without a colour-emoji font the clip
+  renders without emoji and says so (`emoji_note`). **✨ Suggest emoji** makes
+  one Sonnet call per clip, only on the click, sending only the caption
+  phrases; it shares the header's call site, now `app/anthropic_text.py`, so
+  Clipper still has exactly one `messages.create`.
 - **Caption Motion and the Montserrat preset** (RiceSuite
   [#66](https://github.com/gidde032/RiceSuite/issues/66), SPEC §5, §5.1, D8,
   D11). A per-clip **Motion** switch, on by default and saved per slot, gives

@@ -35,10 +35,10 @@ local files and writes local files. Posting — and its approval gate — belong
 RicePoster, which separately pulls from RiceClipper's local handoff. See
 `SPEC.md` §3.
 
-The **only** outbound network feature is the optional on-screen header
-generator, and it is **opt-in**: nothing is sent after transcription
-automatically. It requires an `ANTHROPIC_API_KEY` and runs only when you click
-**✨ Generate** in the review UI. Everything else — transcription, subject
+The **only** outbound network features are the optional on-screen header
+generator and the caption emoji picker, and both are **opt-in**: nothing is
+sent after transcription automatically. They require an `ANTHROPIC_API_KEY` and
+run only when you click **✨ Generate** or **✨ Suggest emoji** in the review UI. Everything else — transcription, subject
 detection, rendering — runs fully offline once the Whisper model has been
 downloaded (see [First run](#first-run)). See [`SECURITY.md`](./SECURITY.md)
 for exactly what is transmitted, and [`.env.example`](./.env.example) for
@@ -52,9 +52,10 @@ configuration.
 - **OpenCV YuNet** for local landscape subject detection (model vendored in
   `render/models/`, no download)
 - **ffmpeg + libass** (ASS subtitles) for caption burn-in and audio mix, and
-  **Pillow** for the header image ffmpeg overlays
-- Anthropic Sonnet for the **opt-in** on-screen header generator (Wave 1) —
-  the only outbound network feature; off unless you set a key and click Generate
+  **Pillow** for the header image and caption emoji rows ffmpeg overlays
+- Anthropic Sonnet for the **opt-in** on-screen header generator (Wave 1) and
+  caption emoji picker (RiceSuite #66) — the only outbound network features;
+  off unless you set a key and click Generate or Suggest emoji
 
 ## Requirements
 

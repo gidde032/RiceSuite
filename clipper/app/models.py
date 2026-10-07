@@ -12,6 +12,8 @@ from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
+from render.text_image import is_emoji_cluster
+
 CaptionStyle = Literal[
     "classic",
     "clean",
@@ -54,6 +56,37 @@ class Word(BaseModel):
     start: float
     end: float
     line_start: bool = False
+
+
+def _emoji_cluster(value: str) -> str:
+    if not is_emoji_cluster(value):
+        raise ValueError("must be one emoji")
+    return value
+
+
+EmojiCluster = Annotated[str, AfterValidator(_emoji_cluster)]
+# Upper bound on emoji picks in one request: far more than any clip's phrases.
+EMOJI_PICKS_MAX = 500
+
+
+class EmojiPick(BaseModel):
+    """One phrase's emoji, anchored to a word (RiceSuite #66).
+
+    ``word`` is the global index of the anchor word in the clip's word list,
+    so a text edit keeps the pick (timing is locked, D4). The phrase that
+    contains the word shows the row; the first anchor in a phrase wins.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    word: int = Field(ge=0)
+    emoji: list[EmojiCluster] = Field(min_length=1, max_length=2)
+
+
+class EmojiRequest(BaseModel):
+    """Body of ``POST /api/jobs/{id}/emoji``: the reviewed words to pick for."""
+
+    words: list[Word] = Field(default_factory=list)
 
 
 class LyricsRequest(BaseModel):
@@ -148,6 +181,10 @@ class RenderRequest(HeaderFields):
     # Caption pop, active-word bump, and soft shadow (RiceSuite #66). Off
     # renders the captions exactly as before.
     motion: bool = True
+    # Caption emoji rows (RiceSuite #66): off by default. ``emoji`` holds the
+    # reviewed picks; they are drawn only while ``emoji_on`` is set.
+    emoji_on: bool = False
+    emoji: list[EmojiPick] = Field(default_factory=list, max_length=EMOJI_PICKS_MAX)
     geometry: Geometry = "auto"
     content: Content = "speech"
     music: MusicSettings = Field(default_factory=MusicSettings)
@@ -222,6 +259,9 @@ class JobState(BaseModel):
     # Set when the last render drew the header with the libass fallback
     # because the Pillow header failed (RiceSuite #65); says why.
     header_note: str | None = None
+    # Set when the last render left the caption emoji out (RiceSuite #66),
+    # for example with no colour-emoji font; says why.
+    emoji_note: str | None = None
     # Subject-crop framing decision (ADR-001). Only set for landscape input.
     crop_plan: CropPlan | None = None
     music_plan: CropPlan | None = None

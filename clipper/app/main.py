@@ -28,6 +28,7 @@ from app import env
 env.load_dotenv_file()
 
 from app import (  # noqa: E402
+    emoji_gen,
     handoff,
     header_gen,
     jobs,
@@ -39,6 +40,7 @@ from app import (  # noqa: E402
 from app.models import (  # noqa: E402
     HEADER_MAX_CHARS,
     CropPlan,
+    EmojiRequest,
     HandoffRequest,
     HeaderPreviewRequest,
     HeaderRequest,
@@ -51,7 +53,11 @@ from app.process import terminate_all_owned_processes  # noqa: E402
 from render import frame, framing, geometry, subject, text_image  # noqa: E402
 from render.ass import HEADER_STYLE_NAMES, fallback_span, header_preset  # noqa: E402
 from render.header_image import header_png_bytes  # noqa: E402
-from render.pipeline import render, style_for_request  # noqa: E402
+from render.pipeline import (  # noqa: E402
+    EMOJI_NOTE_PREFIX,
+    render,
+    style_for_request,
+)
 from transcribe import lyrics, whisper  # noqa: E402
 
 logger = logging.getLogger("riceclipper")
@@ -374,6 +380,33 @@ def generate_header(job_id: str, req: HeaderRequest) -> dict:
         return {"header": _fit_header(header)}
 
 
+@app.post("/api/jobs/{job_id}/emoji")
+def suggest_emoji(job_id: str, req: EmojiRequest) -> dict:
+    """Suggest sparse caption emoji for the reviewed words (RiceSuite #66).
+
+    Opt-in: only the editor's ✨ Suggest emoji button calls this. It sends the
+    caption phrases' text, through the same call site as the header, and
+    posts nothing. The job lock is not held during the model call, so the
+    rest of the review UI keeps working. Any failure leaves the editor's
+    current picks alone.
+    """
+    with jobs.job_operation_lock():
+        job = jobs.get_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        if job.source_path is None or job.info is None:
+            raise HTTPException(status_code=409, detail="job not ready")
+        words = list(req.words or job.words)
+    try:
+        picks = emoji_gen.suggest_emoji(words)
+    except emoji_gen.EmojiConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except emoji_gen.EmojiGenerationError as exc:
+        logger.warning("emoji suggestion failed: %s", exc)
+        raise HTTPException(status_code=502, detail="emoji suggestion failed") from exc
+    return {"picks": [pick.model_dump() for pick in picks]}
+
+
 def _fit_header(header: str) -> str:
     """Trim a generated header to the render limit at a word boundary.
 
@@ -470,6 +503,7 @@ def render_job(job_id: str, req: RenderRequest) -> JobState:
         job.status = "rendering"
         job.error = None
         job.header_note = None
+        job.emoji_note = None
         # From here, job state reports this render's outcome (RiceSuite #49).
         job.render_id = req.render_id
         render_lock = job.render_lock
@@ -494,7 +528,10 @@ def render_job(job_id: str, req: RenderRequest) -> JobState:
             job.output_path = out
             # A header that fell back to libass says why, e.g. a missing font
             # the user can install (Issue #3, RiceSuite #65).
-            job.header_note = notes[0] if notes else None
+            header_notes = [n for n in notes if not n.startswith(EMOJI_NOTE_PREFIX)]
+            emoji_notes = [n for n in notes if n.startswith(EMOJI_NOTE_PREFIX)]
+            job.header_note = header_notes[0] if header_notes else None
+            job.emoji_note = emoji_notes[0] if emoji_notes else None
             job.status = "done"
             if job.searcher_manifest is not None:
                 jobs.persist_searcher_job(job)

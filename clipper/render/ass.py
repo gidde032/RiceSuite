@@ -24,7 +24,7 @@ variables from the UI, not rebuilding this file.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from itertools import pairwise
 
@@ -71,8 +71,11 @@ class StyleConfig:
 
 
 # The bottom band of the 1920 px frame kept for captions (render.framing
-# re-exports it). The header is kept above it (RiceSuite #65).
-CAPTION_ZONE_PX = 540
+# re-exports it). The header is kept above it (RiceSuite #65). Since RiceSuite
+# #66 it also holds caption emoji rows: a two-line phrase lifted by one row,
+# with its row above, reaches 756 px up for the 100 px presets (a test checks
+# every preset).
+CAPTION_ZONE_PX = 760
 
 CAPTION_STYLE_NAMES = (
     "classic",
@@ -442,19 +445,127 @@ def _motion_text(
     return out
 
 
-def _motion_events(
-    phrases: Sequence[Phrase], style: StyleConfig, measure: Measure | None
-) -> list[str]:
-    """Caption events with the pop, the bump, and the soft shadow.
+# --- layout: line breaks, position, and emoji rows (RiceSuite #66) ----------
 
-    Each active-word window is two events: a shadow layer (transparent text
-    whose blurred, offset shadow shows) under a crisp text layer with no
-    shadow. Colour and scale are restored after the active word explicitly;
-    ``\\r`` would drop the pop and the line's other tags.
+# A caption emoji row is this fraction of the caption size tall, this many px
+# from the text block's line boxes. The gap clears the pop's 112% overshoot
+# of a two-line block (about 12 px at size 100) on rendered frames.
+EMOJI_ROW_EM = 0.9
+EMOJI_GAP = 18
+
+
+def emoji_row_height(style: StyleConfig) -> int:
+    return round(style.font_size * EMOJI_ROW_EM)
+
+
+def emoji_lift(style: StyleConfig) -> int:
+    """How far the captions rise for the whole clip when it shows emoji rows.
+
+    One row: a row below the text then sits where the text was, clear of the
+    platforms' bottom interface, and the text never moves between phrases.
+    """
+    return emoji_row_height(style) + EMOJI_GAP
+
+
+@dataclass
+class PhraseLayout:
+    """Where one phrase is drawn, and its emoji row if it has one.
+
+    ``lines`` holds indices into ``phrase.words``. ``top`` and ``bottom`` are
+    the block's line boxes in output px (each line is ``font_size * scale``
+    tall). ``anchor`` is the global index of the word whose pick the phrase
+    shows; ``row`` is "above" or "below" and ``row_box`` its (top, bottom).
+    """
+
+    phrase: Phrase
+    lines: list[list[int]]
+    scale: float
+    top: int
+    bottom: int
+    center_y: int
+    anchor: int | None = None
+    emoji: tuple[str, ...] = ()
+    row: str | None = None
+    row_box: tuple[int, int] | None = None
+
+    @property
+    def start(self) -> float:
+        return self.phrase.start
+
+    @property
+    def end(self) -> float:
+        """When the phrase leaves the screen (its last caption event's end)."""
+        last = self.phrase.words[-1]
+        return max(last.end, self.phrase.end, last.start + 0.01)
+
+
+def layout_phrases(
+    words: Sequence[WordLike],
+    style: StyleConfig,
+    measure: Measure | None = None,
+    emoji: Mapping[int, Sequence[str]] | None = None,
+) -> list[PhraseLayout]:
+    """Lay out every caption phrase, with its emoji row if it has a pick.
+
+    ``emoji`` maps a global word index (the word's position in ``words``) to
+    its emoji. A phrase shows the pick of the first anchor it contains; a pick
+    on a word that is emptied, or past the end, shows nowhere. When any phrase
+    shows a row, every phrase is lifted by :func:`emoji_lift`. A row goes
+    above the text when its anchor is on the first line (so always for a
+    one-line phrase) and below it otherwise.
     """
     if measure is None:
         size = style.font_size
         measure = lambda text: len(text) * size * _ESTIMATE_EM  # noqa: E731
+    picks = dict(emoji or {})
+    index_of = {id(w): i for i, w in enumerate(words)}
+    phrases = group_words(words)
+    anchors = []
+    for phrase in phrases:
+        indices = [index_of[id(w)] for w in phrase.words]
+        anchors.append(next((i for i in indices if i in picks), None))
+    lift = emoji_lift(style) if any(a is not None for a in anchors) else 0
+    bottom = style.play_res_y - style.caption_margin_v - lift
+    row_h = emoji_row_height(style)
+    layouts = []
+    for phrase, anchor in zip(phrases, anchors, strict=True):
+        lines, scale = caption_lines(
+            [w.text.strip() for w in phrase.words], style, measure
+        )
+        height = len(lines) * style.font_size * scale
+        layout = PhraseLayout(
+            phrase=phrase,
+            lines=lines,
+            scale=scale,
+            top=round(bottom - height),
+            bottom=bottom,
+            center_y=round(bottom - height / 2),
+        )
+        if anchor is not None:
+            local = [index_of[id(w)] for w in phrase.words].index(anchor)
+            above = local in lines[0]
+            layout.anchor = anchor
+            layout.emoji = tuple(picks[anchor])
+            layout.row = "above" if above else "below"
+            if above:
+                row_bottom = layout.top - EMOJI_GAP
+                layout.row_box = (row_bottom - row_h, row_bottom)
+            else:
+                layout.row_box = (bottom + EMOJI_GAP, bottom + EMOJI_GAP + row_h)
+        layouts.append(layout)
+    return layouts
+
+
+def _layout_events(layouts: Sequence[PhraseLayout], style: StyleConfig) -> list[str]:
+    """Caption events at the laid-out positions, with explicit line breaks.
+
+    With Motion, each active-word window is two events: a shadow layer
+    (transparent text whose blurred, offset shadow shows) under a crisp text
+    layer with no shadow, and the phrase pops and the active word grows.
+    Without it (a clip with emoji rows), one layer keeps the flat look.
+    Colour and scale are restored after the active word explicitly; ``\\r``
+    would drop the pop and the line's other tags.
+    """
     colours = (
         _inline_color(style.highlight_color),
         _inline_color(style.primary_color),
@@ -463,22 +574,26 @@ def _motion_events(
     dx, dy = SHADOW_OFFSET
     x = style.play_res_x // 2
     events: list[str] = []
-    for phrase in phrases:
-        ws = phrase.words
+    for layout in layouts:
+        ws = layout.phrase.words
         tokens = [_escape(w.text.strip()) for w in ws]
-        lines, phrase_scale = caption_lines(
-            [w.text.strip() for w in ws], style, measure
-        )
-        bottom = style.play_res_y - style.caption_margin_v
-        y = round(bottom - len(lines) * style.font_size * phrase_scale / 2)
-        lead = f"\\an5\\pos({x},{y})\\q2"
-        phrase_cs = round(phrase.start * 100)
+        lines, phrase_scale = layout.lines, layout.scale
+        lead = f"\\an5\\pos({x},{layout.center_y})\\q2"
+        phrase_cs = round(layout.phrase.start * 100)
         n = len(ws)
         for i, word in enumerate(ws):
             start = word.start
-            end = ws[i + 1].start if i + 1 < n else max(word.end, phrase.end)
+            end = ws[i + 1].start if i + 1 < n else max(word.end, layout.phrase.end)
             if end <= start:
                 end = start + 0.01
+            span = f"{_ass_time(start)},{_ass_time(end)}"
+            if not style.motion:
+                scale = _scale(100 * phrase_scale) if phrase_scale != 1.0 else ""
+                text = _flat_text(tokens, lines, i, colours)
+                events.append(
+                    f"Dialogue: 0,{span},Caption,,0,0,0,,{{{lead}{scale}}}{text}"
+                )
+                continue
             offset_ms = (round(start * 100) - phrase_cs) * 10
             pop = offset_ms if offset_ms < pop_end else None
             lead_scale = ""
@@ -492,10 +607,28 @@ def _motion_events(
             crisp = f"{{{lead}\\shad0{lead_scale}}}" + _motion_text(
                 tokens, lines, i, phrase_scale, pop, colours
             )
-            span = f"{_ass_time(start)},{_ass_time(end)}"
             events.append(f"Dialogue: 0,{span},Caption,,0,0,0,,{shadow}")
             events.append(f"Dialogue: 1,{span},Caption,,0,0,0,,{crisp}")
     return events
+
+
+def _flat_text(
+    tokens: Sequence[str],
+    lines: Sequence[Sequence[int]],
+    active: int,
+    colours: tuple[str, str],
+) -> str:
+    """One event's words, broken into ``lines``, with the highlight only."""
+    line_of = {i: n for n, line in enumerate(lines) for i in line}
+    out = ""
+    for j, token in enumerate(tokens):
+        if j:
+            out += "\\N" if line_of[j] != line_of[j - 1] else " "
+        if j == active:
+            out += "{\\c" + colours[0] + "}" + token + "{\\c" + colours[1] + "}"
+        else:
+            out += token
+    return out
 
 
 _ALIGN_TOP = {"left": 7, "center": 8, "right": 9}
@@ -598,13 +731,16 @@ def build_ass(
     fallback_header: str = "",
     fallback_family: str = "Arial",
     measure: Measure | None = None,
+    emoji: Mapping[int, Sequence[str]] | None = None,
 ) -> str:
     """Render the complete ASS script for one clip.
 
     ``fallback_header`` is set only when the Pillow header failed; it adds the
     minimal libass header in ``fallback_family``. ``measure(text) -> px`` sizes
     caption text for the line breaks Motion makes (``caption_lines``); without
-    it, widths are estimated from the character count.
+    it, widths are estimated from the character count. ``emoji`` maps global
+    word indices to picks (``layout_phrases``); when a pick shows, every
+    caption is lifted to make room for the rows.
     """
     style = style or StyleConfig()
 
@@ -622,11 +758,13 @@ def build_ass(
             fallback_header.strip(), duration, style, fallback_family
         )
 
-    phrases = group_words(words) if captions_on else []
-    if style.motion:
-        caption_events = _motion_events(phrases, style, measure)
-    else:
-        caption_events = _phrase_events(phrases, style)
+    caption_events: list[str] = []
+    if captions_on:
+        layouts = layout_phrases(words, style, measure, emoji)
+        if style.motion or any(p.anchor is not None for p in layouts):
+            caption_events = _layout_events(layouts, style)
+        else:
+            caption_events = _phrase_events([p.phrase for p in layouts], style)
     events = caption_events + header_events
 
     lines = [

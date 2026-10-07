@@ -84,6 +84,13 @@ result = [[r.score, r.rationale] for r in scored]
 from app.header_gen import generate_headers
 result = generate_headers("a transcript", n=1)
 """,
+    # The emoji picker shares the header's call site (RiceSuite #66).
+    "clipper_emoji": r"""
+from app.emoji_gen import suggest_emoji
+from app.models import Word
+words = [Word(text="pizza", start=0.0, end=0.4), Word(text="night", start=0.4, end=0.8)]
+result = [[p.word, p.emoji] for p in suggest_emoji(words)]
+""",
     "poster": r"""
 import asyncio
 from backend import captions
@@ -150,6 +157,19 @@ def test_clipper_header_call_site_on_anthropic_1x(tmp_path):
     (call,) = out["calls"]
     assert call["path"] == "/v1/messages"
     assert call["body"]["model"] == "claude-sonnet-5"
+
+
+def test_clipper_emoji_picker_uses_the_same_call_site(tmp_path):
+    reply = '{"picks": [{"word": 0, "emoji": ["\U0001f355"]}]}'
+    out = _run("clipper", _CALLERS["clipper_emoji"], tmp_path, reply=reply)
+    assert out["result"] == [[0, ["\U0001f355"]]]
+    (call,) = out["calls"]
+    assert call["path"] == "/v1/messages"
+    assert call["body"]["model"] == "claude-sonnet-5"
+    # Only the phrase text goes out: no image, nothing else.
+    (message,) = call["body"]["messages"]
+    assert isinstance(message["content"], str)
+    assert "[0] pizza [1] night" in message["content"]
 
 
 def test_searcher_scorer_call_site_on_anthropic_1x(tmp_path):

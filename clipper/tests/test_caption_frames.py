@@ -132,3 +132,96 @@ def test_every_preset_stays_in_the_frame_at_the_peak_of_the_pop(tmp_path, name):
         left, _top, right, _bottom = _ink(frame)
         assert left > 0
         assert right < 1080
+
+
+def _colour_rows(frame: Image.Image) -> list[int]:
+    """Rows of the frame holding saturated colour: emoji, not white/black/grey
+    text, its outline, or the grey background."""
+    hsv = frame.convert("HSV")
+    sat = hsv.getchannel("S").point(lambda v: 255 if v > 120 else 0)
+    val = hsv.getchannel("V").point(lambda v: 255 if v > 80 else 0)
+    mask = ImageChops.multiply(sat, val)
+    return [
+        y
+        for y in range(frame.height)
+        if mask.crop((0, y, frame.width, y + 1)).getbbox()
+    ]
+
+
+@pytest.mark.parametrize(("anchor", "row"), [(0, "above"), (4, "below")])
+def test_emoji_rows_are_drawn_in_colour_where_the_layout_puts_them(
+    tmp_path, monkeypatch, anchor, row
+):
+    """Through the real pipeline: libass text plus the ffconcat overlay."""
+    from app.models import EmojiPick, RenderRequest, Word
+    from app.probe import MediaInfo
+    from render import pipeline
+    from render.ass import layout_phrases
+
+    try:
+        text_image.require_emoji_font()
+    except text_image.TextFontError:
+        pytest.skip("no colour-emoji font on this host")
+    words_ = [
+        Word(text=t, start=i * 0.4, end=i * 0.4 + 0.4)
+        for i, t in enumerate(["everyone", "started", "dancing", "like", "crazy"])
+    ]
+    src = tmp_path / "src.mp4"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=0x808080:s=1080x1920:r=30:d=2",
+            "-pix_fmt",
+            "yuv420p",
+            str(src),
+        ],
+        check=True,
+    )
+    req = RenderRequest(
+        words=words_,
+        caption_style="classic",
+        motion=False,
+        emoji_on=True,
+        emoji=[EmojiPick(word=anchor, emoji=["\U0001f483"])],
+    )
+    style = pipeline.style_for_request(req)
+    measure = text_image.caption_measurer(
+        style.font, style.bold, style.italic, style.font_size
+    )
+    (layout,) = layout_phrases(words_, style, measure, {anchor: ("\U0001f483",)})
+    assert layout.row == row
+    out = pipeline.render(
+        tmp_path, src, MediaInfo(1080, 1920, 2.0, False), req, notes=(notes := [])
+    )
+    assert notes == []
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-y",
+            "-ss",
+            "1.0",
+            "-i",
+            str(out),
+            "-frames:v",
+            "1",
+            "f.png",
+        ],
+        check=True,
+        cwd=tmp_path,
+    )
+    frame = Image.open(tmp_path / "f.png").convert("RGB")
+    # The highlighted word is coloured too: leave out the text block's band.
+    band = range(layout.top - 8, layout.bottom + 9)
+    rows = [y for y in _colour_rows(frame) if y not in band]
+    top, bottom = layout.row_box
+    assert rows, "no colour emoji was drawn"
+    assert top - 3 <= min(rows) and max(rows) <= bottom + 3
+    assert max(rows) - min(rows) >= 0.8 * (bottom - top)

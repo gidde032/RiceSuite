@@ -32,8 +32,9 @@ input → optional added-music (replace / mix with volume) → export 1080×1920
 H.264, through a local FastAPI review UI with a human-in-the-loop gate. Bounded
 batches are reviewed and processed sequentially, with twelve caption presets
 and three header treatments. A per-clip Motion toggle adds a phrase pop-in, an
-active-word bump, and a soft shadow to any preset (RiceSuite
-[#66](https://github.com/gidde032/RiceSuite/issues/66)). Subject crop uses the universal Level-5 strong
+active-word bump, and a soft shadow to any preset, and a per-clip Emoji toggle
+adds Sonnet-suggested, hand-edited emoji rows above or below some phrases
+(RiceSuite [#66](https://github.com/gidde032/RiceSuite/issues/66)). Subject crop uses the universal Level-5 strong
 lock for speech and music: minor motion holds, ordinary correction interpolates
 at 30 Hz, and confirmed cuts or target reacquisition remain immediate.
 
@@ -58,8 +59,10 @@ at 30 Hz, and confirmed cuts or target reacquisition remain immediate.
    resolved via the PNG-overlay fallback (`docs/spikes/emoji-burn-in.md`).
    Prompt styles live in gitignored `prompts/*.json` (only the neutral
    `generic-header` seed is tracked); default via `RICECLIPPER_HEADER_STYLE`.
-   RiceClipper still performs no posting — this is its one outbound call and it
-   generates text only.
+   RiceClipper still performs no posting — this is its one outbound call site
+   and it generates text only. The caption emoji picker (RiceSuite
+   [#66](https://github.com/gidde032/RiceSuite/issues/66)) shares it, opt-in on
+   its own button.
 
 ## Wave 2 — early additions
 

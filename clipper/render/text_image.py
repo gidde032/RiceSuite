@@ -182,6 +182,22 @@ def has_emoji(text: str) -> bool:
     return bool(_EMOJI_RE.search(text or ""))
 
 
+# Longest emoji cluster accepted for a caption row: a ZWJ family with skin
+# tones is about ten codepoints.
+EMOJI_CLUSTER_MAX = 16
+
+
+def is_emoji_cluster(text: str) -> bool:
+    """True when ``text`` is nothing but emoji codepoints (RiceSuite #66).
+
+    Variation selectors, joiners, and skin tones count; letters, digits,
+    spaces, and keycaps do not.
+    """
+    return 0 < len(text) <= EMOJI_CLUSTER_MAX and all(
+        _EMOJI_RE.match(ch) for ch in text
+    )
+
+
 # --- font resolution ---------------------------------------------------------
 
 

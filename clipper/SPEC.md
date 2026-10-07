@@ -52,9 +52,12 @@ RiceClipper **performs no posting, publishing, or network upload of content**. I
 reads local video and image files and writes local output files. The "no live post without
 explicit approval" safety rule belongs to RicePoster and remains RicePoster's
 responsibility after it separately pulls from the implemented local handoff
-(§7, Wave 1). RiceClipper's only outbound network call is the implemented header
-agent's API request (§6.2), which is **opt-in** (never automatic; requires an
-API key and an explicit UI action) and which generates text and posts nothing.
+(§7, Wave 1). RiceClipper's only outbound network requests are text-generation
+calls to Anthropic, made through one call site (`app/anthropic_text.py`;
+RiceSuite ADR-001 fact 1) for two features: the header agent (§6.2) and, since
+RiceSuite #66, the caption emoji picker (§5.1). Each is **opt-in** (never
+automatic; requires an API key and an explicit UI action, **✨ Generate** or
+**✨ Suggest emoji**), and each generates text and posts nothing.
 
 ## 4. Pipeline (data flow)
 
@@ -174,13 +177,66 @@ default** rather than a universal pre-upload dropdown: each slot (the "Clip N"
 ordinal that maps to the RicePoster handoff position) remembers its style in the
 browser (`localStorage`, local-first), starting from the v1 Classic/Plain
 defaults, and editing a clip persists that slot's default for later batches. The
-header controls (§6.3) and the caption **Motion** toggle (§5) are saved per
-slot the same way. On the audio side, choosing a music file defaults the mode to *mix under original*
+header controls (§6.3), the caption **Motion** toggle (§5), and the caption
+**Emoji** toggle (below) are saved per slot the same way. On the audio side, choosing a music file defaults the mode to *mix under original*
 while the mode is still untouched — a convenience default that never overrides a
 deliberate choice and adds no new mode (D13 unchanged). A photo card offers only
 *No music* and *Add music* (replace), at full volume, because a photo has no
 sound of its own (D17). Under the music controls, a **Start at** slider and a
 **Play segment** button choose and preview the part of the track to use (D13).
+
+**Caption emoji rows (RiceSuite #66).** A per-clip **Emoji** toggle, off by
+default and saved per slot, shows a short row of one or two colour emoji above
+or below some phrases, as in TikTok emoji captions. The picks come from **✨
+Suggest emoji** (below) and are reviewed and edited by hand before rendering;
+the render preview stays the approval gate. `RenderRequest.emoji` carries them
+and `RenderRequest.emoji_on` turns them on.
+
+- **Anchoring.** Each pick is stored against a global word index, the anchor
+  word's position in the clip's word list, so transcript text edits keep it
+  (timing is locked, D4). A phrase shows the pick of the first anchor it
+  contains. If a text edit regroups phrases (an emptied word is dropped from
+  its phrase), the earliest anchor in each new phrase wins, and a pick whose
+  word was emptied shows nowhere. Replacing the words (lyric alignment, or
+  restoring the transcript) clears the picks.
+- **Placement.** Clipper breaks a clip's caption lines itself whenever Motion
+  or emoji rows are on (§5), so it knows each phrase's line count and the
+  anchor's line. In a two-line phrase the row goes above when the anchor is on
+  the top line and below when it is on the bottom line; in a one-line phrase
+  it goes above. A rare three-line phrase follows the same rule: first line
+  above, any later line below. The row is 0.9 × the caption size tall and
+  18 px from the text's line boxes, which clears the pop's overshoot.
+- **Safe zone.** Reels and TikTok cover roughly the bottom 200–300 px with
+  their own interface. When a clip shows any row, every caption is raised by
+  one row height plus the gap, for the whole clip, so a row below the text
+  sits where the text used to end and the text never jumps between phrases.
+  The caption zone (`CAPTION_ZONE_PX`: the "face near captions" band, and the
+  header's lower limit) grew from 540 to 760 px to hold a lifted two-line
+  phrase with its row above (756 px for the 100 px presets).
+- **Rendering.** libass cannot draw colour emoji on the macOS/CoreText build
+  (§8), so Pillow draws each row (`render/emoji_track.py`, on the shared
+  `render/text_image.py`: Apple Color Emoji's 160 px strike, scaled down) on a
+  transparent 1080×1920 PNG per phrase. An `ffconcat` list gives each PNG its
+  duration, with a blank PNG for the gaps, and repeats its last file so that
+  file's duration applies. Times are whole microseconds and each duration is
+  the difference of two absolute times, so a long clip cannot drift. ffmpeg
+  reads the list as one input and composites it with a single
+  `overlay=0:0:eof_action=pass` after `subtitles` and before the header. With
+  Motion on, each row starts with two pre-scaled frames (70% for 40 ms, then
+  112% for 80 ms), in step with the caption pop. If a row cannot be drawn
+  (for example, no colour-emoji font), the clip renders without emoji and
+  without the lift, and job state says why (`emoji_note`).
+- **✨ Suggest emoji.** `POST /api/jobs/{id}/emoji` makes one Sonnet call per
+  clip, only when the button is clicked (§3), through the header's call site.
+  It sends the caption phrases as `transcribe.phrasing.group_words` makes them,
+  each word with its global index, and a system prompt that asks for sparse
+  use: about one phrase in four, never more than one in three, none when
+  nothing fits, a concrete anchor word, and one or two emoji. The reply is
+  JSON. Items with an unknown word, text that is not emoji, or the wrong shape
+  are dropped, a third emoji is dropped, and the earliest anchor in a phrase
+  wins. A failure (no key: 503; a failed call or unusable reply: 502) leaves
+  the current picks alone, and the request does not hold the job lock while
+  the model runs, so the rest of the review UI keeps working.
 
 Rerendering applies the currently selected styles. Each completed render uses a
 fresh media URL for both preview and Download, and output responses are not
@@ -348,7 +404,9 @@ warning. Plans saved before #65 keep their ingest warning.
   path renders missing-glyph boxes for color emoji, so emoji headers use the
   Pillow PNG-overlay fallback documented in
   [`docs/spikes/emoji-burn-in.md`](docs/spikes/emoji-burn-in.md). Since
-  RiceSuite #65 every header takes that path (§6.3); captions remain on libass.
+  RiceSuite #65 every header takes that path (§6.3). Caption text remains on
+  libass; since RiceSuite #66 caption emoji rows take the PNG path too, as one
+  timed image track (§5.1).
 
 ## 9. Recorded defaults
 
@@ -380,7 +438,9 @@ warning. Plans saved before #65 keep their ingest warning.
   seconds on CPU for sub-minute clips). WhisperX only if word sync looks loose.
 - **Rendering:** ffmpeg + libass (ASS captions), Pillow header PNG overlay
   (§6.3), blur-pad filter, audio mix.
-- **Header agent:** Anthropic Sonnet (vision), JSON-styled prompt; implemented in Wave 1.
+- **Text generation:** Anthropic Sonnet, through one call site
+  (`app/anthropic_text.py`): the header agent (vision, JSON-styled prompt;
+  Wave 1) and the caption emoji picker (text only; RiceSuite #66). Both opt-in.
 - **Output:** 1080×1920, H.264 / AAC, mp4.
 - Local-first throughout.
 
@@ -395,7 +455,7 @@ warning. Plans saved before #65 keep their ingest warning.
 | D5 | Trimming | None in v1 | The "maybe" and the riskiest component; silence-trim is Wave-1 |
 | D6 | Header (v1) | Manual 1–2 line text box, on every clip | Smallest path to end-to-end; doubles as the silent-clip text layer |
 | D7 | Header (auto) | Deferred (Wave 1): Sonnet vision + transcript + optional desc, manual fallback | Most visible line; strong model earns its keep; local LLM writes weaker hooks |
-| D8 | Caption style | Word-by-word highlight within ~4–5 word phrase groups; Tier-1 preset. **Amended 2026-10-06 (RiceSuite [#66](https://github.com/gidde032/RiceSuite/issues/66)):** the highlight stays, with no fixed keyword colour; a per-clip Motion toggle (on by default) adds a phrase pop-in, an active-word scale bump, and a soft blurred shadow, still drawn by libass (§5) | The signature look; entirely native to libass. Flat captions read as dated next to platform-native ones, and Tier-2 motion needs no second engine |
+| D8 | Caption style | Word-by-word highlight within ~4–5 word phrase groups; Tier-1 preset. **Amended 2026-10-06 (RiceSuite [#66](https://github.com/gidde032/RiceSuite/issues/66)):** the highlight stays, with no fixed keyword colour; a per-clip Motion toggle (on by default) adds a phrase pop-in, an active-word scale bump, and a soft blurred shadow, still drawn by libass (§5); a per-clip Emoji toggle (off by default) adds a row of one or two colour emoji above or below some phrases, suggested by Sonnet only on a button click, edited by hand, and drawn by Pillow as one overlaid image track (§5.1) | The signature look; entirely native to libass. Flat captions read as dated next to platform-native ones, and Tier-2 motion needs no second engine |
 | D9 | Transcription | faster-whisper, local | Free, private, word timestamps built in; fits local-first setup |
 | D10 | Interface | FastAPI + vanilla HTML/JS localhost, review gate | Hosts override + header entry; matches RicePoster for easy merge |
 | D11 | Styling | One Tier-1 preset v1; style/position config Wave-2; Tier-3 deferred behind engine decision. **Amended 2026-10-06 (RiceSuite [#65](https://github.com/gidde032/RiceSuite/issues/65)):** the header gets per-clip style and position controls with a live preview, and every header is drawn by Pillow (§6.3). Caption style stays the fixed presets of §5.1. **Amended 2026-10-06 (RiceSuite [#66](https://github.com/gidde032/RiceSuite/issues/66)):** one preset, Montserrat, uses a bundled open-licence font (§5.1), and the Motion toggle applies to every preset (§5); Tier 3 stays deferred | Config is a time sink; template already parameterized for cheap later exposure. Two header renderers would need every control built twice, and they had already drifted apart |

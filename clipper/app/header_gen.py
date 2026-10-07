@@ -5,8 +5,9 @@ model turns an early frame + the reviewed transcript (+ an optional editor note)
 into a single on-screen header ending in one or two emoji. Manual entry stays the
 fallback — the review UI never blocks on this call.
 
-This is the design's ONLY outbound network call (SPEC.md §3). It generates text
-and posts nothing. Prompt *styles* live in ``prompts/*.json`` (mirroring
+It shares Clipper's one Anthropic call site, ``app.anthropic_text``, with the
+caption emoji picker (SPEC.md §3, ADR-001 fact 1). It generates text and posts
+nothing. Prompt *styles* live in ``prompts/*.json`` (mirroring
 RicePoster's caption styles); only the neutral ``generic-header`` seed is tracked,
 so a maintainer-specific style naming real people stays local and gitignored.
 
@@ -22,27 +23,23 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
-from ricesuite.anthropic_client import close_client, create_client
+
+from app import anthropic_text
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 
 _DEFAULT_STYLE = "generic-header"
-_DEFAULT_MODEL = "claude-sonnet-5"
 _STYLE_ENV = "RICECLIPPER_HEADER_STYLE"
-_MODEL_ENV = "RICECLIPPER_HEADER_MODEL"
-_API_KEY_ENV = "ANTHROPIC_API_KEY"
 
 # The header sits on the request path of an interactive review UI; a ten-minute
 # SDK default read timeout would be indistinguishable from a hang.
 _MAX_TOKENS = 200
 
 
-class HeaderConfigError(RuntimeError):
-    """Missing/invalid configuration (no API key, unknown style)."""
-
-
-class HeaderGenerationError(RuntimeError):
-    """The model call failed or returned nothing usable."""
+# Missing/invalid configuration (no API key, unknown style), and a failed or
+# empty model call. The shared call site raises the same types.
+HeaderConfigError = anthropic_text.TextConfigError
+HeaderGenerationError = anthropic_text.TextGenerationError
 
 
 class HeaderStyle(BaseModel):
@@ -54,10 +51,6 @@ class HeaderStyle(BaseModel):
 
 def default_style() -> str:
     return os.getenv(_STYLE_ENV) or _DEFAULT_STYLE
-
-
-def _model() -> str:
-    return os.getenv(_MODEL_ENV) or _DEFAULT_MODEL
 
 
 def load_styles() -> dict[str, HeaderStyle]:
@@ -122,9 +115,8 @@ def _build_content(user_prompt: str, thumbnail_b64: str = "") -> Any:
 
 
 def _create_client(api_key: str) -> Any:
-    """Build a real Anthropic client. Imported lazily so the module loads (and
-    tests that inject a fake client run) without the SDK installed."""
-    return create_client(api_key=api_key)
+    """Build a real Anthropic client (tests replace this)."""
+    return anthropic_text._create_client(api_key)
 
 
 def generate_headers(
@@ -142,10 +134,10 @@ def generate_headers(
 
     ``client`` is injectable for tests; production builds one from the API key.
     """
-    api_key = os.getenv(_API_KEY_ENV, "").strip()
-    if client is None and not api_key:
+    if client is None and not os.getenv(anthropic_text.API_KEY_ENV, "").strip():
         raise HeaderConfigError(
-            f"{_API_KEY_ENV} is not set — the auto-header cannot be generated."
+            f"{anthropic_text.API_KEY_ENV} is not set — the auto-header cannot "
+            "be generated."
         )
 
     styles = load_styles()
@@ -157,31 +149,18 @@ def generate_headers(
             f"Available: {', '.join(sorted(styles)) or 'none'}"
         )
 
-    owns_client = client is None
-    if owns_client:
-        client = _create_client(api_key)
-
-    headers: list[str] = []
-    try:
-        user_prompt = _build_user_prompt(
-            transcript, selected.no_topic_fallback, note, feedback, avoid
-        )
-        content = _build_content(user_prompt, thumbnail_b64)
-        for _ in range(max(1, n)):
-            response = client.messages.create(
-                model=_model(),
-                max_tokens=_MAX_TOKENS,
-                system=selected.system_prompt,
-                messages=[{"role": "user", "content": content}],
-            )
-            headers.append(response.content[0].text.strip())
-    except HeaderGenerationError:
-        raise
-    except Exception as exc:
-        raise HeaderGenerationError("header generation failed") from exc
-    finally:
-        if owns_client:
-            close_client(client)
+    user_prompt = _build_user_prompt(
+        transcript, selected.no_topic_fallback, note, feedback, avoid
+    )
+    headers = anthropic_text.generate(
+        purpose="header",
+        system=selected.system_prompt,
+        content=_build_content(user_prompt, thumbnail_b64),
+        max_tokens=_MAX_TOKENS,
+        n=n,
+        client=client,
+        create=_create_client,
+    )
 
     if not any(headers):
         raise HeaderGenerationError("model returned an empty header")

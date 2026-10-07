@@ -13,8 +13,10 @@ Under normal use, **nothing** leaves your machine. Transcription
 libass) all run locally. The Whisper model is downloaded once on first run from
 its model host and then cached locally.
 
-The **only** outbound network call in the entire design is the optional
-on-screen header generator (SPEC §6.2), and it is **opt-in**:
+The **only** outbound network calls in the entire design are two optional
+text generators that share one Anthropic call site: the on-screen header
+generator (SPEC §6.2) and the caption emoji picker (SPEC §5.1, RiceSuite #66).
+Both are **opt-in**. The header generator:
 
 - It is **never** triggered automatically. Nothing is sent after transcription
   on its own — you invoke it explicitly with the header **"✨ Generate"** button
@@ -31,9 +33,20 @@ on-screen header generator (SPEC §6.2), and it is **opt-in**:
 - It generates **text only** and posts nothing. On any failure the UI keeps
   your manual header, so a render is never blocked.
 
+The caption emoji picker works the same way:
+
+- It is **never** triggered automatically: only the **"✨ Suggest emoji"**
+  button sends anything, and it needs the same `ANTHROPIC_API_KEY`.
+- For that single request it sends the clip's **caption phrases** (the
+  reviewed transcript words, grouped as the captions show them, each with its
+  position number) and a fixed system prompt. It sends **no frame** and no
+  other clip data.
+- It returns **text only** (emoji picks you review and edit) and posts
+  nothing. On any failure the UI keeps your current picks.
+
 If you do not want any clip frame or transcript to ever reach a third party, do
-not set `ANTHROPIC_API_KEY` and do not use the header generator — every other
-feature works fully offline.
+not set `ANTHROPIC_API_KEY` and use neither button — every other feature works
+fully offline.
 
 ## API keys & secrets
 
