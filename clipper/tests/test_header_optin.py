@@ -23,8 +23,17 @@ def test_no_auto_generate_header_helper():
 
 
 def test_header_endpoint_is_called_exactly_once():
-    """The only fetch to the header endpoint lives in ``requestHeader``."""
-    assert APP_JS.count("/header") == 1
+    """The only fetch to the header endpoint lives in ``requestHeader``.
+
+    ``/header-preview`` and ``/header-options`` (RiceSuite #65) are local
+    Pillow and font-list routes, not the generator, so the match is exact.
+    """
+    assert len(re.findall(r"/header[`'\"]", APP_JS)) == 1
+    assert set(re.findall(r"/header[-\w]*", APP_JS)) == {
+        "/header",
+        "/header-preview",
+        "/header-options",
+    }
 
 
 def test_request_header_has_a_single_call_site():

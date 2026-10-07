@@ -71,7 +71,7 @@ the fallback and as an explicit per-clip choice.
 - `face_rate` = samples with a face / all samples.
 - `safe_rate` = samples where the face **center** lies inside the central 70% of the window / samples with a face (tuning round 2; the box rule failed every close-up wider than the zone).
 - `decision = crop` when `face_rate >= 0.80` and `safe_rate >= 0.95`. Else `blur_pad`. `reason` names the failed threshold.
-- Warn, do not block, when the face box intersects the header zone (top `header_margin_v` + 160 px of output: 370 px, covering a 2-line header with its plate; was 450 px until RiceSuite #20) or the caption zone (bottom 540 px of output) in over 20% of samples. Store `warning` on the plan.
+- Warn, do not block, when the face box intersects the header zone (`header_margin_v` to `header_margin_v` + 160 px of output: 210–370 px, covering a 2-line default header with its plate; was the top 450 px until RiceSuite #20) or the caption zone (bottom 540 px of output) in over 20% of samples. Store `warning` on the plan, and each face box's vertical span in `face_spans`. Since RiceSuite #65 the editor re-checks the header zone against the clip's drawn header (`framing.header_warning`, via the header preview), so it follows the header's position and size; with no header there is no header zone.
 
 ### Per-clip control
 

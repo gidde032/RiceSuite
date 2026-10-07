@@ -103,7 +103,10 @@ test("a photo upload is ready without a transcription request", async () => {
   assert.equal(ctx.clip.status, "ready");
   assert.equal(ctx.clip.jobId, "p1");
   assert.equal(ctx.clip.isPhoto, true);
-  assert.deepEqual(calls.map((c) => c.path).filter((p) => p.startsWith("api/") && p !== "api/health" && p !== "api/media-info"), ["api/upload"]);
+  // The header controls read their font list and ask for a header preview
+  // (RiceSuite #65); both are read-only and local. Nothing is transcribed.
+  const readOnly = new Set(["api/health", "api/media-info", "api/header-options", "api/jobs/p1/header-preview"]);
+  assert.deepEqual(calls.map((c) => c.path).filter((p) => p.startsWith("api/") && !readOnly.has(p)), ["api/upload"]);
 });
 
 test("a photo render sends its length and drops nothing else", async () => {

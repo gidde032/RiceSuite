@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 
 from render.ass import (
@@ -6,6 +8,7 @@ from render.ass import (
     StyleConfig,
     _ass_time,
     build_ass,
+    fallback_span,
     style_for_presets,
 )
 from tests._util import words
@@ -46,24 +49,27 @@ def test_active_word_window_is_contiguous():
     assert "0:00:00.00,0:00:00.50" in dialogues[0]
 
 
-def test_captions_off_still_emits_header():
+def test_captions_off_still_emits_the_fallback_header():
     ass = build_ass(
-        words(("skip", 0.0, 0.3)), header="Look 🥹", captions_on=False, duration=2.0
+        words(("skip", 0.0, 0.3)),
+        fallback_header="Look 🥹",
+        captions_on=False,
+        duration=2.0,
     )
     dialogues = [line for line in ass.splitlines() if line.startswith("Dialogue:")]
     assert len(dialogues) == 1
-    assert "Header" in dialogues[0]
+    assert "HeaderFallback" in dialogues[0]
     assert "Look 🥹" in dialogues[0]  # emoji passed through untouched
 
 
-def test_header_spans_full_duration():
-    ass = build_ass(words(("x", 0.0, 0.3)), header="Hook", duration=4.2)
+def test_fallback_header_spans_full_duration():
+    ass = build_ass(words(("x", 0.0, 0.3)), fallback_header="Hook", duration=4.2)
     header = next(line for line in ass.splitlines() if line.startswith("Dialogue: 1"))
     assert "0:00:00.00,0:00:04.20" in header
 
 
-def test_newlines_become_ass_breaks():
-    ass = build_ass([], header="line one\nline two", duration=1.0)
+def test_fallback_newlines_become_ass_breaks():
+    ass = build_ass([], fallback_header="line one\nline two", duration=1.0)
     assert "line one\\Nline two" in ass
 
 
@@ -149,28 +155,73 @@ def test_lyric_presets_match_the_ratified_font_and_color_treatments():
 def test_header_presets_share_compact_scale_and_plain_has_no_plate():
     styles = [style_for_presets("classic", name) for name in HEADER_STYLE_NAMES]
     assert [style.header_font_size for style in styles] == [42, 42, 42]
+    assert [style.header_plate for style in styles] == ["none", "translucent", "solid"]
 
-    plain = build_ass(
-        [], header="Hook", duration=1.0, style=style_for_presets("classic", "plain")
-    )
-    black = build_ass(
-        [],
-        header="Hook",
-        duration=1.0,
-        style=style_for_presets("classic", "black_plate"),
-    )
-    white = build_ass(
-        [],
-        header="Hook",
-        duration=1.0,
-        style=style_for_presets("classic", "white_plate"),
-    )
+    black = style_for_presets("classic", "black_plate")
+    assert (black.header_plate_color, black.header_plate_opacity) == ("000000", 75)
+    assert black.header_outline == 0  # libass drew no edge inside the box
+    white = style_for_presets("classic", "white_plate")
+    assert (white.header_plate_color, white.header_outline) == ("FFFFFF", 2)
+    assert all(style.header_padding == 16 for style in styles)
+    assert all(style.header_plate_radius == 0 for style in styles)
 
-    assert "Style: Header,Arial,42" in plain
-    assert ",1,2,2,8,80,80,210,1" in plain
-    assert ",3,16,0,8,80,80,210,1" in black
-    assert ",3,16,0,8,80,80,210,1" in white
-    assert "Style: HeaderPlate,Arial,42,&HFFFFFFFF,&HFFFFFFFF,&H00FFFFFF" in white
-    assert "Style: Header,Arial,42,&H00FFFFFF,&H00FFFFFF,&H00000000" in white
-    assert "Dialogue: 0,0:00:00.00,0:00:01.00,HeaderPlate" in white
-    assert "Dialogue: 1,0:00:00.00,0:00:01.00,Header" in white
+
+def test_header_preset_fills_every_header_control():
+    from render.ass import HEADER_LOOK_FIELDS, header_preset
+
+    for name in HEADER_STYLE_NAMES:
+        assert set(header_preset(name)) == set(HEADER_LOOK_FIELDS)
+    assert header_preset("plain")["y"] == 210
+
+
+def test_fallback_header_is_a_minimal_text_line_at_the_header_position():
+    style = replace(
+        style_for_presets("classic", "white_plate"),
+        header_font_size=60,
+        header_color="FFCC00",
+        header_align="left",
+        header_margin_v=500,
+    )
+    ass = build_ass(
+        [], fallback_header="Hook", duration=1.0, style=style, fallback_family="Impact"
+    )
+    line = next(x for x in ass.splitlines() if x.startswith("Style: HeaderFallback,"))
+    assert line.startswith("Style: HeaderFallback,Impact,60,&H0000CCFF,")
+    # BorderStyle 1 (no plate), outline 2, no shadow, top-left, MarginV 500.
+    assert line.endswith(",1,2,0,7,80,80,500,1")
+
+
+@pytest.mark.parametrize("plate,padding,outline", [("solid", 40, 2), ("none", 0, 8)])
+@pytest.mark.parametrize("y", [0, 1380])
+def test_fallback_span_includes_the_background_and_outline(plate, padding, outline, y):
+    style = replace(
+        StyleConfig(),
+        header_margin_v=y,
+        header_font_size=60,
+        header_plate=plate,
+        header_padding=padding,
+        header_outline=outline,
+    )
+    top, bottom = fallback_span("One\nTwo", style)
+    edge = max(padding if plate != "none" else 0, outline)
+    assert bottom - top == 120 + 2 * edge
+    assert top >= 0
+    assert bottom <= 1380
+
+
+def test_fallback_text_and_background_have_the_same_fixed_position():
+    import re
+
+    ass = build_ass(
+        words(("ordinary", 0.0, 0.5), ("people", 0.5, 1.0)),
+        fallback_header="One\nTwo",
+        duration=1.0,
+        style=replace(StyleConfig(), header_plate="solid", header_padding=40),
+    )
+    events = [line for line in ass.splitlines() if ",HeaderFallback" in line]
+    positions = [re.search(r"\\pos\((\d+),(\d+)\)", line) for line in events]
+    assert len(positions) == 2
+    assert all(positions), (
+        "fixed positions keep libass from moving the plate for captions"
+    )
+    assert positions[0].groups() == positions[1].groups()

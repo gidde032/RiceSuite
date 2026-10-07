@@ -2,9 +2,9 @@
 
 Builds a single ffmpeg ``filter_complex`` invocation covering SPEC.md §4 steps
 5-8: normalize source coordinates, apply crop/pass/blur-pad geometry, burn the
-caption+header ASS via libass, mix audio, and encode. Caption timing is already
-baked to the timeline in seconds, so mixing music here cannot affect sync
-(SPEC.md §4 step 7).
+caption ASS via libass, overlay the Pillow header PNG, mix audio, and encode.
+Caption timing is already baked to the timeline in seconds, so mixing music
+here cannot affect sync (SPEC.md §4 step 7).
 
 ffmpeg runs with ``cwd`` set to the job dir and the ASS referenced by bare
 filename, which sidesteps the notoriously fragile ``subtitles`` path escaping.
@@ -12,6 +12,7 @@ filename, which sidesteps the notoriously fragile ``subtitles`` path escaping.
 
 from __future__ import annotations
 
+import logging
 import math
 import os
 from pathlib import Path
@@ -20,8 +21,11 @@ from app.models import CropPlan, RenderRequest
 from app.probe import MediaInfo
 from app.process import ProcessTimeoutError, run_owned
 from render import geometry
-from render.ass import StyleConfig, build_ass, style_for_presets
-from render.header_image import has_emoji, render_header_png
+from render.ass import StyleConfig, apply_header_look, build_ass, style_for_presets
+from render.header_image import render_header_png
+from render.text_image import DEFAULT_FONT, FONT_CHOICES
+
+logger = logging.getLogger("riceclipper")
 
 ASS_NAME = "captions.ass"
 HEADER_PNG = "header.png"
@@ -201,6 +205,20 @@ def _ffmpeg_command(
     return cmd
 
 
+def style_for_request(req) -> StyleConfig:
+    """The ``StyleConfig`` a render or preview request asks for.
+
+    The caption preset and the header preset fill it in; ``header_look``, when
+    sent, then sets every header control.
+    """
+    style = style_for_presets(
+        getattr(req, "caption_style", "classic"), req.header_style
+    )
+    if req.header_look is not None:
+        style = apply_header_look(style, req.header_look)
+    return style
+
+
 def render(
     job_dir: str | Path,
     source_path: str | Path,
@@ -208,6 +226,7 @@ def render(
     req: RenderRequest,
     style: StyleConfig | None = None,
     plan: CropPlan | None = None,
+    notes: list[str] | None = None,
 ) -> Path:
     """Render one clip; returns the output mp4 path. Raises RenderError.
 
@@ -215,36 +234,46 @@ def render(
     the video uses the subject-crop path (a moving 9:16 window) instead of
     blur-pad. The caller resolves the plan (ADR-001, F4). ``None`` keeps the
     blur-pad / pass-through behaviour.
+
+    If the header PNG cannot be drawn, the header falls back to a minimal
+    libass text line and the reason is appended to ``notes``.
     """
     job_dir = Path(job_dir)
     source_path = Path(source_path)
     if not math.isfinite(info.duration) or info.duration <= 0:
         raise RenderError(f"invalid video duration: {info.duration!r}")
 
-    # 1. Header routing. libass can't render color emoji on this toolchain, so a
-    # header containing emoji is drawn to a PNG and composited via `overlay`; the
-    # ASS then omits the header. Text-only headers stay on the libass path. If the
-    # image render fails for any reason, degrade to the libass header rather than
-    # failing the whole render (text shows; emoji may box).
-    style = style or style_for_presets(req.caption_style, req.header_style)
-    overlay_header = bool(req.header.strip()) and has_emoji(req.header)
+    # 1. Header. Pillow draws every non-empty header, with or without emoji,
+    # to a full-frame PNG that is overlaid after the captions (RiceSuite #65).
+    # If that fails, a minimal libass text header keeps the header on the clip
+    # and the reason goes back to the caller, so the fallback is not silent.
+    style = style or style_for_request(req)
+    header = req.header.strip()
+    overlay_header = bool(header)
+    fallback_header = ""
     if overlay_header:
         try:
             render_header_png(
-                req.header,
+                header,
                 job_dir / HEADER_PNG,
                 style,
                 canvas=(geometry.TARGET_W, geometry.TARGET_H),
             )
-        except Exception:
+        except Exception as exc:
+            logger.warning("header PNG failed; using the libass header: %s", exc)
             overlay_header = False
+            fallback_header = header
+            if notes is not None:
+                notes.append(f"The header used the basic text renderer: {exc}")
 
+    family = FONT_CHOICES.get(style.header_font, FONT_CHOICES[DEFAULT_FONT])
     ass_text = build_ass(
         req.words,
-        header="" if overlay_header else req.header,
         captions_on=req.captions_on,
         duration=info.duration,
         style=style,
+        fallback_header=fallback_header,
+        fallback_family=family.ass_family,
     )
     (job_dir / ASS_NAME).write_text(ass_text, encoding="utf-8")
 

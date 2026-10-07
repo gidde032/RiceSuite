@@ -8,6 +8,35 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Header controls and a live header preview** (RiceSuite
+  [#65](https://github.com/gidde032/RiceSuite/issues/65), SPEC §6.3, D11).
+  Every header is now drawn by Pillow and overlaid, with or without emoji;
+  libass draws only the captions. The Pillow header matches the libass one it
+  replaces to within 2 px on rendered frames. Emoji headers now use the same
+  text size as text-only ones (they were drawn about 10% larger).
+  `RenderRequest.header_look` carries per-clip position, size, curated font,
+  colours, outline, soft shadow, plate (none, solid, or translucent, with
+  colour, opacity, corner radius, and padding), alignment, and line spacing;
+  Plain, Black plate, and White plate fill them in. `POST
+  /api/jobs/{id}/header-preview` returns the exact header PNG and the "face
+  near header" warning re-checked for that header, without writing a file. If
+  the PNG render fails, the clip gets a minimal libass header (with its plate,
+  above the captions) and the card says why (`header_note`), instead of a
+  silent fallback. A character the header font lacks (★, ✓, Hangul, kana) is
+  drawn with a fallback text font, and a symbol the colour-emoji font lacks is
+  drawn as text instead of a gap; a keycap is drawn as its digit. Text Pillow
+  cannot lay out (Arabic, Hebrew, Indic scripts, or a character no font has)
+  takes the libass fallback, since libass shapes it. A header too tall or wide for its space is drawn smaller to fit. Header
+  text is limited to 200 characters; a longer generated header is trimmed at a
+  word boundary.
+  In the editor (variant A, chosen 2026-10-06), an **Adjust header**
+  disclosure under the header-style cards holds the controls, with a position
+  slider. The header PNG is drawn over the source preview 250 ms after the last
+  change, in the frame the render will use: a blur-pad clip (every photo that
+  is not 9:16, for one) shows a mock of the blur-pad output under it. The
+  "face near header" badge follows the header. A style card fills in
+  colours, outline, shadow, and plate, and keeps position, size, font,
+  alignment, and spacing. The controls are saved per slot.
 - **Music segment and preview** (RiceSuite [#55](https://github.com/gidde032/RiceSuite/issues/55),
   SPEC D13). Pick where a music track starts with the **Start at** slider. The
   slider keeps the whole segment inside the track. **Play segment** plays it for
@@ -28,6 +57,14 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   automatic-pull timer, never pulls, and leaves the progress bar alone.
 
 ### Fixed
+- **Basic header backgrounds stay with their text.** The libass fallback uses
+  a fixed shared position and includes plate padding and outlines when keeping
+  the header above captions.
+- **Face warnings follow blur-pad framing.** Header preview warnings use the
+  selected geometry and refresh when Geometry or Content changes.
+- **Removing a clip keeps saved styles in the correct slot.** Remaining clips
+  are renumbered to match their Poster handoff positions, preserving their
+  current header controls and saving defaults under the new slot.
 - **A lost render request no longer passes for a finished render** (RiceSuite
   [#49](https://github.com/gidde032/RiceSuite/issues/49)). After a lost render
   reply, the page polled job state and took any finished output as success. If

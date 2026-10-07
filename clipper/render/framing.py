@@ -13,8 +13,10 @@ See ``docs/design/subject-crop-spec.md`` (Framing policy).
 
 from __future__ import annotations
 
+from typing import Literal
+
 from app.models import Content, CropPlan, CropReason, CropSample, TrackSample
-from render.ass import StyleConfig
+from render.ass import CAPTION_ZONE_PX, StyleConfig
 
 # Sampling and motion policy (source_w-relative unless noted).
 SAMPLE_FPS = 5
@@ -29,15 +31,18 @@ SCENE_MIN_SPEECH = 0.3
 SCENE_MIN_MUSIC = 0.2
 FACE_RATE_MIN = 0.80
 SAFE_RATE_MIN = 0.95
-# The header zone runs from the frame top to the bottom of the tallest 2-line
-# header with its plate: the emoji PNG path at 42 px ends 155 px below
-# ``header_margin_v`` (libass ends 100 px below). It moves with the header.
+# The "face near header" zone is the drawn header's own top-to-bottom span
+# (RiceSuite #65). At ingest no header is known yet, so the plan's stored
+# warning uses the default header's span: from ``header_margin_v`` down to the
+# bottom of a 2-line default header with its plate (160 px covers it). The
+# editor re-checks the zone for the clip's header through ``header_warning``.
 HEADER_BLOCK_MAX_PX = 160
 HEADER_ZONE_PX = StyleConfig().header_margin_v + HEADER_BLOCK_MAX_PX
-CAPTION_ZONE_PX = 540
+DEFAULT_HEADER_SPAN = (StyleConfig().header_margin_v, HEADER_ZONE_PX)
 WARN_FRACTION = 0.20
 
 # Output height the header/caption zones are defined against.
+_OUTPUT_W = 1080
 _OUTPUT_H = 1920
 # Central-window margin on each side, from SAFE_FRACTION.
 _SAFE_MARGIN = (1.0 - SAFE_FRACTION) / 2.0
@@ -269,7 +274,10 @@ def plan_crop(
     else:
         decision, reason = "blur_pad", "low_safe_rate"
 
-    warning = _warning(face_records, source_h, n_face)
+    face_spans = [
+        (round(f.cy - f.h / 2, 1), round(f.cy + f.h / 2, 1)) for f, _ in face_records
+    ]
+    warning = zone_warning(face_spans, source_h, DEFAULT_HEADER_SPAN)
 
     return CropPlan(
         decision=decision,
@@ -282,23 +290,32 @@ def plan_crop(
         warning=warning,
         profile=profile,
         interpolation_fps=interpolation_fps,
+        face_spans=face_spans,
     )
 
 
-def _warning(
-    face_records: list[tuple[TrackSample, int]],
+def zone_warning(
+    face_spans: list[tuple[float, float]],
     source_h: int,
-    n_face: int,
+    header_span: tuple[float, float] | None,
 ) -> str | None:
     """Return the larger over-threshold zone hit, or None.
 
-    Zones are defined in output pixels; scale maps them back to source pixels.
+    ``face_spans`` are (top, bottom) face boxes in source px. ``header_span``
+    is the header's (top, bottom) in output px, or None when the clip has no
+    header. Zones are defined in output pixels; scale maps them back to source
+    pixels.
     """
+    if not face_spans or source_h <= 0:
+        return None
+    n_face = len(face_spans)
     scale = _OUTPUT_H / source_h
-    header_limit = HEADER_ZONE_PX / scale
     caption_limit = source_h - CAPTION_ZONE_PX / scale
-    header_hits = sum(1 for s, _ in face_records if s.cy - s.h / 2 < header_limit)
-    caption_hits = sum(1 for s, _ in face_records if s.cy + s.h / 2 > caption_limit)
+    header_hits = 0
+    if header_span is not None:
+        top, bottom = header_span[0] / scale, header_span[1] / scale
+        header_hits = sum(1 for t, b in face_spans if t < bottom and b > top)
+    caption_hits = sum(1 for _t, b in face_spans if b > caption_limit)
 
     candidates: list[tuple[str, int]] = []
     if header_hits / n_face > WARN_FRACTION:
@@ -308,3 +325,49 @@ def _warning(
     if not candidates:
         return None
     return max(candidates, key=lambda c: c[1])[0]
+
+
+def header_warning(
+    plan: CropPlan | None,
+    header_span: tuple[float, float] | None,
+    *,
+    source_w: int | None = None,
+    source_h: int | None = None,
+    resolved_geometry: Literal["pass", "blur_pad", "crop"] | None = None,
+) -> str | None:
+    """The plan's warning, re-checked against the clip's drawn header.
+
+    A plan saved before RiceSuite #65 has no face spans; its ingest warning
+    stands. When the preview supplies the source dimensions and resolved render
+    geometry, face spans are projected onto the output canvas first. Without
+    them, retain the original full-height crop mapping for existing callers.
+    """
+    if plan is None:
+        return None
+    if not plan.face_spans:
+        return plan.warning
+
+    if (
+        source_w is None
+        or source_h is None
+        or source_w <= 0
+        or source_h <= 0
+        or resolved_geometry is None
+    ):
+        return zone_warning(plan.face_spans, plan.window_h, header_span)
+
+    if resolved_geometry in {"pass", "crop"}:
+        scale = _OUTPUT_H / source_h
+        offset_y = 0.0
+    else:
+        # blur_pad keeps the whole foreground and fits it inside the output;
+        # the background fills the rest. Mirror scale=decrease and the centred
+        # overlay used by render.geometry.blur_pad_statements.
+        scale = min(_OUTPUT_W / source_w, _OUTPUT_H / source_h)
+        offset_y = (_OUTPUT_H - source_h * scale) / 2.0
+
+    output_spans = [
+        (offset_y + top * scale, offset_y + bottom * scale)
+        for top, bottom in plan.face_spans
+    ]
+    return zone_warning(output_spans, _OUTPUT_H, header_span)

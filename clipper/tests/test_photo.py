@@ -254,7 +254,7 @@ def test_photo_render_uses_the_chosen_length_and_drops_captions(
     state = _photo_job(isolated_jobs)
     seen = {}
 
-    def fake_render(work_dir, source, info, req, plan=None):
+    def fake_render(work_dir, source, info, req, plan=None, notes=None):
         seen.update(info=info, req=req, plan=plan)
         out = work_dir / "output.mp4"
         out.write_bytes(b"mp4")
