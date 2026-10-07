@@ -383,6 +383,68 @@ EMOJI_RESET = r"""
 """
 
 
+def _mouse_click(devtools, selector_js):
+    """Click an element with real pointer events (focus moves on press)."""
+    point = devtools.evaluate(
+        f"""(() => {{
+          const el = {selector_js};
+          el.scrollIntoView({{ block: "center" }});
+          const r = el.getBoundingClientRect();
+          return {{ x: r.x + r.width / 2, y: r.y + r.height / 2 }};
+        }})()"""
+    )
+    for kind in ("mousePressed", "mouseReleased"):
+        devtools.call(
+            "Input.dispatchMouseEvent",
+            {
+                "type": kind,
+                "x": point["x"],
+                "y": point["y"],
+                "button": "left",
+                "clickCount": 1,
+            },
+        )
+
+
+def emoji_click_after_edit(devtools):
+    """Cold review S2: the first strip click after typing in a word counts."""
+    devtools.evaluate(
+        r"""(() => {
+          const c = window.__editorFixture;
+          c.emojiToggleEl.checked = true;
+          c.emojiToggleEl.dispatchEvent(new Event("change", { bubbles: true }));
+          setEmojiPicks(c, { 1: ["\u{1F525}"] });
+        })()"""
+    )
+    _mouse_click(
+        devtools,
+        "window.__editorFixture.transcriptEl.querySelector('.word[data-index=\"1\"]')",
+    )
+    devtools.call("Input.insertText", {"text": "y"})
+    _mouse_click(
+        devtools,
+        "window.__editorFixture.emojiStripEl.querySelector('.emoji-palette button')",
+    )
+    time.sleep(0.05)
+    picks = devtools.evaluate("JSON.stringify(window.__editorFixture.emojiPicks)")
+    devtools.evaluate(
+        """(() => {
+          const c = window.__editorFixture;
+          const word = c.transcriptEl.querySelector('.word[data-index="1"]');
+          word.textContent = c.words[1].text;
+          c.emojiToggleEl.checked = false;
+          c.emojiToggleEl.dispatchEvent(new Event("change", { bubbles: true }));
+          resetEmojiPicks(c);
+          refreshEmoji(c);
+          if (document.activeElement) document.activeElement.blur();
+          window.scrollTo(0, 0);
+        })()"""
+    )
+    first = json.loads(picks).get("1", [])
+    if len(first) != 2:
+        raise AssertionError(f"first strip click after a word edit was lost: {picks}")
+
+
 def tab_reachability(devtools, mode, *, disabled_target=None):
     """Walk the real Tab sequence and check focus rings on representative controls."""
     if disabled_target == "lyrics":
@@ -608,6 +670,10 @@ def main():
                                 failures.append(
                                     f"{width}x{height}: Emoji off left markers behind"
                                 )
+                            try:
+                                emoji_click_after_edit(devtools)
+                            except AssertionError as error:
+                                failures.append(f"{width}x{height}: {error}")
                     music = by_mode["music"]["settings"]
                     speech = by_mode["speech"]["settings"]
                     if any(

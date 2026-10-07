@@ -24,12 +24,22 @@ variables from the UI, not rebuilding this file.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from itertools import pairwise
 
 from render.text_image import wrap
 from transcribe.phrasing import Phrase, WordLike, group_words
+
+# The bottom band of the 1920 px frame kept for captions (render.framing
+# re-exports it). The header is kept above it (RiceSuite #65).
+CAPTION_ZONE_PX = 540
+# A clip that shows caption emoji rows (RiceSuite #66) keeps this band
+# instead: a two-line phrase lifted by one row, with its row above, reaches
+# 756 px up for the 100 px presets. A row that would go higher goes below its
+# phrase (a test checks every preset with two and three lines).
+EMOJI_CAPTION_ZONE_PX = 760
 
 
 @dataclass
@@ -68,14 +78,10 @@ class StyleConfig:
     header_align: str = "center"  # "left" | "center" | "right"
     header_line_spacing: float = 1.0
     header_margin_v: int = 210  # first line top, px from the top (Issue #20)
+    # The caption band the header stays above: EMOJI_CAPTION_ZONE_PX for a
+    # clip that shows emoji rows (RiceSuite #66).
+    caption_zone: int = CAPTION_ZONE_PX
 
-
-# The bottom band of the 1920 px frame kept for captions (render.framing
-# re-exports it). The header is kept above it (RiceSuite #65). Since RiceSuite
-# #66 it also holds caption emoji rows: a two-line phrase lifted by one row,
-# with its row above, reaches 756 px up for the 100 px presets (a test checks
-# every preset).
-CAPTION_ZONE_PX = 760
 
 CAPTION_STYLE_NAMES = (
     "classic",
@@ -350,6 +356,8 @@ LINE_SAFETY = 1.04
 SHADOW_OFFSET = (4, 8)
 SHADOW_BLUR = 8
 SHADOW_ALPHA = "60"
+# The shadow layer's alpha tags: transparent fill and outline, visible shadow.
+SHADOW_LAYER_ALPHA = f"\\1a&HFF&\\3a&HFF&\\4a&H{SHADOW_ALPHA}&"
 # Width of an average glyph, as a fraction of the size, when nothing measures.
 _ESTIMATE_EM = 0.62
 
@@ -432,16 +440,36 @@ def _motion_text(
     on = off = ""
     if colours is not None:
         on, off = "\\c" + colours[0], "\\c" + colours[1]
+    bump = _motion_scale(phrase_scale * ACTIVE_SCALE / 100, pop_offset)
+    rest = _motion_scale(phrase_scale, pop_offset)
+    # The bump makes the active word's line taller, which would shift the
+    # other lines of a centred block each time the highlight changes line.
+    # An invisible, 1% wide strut at the bump's height ends every other line,
+    # so all lines keep one height (cold review S4, RiceSuite #66).
+    shown = SHADOW_LAYER_ALPHA if colours is None else "\\alpha&H00&"
+    strut = (
+        "{\\alpha&HFF&"
+        + re.sub(r"\\fscx[\d.]+", r"\\fscx1", bump)
+        + "}x{"
+        + shown
+        + rest
+        + "}"
+    )
     out = ""
     for j, token in enumerate(tokens):
         if j:
-            out += "\\N" if line_of[j] != line_of[j - 1] else " "
+            if line_of[j] != line_of[j - 1]:
+                if line_of[active] != line_of[j - 1]:
+                    out += strut
+                out += "\\N"
+            else:
+                out += " "
         if j != active:
             out += token
-            continue
-        bump = _motion_scale(phrase_scale * ACTIVE_SCALE / 100, pop_offset)
-        rest = _motion_scale(phrase_scale, pop_offset)
-        out += "{" + on + bump + "}" + token + "{" + off + rest + "}"
+        else:
+            out += "{" + on + bump + "}" + token + "{" + off + rest + "}"
+    if len(lines) > 1 and line_of[active] != line_of[len(tokens) - 1]:
+        out += strut
     return out
 
 
@@ -458,10 +486,22 @@ def emoji_row_height(style: StyleConfig) -> int:
     return round(style.font_size * EMOJI_ROW_EM)
 
 
+def emoji_gap_below(style: StyleConfig) -> int:
+    """The gap under the text for a row below it.
+
+    Descenders and the outline reach the bottom of the last line box, and the
+    pop's 112% overshoot pushes the ink about 0.12 of the size further down,
+    so a row below sits further off than a row above (whose side holds the
+    line box's empty ascent). On rendered frames this leaves at least 8 px at
+    the pop's peak (cold review S5, RiceSuite #66).
+    """
+    return EMOJI_GAP + style.outline + round(0.2 * style.font_size)
+
+
 def emoji_lift(style: StyleConfig) -> int:
     """How far the captions rise for the whole clip when it shows emoji rows.
 
-    One row: a row below the text then sits where the text was, clear of the
+    One row: a row below the text then ends near where the text did, clear of the
     platforms' bottom interface, and the text never moves between phrases.
     """
     return emoji_row_height(style) + EMOJI_GAP
@@ -543,7 +583,10 @@ def layout_phrases(
         )
         if anchor is not None:
             local = [index_of[id(w)] for w in phrase.words].index(anchor)
-            above = local in lines[0]
+            # Above for a first-line anchor, unless the row would leave the
+            # emoji caption zone (a phrase of three or more lines).
+            zone_top = style.play_res_y - EMOJI_CAPTION_ZONE_PX
+            above = local in lines[0] and layout.top - EMOJI_GAP - row_h >= zone_top
             layout.anchor = anchor
             layout.emoji = tuple(picks[anchor])
             layout.row = "above" if above else "below"
@@ -551,7 +594,8 @@ def layout_phrases(
                 row_bottom = layout.top - EMOJI_GAP
                 layout.row_box = (row_bottom - row_h, row_bottom)
             else:
-                layout.row_box = (bottom + EMOJI_GAP, bottom + EMOJI_GAP + row_h)
+                below = bottom + emoji_gap_below(style)
+                layout.row_box = (below, below + row_h)
         layouts.append(layout)
     return layouts
 
@@ -600,7 +644,7 @@ def _layout_events(layouts: Sequence[PhraseLayout], style: StyleConfig) -> list[
             if pop is not None or phrase_scale != 1.0:
                 lead_scale = _motion_scale(phrase_scale, pop)
             shadow = (
-                f"{{{lead}\\1a&HFF&\\3a&HFF&\\4a&H{SHADOW_ALPHA}&"
+                f"{{{lead}{SHADOW_LAYER_ALPHA}"
                 f"\\xshad{dx}\\yshad{dy}\\blur{SHADOW_BLUR}{lead_scale}}}"
                 + _motion_text(tokens, lines, i, phrase_scale, pop, None)
             )
@@ -664,7 +708,7 @@ def _fallback_margin_v(header: str, style: StyleConfig) -> int:
     between the side margins.
     """
     lines = _fallback_lines(header, style)
-    caption_top = style.play_res_y - CAPTION_ZONE_PX
+    caption_top = style.play_res_y - style.caption_zone
     edge = _fallback_edge(style)
     return max(
         edge,

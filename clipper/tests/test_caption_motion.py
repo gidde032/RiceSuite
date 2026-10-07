@@ -210,7 +210,9 @@ def test_motion_breaks_lines_itself_so_the_pop_cannot_rewrap_them():
     assert "WrapStyle: 0" in ass
     for d in _dialogues(ass):
         assert "\\q2" in _text(d)
-        plain = re.sub(r"\{[^}]*\}", "", _text(d))
+        # Drop the hidden line-height strut, then every tag.
+        plain = re.sub(r"\{\\alpha&HFF&[^}]*\}x", "", _text(d))
+        plain = re.sub(r"\{[^}]*\}", "", plain)
         assert plain == "aaaa aaaa aaaa\\Naaaa aaaa"
 
 

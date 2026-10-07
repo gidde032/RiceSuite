@@ -51,7 +51,12 @@ from app.models import (  # noqa: E402
 )
 from app.process import terminate_all_owned_processes  # noqa: E402
 from render import frame, framing, geometry, subject, text_image  # noqa: E402
-from render.ass import HEADER_STYLE_NAMES, fallback_span, header_preset  # noqa: E402
+from render.ass import (  # noqa: E402
+    EMOJI_CAPTION_ZONE_PX,
+    HEADER_STYLE_NAMES,
+    fallback_span,
+    header_preset,
+)
 from render.header_image import header_png_bytes  # noqa: E402
 from render.pipeline import (  # noqa: E402
     EMOJI_NOTE_PREFIX,
@@ -567,6 +572,8 @@ def header_preview(job_id: str, req: HeaderPreviewRequest) -> dict:
     if job is None:
         raise HTTPException(status_code=404, detail="job not found")
     style = style_for_request(req)
+    if req.emoji_rows:
+        style = replace(style, caption_zone=EMOJI_CAPTION_ZONE_PX)
     image = box = note = None
     span: tuple[float, float] | None = None
     try:
@@ -584,7 +591,7 @@ def header_preview(job_id: str, req: HeaderPreviewRequest) -> dict:
 
     def plan_warning(plan: CropPlan | None) -> str | None:
         if plan is None or job.info is None:
-            return framing.header_warning(plan, span)
+            return framing.header_warning(plan, span, caption_zone=style.caption_zone)
         resolved = geometry.resolve_geometry(
             req.geometry, plan, job.info.width, job.info.height
         )
@@ -594,6 +601,7 @@ def header_preview(job_id: str, req: HeaderPreviewRequest) -> dict:
             source_w=job.info.width,
             source_h=job.info.height,
             resolved_geometry=resolved,
+            caption_zone=style.caption_zone,
         )
 
     return {

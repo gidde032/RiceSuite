@@ -38,6 +38,8 @@ def ffmpeg(monkeypatch):
 
     monkeypatch.setattr(pipeline, "run_owned", fake_run)
     monkeypatch.setattr(emoji_track, "draw_emoji_row", _fake_row)
+    # CI has no colour-emoji font; the real check needs one.
+    monkeypatch.setattr(text_image, "emoji_drawable", lambda cluster: True)
     monkeypatch.setattr(
         pipeline,
         "render_header_png",
@@ -136,9 +138,7 @@ def test_a_missing_emoji_font_drops_the_rows_but_not_the_render(
     render(tmp_path, tmp_path / "source.mp4", info, _req(motion=False), notes=notes)
     assert emoji_track.LIST_NAME not in _inputs(ffmpeg[-1])
     assert "\\pos(" not in (tmp_path / "captions.ass").read_text()
-    assert notes == [
-        "The caption emoji were left out: missing a renderable color-emoji font"
-    ]
+    assert notes == ["Caption emoji left out: missing a renderable color-emoji font"]
 
 
 def test_captions_off_draws_no_emoji(ffmpeg, tmp_path):

@@ -12,10 +12,11 @@ import pytest
 
 from render.ass import (
     CAPTION_STYLE_NAMES,
-    CAPTION_ZONE_PX,
+    EMOJI_CAPTION_ZONE_PX,
     EMOJI_GAP,
     StyleConfig,
     build_ass,
+    emoji_gap_below,
     emoji_lift,
     emoji_row_height,
     layout_phrases,
@@ -108,10 +109,8 @@ def test_the_row_sits_a_gap_away_from_the_text_block():
     (below,) = _layout(ws, {4: ("🔥",)}, style, _per_char(50))
     height = emoji_row_height(style)
     assert above.row_box == (above.top - EMOJI_GAP - height, above.top - EMOJI_GAP)
-    assert below.row_box == (
-        below.bottom + EMOJI_GAP,
-        below.bottom + EMOJI_GAP + height,
-    )
+    gap = emoji_gap_below(style)
+    assert below.row_box == (below.bottom + gap, below.bottom + gap + height)
     assert above.bottom - above.top == 2 * style.font_size
 
 
@@ -145,7 +144,7 @@ def test_the_caption_zone_covers_a_lifted_two_line_block_and_its_row(name):
     (p,) = _layout(ws, {0: ("🔥",)}, style, _per_char(style.font_size * 0.5))
     assert len(p.lines) == 2
     assert p.row == "above"
-    assert p.row_box[0] >= style.play_res_y - CAPTION_ZONE_PX
+    assert p.row_box[0] >= style.play_res_y - EMOJI_CAPTION_ZONE_PX
 
 
 # --- the ASS -----------------------------------------------------------------

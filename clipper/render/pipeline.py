@@ -22,8 +22,9 @@ from pathlib import Path
 from app.models import CropPlan, RenderRequest
 from app.probe import MediaInfo
 from app.process import ProcessTimeoutError, run_owned
-from render import emoji_track, geometry
+from render import emoji_track, geometry, text_image
 from render.ass import (
+    EMOJI_CAPTION_ZONE_PX,
     StyleConfig,
     apply_header_look,
     build_ass,
@@ -46,7 +47,7 @@ OUTPUT_NAME = "output.mp4"
 # Bundled fonts are copied here, inside the job dir, for libass's fontsdir.
 FONTS_DIR_NAME = "fonts"
 # Job notes starting with this say why the caption emoji were left out.
-EMOJI_NOTE_PREFIX = "The caption emoji were left out: "
+EMOJI_NOTE_PREFIX = "Caption emoji left out: "
 PHOTO_FPS = 30
 MUSIC_FADE_IN_S = 0.5
 MUSIC_FADE_OUT_S = 1.0
@@ -241,6 +242,24 @@ def style_for_request(req) -> StyleConfig:
     return replace(style, motion=getattr(req, "motion", False))
 
 
+def _drawable_picks(
+    picks: dict[int, tuple[str, ...]],
+) -> tuple[dict[int, tuple[str, ...]], list[str]]:
+    """The picks without emoji the colour-emoji font cannot draw, and those.
+
+    A symbol in the emoji ranges that the font lacks (★, ✓) would draw
+    nothing yet still lift the captions, so it is left out and named.
+    """
+    kept: dict[int, tuple[str, ...]] = {}
+    undrawable: list[str] = []
+    for word, emoji in picks.items():
+        good = tuple(e for e in emoji if text_image.emoji_drawable(e))
+        undrawable += [e for e in emoji if e not in good and e not in undrawable]
+        if good:
+            kept[word] = good
+    return kept, undrawable
+
+
 def _subtitles_filter(job_dir: Path, families: list[str]) -> str:
     """The ``subtitles`` filter, with ``fontsdir`` when a bundled font is used.
 
@@ -282,11 +301,48 @@ def render(
     if not math.isfinite(info.duration) or info.duration <= 0:
         raise RenderError(f"invalid video duration: {info.duration!r}")
 
-    # 1. Header. Pillow draws every non-empty header, with or without emoji,
+    style = style or style_for_request(req)
+
+    # 1. Caption emoji rows (RiceSuite #66), only with the Emoji toggle on. A
+    # word's first pick counts; the layout then lets a phrase's first anchor
+    # win. They come first because a clip that shows rows keeps its header
+    # above the wider emoji caption zone.
+    picks: dict[int, tuple[str, ...]] = {}
+    if req.captions_on and req.emoji_on:
+        for pick in req.emoji:
+            picks.setdefault(pick.word, tuple(pick.emoji))
+    measure = None
+    if req.captions_on and (style.motion or picks):
+        measure = caption_measurer(
+            style.font, style.bold, style.italic, style.font_size
+        )
+    emoji_list = None
+    if picks:
+        try:
+            picks, undrawable = _drawable_picks(picks)
+            if undrawable and notes is not None:
+                notes.append(
+                    f"{EMOJI_NOTE_PREFIX}this computer cannot draw "
+                    + " ".join(undrawable)
+                )
+            layouts = layout_phrases(req.words, style, measure, picks)
+            emoji_list = emoji_track.write_track(job_dir, layouts, style, info.duration)
+        except Exception as exc:
+            # No colour-emoji font, for example: render the captions without
+            # the rows (and without their lift), and say why.
+            logger.warning("caption emoji failed; rendering without them: %s", exc)
+            picks, emoji_list = {}, None
+            if notes is not None:
+                notes.append(f"{EMOJI_NOTE_PREFIX}{exc}")
+    if emoji_list is None:
+        picks = {}  # no row shows: no lift either
+    else:
+        style = replace(style, caption_zone=EMOJI_CAPTION_ZONE_PX)
+
+    # 2. Header. Pillow draws every non-empty header, with or without emoji,
     # to a full-frame PNG that is overlaid after the captions (RiceSuite #65).
     # If that fails, a minimal libass text header keeps the header on the clip
     # and the reason goes back to the caller, so the fallback is not silent.
-    style = style or style_for_request(req)
     header = req.header.strip()
     overlay_header = bool(header)
     fallback_header = ""
@@ -306,29 +362,6 @@ def render(
                 notes.append(f"The header used the basic text renderer: {exc}")
 
     family = FONT_CHOICES.get(style.header_font, FONT_CHOICES[DEFAULT_FONT])
-    # Caption emoji rows (RiceSuite #66), only with the Emoji toggle on. A
-    # word's first pick counts; the layout then lets a phrase's first anchor win.
-    picks: dict[int, tuple[str, ...]] = {}
-    if req.captions_on and req.emoji_on:
-        for pick in req.emoji:
-            picks.setdefault(pick.word, tuple(pick.emoji))
-    measure = None
-    if req.captions_on and (style.motion or picks):
-        measure = caption_measurer(
-            style.font, style.bold, style.italic, style.font_size
-        )
-    emoji_list = None
-    if picks:
-        layouts = layout_phrases(req.words, style, measure, picks)
-        try:
-            emoji_list = emoji_track.write_track(job_dir, layouts, style, info.duration)
-        except Exception as exc:
-            # No colour-emoji font, for example: render the captions without
-            # the rows (and without their lift), and say why.
-            logger.warning("caption emoji failed; rendering without them: %s", exc)
-            picks = {}
-            if notes is not None:
-                notes.append(f"{EMOJI_NOTE_PREFIX}{exc}")
     ass_text = build_ass(
         req.words,
         captions_on=req.captions_on,
@@ -341,7 +374,7 @@ def render(
     )
     (job_dir / ASS_NAME).write_text(ass_text, encoding="utf-8")
 
-    # 2. Audio graph (input indices: 0 = source, then music, then the header
+    # 3. Audio graph (input indices: 0 = source, then music, then the header
     # PNG, then the emoji track).
     has_music = req.music.mode != "none" and bool(req.music.filename)
     music_path = _job_child(job_dir, req.music.filename) if has_music else None
@@ -349,7 +382,7 @@ def render(
         raise RenderError(f"music file not found: {req.music.filename}")
     audio_stmts, audio_map = _audio_graph(req, info.has_audio, has_music, info.duration)
 
-    # 3. Video graph: crop / blur-pad / pass-through → burn subtitles → emoji
+    # 4. Video graph: crop / blur-pad / pass-through → burn subtitles → emoji
     # rows → header.
     sub_out = "[subbed]" if overlay_header or emoji_list else "[vout]"
     families = [style.font] if req.captions_on else []
@@ -396,7 +429,7 @@ def render(
 
     filter_complex = ";".join(video_stmts + audio_stmts)
 
-    # 4. Assemble and run ffmpeg.
+    # 5. Assemble and run ffmpeg.
     cmd = _ffmpeg_command(
         source_path,
         music_path if has_music else None,

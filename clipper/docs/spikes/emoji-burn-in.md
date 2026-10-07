@@ -156,7 +156,10 @@ a timed image track rather than one still:
   emoji.ffconcat`) and composites it with one `overlay=0:0:eof_action=pass`
   after `subtitles`, before the header overlay.
 - Durations are whole microseconds, each the difference of two absolute
-  times, so a long clip does not drift and every row starts on its phrase.
+  times, so a long clip does not drift. Every entry also sets `option
+  framerate 1000`: the image demuxer's default 1/25 s time base rounded each
+  row boundary to 40 ms (found in cold review, checked with `ffprobe`), and a
+  1 ms time base puts every row within 1 ms of its phrase.
 - With Motion on, a row starts with two pre-scaled frames (70% for 40 ms, then
   112% for 80 ms) before it rests at 100%, in step with the caption pop.
 

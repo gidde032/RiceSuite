@@ -225,3 +225,174 @@ def test_emoji_rows_are_drawn_in_colour_where_the_layout_puts_them(
     assert rows, "no colour emoji was drawn"
     assert top - 3 <= min(rows) and max(rows) <= bottom + 3
     assert max(rows) - min(rows) >= 0.8 * (bottom - top)
+
+
+# --- cold-review repairs (RiceSuite #66) -------------------------------------
+
+
+def _last_word_rows(frame: Image.Image, upper: bool, centre_y: int) -> tuple[int, int]:
+    """Vertical ink extent of the last word of the upper or lower line.
+
+    The last word of each line is never the active one in these frames, so it
+    moves only if its whole line does.
+    """
+    diff = ImageChops.difference(frame, Image.new("RGB", frame.size, GREY))
+    mask = diff.convert("L").point(lambda v: 255 if v > 100 else 0)
+    half = (
+        (0, 0, frame.width, centre_y)
+        if upper
+        else (0, centre_y, frame.width, frame.height)
+    )
+    region = mask.crop(half)
+    right = region.getbbox()[2]
+    strip = region.crop((right - 50, 0, right, region.height))
+    _l, top, _r, bottom = strip.getbbox()
+    return top + half[1], bottom + half[1]
+
+
+def test_S4_a_two_line_phrase_holds_still_when_the_highlight_changes_line(tmp_path):
+    ws = words(
+        ("honestly", 0.0, 0.5),
+        ("that", 0.5, 1.0),
+        ("sunset", 1.0, 1.5),
+        ("made", 1.5, 2.0),
+        ("it", 2.0, 3.0),
+    )
+    ass, family = _ass("classic", ws)
+    style = replace(style_for_presets("classic", "plain"), motion=True)
+    measure = text_image.caption_measurer(
+        style.font, style.bold, style.italic, style.font_size
+    )
+    from render.ass import layout_phrases
+
+    (layout,) = layout_phrases(ws, style, measure)
+    assert len(layout.lines) == 2
+    first = layout.lines[0][0]
+    second = layout.lines[1][0]
+    early = ws[first].start + 0.3
+    late = ws[second].start + 0.2
+    a, b = _frames(tmp_path, ass, [early, late], family)
+    for upper in (True, False):
+        rows_a = _last_word_rows(a, upper, layout.center_y)
+        rows_b = _last_word_rows(b, upper, layout.center_y)
+        assert abs(rows_a[0] - rows_b[0]) <= 1, (upper, rows_a, rows_b)
+        assert abs(rows_a[1] - rows_b[1]) <= 1, (upper, rows_a, rows_b)
+
+
+def test_C2_rows_start_on_their_phrase_to_the_millisecond(tmp_path):
+    from render import emoji_track
+
+    names = []
+    for k in range(3):
+        name = f"p{k}.png"
+        Image.new("RGBA", (16, 16), (k * 80, 0, 0, 255)).save(tmp_path / name)
+        names.append(name)
+    Image.new("RGBA", (16, 16)).save(tmp_path / emoji_track.BLANK_NAME)
+    segments = [
+        emoji_track.Segment(1.017, 1.4, (names[0],)),
+        emoji_track.Segment(2.333, 3.019, (names[1],)),
+        emoji_track.Segment(5.981, 6.5, (names[2],)),
+    ]
+    entries = emoji_track.timeline(segments, 7.0, motion=False)
+    (tmp_path / "t.ffconcat").write_text(emoji_track.ffconcat_text(entries))
+    out = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            "t.ffconcat",
+            "-show_entries",
+            "frame=pts_time",
+            "-of",
+            "csv=p=0",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    starts = [float(t) for t in out]
+    expected, clock = [], 0
+    for _name, us in entries:
+        expected.append(clock / 1e6)
+        clock += us
+    for got, want in zip(starts, expected, strict=False):
+        assert abs(got - want) <= 0.001
+
+
+def test_S5_a_row_below_clears_the_text_at_the_peak_of_the_pop(tmp_path):
+    from app.models import EmojiPick, RenderRequest, Word
+    from app.probe import MediaInfo
+    from render import pipeline
+    from render.ass import layout_phrases
+
+    try:
+        text_image.require_emoji_font()
+    except text_image.TextFontError:
+        pytest.skip("no colour-emoji font on this host")
+    words_ = [
+        Word(text=t, start=i * 0.4, end=i * 0.4 + 0.4)
+        for i, t in enumerate(["everyone", "started", "dancing", "jiggly", "gypsy"])
+    ]
+    src = tmp_path / "src.mp4"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=0x808080:s=1080x1920:r=100:d=2",
+            "-pix_fmt",
+            "yuv420p",
+            str(src),
+        ],
+        check=True,
+    )
+    req = RenderRequest(
+        words=words_,
+        motion=True,
+        emoji_on=True,
+        emoji=[EmojiPick(word=4, emoji=["\U0001f483"])],
+    )
+    style = pipeline.style_for_request(req)
+    measure = text_image.caption_measurer(
+        style.font, style.bold, style.italic, style.font_size
+    )
+    (layout,) = layout_phrases(words_, style, measure, {4: ("\U0001f483",)})
+    assert layout.row == "below"
+    out = pipeline.render(tmp_path, src, MediaInfo(1080, 1920, 2.0, False), req)
+    for t in (0.08, 1.7):  # the pop's peak, and at rest
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-y",
+                "-ss",
+                str(t),
+                "-i",
+                str(out),
+                "-frames:v",
+                "1",
+                "f.png",
+            ],
+            check=True,
+            cwd=tmp_path,
+        )
+        frame = Image.open(tmp_path / "f.png").convert("RGB")
+        top = layout.row_box[0]
+        text = frame.crop((0, layout.top - 40, 1080, top - 1))
+        diff = ImageChops.difference(text, Image.new("RGB", text.size, GREY))
+        ink = diff.convert("L").point(lambda v: 255 if v > 100 else 0).getbbox()
+        row = _colour_rows(frame)
+        emoji_top = min(y for y in row if y >= layout.row_box[0] - 12)
+        text_bottom = layout.top - 40 + ink[3]
+        assert emoji_top - text_bottom >= 8, (t, text_bottom, emoji_top)

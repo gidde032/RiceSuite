@@ -113,6 +113,7 @@ def test_the_editor_accepts_exactly_the_emoji_the_render_accepts():
         "❤️",
         "☀️",
         "🏖️",
+        "🏳️‍🌈",
         "a",
         "1️⃣",
         "🍕 ",
@@ -122,6 +123,15 @@ def test_the_editor_accepts_exactly_the_emoji_the_render_accepts():
         "★",
         "✓",
         "#",
+        "🔥🔥",
+        "🇫",
+        "\ufe0f",
+        "\u200d",
+        "🍕\u200d",
+        "\u200d🍕",
+        "🏽",
+        "🇫🇷🇩🇪",
+        "🏽🍕",
     ]
     got = _node_eval(f"{json.dumps(samples)}.map(isEmojiCluster)")
     assert got == [is_emoji_cluster(s) for s in samples]

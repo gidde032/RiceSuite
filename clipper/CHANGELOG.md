@@ -23,14 +23,17 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   otherwise. Picks are stored by word index, so text edits keep them; a
   phrase shows its first anchor's pick. With any row shown, the captions rise
   by one row for the whole clip, clear of the platforms' bottom interface, and
-  the caption zone grew from 540 to 760 px. Pillow draws one transparent
-  frame per phrase row; an `ffconcat` list (blank gaps, the last file
-  repeated, microsecond times so nothing drifts) is composited with a single
-  overlay, popping in with Motion. Without a colour-emoji font the clip
-  renders without emoji and says so (`emoji_note`). In the editor (inline
+  such a clip's header stays above a 760 px caption zone (clips without rows
+  keep 540 px). Pillow draws one transparent frame per phrase row; an
+  `ffconcat` list (blank gaps, the last file repeated, absolute times on a
+  1 ms time base so nothing drifts) is composited with a single overlay,
+  popping in with Motion. Without a colour-emoji font the clip renders without
+  emoji, and an emoji the font cannot draw is left out; the card says so
+  (`emoji_note`). In the editor (inline
   markers, chosen 2026-10-06), each phrase's emoji show as a pill after the
   anchor word in the transcript, phrase breaks are marked, and a strip under
-  the transcript adds, replaces, removes, or moves them. **✨ Suggest emoji** makes
+  the transcript adds, replaces, removes, or moves them; a pick is one emoji,
+  never a run. **✨ Suggest emoji** asks before it replaces existing picks and makes
   one Sonnet call per clip, only on the click, sending only the caption
   phrases; it shares the header's call site, now `app/anthropic_text.py`, so
   Clipper still has exactly one `messages.create`.
@@ -40,9 +43,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   every caption preset a phrase pop-in (70% → 112% → 100% over 160 ms, once per
   phrase), a 110% scale bump on the highlighted word, and a soft blurred drop
   shadow under crisp text. libass still draws the captions. With Motion off the
-  subtitle script is byte-identical to before. With it on, Clipper breaks each
-  phrase into lines itself, measured in the caption's own font at libass's
-  scale, because libass re-wraps a line while its scale animates. The new
+  subtitle script of a clip without emoji rows is byte-identical to before.
+  With it on, Clipper breaks each phrase into lines itself, measured in the
+  caption's own font at libass's scale, because libass re-wraps a line while
+  its scale animates. The new
   **Montserrat** preset uses the bundled Montserrat Black (SIL OFL 1.1, licence
   in `render/fonts/OFL.txt`), passed to libass with `fontsdir`.
 - **Header controls and a live header preview** (RiceSuite

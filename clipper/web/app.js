@@ -257,6 +257,7 @@ function headerPreviewPayload(clip) {
     header_style: radioValue(clip.headerStyleEl),
     header_look: clip.headerLook,
     geometry: clip.geometryEl ? radioValue(clip.geometryEl) : "auto",
+    emoji_rows: emojiRowsShown(clip),
   };
 }
 
@@ -792,8 +793,27 @@ function buildCard(clip) {
   clip.transcriptEl.addEventListener("focusout", (event) => {
     if (!event.target.classList.contains("word")) return;
     const key = collectWords(clip).map((w) => w.text).join("\u0000");
-    if (key !== clip.emojiTextKey) refreshEmoji(clip);
+    if (key === clip.emojiTextKey) return;
+    if (clip.emojiHold) clip.emojiPending = true;
+    else refreshEmoji(clip);
   });
+  // Pressing a pill or a strip button moves focus off an edited word, and the
+  // redraw that follows would replace the button before its click lands (cold
+  // review S2). Hold the redraw until the press is over.
+  const holdRedraw = (event) => {
+    const target = event.target;
+    if (!target.closest || !(target.closest(".emoji-pill") || target.closest(".emoji-strip"))) return;
+    clip.emojiHold = true;
+    window.addEventListener("pointerup", () => setTimeout(() => {
+      clip.emojiHold = false;
+      if (clip.emojiPending) {
+        clip.emojiPending = false;
+        refreshEmoji(clip);
+      }
+    }, 0), { once: true });
+  };
+  clip.transcriptEl.addEventListener("pointerdown", holdRedraw);
+  clip.emojiStripEl.addEventListener("pointerdown", holdRedraw);
   refreshEmoji(clip);
   clip.headerStyleEl.addEventListener("change", (event) => {
     if (!event.target || event.target.type !== "radio") return; // a header control
@@ -1137,9 +1157,31 @@ const EMOJI_PALETTE = ["😂", "🔥", "😍", "😭", "🤯", "👀", "💀", "
 const PHRASE_MAX_WORDS = 5;
 const PHRASE_MAX_GAP = 0.7;
 
+// Exactly one emoji: a flag (two regional indicators), or pictographs joined
+// by zero-width joiners, each with optional variation selectors and a skin
+// tone. Mirrors render.text_image.is_emoji_cluster (a test compares them).
 function isEmojiCluster(text) {
   const chars = [...String(text || "")];
-  return chars.length > 0 && chars.length <= EMOJI_CLUSTER_MAX && chars.every((ch) => EMOJI_CHAR.test(ch));
+  if (!chars.length || chars.length > EMOJI_CLUSTER_MAX || !chars.every((ch) => EMOJI_CHAR.test(ch))) return false;
+  const regional = (ch) => ch >= "\u{1f1e6}" && ch <= "\u{1f1ff}";
+  if (chars.every(regional)) return chars.length === 2;
+  let elements = 0;
+  let expectBase = true;
+  for (const ch of chars) {
+    if (ch === "\u200d") {
+      if (expectBase) return false;
+      expectBase = true;
+    } else if (ch === "\ufe0e" || ch === "\ufe0f" || (ch >= "\u{1f3fb}" && ch <= "\u{1f3ff}")) {
+      if (expectBase) return false;
+    } else if (regional(ch)) {
+      return false;
+    } else {
+      if (!expectBase) return false;
+      elements += 1;
+      expectBase = false;
+    }
+  }
+  return elements >= 1 && !expectBase;
 }
 
 // The caption phrases as transcribe.phrasing.group_words makes them, as lists
@@ -1211,6 +1253,13 @@ function emojiPayload(picks) {
     .map((word) => ({ word, emoji: picks[word] }));
 }
 
+// The clip will show at least one emoji row: its header then stays above the
+// wider emoji caption zone (render.ass.EMOJI_CAPTION_ZONE_PX).
+function emojiRowsShown(clip) {
+  if (!emojiShown(clip)) return false;
+  return emojiAnchors(collectWords(clip), clip.emojiPicks || {}).some((group) => group.anchor !== null);
+}
+
 function emojiShown(clip) {
   return Boolean(clip.emojiToggleEl && clip.emojiToggleEl.checked && clip.captionsToggleEl.checked && clip.isPhoto !== true);
 }
@@ -1225,6 +1274,8 @@ function resetEmojiPicks(clip) {
 
 function setEmojiPicks(clip, picks) {
   clip.emojiPicks = picks;
+  clip.picksVersion = (clip.picksVersion || 0) + 1;
+  clip.emojiConfirm = false;
   noteClipEdited(clip);
   refreshEmoji(clip);
 }
@@ -1237,6 +1288,12 @@ function setEmojiStatus(clip, text, isError = false) {
 
 function refreshEmoji(clip) {
   if (!clip.transcriptEl || !clip.emojiStripEl) return;
+  // Showing rows moves the header's lower limit, so the preview follows.
+  const rows = emojiRowsShown(clip);
+  if (rows !== Boolean(clip.emojiRowsPreviewed)) {
+    clip.emojiRowsPreviewed = rows;
+    scheduleHeaderPreview(clip);
+  }
   clip.emojiTextKey = collectWords(clip).map((w) => w.text).join("\u0000");
   decorateTranscript(clip);
   renderEmojiStrip(clip);
@@ -1325,10 +1382,19 @@ function renderEmojiStrip(clip) {
 
 async function requestEmoji(clip) {
   if (!clip.jobId || clip.emojiBusy || !emojiShown(clip)) return;
+  // Suggestions replace every pick, so a clip that has some asks first.
+  const count = Object.keys(clip.emojiPicks || {}).length;
+  if (count && !clip.emojiConfirm) {
+    clip.emojiConfirm = true;
+    setEmojiStatus(clip, `This replaces your ${count} emoji pick${count === 1 ? "" : "s"}. Click ✨ Suggest emoji again to replace them.`);
+    return;
+  }
+  clip.emojiConfirm = false;
   clip.emojiBusy = true;
   clip.emojiSuggestEl.disabled = true;
   setEmojiStatus(clip, "Suggesting emoji…");
   const version = clip.wordsVersion;
+  const picksVersion = clip.picksVersion;
   try {
     const res = await fetch(`api/jobs/${clip.jobId}/emoji`, {
       method: "POST",
@@ -1339,6 +1405,10 @@ async function requestEmoji(clip) {
     if (!res.ok) throw new Error(requestErrorText(data, "emoji suggestion failed"));
     if (clip.wordsVersion !== version) {
       setEmojiStatus(clip, "The transcript changed while emoji were suggested. Suggest again.");
+      return;
+    }
+    if (clip.picksVersion !== picksVersion) {
+      setEmojiStatus(clip, "Your emoji changed while suggestions were loading, so they were kept.");
       return;
     }
     const picks = {};
@@ -1830,7 +1900,8 @@ const RENDER_NOT_RECEIVED = "Clipper has no record of this render; render it aga
 // silent (RiceSuite #65).
 function setRenderedStatus(clip, headerNote, emojiNote) {
   let basic = headerNote ? ` Rendered with a basic header. ${headerNote}` : "";
-  if (emojiNote) basic += ` Rendered without the caption emoji. ${emojiNote}`;
+  // The emoji note names what was left out ("Caption emoji left out: …").
+  if (emojiNote) basic = basic ? `${basic} ${emojiNote}` : ` Rendered ✓. ${emojiNote}`;
   if (!clipCurrent(clip)) {
     setClipStatus(clip, `Edited since its render. Render it again before it is sent.${basic}`, Boolean(basic));
   } else if (basic) {

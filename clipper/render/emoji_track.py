@@ -8,9 +8,11 @@ between rows. An ``ffconcat`` list gives each image its duration, and ffmpeg
 reads the list as one input composited with one ``overlay``. With Motion, a
 row starts with two pre-scaled pop frames.
 
-Times are whole microseconds (ffmpeg's own time base) and every duration is
-the difference of two absolute boundaries, so a long clip cannot drift and
-each row starts exactly when its phrase does.
+Times are whole microseconds and every duration is the difference of two
+absolute boundaries, so a long clip cannot drift. Each entry asks the image
+demuxer for a 1000 fps time base: its default, 25 fps, would round every
+boundary to 40 ms (cold review, RiceSuite #66), so rows start within 1 ms of
+their phrase.
 """
 
 from __future__ import annotations
@@ -35,6 +37,8 @@ POP_FRAMES = (40, 80)
 POP_SCALES = (70, 112)
 
 _US = 1_000_000
+# The image demuxer's frame rate for every entry: its time base is 1/TRACK_FPS.
+TRACK_FPS = 1000
 
 # The real row drawer; tests replace it, since CI has no colour-emoji font.
 draw_emoji_row: Callable[[Sequence[str], int, int], Image.Image] = emoji_row
@@ -99,12 +103,14 @@ def _seconds(us: int) -> str:
 
 def ffconcat_text(entries: Sequence[tuple[str, int]]) -> str:
     """The ffconcat list. The demuxer applies a file's ``duration`` only when
-    another file follows, so the last file is listed again."""
+    another file follows, so the last file is listed again. Each file gets a
+    millisecond time base (``TRACK_FPS``)."""
     lines = ["ffconcat version 1.0"]
+    rate = f"option framerate {TRACK_FPS}"
     for name, us in entries:
-        lines += [f"file {name}", f"duration {_seconds(us)}"]
+        lines += [f"file {name}", rate, f"duration {_seconds(us)}"]
     if entries:
-        lines.append(f"file {entries[-1][0]}")
+        lines += [f"file {entries[-1][0]}", rate]
     return "\n".join(lines) + "\n"
 
 

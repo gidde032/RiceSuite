@@ -19,7 +19,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from render.ass import CAPTION_ZONE_PX, StyleConfig
+from render.ass import StyleConfig
 from render.text_image import TextFontError, TextLook, draw_block
 
 # Same side margins as the libass header had (MarginL/MarginR 80).
@@ -74,7 +74,7 @@ def header_layer(
     """Draw ``text`` into a transparent full-frame image.
 
     The first line box's top sits at ``style.header_margin_v``. If the drawn
-    block would run into the caption zone it moves up; if it would leave the
+    block would run into the caption zone (``style.caption_zone``) it moves up; if it would leave the
     top of the frame it moves down (the top wins when both apply).
     """
     style = style or StyleConfig()
@@ -84,7 +84,7 @@ def header_layer(
     if not text:
         return HeaderLayer(frame, None)
 
-    caption_top = ch - CAPTION_ZONE_PX
+    caption_top = ch - style.caption_zone
     look = text_look(style)
     # A block taller than the space above the captions, or with a word wider
     # than the frame, is drawn smaller until it fits, so no look within the

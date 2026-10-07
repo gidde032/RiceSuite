@@ -128,9 +128,9 @@ locally and the header field is manual-only. The variables are documented in
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | *(unset)* | Enables **✨ Generate** for the header. Without it, clicking Generate returns an error and you type the header by hand. |
+| `ANTHROPIC_API_KEY` | *(unset)* | Enables **✨ Generate** for the header and **✨ Suggest emoji** for caption emoji. Without it, either button returns an error; you type the header and pick emoji by hand. |
 | `RICECLIPPER_HEADER_STYLE` | `generic-header` | Header prompt style; must match a file in `prompts/`. |
-| `RICECLIPPER_HEADER_MODEL` | `claude-sonnet-5` | Anthropic model for header generation. |
+| `RICECLIPPER_HEADER_MODEL` | `claude-sonnet-5` | Anthropic model for header generation and the caption emoji picker (one setting for both). |
 | `RICECLIPPER_WHISPER_MODEL` | `small` | `tiny` / `base` / `small` / `medium` / `large-v3`. Smaller is a faster, smaller download. |
 | `RICECLIPPER_WHISPER_DEVICE` | `cpu` | `cpu` or `cuda`. |
 | `RICECLIPPER_WHISPER_COMPUTE` | `int8` | ctranslate2 compute type. |

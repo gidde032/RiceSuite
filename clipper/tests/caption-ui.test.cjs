@@ -89,9 +89,10 @@ function emojiClip(h, extra = {}) {
     collectWords = (c) => c.words; ${extra.setup || ''}`);
 }
 
-test('Suggest emoji sends the reviewed words once and replaces the picks', async () => {
+test('Suggest emoji sends the reviewed words once and fills the picks', async () => {
   const h = harness();
   emojiClip(h);
+  h.run('clip.emojiPicks = {}');
   h.run('fetch = async (url, opts) => { __calls.push([url, JSON.parse(opts.body)]); return { ok: true, json: async () => ({ picks: [{ word: 0, emoji: ["🍕"] }] }) }; }');
   vm.runInContext('var __calls = []', h.context);
   await h.run('requestEmoji(clip)');
@@ -109,6 +110,7 @@ test('a failed suggestion keeps the current picks and says why', async () => {
   const h = harness();
   emojiClip(h);
   h.run('fetch = async () => ({ ok: false, json: async () => ({ detail: "ANTHROPIC_API_KEY is not set" }) })');
+  await h.run('requestEmoji(clip)'); // asks before replacing the picks
   await h.run('requestEmoji(clip)');
   assert.deepEqual(JSON.parse(h.run('JSON.stringify(clip.emojiPicks)')), { 1: ['🌙'] });
   assert.match(h.run('clip.emojiStatusEl.textContent'), /ANTHROPIC_API_KEY is not set/);
@@ -119,6 +121,7 @@ test('a failed suggestion keeps the current picks and says why', async () => {
 test('a suggestion for words that were since replaced is dropped', async () => {
   const h = harness();
   emojiClip(h);
+  h.run('clip.emojiPicks = {}');
   h.run('fetch = async () => { resetEmojiPicks(clip); return { ok: true, json: async () => ({ picks: [{ word: 0, emoji: ["🍕"] }] }) }; }');
   await h.run('requestEmoji(clip)');
   assert.deepEqual(JSON.parse(h.run('JSON.stringify(clip.emojiPicks)')), {});
@@ -146,6 +149,43 @@ test('replacing the words clears the picks', () => {
 test('the rendered status names a render without emoji', () => {
   const h = harness();
   h.run('var shown = []; setClipStatus = (c, text, warn) => shown.push([text, Boolean(warn)]); clipCurrent = () => true');
-  h.run('setRenderedStatus({}, "", "no colour-emoji font")');
-  assert.deepEqual(JSON.parse(h.run('JSON.stringify(shown[0])')), ['Rendered without the caption emoji. no colour-emoji font', true]);
+  h.run('setRenderedStatus({}, "", "Caption emoji left out: no colour-emoji font")');
+  assert.deepEqual(JSON.parse(h.run('JSON.stringify(shown[0])')), ['Rendered ✓. Caption emoji left out: no colour-emoji font', true]);
+});
+
+
+// --- cold-review repairs (RiceSuite #66) -------------------------------------
+
+test('S3: Suggest asks before it replaces picks, and sends on the second click', async () => {
+  const h = harness();
+  emojiClip(h);
+  vm.runInContext('var __n = 0; fetch = async () => { __n++; return { ok: true, json: async () => ({ picks: [{ word: 0, emoji: ["🍕"] }] }) }; }', h.context);
+  await h.run('requestEmoji(clip)');
+  assert.equal(h.run('__n'), 0, 'the first click only asks');
+  assert.match(h.run('clip.emojiStatusEl.textContent'), /replace/i);
+  assert.deepEqual(JSON.parse(h.run('JSON.stringify(clip.emojiPicks)')), { 1: ['🌙'] });
+  await h.run('requestEmoji(clip)');
+  assert.equal(h.run('__n'), 1);
+  assert.deepEqual(JSON.parse(h.run('JSON.stringify(clip.emojiPicks)')), { 0: ['🍕'] });
+});
+
+test('S3: a suggestion that arrives after a hand edit is dropped', async () => {
+  const h = harness();
+  emojiClip(h);
+  h.run('clip.emojiPicks = {}');
+  h.run('fetch = async () => { setEmojiPicks(clip, { 1: ["🌙", "✨"] }); return { ok: true, json: async () => ({ picks: [{ word: 0, emoji: ["🍕"] }] }) }; }');
+  await h.run('requestEmoji(clip)');
+  assert.deepEqual(JSON.parse(h.run('JSON.stringify(clip.emojiPicks)')), { 1: ['🌙', '✨'] });
+  assert.match(h.run('clip.emojiStatusEl.textContent'), /changed/i);
+});
+
+test('C1: the header preview knows when the clip shows emoji rows', () => {
+  const h = harness();
+  emojiClip(h);
+  h.run('clip.headerEl = { value: "" }; clip.headerLook = {}; radioValue = () => "plain"');
+  assert.equal(h.run('headerPreviewPayload(clip).emoji_rows'), true);
+  h.run('clip.emojiToggleEl.checked = false');
+  assert.equal(h.run('headerPreviewPayload(clip).emoji_rows'), false);
+  h.run('clip.emojiToggleEl.checked = true; clip.emojiPicks = {}');
+  assert.equal(h.run('headerPreviewPayload(clip).emoji_rows'), false);
 });

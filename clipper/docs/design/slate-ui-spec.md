@@ -147,7 +147,8 @@ both the visible toolbar symbol and the favicon.
   phrase's emoji as a pill after its anchor word; a pill or a focused word
   opens an emoji strip under the transcript (chips, a palette, a paste box,
   Move, and Done). Strip controls meet the 36 px target size (44 px on a
-  coarse pointer); the inline pills stay text height.
+  coarse pointer); the inline pills stay text height. ✨ Suggest emoji asks
+  for a second click before it replaces existing picks.
 - Each tile includes a truthful miniature treatment example and a text label.
 - Selection uses a rice-grey border and checkmark, never color alone.
 - The underlying values and API payload shapes remain the existing

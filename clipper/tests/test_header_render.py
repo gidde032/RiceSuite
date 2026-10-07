@@ -1005,9 +1005,7 @@ def test_preview_warning_uses_the_resolved_geometry_for_each_plan(
 
 def test_preview_caption_warning_uses_fitted_geometry(isolated_jobs):
     job = _ready_job(MediaInfo(width=1920, height=1080, duration=2.0, has_audio=False))
-    # Fitted for blur-pad, the face ends at y=1134, above the caption zone
-    # (1160 since RiceSuite #66 made room for emoji rows); cropped, at y=1511.
-    face = TrackSample(t=0.0, cx=960, cy=800, w=100, h=100)
+    face = TrackSample(t=0.0, cx=960, cy=950, w=100, h=100)
     track = [face, None, None, None, None]
     times = [i * 0.2 for i in range(len(track))]
     job.crop_plan = framing.plan_crop(track, [], 1920, 1080, sample_times=times)

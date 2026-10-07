@@ -187,15 +187,52 @@ def has_emoji(text: str) -> bool:
 EMOJI_CLUSTER_MAX = 16
 
 
-def is_emoji_cluster(text: str) -> bool:
-    """True when ``text`` is nothing but emoji codepoints (RiceSuite #66).
+_VARIATION = frozenset("\ufe0e\ufe0f")
+_ZWJ = "\u200d"
 
-    Variation selectors, joiners, and skin tones count; letters, digits,
-    spaces, and keycaps do not.
+
+def _is_skin_tone(ch: str) -> bool:
+    return "\U0001f3fb" <= ch <= "\U0001f3ff"
+
+
+def _is_regional(ch: str) -> bool:
+    return "\U0001f1e6" <= ch <= "\U0001f1ff"
+
+
+def is_emoji_cluster(text: str) -> bool:
+    """True when ``text`` is exactly one emoji (RiceSuite #66).
+
+    One emoji is a pair of regional indicators (a flag), or one or more
+    pictographs joined by zero-width joiners, each optionally followed by
+    variation selectors and a skin tone. Letters, digits, spaces, keycaps, a
+    run of separate emoji, and a bare modifier are refused. The editor's
+    ``isEmojiCluster`` (web/app.js) applies the same rule; a test compares them.
     """
-    return 0 < len(text) <= EMOJI_CLUSTER_MAX and all(
-        _EMOJI_RE.match(ch) for ch in text
-    )
+    chars = list(text or "")
+    if not 0 < len(chars) <= EMOJI_CLUSTER_MAX:
+        return False
+    if not all(_EMOJI_RE.match(ch) for ch in chars):
+        return False
+    if all(_is_regional(ch) for ch in chars):
+        return len(chars) == 2
+    elements = 0
+    expect_base = True
+    for ch in chars:
+        if ch == _ZWJ:
+            if expect_base:
+                return False  # a joiner with nothing before it
+            expect_base = True
+        elif ch in _VARIATION or _is_skin_tone(ch):
+            if expect_base:
+                return False  # a modifier with no pictograph
+        elif _is_regional(ch):
+            return False
+        else:
+            if not expect_base:
+                return False  # a second emoji with no joiner: a run
+            elements += 1
+            expect_base = False
+    return elements >= 1 and not expect_base
 
 
 # --- font resolution ---------------------------------------------------------
@@ -619,6 +656,15 @@ def emoji_image(cluster: str, height: int) -> Image.Image:  # pragma: no cover
         w = max(1, round(tmp.width * height / tmp.height))
         tmp = tmp.resize((w, height), Image.LANCZOS)
     return tmp
+
+
+def emoji_drawable(cluster: str) -> bool:  # pragma: no cover - needs an emoji font
+    """True when the colour-emoji font draws ``cluster`` with visible pixels.
+
+    A symbol in the emoji ranges that the font lacks (★, ✓) draws nothing.
+    Raises :class:`TextFontError` with no colour-emoji font at all.
+    """
+    return emoji_image(cluster, 32).getbbox() is not None
 
 
 def compose_row(images: Sequence[Image.Image], gap: int) -> Image.Image:

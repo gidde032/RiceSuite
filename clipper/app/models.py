@@ -170,6 +170,9 @@ class HeaderPreviewRequest(HeaderFields):
     # Header warnings depend on the geometry the render will use, including
     # whether auto resolves to the crop plan's crop or blur-pad decision.
     geometry: Geometry = "auto"
+    # The clip shows caption emoji rows (RiceSuite #66): the header keeps
+    # above the wider caption band, and the face check uses it.
+    emoji_rows: bool = False
 
 
 class RenderRequest(HeaderFields):

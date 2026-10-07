@@ -298,19 +298,21 @@ def zone_warning(
     face_spans: list[tuple[float, float]],
     source_h: int,
     header_span: tuple[float, float] | None,
+    caption_zone: int = CAPTION_ZONE_PX,
 ) -> str | None:
     """Return the larger over-threshold zone hit, or None.
 
     ``face_spans`` are (top, bottom) face boxes in source px. ``header_span``
     is the header's (top, bottom) in output px, or None when the clip has no
     header. Zones are defined in output pixels; scale maps them back to source
-    pixels.
+    pixels. ``caption_zone`` is the caption band's height in output px: wider
+    for a clip that shows caption emoji rows (RiceSuite #66).
     """
     if not face_spans or source_h <= 0:
         return None
     n_face = len(face_spans)
     scale = _OUTPUT_H / source_h
-    caption_limit = source_h - CAPTION_ZONE_PX / scale
+    caption_limit = source_h - caption_zone / scale
     header_hits = 0
     if header_span is not None:
         top, bottom = header_span[0] / scale, header_span[1] / scale
@@ -334,6 +336,7 @@ def header_warning(
     source_w: int | None = None,
     source_h: int | None = None,
     resolved_geometry: Literal["pass", "blur_pad", "crop"] | None = None,
+    caption_zone: int = CAPTION_ZONE_PX,
 ) -> str | None:
     """The plan's warning, re-checked against the clip's drawn header.
 
@@ -354,7 +357,7 @@ def header_warning(
         or source_h <= 0
         or resolved_geometry is None
     ):
-        return zone_warning(plan.face_spans, plan.window_h, header_span)
+        return zone_warning(plan.face_spans, plan.window_h, header_span, caption_zone)
 
     if resolved_geometry in {"pass", "crop"}:
         scale = _OUTPUT_H / source_h
@@ -370,4 +373,4 @@ def header_warning(
         (offset_y + top * scale, offset_y + bottom * scale)
         for top, bottom in plan.face_spans
     ]
-    return zone_warning(output_spans, _OUTPUT_H, header_span)
+    return zone_warning(output_spans, _OUTPUT_H, header_span, caption_zone)

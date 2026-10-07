@@ -55,12 +55,16 @@ def test_the_last_file_is_repeated_so_its_duration_applies():
     text = ffconcat_text(entries)
     lines = text.strip().splitlines()
     assert lines[0] == "ffconcat version 1.0"
+    rate = f"option framerate {emoji_track.TRACK_FPS}"
     assert lines[1:] == [
         f"file {BLANK_NAME}",
+        rate,
         "duration 1.000000",
         "file p0.png",
+        rate,
         "duration 2.000000",
         "file p0.png",
+        rate,
     ]
 
 

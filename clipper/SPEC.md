@@ -124,7 +124,7 @@ filling in variables, not rebuilding.
 
 **Motion (RiceSuite #66).** A per-clip **Motion** toggle, on by default and
 saved per slot (§5.1), applies to every preset. It is sent as
-`RenderRequest.motion`; with it off, the ASS is byte-identical to the output
+`RenderRequest.motion`; with it off, a clip without emoji rows gets an ASS byte-identical to the output
 before #66. With it on, libass still draws the captions:
 
 - **Pop-in.** Each phrase scales 70% → 112% → 100% over 160 ms with `\t`. It
@@ -133,7 +133,10 @@ before #66. With it on, libass still draws the captions:
   first word does not make the phrase pop twice.
 - **Active-word bump.** The highlighted word is drawn at 110%. Colour and scale
   are restored explicitly after it, never with `\r`, which would also reset the
-  pop and the line's other tags.
+  pop and the line's other tags. Its taller line would shift the other lines
+  of a centred block whenever the highlight changes line (about 8 px), so every
+  other line ends with an invisible, 1%-wide strut at the bump's height and all
+  lines keep one height.
 - **Soft shadow.** Each event is two layers: transparent text whose blurred,
   offset shadow shows (offset 4/8 px, `\blur8`, about 60% opacity), under crisp
   text with no shadow. `\blur` on one layer would also soften the outline.
@@ -203,29 +206,41 @@ and `RenderRequest.emoji_on` turns them on.
   or emoji rows are on (§5), so it knows each phrase's line count and the
   anchor's line. In a two-line phrase the row goes above when the anchor is on
   the top line and below when it is on the bottom line; in a one-line phrase
-  it goes above. A rare three-line phrase follows the same rule: first line
-  above, any later line below. The row is 0.9 × the caption size tall and
-  18 px from the text's line boxes, which clears the pop's overshoot.
+  it goes above. A phrase of three or more lines follows the same rule (first
+  line above, any later line below), except that a row which would rise past
+  the emoji caption zone goes below. The row is 0.9 × the caption size tall. A
+  row above sits 18 px from the text's line boxes; a row below sits 18 px plus
+  the outline plus 0.2 × the size away, because descenders, the outline, and
+  the pop's 112% overshoot reach below the last line box. Rendered frames keep
+  at least 8 px between text and row at the pop's peak.
 - **Safe zone.** Reels and TikTok cover roughly the bottom 200–300 px with
   their own interface. When a clip shows any row, every caption is raised by
-  one row height plus the gap, for the whole clip, so a row below the text
-  sits where the text used to end and the text never jumps between phrases.
-  The caption zone (`CAPTION_ZONE_PX`: the "face near captions" band, and the
-  header's lower limit) grew from 540 to 760 px to hold a lifted two-line
-  phrase with its row above (756 px for the 100 px presets).
+  one row height plus 18 px, for the whole clip, so a row below the text ends
+  near where the text used to end (at most 315 px from the bottom) and the
+  text never jumps between phrases. Such a clip uses a taller caption zone,
+  `EMOJI_CAPTION_ZONE_PX` (760 px instead of `CAPTION_ZONE_PX`, 540 px), which
+  holds a lifted two-line phrase with its row above (756 px for the 100 px
+  presets): its header stays above it, and the editor's "face near captions"
+  check uses it (the preview is told whether rows show). A clip without rows
+  keeps the 540 px zone, so its header and warnings are unchanged. The crop
+  plan's ingest warning, computed before any emoji exist, uses 540 px.
 - **Rendering.** libass cannot draw colour emoji on the macOS/CoreText build
   (§8), so Pillow draws each row (`render/emoji_track.py`, on the shared
   `render/text_image.py`: Apple Color Emoji's 160 px strike, scaled down) on a
   transparent 1080×1920 PNG per phrase. An `ffconcat` list gives each PNG its
   duration, with a blank PNG for the gaps, and repeats its last file so that
-  file's duration applies. Times are whole microseconds and each duration is
-  the difference of two absolute times, so a long clip cannot drift. ffmpeg
+  file's duration applies. Each duration is the difference of two absolute
+  times, so a long clip cannot drift, and every entry sets the image
+  demuxer's frame rate to 1000 (`option framerate 1000`): its default time
+  base, 1/25 s, would round each boundary to 40 ms, so rows start within 1 ms
+  of their phrase. ffmpeg
   reads the list as one input and composites it with a single
   `overlay=0:0:eof_action=pass` after `subtitles` and before the header. With
   Motion on, each row starts with two pre-scaled frames (70% for 40 ms, then
-  112% for 80 ms), in step with the caption pop. If a row cannot be drawn
+  112% for 80 ms), in step with the caption pop. If the rows cannot be drawn
   (for example, no colour-emoji font), the clip renders without emoji and
-  without the lift, and job state says why (`emoji_note`).
+  without the lift. An emoji the font has no colour glyph for (★, ✓) is left
+  out of its row. Either way job state says what was left out (`emoji_note`).
 - **Editing (option B, inline markers, chosen by Finn on 2026-10-06).** With
   the Emoji toggle on, the transcript box marks each phrase break with a thin
   `│` and shows each shown pick as a pill right after its anchor word. Pills
@@ -233,7 +248,9 @@ and `RenderRequest.emoji_on` turns them on.
   editing is unchanged and they never reach the words. Clicking a pill, or
   focusing a word, opens a strip under the transcript for that word's phrase:
   its emoji as chips (click to remove), a palette and a paste box to add one
-  (two at most; a third replaces the second), **Move to "word"** to re-anchor
+  (two at most; a third replaces the second; one emoji means one grapheme: a
+  flag, or pictographs joined by zero-width joiners with their variation
+  selectors and skin tones, never a run), **Move to "word"** to re-anchor
   the phrase's emoji on the focused word, and **Done**. A phrase without emoji
   gets its first one on the focused word. Picks belong to the clip's words and
   are not saved per slot; any change marks a finished render stale. The
@@ -250,8 +267,9 @@ and `RenderRequest.emoji_on` turns them on.
   wins. A failure (no key: 503; a failed call or unusable reply: 502) leaves
   the current picks alone, and the request does not hold the job lock while
   the model runs, so the rest of the review UI keeps working. Suggestions
-  replace the clip's picks; a reply for words that were replaced in the
-  meantime (lyric alignment, restore) is dropped.
+  replace the clip's picks, so a clip that already has picks asks for a
+  second click first; a reply that arrives after the words were replaced
+  (lyric alignment, restore) or the picks were edited is dropped.
 
 Rerendering applies the currently selected styles. Each completed render uses a
 fresh media URL for both preview and Download, and output responses are not
