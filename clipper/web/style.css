@@ -49,7 +49,7 @@ body:has(#batch-panel:not(.hidden)) main { width: 100%; padding: calc(var(--edit
 .source-photo, .field-row.photo-length { display: none; }
 .photo-card .source-photo { display: block; width: 100%; height: 360px; min-height: 360px; flex: 1 1 360px; border: 1px solid var(--hairline); border-radius: 6px; background: #000; object-fit: contain; }
 .photo-card .field-row.photo-length { display: grid; }
-.photo-card .source-video, .photo-card .guide-caption, .photo-card .content, .photo-card .geometry, .photo-card .captions-row, .photo-card .motion-row, .photo-card .caption-style, .photo-card .text-row { display: none; }
+.photo-card .source-video, .photo-card .guide-caption, .photo-card .content, .photo-card .geometry, .photo-card .captions-row, .photo-card .motion-row, .photo-card .emoji-field, .photo-card .caption-style, .photo-card .text-row { display: none; }
 .photo-length-stack { display: flex; align-items: center; gap: var(--editor-space); flex-wrap: wrap; }
 .photo-length-input { width: 6em; }
 .geo-note { margin-top: var(--editor-space); padding: var(--editor-space); border: 1px solid var(--hairline); border-radius: 6px; background: var(--midground); font-family: Arial, sans-serif; }
@@ -198,6 +198,21 @@ button:focus-visible, .primary:focus-visible, textarea:focus-visible, select:foc
 
 /* Auto-header generate control (Wave-1). */
 .header-gen { display: flex; gap: 8px; margin-top: 8px; align-items: stretch; }
+/* Caption emoji (RiceSuite #66, option B): pills after the anchor word in the
+   transcript, phrase breaks marked inline, and a strip to edit one phrase. */
+.emoji-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.emoji-suggest { min-height: 36px; padding: 6px 12px; white-space: nowrap; }
+.transcript .phrase-sep { margin-right: 0.35em; color: var(--control-line); user-select: none; }
+.transcript .emoji-pill { display: inline-flex; min-height: 0 !important; height: 22px; margin: 0 2px; padding: 0 6px !important; align-items: center; border: 1px solid var(--control-line); border-radius: 999px; background: var(--interior); color: var(--text); font-size: 13px; line-height: 1; vertical-align: 1px; cursor: pointer; }
+.transcript .emoji-pill.open { border-color: var(--focus); }
+.emoji-strip { display: grid; gap: var(--editor-space); margin-top: var(--editor-space); padding: var(--editor-space); border: 1px solid var(--control-line); border-radius: 6px; background: var(--midground); }
+.emoji-strip-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--editor-space); font-family: Arial, sans-serif; font-size: 13px; }
+.emoji-strip-head .emoji-strip-title { flex: 1 1 12em; min-width: 0; }
+.emoji-chips, .emoji-palette { display: flex; flex-wrap: wrap; gap: 4px; }
+.emoji-chip { border-radius: 999px !important; font-size: 16px; }
+.emoji-palette button { min-width: 36px; font-size: 17px; padding: 0 !important; }
+@media (pointer: coarse) { #batch-panel .emoji-paste { min-height: 44px; } }
+.emoji-paste { width: 9em; min-height: 36px; padding: 0 8px; border: 1px solid var(--control-line); border-radius: 6px; background: var(--backdrop); color: var(--text); }
 .header-generate { min-height: 36px; padding: 6px 12px; flex: 0 0 auto; white-space: nowrap; }
 .header-feedback { flex: 1 1 auto; min-width: 0; padding: 6px 10px; }
 

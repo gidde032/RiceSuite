@@ -660,7 +660,10 @@ function syncResultStale(clip) {
 // input event whose target is the <video> or <audio> element. Moving through
 // or listening to a clip changes nothing that renders, so it is not an edit.
 function isReviewEdit(event) {
-  const tag = String((event && event.target && event.target.tagName) || "").toUpperCase();
+  const target = event && event.target;
+  const tag = String((target && target.tagName) || "").toUpperCase();
+  // Typing in the emoji paste box changes nothing until an emoji is added.
+  if (target && target.classList && target.classList.contains("emoji-paste")) return false;
   return tag !== "VIDEO" && tag !== "AUDIO";
 }
 
@@ -699,6 +702,10 @@ function buildCard(clip) {
   clip.captionsToggleEl = node.querySelector(".captions-toggle");
   clip.captionStyleEl = node.querySelector(".caption-style");
   clip.motionToggleEl = node.querySelector(".motion-toggle");
+  clip.emojiToggleEl = node.querySelector(".emoji-toggle");
+  clip.emojiSuggestEl = node.querySelector(".emoji-suggest");
+  clip.emojiStatusEl = node.querySelector(".emoji-status");
+  clip.emojiStripEl = node.querySelector(".emoji-strip");
   clip.transcriptEl = node.querySelector(".transcript");
   clip.lyricsEl = node.querySelector(".lyrics");
   clip.lyricsInputEl = node.querySelector(".lyrics-input");
@@ -765,6 +772,29 @@ function buildCard(clip) {
   clip.motionToggleEl.addEventListener("change", () => {
     rememberSlotStyle(clip.ord, "motion", clip.motionToggleEl.checked);
   });
+  // Caption emoji (RiceSuite #66): off unless this slot saved it on. The picks
+  // belong to this clip's words, so they are not saved per slot.
+  resetEmojiPicks(clip);
+  clip.emojiToggleEl.checked = slotFlag(clip.ord, "emoji", false);
+  clip.emojiToggleEl.addEventListener("change", () => {
+    rememberSlotStyle(clip.ord, "emoji", clip.emojiToggleEl.checked);
+    refreshEmoji(clip);
+  });
+  clip.emojiSuggestEl.addEventListener("click", () => requestEmoji(clip));
+  // Focusing a word opens its phrase in the emoji strip. A text edit can
+  // regroup phrases, so the markers are redrawn when a changed word is left.
+  clip.transcriptEl.addEventListener("focusin", (event) => {
+    if (!emojiShown(clip) || !event.target.classList.contains("word")) return;
+    clip.emojiFocus = Number(event.target.dataset.index);
+    renderEmojiStrip(clip);
+    decorateTranscript(clip);
+  });
+  clip.transcriptEl.addEventListener("focusout", (event) => {
+    if (!event.target.classList.contains("word")) return;
+    const key = collectWords(clip).map((w) => w.text).join("\u0000");
+    if (key !== clip.emojiTextKey) refreshEmoji(clip);
+  });
+  refreshEmoji(clip);
   clip.headerStyleEl.addEventListener("change", (event) => {
     if (!event.target || event.target.type !== "radio") return; // a header control
     rememberSlotStyle(clip.ord, "header", radioValue(clip.headerStyleEl));
@@ -829,6 +859,8 @@ function buildCard(clip) {
   clip.captionsToggleEl.addEventListener("change", () => {
     setRadioDisabled(clip.captionStyleEl, !clip.captionsToggleEl.checked);
     clip.motionToggleEl.disabled = !clip.captionsToggleEl.checked;
+    clip.emojiToggleEl.disabled = !clip.captionsToggleEl.checked;
+    refreshEmoji(clip);
   });
   clip.headerGenerateEl.addEventListener("click", () => regenerateHeader(clip));
   clip.lyricsAlignEl.addEventListener("click", () => alignLyrics(clip));
@@ -1077,6 +1109,7 @@ function renderTranscript(clip) {
     box.appendChild(span);
     box.appendChild(document.createTextNode(" "));
   });
+  refreshEmoji(clip);
 }
 
 function collectWords(clip) {
@@ -1086,6 +1119,244 @@ function collectWords(clip) {
     const w = clip.words[Number(span.dataset.index)];
     return { text: span.textContent.trim(), start: w.start, end: w.end, line_start: w.line_start };
   });
+}
+
+// --- caption emoji (RiceSuite #66) ------------------------------------------
+// Finn chose inline markers in the transcript (option B, 2026-10-06): an
+// emoji pill sits after its anchor word, phrase breaks are marked, and a strip
+// under the transcript edits one phrase's emoji. Picks are kept per clip as
+// { global word index: [one or two emoji] }; the render resolves them the way
+// render.ass.layout_phrases does, so a phrase shows its first anchor's pick.
+// Nothing is sent to the picker without the ✨ Suggest emoji button.
+
+// Mirrors render.text_image._EMOJI_RE and EMOJI_CLUSTER_MAX (a test compares).
+const EMOJI_CHAR = /^[\u{1f000}-\u{1faff}\u{2600}-\u{27bf}\u{1f1e6}-\u{1f1ff}\u{2300}-\u{23ff}\u{2b00}-\u{2bff}\u{fe00}-\u{fe0f}\u{200d}]$/u;
+const EMOJI_CLUSTER_MAX = 16;
+const EMOJI_PALETTE = ["😂", "🔥", "😍", "😭", "🤯", "👀", "💀", "🙌", "🎉", "❤️", "✨", "💯", "😱", "🥶", "☀️", "🍕"];
+// transcribe.phrasing.group_words defaults.
+const PHRASE_MAX_WORDS = 5;
+const PHRASE_MAX_GAP = 0.7;
+
+function isEmojiCluster(text) {
+  const chars = [...String(text || "")];
+  return chars.length > 0 && chars.length <= EMOJI_CLUSTER_MAX && chars.every((ch) => EMOJI_CHAR.test(ch));
+}
+
+// The caption phrases as transcribe.phrasing.group_words makes them, as lists
+// of global word indices (a test compares the two).
+function phraseGroups(words) {
+  const groups = [];
+  let current = [];
+  words.forEach((word, i) => {
+    if (!String(word.text || "").trim()) return;
+    if (current.length) {
+      const prev = words[current[current.length - 1]];
+      if (current.length >= PHRASE_MAX_WORDS || word.start - prev.end > PHRASE_MAX_GAP || word.line_start) {
+        groups.push(current);
+        current = [];
+      }
+    }
+    current.push(i);
+  });
+  if (current.length) groups.push(current);
+  return groups;
+}
+
+// Each phrase with the pick it shows: its first anchor's.
+function emojiAnchors(words, picks) {
+  return phraseGroups(words).map((phrase) => {
+    const anchor = phrase.find((i) => picks[i]);
+    return anchor === undefined
+      ? { phrase, anchor: null, emoji: [] }
+      : { phrase, anchor, emoji: picks[anchor] };
+  });
+}
+
+// Add an emoji to a phrase: on its anchor (two at most, the second replaced),
+// or as a new pick on word `at`. Returns new picks.
+function addPickEmoji(picks, phrase, at, emoji) {
+  const next = { ...picks };
+  const anchor = phrase.find((i) => next[i]);
+  if (anchor === undefined) {
+    next[at] = [emoji];
+  } else if (!next[anchor].includes(emoji)) {
+    next[anchor] = next[anchor].length >= 2 ? [next[anchor][0], emoji] : [...next[anchor], emoji];
+  }
+  return next;
+}
+
+function removePickEmoji(picks, anchor, emoji) {
+  const next = { ...picks };
+  const rest = (next[anchor] || []).filter((e) => e !== emoji);
+  if (rest.length) next[anchor] = rest;
+  else delete next[anchor];
+  return next;
+}
+
+// Move a phrase's emoji onto word `to` of the same phrase.
+function movePick(picks, phrase, to) {
+  const next = { ...picks };
+  const anchor = phrase.find((i) => next[i]);
+  if (anchor === undefined || anchor === to) return next;
+  const emoji = next[anchor];
+  for (const i of phrase) delete next[i];
+  next[to] = emoji;
+  return next;
+}
+
+function emojiPayload(picks) {
+  return Object.keys(picks)
+    .map(Number)
+    .sort((a, b) => a - b)
+    .map((word) => ({ word, emoji: picks[word] }));
+}
+
+function emojiShown(clip) {
+  return Boolean(clip.emojiToggleEl && clip.emojiToggleEl.checked && clip.captionsToggleEl.checked && clip.isPhoto !== true);
+}
+
+// New words (transcription, lyric alignment, restore) start without emoji:
+// the picks pointed at the old words.
+function resetEmojiPicks(clip) {
+  clip.emojiPicks = {};
+  clip.emojiFocus = null;
+  clip.wordsVersion = (clip.wordsVersion || 0) + 1;
+}
+
+function setEmojiPicks(clip, picks) {
+  clip.emojiPicks = picks;
+  noteClipEdited(clip);
+  refreshEmoji(clip);
+}
+
+function setEmojiStatus(clip, text, isError = false) {
+  if (!clip.emojiStatusEl) return;
+  clip.emojiStatusEl.textContent = text || "";
+  clip.emojiStatusEl.className = `emoji-status status${isError ? " error" : ""}`;
+}
+
+function refreshEmoji(clip) {
+  if (!clip.transcriptEl || !clip.emojiStripEl) return;
+  clip.emojiTextKey = collectWords(clip).map((w) => w.text).join("\u0000");
+  decorateTranscript(clip);
+  renderEmojiStrip(clip);
+  if (clip.emojiSuggestEl) clip.emojiSuggestEl.disabled = Boolean(clip.emojiBusy) || !emojiShown(clip);
+}
+
+function emojiNode(tag, props = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(props)) {
+    if (key === "onclick") node.addEventListener("click", value);
+    else if (key in node && key !== "ariaLabel") node[key] = value;
+    else node.setAttribute(key === "ariaLabel" ? "aria-label" : key, value);
+  }
+  node.append(...children);
+  return node;
+}
+
+// Phrase breaks and pills, drawn between the editable word spans (never in
+// them), so typing in a word is unchanged.
+function decorateTranscript(clip) {
+  const box = clip.transcriptEl;
+  box.querySelectorAll(".phrase-sep, .emoji-pill").forEach((node) => node.remove());
+  if (!emojiShown(clip)) return;
+  const spans = new Map(Array.from(box.querySelectorAll(".word")).map((s) => [Number(s.dataset.index), s]));
+  const words = collectWords(clip);
+  const open = openEmojiPhrase(clip, words);
+  emojiAnchors(words, clip.emojiPicks || {}).forEach((group, n) => {
+    if (n) box.insertBefore(emojiNode("span", { className: "phrase-sep", "aria-hidden": "true" }, "│"), spans.get(group.phrase[0]));
+    if (group.anchor === null) return;
+    const pill = emojiNode("button", {
+      type: "button",
+      className: `emoji-pill${open && open.anchor === group.anchor ? " open" : ""}`,
+      contentEditable: "false",
+      ariaLabel: `Edit emoji ${group.emoji.join(" ")} on “${words[group.anchor].text}”`,
+      onclick: () => { clip.emojiFocus = group.anchor; refreshEmoji(clip); },
+    }, group.emoji.join(""));
+    spans.get(group.anchor).after(pill);
+  });
+}
+
+function openEmojiPhrase(clip, words) {
+  if (clip.emojiFocus === null || clip.emojiFocus === undefined) return null;
+  return emojiAnchors(words, clip.emojiPicks || {}).find((g) => g.phrase.includes(clip.emojiFocus)) || null;
+}
+
+// The strip edits the phrase of the focused word or clicked pill.
+function renderEmojiStrip(clip) {
+  const strip = clip.emojiStripEl;
+  const words = collectWords(clip);
+  const group = emojiShown(clip) ? openEmojiPhrase(clip, words) : null;
+  strip.hidden = !group;
+  if (!group) {
+    strip.replaceChildren();
+    return;
+  }
+  const word = clip.emojiFocus;
+  const label = (i) => `“${words[i].text}”`;
+  const picks = () => clip.emojiPicks || {};
+  const add = (emoji) => setEmojiPicks(clip, addPickEmoji(picks(), group.phrase, word, emoji));
+  const head = emojiNode("div", { className: "emoji-strip-head" },
+    emojiNode("span", { className: "emoji-strip-title" }, group.anchor === null
+      ? `Add emoji to ${label(word)}. The render shows them above or below this phrase.`
+      : `Emoji on ${label(group.anchor)}. Two at most per phrase.`));
+  if (group.anchor !== null && word !== group.anchor) {
+    head.append(emojiNode("button", { type: "button", className: "emoji-move", onclick: () => setEmojiPicks(clip, movePick(picks(), group.phrase, word)) }, `Move to ${label(word)}`));
+  }
+  head.append(emojiNode("button", { type: "button", className: "emoji-done", onclick: () => { clip.emojiFocus = null; refreshEmoji(clip); } }, "Done"));
+  const chips = emojiNode("div", { className: "emoji-chips" },
+    ...group.emoji.map((emoji) => emojiNode("button", {
+      type: "button", className: "emoji-chip", ariaLabel: `Remove ${emoji}`,
+      onclick: () => setEmojiPicks(clip, removePickEmoji(picks(), group.anchor, emoji)),
+    }, `${emoji} ×`)));
+  const palette = emojiNode("div", { className: "emoji-palette" },
+    ...EMOJI_PALETTE.map((emoji) => emojiNode("button", { type: "button", ariaLabel: `Add ${emoji}`, onclick: () => add(emoji) }, emoji)));
+  const paste = emojiNode("input", { type: "text", className: "emoji-paste", placeholder: "Paste an emoji", ariaLabel: "Paste an emoji to add" });
+  paste.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    const emoji = paste.value.trim();
+    if (isEmojiCluster(emoji)) add(emoji);
+    else setEmojiStatus(clip, "Paste one emoji, with nothing else.", true);
+  });
+  palette.append(paste);
+  strip.replaceChildren(head, chips, palette);
+}
+
+async function requestEmoji(clip) {
+  if (!clip.jobId || clip.emojiBusy || !emojiShown(clip)) return;
+  clip.emojiBusy = true;
+  clip.emojiSuggestEl.disabled = true;
+  setEmojiStatus(clip, "Suggesting emoji…");
+  const version = clip.wordsVersion;
+  try {
+    const res = await fetch(`api/jobs/${clip.jobId}/emoji`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ words: collectWords(clip) }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(requestErrorText(data, "emoji suggestion failed"));
+    if (clip.wordsVersion !== version) {
+      setEmojiStatus(clip, "The transcript changed while emoji were suggested. Suggest again.");
+      return;
+    }
+    const picks = {};
+    for (const pick of data.picks || []) {
+      const emoji = Array.isArray(pick.emoji) ? pick.emoji.filter(isEmojiCluster).slice(0, 2) : [];
+      if (Number.isInteger(pick.word) && emoji.length) picks[pick.word] = emoji;
+    }
+    setEmojiPicks(clip, picks);
+    const n = Object.keys(picks).length;
+    setEmojiStatus(clip, n
+      ? `Suggested emoji for ${n} phrase${n === 1 ? "" : "s"}. Click a pill in the transcript to change it.`
+      : "No emoji suggested for this clip.");
+  } catch (err) {
+    setEmojiStatus(clip, `Couldn't suggest emoji: ${err.message}`, true);
+  } finally {
+    clip.emojiBusy = false;
+    clip.emojiSuggestEl.disabled = !emojiShown(clip);
+  }
 }
 
 async function alignLyrics(clip) {
@@ -1103,6 +1374,7 @@ async function alignLyrics(clip) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || "lyric alignment failed");
     clip.words = data.words || [];
+    resetEmojiPicks(clip);
     renderTranscript(clip);
     clip.status = "ready";
     clip.lyricsBadgeEl.textContent =
@@ -1143,6 +1415,7 @@ async function restoreTranscript(clip) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || "restore failed");
     clip.words = data.words || [];
+    resetEmojiPicks(clip);
     renderTranscript(clip);
     clip.status = "ready";
     clip.lyricsBadgeEl.textContent = "";
@@ -1170,6 +1443,7 @@ function compactClipOrdinals() {
     // choices into that slot so edits and the next batch use the visible look.
     if (clip.captionStyleEl) rememberSlotStyle(ord, "caption", radioValue(clip.captionStyleEl));
     if (clip.motionToggleEl) rememberSlotStyle(ord, "motion", clip.motionToggleEl.checked);
+    if (clip.emojiToggleEl) rememberSlotStyle(ord, "emoji", clip.emojiToggleEl.checked);
     if (clip.headerStyleEl) rememberSlotStyle(ord, "header", radioValue(clip.headerStyleEl));
     if (clip.headerLook) rememberSlotStyle(ord, "headerLook", clip.headerLook);
   });
@@ -1476,6 +1750,7 @@ async function ingestClip(clip) {
       throw new Error(trdata.error || trdata.detail || "transcription failed");
     }
     clip.words = trdata.words || [];
+    resetEmojiPicks(clip);
     clip.geoState = trdata;
     renderTranscript(clip);
     applyGeometry(clip, trdata);
@@ -1553,8 +1828,9 @@ const RENDER_NOT_RECEIVED = "Clipper has no record of this render; render it aga
 // A finished render's status line. A header that fell back to libass says
 // why, even when the clip was edited during the render, so it is never
 // silent (RiceSuite #65).
-function setRenderedStatus(clip, headerNote) {
-  const basic = headerNote ? ` Rendered with a basic header. ${headerNote}` : "";
+function setRenderedStatus(clip, headerNote, emojiNote) {
+  let basic = headerNote ? ` Rendered with a basic header. ${headerNote}` : "";
+  if (emojiNote) basic += ` Rendered without the caption emoji. ${emojiNote}`;
   if (!clipCurrent(clip)) {
     setClipStatus(clip, `Edited since its render. Render it again before it is sent.${basic}`, Boolean(basic));
   } else if (basic) {
@@ -1601,6 +1877,7 @@ async function pollRenderCompletion(clip, renderId) {
     seen = true;
     if (state.status === "done" && state.has_output) {
       clip.headerNote = state.header_note || ""; // the reply that carried it was lost
+      clip.emojiNote = state.emoji_note || "";
       return true;
     }
     if (state.status === "error") throw new Error(state.error || "render failed");
@@ -1655,6 +1932,8 @@ async function renderClip(clip) {
       captions_on: clip.captionsToggleEl.checked,
       caption_style: radioValue(clip.captionStyleEl),
       motion: clip.motionToggleEl.checked,
+      emoji_on: clip.emojiToggleEl.checked,
+      emoji: emojiPayload(clip.emojiPicks || {}),
       header_style: radioValue(clip.headerStyleEl),
       header_look: clip.headerLook,
       geometry: radioValue(clip.geometryEl),
@@ -1689,7 +1968,7 @@ async function renderClip(clip) {
         clip.renders = (clip.renders || 0) + 1;
         clip.renderedEdits = editsAtRender;
         clip.status = "done";
-        setRenderedStatus(clip, clip.headerNote);
+        setRenderedStatus(clip, clip.headerNote, clip.emojiNote);
         await showResult(clip);
         return true;
       }
@@ -1701,7 +1980,7 @@ async function renderClip(clip) {
     clip.renders = (clip.renders || 0) + 1;
     clip.renderedEdits = editsAtRender;
     clip.status = "done";
-    setRenderedStatus(clip, data.header_note);
+    setRenderedStatus(clip, data.header_note, data.emoji_note);
     await showResult(clip);
     return true;
   } catch (err) {

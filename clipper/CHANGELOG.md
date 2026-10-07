@@ -27,7 +27,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   frame per phrase row; an `ffconcat` list (blank gaps, the last file
   repeated, microsecond times so nothing drifts) is composited with a single
   overlay, popping in with Motion. Without a colour-emoji font the clip
-  renders without emoji and says so (`emoji_note`). **✨ Suggest emoji** makes
+  renders without emoji and says so (`emoji_note`). In the editor (inline
+  markers, chosen 2026-10-06), each phrase's emoji show as a pill after the
+  anchor word in the transcript, phrase breaks are marked, and a strip under
+  the transcript adds, replaces, removes, or moves them. **✨ Suggest emoji** makes
   one Sonnet call per clip, only on the click, sending only the caption
   phrases; it shares the header's call site, now `app/anthropic_text.py`, so
   Clipper still has exactly one `messages.create`.

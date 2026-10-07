@@ -65,7 +65,7 @@ function card(rendered) {
     musicModeEl: { value: "none" },
     musicInputEl: { files: [] },
     headerEl: { value: "Hook" },
-    captionsToggleEl: { checked: true }, motionToggleEl: { checked: true },
+    captionsToggleEl: { checked: true }, motionToggleEl: { checked: true }, emojiToggleEl: { checked: false },
   };
   return new Proxy(clip, {
     get(target, prop) {

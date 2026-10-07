@@ -226,6 +226,19 @@ and `RenderRequest.emoji_on` turns them on.
   112% for 80 ms), in step with the caption pop. If a row cannot be drawn
   (for example, no colour-emoji font), the clip renders without emoji and
   without the lift, and job state says why (`emoji_note`).
+- **Editing (option B, inline markers, chosen by Finn on 2026-10-06).** With
+  the Emoji toggle on, the transcript box marks each phrase break with a thin
+  `│` and shows each shown pick as a pill right after its anchor word. Pills
+  and marks sit between the editable word spans, never inside them, so text
+  editing is unchanged and they never reach the words. Clicking a pill, or
+  focusing a word, opens a strip under the transcript for that word's phrase:
+  its emoji as chips (click to remove), a palette and a paste box to add one
+  (two at most; a third replaces the second), **Move to "word"** to re-anchor
+  the phrase's emoji on the focused word, and **Done**. A phrase without emoji
+  gets its first one on the focused word. Picks belong to the clip's words and
+  are not saved per slot; any change marks a finished render stale. The
+  editor groups phrases with the same rule as `group_words`, and accepts the
+  same emoji as the render (tests compare both).
 - **✨ Suggest emoji.** `POST /api/jobs/{id}/emoji` makes one Sonnet call per
   clip, only when the button is clicked (§3), through the header's call site.
   It sends the caption phrases as `transcribe.phrasing.group_words` makes them,
@@ -236,7 +249,9 @@ and `RenderRequest.emoji_on` turns them on.
   are dropped, a third emoji is dropped, and the earliest anchor in a phrase
   wins. A failure (no key: 503; a failed call or unusable reply: 502) leaves
   the current picks alone, and the request does not hold the job lock while
-  the model runs, so the rest of the review UI keeps working.
+  the model runs, so the rest of the review UI keeps working. Suggestions
+  replace the clip's picks; a reply for words that were replaced in the
+  meantime (lyric alignment, restore) is dropped.
 
 Rerendering applies the currently selected styles. Each completed render uses a
 fresh media URL for both preview and Download, and output responses are not

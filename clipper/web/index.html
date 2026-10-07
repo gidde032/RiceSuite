@@ -229,6 +229,20 @@
             </label>
           </div>
 
+          <div class="field field-row emoji-field">
+            <span class="field-label">Emoji</span>
+            <div>
+              <div class="emoji-controls">
+                <label class="switch-label">
+                  <input class="emoji-toggle" type="checkbox" />
+                  <span>Emoji rows on some phrases</span>
+                </label>
+                <button class="emoji-suggest" type="button" title="Sends the caption text to Anthropic and suggests a few emoji">✨ Suggest emoji</button>
+              </div>
+              <p class="emoji-status status" role="status"></p>
+            </div>
+          </div>
+
           <fieldset class="field choice-field caption-style">
             <legend>Caption style</legend>
             <div class="choice-grid caption-choice-grid">
@@ -299,6 +313,7 @@
               <span class="hint">Edit any misheard word. Timing stays locked.</span>
             </div>
             <div class="transcript" contenteditable="false" aria-label="Editable transcript"></div>
+            <div class="emoji-strip" hidden></div>
           </div>
 
           <div class="text-panel lyrics" hidden>

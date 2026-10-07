@@ -141,6 +141,13 @@ both the visible toolbar symbol and the favicon.
   and saved per slot, turns the caption pop-in, active-word bump, and soft
   shadow on or off. It is disabled while captions are off and hidden on a
   photo card.
+- An **Emoji** switch and a **✨ Suggest emoji** button sit under **Motion**
+  (RiceSuite #66), off by default, saved per slot, and hidden on a photo card.
+  With Emoji on, the transcript shows phrase breaks as a thin `│` and each
+  phrase's emoji as a pill after its anchor word; a pill or a focused word
+  opens an emoji strip under the transcript (chips, a palette, a paste box,
+  Move, and Done). Strip controls meet the 36 px target size (44 px on a
+  coarse pointer); the inline pills stay text height.
 - Each tile includes a truthful miniature treatment example and a text label.
 - Selection uses a rice-grey border and checkmark, never color alone.
 - The underlying values and API payload shapes remain the existing
