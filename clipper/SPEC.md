@@ -43,7 +43,7 @@ arbitrary caption style/position editing, animated (Tier-3) captions,
 auto-ducking.
 
 The approved post-v1 visual follow-up adds a bounded set of built-in choices:
-eleven caption presets and three header treatments. It does not add a general
+twelve caption presets and three header treatments. It does not add a general
 text editor, arbitrary font/color input, or user-authored preset persistence.
 
 ## 3. Boundary & safety note
@@ -104,9 +104,10 @@ ladder:
   text color, outline + shadow, position, phrase blocks, and **per-word color
   highlight / left-to-right fill synced to audio**. The target "native TikTok /
   Opus" look is entirely Tier 1.
-- **Tier 2 (libass + scripting effort — natural stretch):** a highlight *box*
-  behind the active word (CapCut style), computed per-word from font metrics; a
-  simple scale "pop" on word appearance.
+- **Tier 2 (libass + scripting effort):** a phrase pop-in, a scale bump on the
+  active word, and a soft blurred shadow — **implemented** behind the per-clip
+  **Motion** toggle (below, RiceSuite #66). A highlight *box* behind the active
+  word (CapCut style), computed per-word from font metrics, remains a stretch.
 - **Tier 3 (requires a second render engine — the real fork):** fluid
   spring/bounce motion, animated resizing boxes. Needs a frame-compositing or
   HTML-to-video renderer (MoviePy / Remotion-class). This is an engine decision,
@@ -118,18 +119,49 @@ position with the header cleared above. The ASS template is parameterized from
 day one so exposing font/color/highlight/position config later (§7, Wave 2) is
 filling in variables, not rebuilding.
 
+**Motion (RiceSuite #66).** A per-clip **Motion** toggle, on by default and
+saved per slot (§5.1), applies to every preset. It is sent as
+`RenderRequest.motion`; with it off, the ASS is byte-identical to the output
+before #66. With it on, libass still draws the captions:
+
+- **Pop-in.** Each phrase scales 70% → 112% → 100% over 160 ms with `\t`. It
+  plays once per phrase, on the phrase's own clock: an event that starts while
+  the pop is still running continues it rather than restarting it, so a fast
+  first word does not make the phrase pop twice.
+- **Active-word bump.** The highlighted word is drawn at 110%. Colour and scale
+  are restored explicitly after it, never with `\r`, which would also reset the
+  pop and the line's other tags.
+- **Soft shadow.** Each event is two layers: transparent text whose blurred,
+  offset shadow shows (offset 4/8 px, `\blur8`, about 60% opacity), under crisp
+  text with no shadow. `\blur` on one layer would also soften the outline.
+- **Explicit line breaks.** libass re-wraps a line while its scale animates, so
+  the pop would move words between lines. Motion breaks each phrase itself, the
+  way libass `WrapStyle: 0` would (`render.text_image.wrap`), and each caption
+  event carries `\q2` and a fixed `\pos`. Lines are measured with Pillow in the
+  caption's own face, at the scale libass uses (OS/2 `usWinAscent +
+  usWinDescent`), and keep 4% spare width plus room for the bump and the
+  outline. A word wider than the frame shrinks its phrase to fit. Without the
+  face (for example on Linux), the default text font stands in, widened 15%.
+
 ### 5.1 Bounded visual preset follow-up
 
-The review UI exposes eleven named caption presets: **Classic** (the original
+The review UI exposes twelve named caption presets: **Classic** (the original
 v1 treatment), **Clean**, **Punch**, **Friendly**, **Sunset**, **Mono**,
-**Editorial**, **Lyric Block**, **Velvet Serif**, **Powder**, and
-**Baskerville**. Each remains a Tier-1 ASS/libass combination of font, size,
+**Editorial**, **Lyric Block**, **Velvet Serif**, **Powder**,
+**Baskerville**, and **Montserrat**. Each remains a Tier-1 ASS/libass combination of font, size,
 outline/shadow, position, base color, and active-word highlight color. The
 four approved lyric treatments are fixed combinations: Avenir Next Condensed
 italic with cyan (`#00E5FF`), Bodoni 72 with red (`#FF3654`), **Powder** using
 the DIN Condensed font with powder blue (`#A8C7E8`), and Baskerville with teal
 (`#00A7A7`). The stable internal identifier for Powder remains
-`din_condensed`.
+`din_condensed`. **Montserrat** (RiceSuite #66) is the one preset with a
+bundled font: Montserrat Black, under the SIL Open Font License 1.1, committed
+with its `OFL.txt` in `render/fonts/`, with a yellow (`#FFD60A`) highlight.
+libass finds it only through the `subtitles` filter's `fontsdir` option and
+otherwise falls back to Helvetica without an error, so the render copies the
+font into the job directory and passes `fontsdir=fonts`. The ASS font name is
+the face's full name, `Montserrat Black`; libass does not match the bare
+family `Montserrat`.
 
 The UI also exposes three header treatments at the same compact,
 reference-matched scale: **Plain text**, **Black plate**, and **White plate**.
@@ -142,7 +174,8 @@ default** rather than a universal pre-upload dropdown: each slot (the "Clip N"
 ordinal that maps to the RicePoster handoff position) remembers its style in the
 browser (`localStorage`, local-first), starting from the v1 Classic/Plain
 defaults, and editing a clip persists that slot's default for later batches. The
-header controls (§6.3) are saved per slot the same way. On the audio side, choosing a music file defaults the mode to *mix under original*
+header controls (§6.3) and the caption **Motion** toggle (§5) are saved per
+slot the same way. On the audio side, choosing a music file defaults the mode to *mix under original*
 while the mode is still untouched — a convenience default that never overrides a
 deliberate choice and adds no new mode (D13 unchanged). A photo card offers only
 *No music* and *Add music* (replace), at full volume, because a photo has no
@@ -362,10 +395,10 @@ warning. Plans saved before #65 keep their ingest warning.
 | D5 | Trimming | None in v1 | The "maybe" and the riskiest component; silence-trim is Wave-1 |
 | D6 | Header (v1) | Manual 1–2 line text box, on every clip | Smallest path to end-to-end; doubles as the silent-clip text layer |
 | D7 | Header (auto) | Deferred (Wave 1): Sonnet vision + transcript + optional desc, manual fallback | Most visible line; strong model earns its keep; local LLM writes weaker hooks |
-| D8 | Caption style | Word-by-word highlight within ~4–5 word phrase groups; Tier-1 preset | The signature look; entirely native to libass |
+| D8 | Caption style | Word-by-word highlight within ~4–5 word phrase groups; Tier-1 preset. **Amended 2026-10-06 (RiceSuite [#66](https://github.com/gidde032/RiceSuite/issues/66)):** the highlight stays, with no fixed keyword colour; a per-clip Motion toggle (on by default) adds a phrase pop-in, an active-word scale bump, and a soft blurred shadow, still drawn by libass (§5) | The signature look; entirely native to libass. Flat captions read as dated next to platform-native ones, and Tier-2 motion needs no second engine |
 | D9 | Transcription | faster-whisper, local | Free, private, word timestamps built in; fits local-first setup |
 | D10 | Interface | FastAPI + vanilla HTML/JS localhost, review gate | Hosts override + header entry; matches RicePoster for easy merge |
-| D11 | Styling | One Tier-1 preset v1; style/position config Wave-2; Tier-3 deferred behind engine decision. **Amended 2026-10-06 (RiceSuite [#65](https://github.com/gidde032/RiceSuite/issues/65)):** the header gets per-clip style and position controls with a live preview, and every header is drawn by Pillow (§6.3). Caption style stays the fixed presets of §5.1 | Config is a time sink; template already parameterized for cheap later exposure. Two header renderers would need every control built twice, and they had already drifted apart |
+| D11 | Styling | One Tier-1 preset v1; style/position config Wave-2; Tier-3 deferred behind engine decision. **Amended 2026-10-06 (RiceSuite [#65](https://github.com/gidde032/RiceSuite/issues/65)):** the header gets per-clip style and position controls with a live preview, and every header is drawn by Pillow (§6.3). Caption style stays the fixed presets of §5.1. **Amended 2026-10-06 (RiceSuite [#66](https://github.com/gidde032/RiceSuite/issues/66)):** one preset, Montserrat, uses a bundled open-licence font (§5.1), and the Motion toggle applies to every preset (§5); Tier 3 stays deferred | Config is a time sink; template already parameterized for cheap later exposure. Two header renderers would need every control built twice, and they had already drifted apart |
 | D12 | Non-9:16 handling | Blur-pad fill as the **fallback and explicit choice**; subject crop when detection passes (D15) | Never loses content. The RicePoster "edge-crop failure" was withdrawn 2026-07-27 (TikTok trims edges itself); the surviving rule is a safe zone for the subject |
 | D13 | Music | Optional added audio; replace **or** mix-under toggle with volume slider; v1. Segment start chosen per clip with an in-browser preview; the segment runs for the clip length. Added music fades in over 0.5 s when the start is past 0 and fades out over the last 1 s (amended 2026-10-03, RiceSuite [#55](https://github.com/gidde032/RiceSuite/issues/55)). Auto-ducking + vocal isolation deferred | Central to actual usage; cheap since encoding already exists; adding after sync can't affect timing. A song's opening is rarely the part a clip needs, and a mid-song cut sounds broken without a fade |
 | D14 | Browser theme | Slate: dark carbon/grey chrome, rice-grey state accents, visual per-clip preset cards, symbol-only rice-and-shears mark | Makes the daily-driver review path faster to scan without changing behavior or adding editor features |

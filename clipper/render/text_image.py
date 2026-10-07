@@ -21,6 +21,7 @@ import math
 import os
 import re
 import shutil
+import struct
 import subprocess
 import unicodedata
 from collections.abc import Callable, Sequence
@@ -48,8 +49,11 @@ _NEEDS_SHAPING_RE = re.compile(
 # A codepoint no font maps, used to find a face's missing-glyph box.
 _NO_GLYPH_PROBE = "\U0010fffd"
 
-# Open-licence fonts committed with Clipper. RiceSuite #66 adds the first one.
+# Open-licence fonts committed with Clipper (RiceSuite #66), keyed by the ASS
+# Fontname libass matches: the face's full name. libass finds them only through
+# the subtitles filter's ``fontsdir``; without it, it silently uses Helvetica.
 BUNDLED_FONTS_DIR = Path(__file__).resolve().parent / "fonts"
+BUNDLED_FONTS = {"Montserrat Black": "Montserrat-Black.ttf"}
 
 # Checked in order; the first existing file wins. macOS system fonts come first,
 # then the common Linux package locations (Debian/Ubuntu, Fedora, Arch).
@@ -273,10 +277,120 @@ def resolve_font(key: str) -> FontRef:
     return FontRef(path)
 
 
+def bundled_font_file(family: str) -> Path | None:
+    """The committed font file for ASS family ``family``, or None."""
+    name = BUNDLED_FONTS.get(family)
+    return BUNDLED_FONTS_DIR / name if name else None
+
+
+# The caption presets' faces, keyed by (ASS family, bold, italic), so Pillow can
+# measure caption lines in the font libass draws (RiceSuite #66).
+_CAPTION_FACES: dict[tuple[str, bool, bool], tuple[str, str | None]] = {
+    ("Arial", True, False): (f"{_SUPPLEMENTAL}/Arial Bold.ttf", None),
+    ("Helvetica Neue", True, False): (
+        "/System/Library/Fonts/HelveticaNeue.ttc",
+        "Bold",
+    ),
+    ("Impact", True, False): (f"{_SUPPLEMENTAL}/Impact.ttf", None),
+    ("Avenir Next", True, False): ("/System/Library/Fonts/Avenir Next.ttc", "Bold"),
+    ("Arial Narrow", True, False): (f"{_SUPPLEMENTAL}/Arial Narrow Bold.ttf", None),
+    ("Courier New", True, False): (f"{_SUPPLEMENTAL}/Courier New Bold.ttf", None),
+    ("Georgia", True, False): (f"{_SUPPLEMENTAL}/Georgia Bold.ttf", None),
+    ("Avenir Next Condensed", True, True): (
+        "/System/Library/Fonts/Avenir Next Condensed.ttc",
+        "Bold Italic",
+    ),
+    ("Bodoni 72", False, False): (f"{_SUPPLEMENTAL}/Bodoni 72.ttc", "Book"),
+    ("DIN Condensed", True, False): (f"{_SUPPLEMENTAL}/DIN Condensed Bold.ttf", None),
+    ("Baskerville", False, False): (f"{_SUPPLEMENTAL}/Baskerville.ttc", "Regular"),
+}
+
+
+@cache
+def caption_font(family: str, bold: bool, italic: bool) -> FontRef | None:
+    """The face libass draws a caption family with, when this host has it."""
+    bundled = bundled_font_file(family)
+    if bundled is not None:
+        return FontRef(str(bundled)) if bundled.exists() else None
+    entry = _CAPTION_FACES.get((family, bold, italic))
+    if entry is None or not os.path.exists(entry[0]):
+        return None
+    index = _face_index(*entry)
+    return None if index is None else FontRef(entry[0], index)
+
+
+# Without the caption face, lines are measured in the default text font and
+# widened by this much, so an estimate errs toward an earlier line break.
+_STAND_IN_WIDEN = 1.15
+# With no font at all, an average glyph is taken as this fraction of the size.
+_STAND_IN_EM = 0.62
+
+
+def caption_measurer(
+    family: str, bold: bool, italic: bool, size: int
+) -> Callable[[str], float]:
+    """``measure(text) -> px`` for caption text at ASS size ``size``.
+
+    Uses the caption's own face when it resolves, else the default text font
+    (widened), else a per-character estimate. libass shapes text and this
+    Pillow does not, so callers keep a safety margin.
+    """
+    ref = caption_font(family, bold, italic)
+    widen = 1.0
+    if ref is None:
+        path = _resolve_text_font()
+        if path is None:
+            return lambda text: len(text) * size * _STAND_IN_EM
+        ref, widen = FontRef(path), _STAND_IN_WIDEN
+    font = libass_font(ref, size)
+    return lambda text: font.getlength(text) * widen
+
+
+def _win_height(ref: FontRef) -> tuple[int, int] | None:
+    """(units per em, usWinAscent + usWinDescent) of a face, or None.
+
+    Read straight from the ``head`` and ``OS/2`` tables: Pillow does not
+    expose them.
+    """
+    try:
+        data = Path(ref.path).read_bytes()
+        base = 0
+        if data[:4] == b"ttcf":
+            (base,) = struct.unpack_from(">I", data, 12 + 4 * ref.index)
+        (count,) = struct.unpack_from(">H", data, base + 4)
+        tables = {}
+        for i in range(count):
+            tag, _sum, offset, _len = struct.unpack_from(
+                ">4sIII", data, base + 12 + 16 * i
+            )
+            tables[tag] = offset
+        (upem,) = struct.unpack_from(">H", data, tables[b"head"] + 18)
+        ascent, descent = struct.unpack_from(">HH", data, tables[b"OS/2"] + 74)
+    except (OSError, KeyError, struct.error):
+        return None
+    return (upem, ascent + descent) if upem and ascent + descent else None
+
+
+def libass_font(ref: FontRef, size: float) -> ImageFont.FreeTypeFont:
+    """Load ``ref`` at the scale libass draws an ASS ``Fontsize`` of ``size``.
+
+    libass sizes a face so its OS/2 ``usWinAscent + usWinDescent`` equals the
+    size. Pillow's metrics come from ``hhea``, which differs for some faces
+    (Montserrat by 28%, DIN Condensed by 19%), so captions are measured with
+    this. Falls back to :func:`ass_font` for a face without an OS/2 table.
+    """
+    win = _win_height(ref)
+    if win is None:
+        return ass_font(ref, size)
+    upem, height = win
+    return _load(ref, size * upem / height)
+
+
 def clear_font_caches() -> None:
     """Forget resolved fonts (tests swap the candidate files)."""
     _resolve_text_font.cache_clear()
     _resolve_choice.cache_clear()
+    caption_font.cache_clear()
     _resolve_emoji_font.cache_clear()
     emoji_has_glyph.cache_clear()
     _fallback_refs.cache_clear()

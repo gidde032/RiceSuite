@@ -15,6 +15,17 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   [#68](https://github.com/gidde032/RiceSuite/issues/68)).
 
 ### Added
+- **Caption Motion and the Montserrat preset** (RiceSuite
+  [#66](https://github.com/gidde032/RiceSuite/issues/66), SPEC §5, §5.1, D8,
+  D11). A per-clip **Motion** switch, on by default and saved per slot, gives
+  every caption preset a phrase pop-in (70% → 112% → 100% over 160 ms, once per
+  phrase), a 110% scale bump on the highlighted word, and a soft blurred drop
+  shadow under crisp text. libass still draws the captions. With Motion off the
+  subtitle script is byte-identical to before. With it on, Clipper breaks each
+  phrase into lines itself, measured in the caption's own font at libass's
+  scale, because libass re-wraps a line while its scale animates. The new
+  **Montserrat** preset uses the bundled Montserrat Black (SIL OFL 1.1, licence
+  in `render/fonts/OFL.txt`), passed to libass with `fontsdir`.
 - **Header controls and a live header preview** (RiceSuite
   [#65](https://github.com/gidde032/RiceSuite/issues/65), SPEC §6.3, D11).
   Every header is now drawn by Pillow and overlaid, with or without emoji;

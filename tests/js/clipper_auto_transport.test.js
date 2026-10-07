@@ -380,7 +380,7 @@ function held() {
 function renderable(jobId, ord) {
   return `{ jobId: "${jobId}", ord: ${ord}, status: "ready", headerEl: { value: "first header" },
     captionStyleEl: {}, headerStyleEl: {}, transcriptEl: {}, geometryEl: {}, contentEl: {},
-    captionsToggleEl: { checked: true }, musicModeEl: { value: "none" },
+    captionsToggleEl: { checked: true }, motionToggleEl: { checked: true }, musicModeEl: { value: "none" },
     musicInputEl: { files: [] }, musicVolumeEl: { value: "0.5" },
     resultEl: { classList: { add() {}, remove() {} } },
     outputVideoEl: { pause() {}, load() {}, removeAttribute() {} },

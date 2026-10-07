@@ -15,6 +15,8 @@ from __future__ import annotations
 import logging
 import math
 import os
+import shutil
+from dataclasses import replace
 from pathlib import Path
 
 from app.models import CropPlan, RenderRequest
@@ -23,13 +25,20 @@ from app.process import ProcessTimeoutError, run_owned
 from render import geometry
 from render.ass import StyleConfig, apply_header_look, build_ass, style_for_presets
 from render.header_image import render_header_png
-from render.text_image import DEFAULT_FONT, FONT_CHOICES
+from render.text_image import (
+    DEFAULT_FONT,
+    FONT_CHOICES,
+    bundled_font_file,
+    caption_measurer,
+)
 
 logger = logging.getLogger("riceclipper")
 
 ASS_NAME = "captions.ass"
 HEADER_PNG = "header.png"
 OUTPUT_NAME = "output.mp4"
+# Bundled fonts are copied here, inside the job dir, for libass's fontsdir.
+FONTS_DIR_NAME = "fonts"
 PHOTO_FPS = 30
 MUSIC_FADE_IN_S = 0.5
 MUSIC_FADE_OUT_S = 1.0
@@ -209,14 +218,32 @@ def style_for_request(req) -> StyleConfig:
     """The ``StyleConfig`` a render or preview request asks for.
 
     The caption preset and the header preset fill it in; ``header_look``, when
-    sent, then sets every header control.
+    sent, then sets every header control. ``motion`` comes from a render
+    request; a header preview has none.
     """
     style = style_for_presets(
         getattr(req, "caption_style", "classic"), req.header_style
     )
     if req.header_look is not None:
         style = apply_header_look(style, req.header_look)
-    return style
+    return replace(style, motion=getattr(req, "motion", False))
+
+
+def _subtitles_filter(job_dir: Path, families: list[str]) -> str:
+    """The ``subtitles`` filter, with ``fontsdir`` when a bundled font is used.
+
+    libass finds a bundled font only through ``fontsdir`` and otherwise falls
+    back to Helvetica without an error (RiceSuite #66). The font is copied into
+    the job dir, so the filter takes a relative path that needs no escaping.
+    """
+    files = {f for f in map(bundled_font_file, families) if f is not None}
+    if not files:
+        return f"subtitles={ASS_NAME}"
+    fonts_dir = job_dir / FONTS_DIR_NAME
+    fonts_dir.mkdir(exist_ok=True)
+    for src in sorted(files):
+        shutil.copyfile(src, fonts_dir / src.name)
+    return f"subtitles={ASS_NAME}:fontsdir={FONTS_DIR_NAME}"
 
 
 def render(
@@ -267,6 +294,11 @@ def render(
                 notes.append(f"The header used the basic text renderer: {exc}")
 
     family = FONT_CHOICES.get(style.header_font, FONT_CHOICES[DEFAULT_FONT])
+    measure = None
+    if style.motion and req.captions_on:
+        measure = caption_measurer(
+            style.font, style.bold, style.italic, style.font_size
+        )
     ass_text = build_ass(
         req.words,
         captions_on=req.captions_on,
@@ -274,6 +306,7 @@ def render(
         style=style,
         fallback_header=fallback_header,
         fallback_family=family.ass_family,
+        measure=measure,
     )
     (job_dir / ASS_NAME).write_text(ass_text, encoding="utf-8")
 
@@ -286,6 +319,10 @@ def render(
 
     # 3. Video graph: crop / blur-pad / pass-through → burn subtitles → header.
     sub_out = "[subbed]" if overlay_header else "[vout]"
+    families = [style.font] if req.captions_on else []
+    if fallback_header:
+        families.append(family.ass_family)
+    subtitles = _subtitles_filter(job_dir, families)
     # ffmpeg applies display rotation before the filter graph. Normalize that
     # result (including non-square sample aspect ratios) to the same square-pixel
     # dimensions used by probing, detection, and framing.
@@ -295,7 +332,7 @@ def render(
     if geometry.is_target(info.width, info.height):
         # A 1080x1920 job passes through, whatever the plan says. Detection only
         # runs on landscape input, so a vertical job never crops (ADR-001).
-        video_stmts.append(f"[src]subtitles={ASS_NAME}{sub_out}")
+        video_stmts.append(f"[src]{subtitles}{sub_out}")
     elif plan is not None and plan.decision == "crop":
         # Subject crop: write the sendcmd command file, then drive a moving 9:16
         # window over the source.
@@ -303,10 +340,10 @@ def render(
             geometry.crop_command_file(plan), encoding="utf-8"
         )
         video_stmts.extend(geometry.crop_statements(plan, "[src]", "[base]"))
-        video_stmts.append(f"[base]subtitles={ASS_NAME}{sub_out}")
+        video_stmts.append(f"[base]{subtitles}{sub_out}")
     else:
         video_stmts.extend(geometry.blur_pad_statements("[src]", "[base]"))
-        video_stmts.append(f"[base]subtitles={ASS_NAME}{sub_out}")
+        video_stmts.append(f"[base]{subtitles}{sub_out}")
 
     if overlay_header:
         header_input = 1 + (1 if has_music else 0)

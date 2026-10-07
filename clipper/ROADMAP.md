@@ -30,8 +30,10 @@ Decode → transcribe (word-level) → word-highlight captions → manual on-scr
 header → subject crop or blur-pad landscape input and blur-pad non-9:16 vertical
 input → optional added-music (replace / mix with volume) → export 1080×1920
 H.264, through a local FastAPI review UI with a human-in-the-loop gate. Bounded
-batches are reviewed and processed sequentially, with eleven caption presets
-and three header treatments. Subject crop uses the universal Level-5 strong
+batches are reviewed and processed sequentially, with twelve caption presets
+and three header treatments. A per-clip Motion toggle adds a phrase pop-in, an
+active-word bump, and a soft shadow to any preset (RiceSuite
+[#66](https://github.com/gidde032/RiceSuite/issues/66)). Subject crop uses the universal Level-5 strong
 lock for speech and music: minor motion holds, ordinary correction interpolates
 at 30 Hz, and confirmed cuts or target reacquisition remain immediate.
 
@@ -91,6 +93,8 @@ at 30 Hz, and confirmed cuts or target reacquisition remain immediate.
   The 2026-09-20 motion-tuning amendment applies the Level-5 strong lock to both
   speech and music profiles without changing target selection.
 - **Tier-3 animated captions** — spring/bounce motion, animated resizing boxes.
+  The Tier-2 pop-in, active-word bump, and soft shadow shipped on libass in
+  RiceSuite [#66](https://github.com/gidde032/RiceSuite/issues/66) (SPEC §5).
   Requires adopting a second render engine (compositing / HTML-to-video). This is
   a deliberate engine decision, not a style toggle.
 - **Auto-ducking + vocal isolation** — music automatically dips under speech;

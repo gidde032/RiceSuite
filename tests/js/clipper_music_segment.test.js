@@ -48,7 +48,7 @@ function card(extra = {}) {
     sourceVideoEl: media(20),
     photoLengthEl: { value: "10" },
     headerEl: { value: "" },
-    captionsToggleEl: { checked: true },
+    captionsToggleEl: { checked: true }, motionToggleEl: { checked: true },
     segmentTimer: null,
     musicUrl: null,
     ...extra,

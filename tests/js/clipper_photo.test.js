@@ -42,7 +42,7 @@ function card(extra = {}) {
     musicModeEl: { value: "none", innerHTML: "" },
     musicInputEl: { files: [] },
     headerEl: { value: "Hook" },
-    captionsToggleEl: { checked: true },
+    captionsToggleEl: { checked: true }, motionToggleEl: { checked: true },
     photoLengthEl: { value: "10" },
     sourcePhotoEl: { src: "", alt: "" },
     sourceVideoEl: { src: "", removeAttribute(name) { if (name === "src") this.src = ""; } },

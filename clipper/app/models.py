@@ -24,6 +24,7 @@ CaptionStyle = Literal[
     "velvet_serif",
     "din_condensed",
     "baskerville",
+    "montserrat",
 ]
 HeaderStyle = Literal["plain", "black_plate", "white_plate"]
 # The curated header fonts; keys of ``render.text_image.FONT_CHOICES``.
@@ -144,6 +145,9 @@ class RenderRequest(HeaderFields):
     words: list[Word] = Field(default_factory=list)
     captions_on: bool = True
     caption_style: CaptionStyle = "classic"
+    # Caption pop, active-word bump, and soft shadow (RiceSuite #66). Off
+    # renders the captions exactly as before.
+    motion: bool = True
     geometry: Geometry = "auto"
     content: Content = "speech"
     music: MusicSettings = Field(default_factory=MusicSettings)

@@ -131,10 +131,16 @@ both the visible toolbar symbol and the favicon.
 
 - Per-clip header styles become three accessible radio-card tiles: **Plain
   text**, **Black plate**, and **White plate**.
-- Per-clip caption styles become eleven accessible radio-card tiles: **Classic**,
+- Per-clip caption styles become twelve accessible radio-card tiles: **Classic**,
   **Clean**, **Punch**, **Friendly**, **Sunset**, **Mono**, **Editorial**,
-  **Lyric Block**, **Velvet Serif**, **Powder**, and **Baskerville**. Powder keeps
-  the stable `din_condensed` identifier and uses the DIN Condensed font.
+  **Lyric Block**, **Velvet Serif**, **Powder**, **Baskerville**, and
+  **Montserrat**. Powder keeps the stable `din_condensed` identifier and uses the
+  DIN Condensed font. Montserrat (RiceSuite #66) uses the bundled Montserrat
+  Black font; its tile falls back to Arial Black where the browser lacks it.
+- A **Motion** switch under **Burn captions** (RiceSuite #66), on by default
+  and saved per slot, turns the caption pop-in, active-word bump, and soft
+  shadow on or off. It is disabled while captions are off and hidden on a
+  photo card.
 - Each tile includes a truthful miniature treatment example and a text label.
 - Selection uses a rice-grey border and checkmark, never color alone.
 - The underlying values and API payload shapes remain the existing

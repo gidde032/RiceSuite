@@ -81,6 +81,12 @@ function slotDefault(ord, kind, fallback) {
   return (slot && slot[kind]) || fallback;
 }
 
+// A saved on/off choice; ``slotDefault`` would read a saved false as unset.
+function slotFlag(ord, kind, fallback) {
+  const slot = loadSlotStyles()[String(ord)];
+  return slot && typeof slot[kind] === "boolean" ? slot[kind] : fallback;
+}
+
 function rememberSlotStyle(ord, kind, value) {
   const all = loadSlotStyles();
   const key = String(ord);
@@ -692,6 +698,7 @@ function buildCard(clip) {
   clip.geometryEl = node.querySelector(".geometry");
   clip.captionsToggleEl = node.querySelector(".captions-toggle");
   clip.captionStyleEl = node.querySelector(".caption-style");
+  clip.motionToggleEl = node.querySelector(".motion-toggle");
   clip.transcriptEl = node.querySelector(".transcript");
   clip.lyricsEl = node.querySelector(".lyrics");
   clip.lyricsInputEl = node.querySelector(".lyrics-input");
@@ -752,6 +759,11 @@ function buildCard(clip) {
   setRadioValue(clip.headerStyleEl, slotDefault(clip.ord, "header", "plain"));
   clip.captionStyleEl.addEventListener("change", () => {
     rememberSlotStyle(clip.ord, "caption", radioValue(clip.captionStyleEl));
+  });
+  // Caption motion (RiceSuite #66): on unless this slot saved it off.
+  clip.motionToggleEl.checked = slotFlag(clip.ord, "motion", true);
+  clip.motionToggleEl.addEventListener("change", () => {
+    rememberSlotStyle(clip.ord, "motion", clip.motionToggleEl.checked);
   });
   clip.headerStyleEl.addEventListener("change", (event) => {
     if (!event.target || event.target.type !== "radio") return; // a header control
@@ -816,6 +828,7 @@ function buildCard(clip) {
   clip.musicModeEl.addEventListener("change", () => { clip.musicModeTouched = true; });
   clip.captionsToggleEl.addEventListener("change", () => {
     setRadioDisabled(clip.captionStyleEl, !clip.captionsToggleEl.checked);
+    clip.motionToggleEl.disabled = !clip.captionsToggleEl.checked;
   });
   clip.headerGenerateEl.addEventListener("click", () => regenerateHeader(clip));
   clip.lyricsAlignEl.addEventListener("click", () => alignLyrics(clip));
@@ -1156,6 +1169,7 @@ function compactClipOrdinals() {
     // This clip now occupies a different handoff slot. Carry its current
     // choices into that slot so edits and the next batch use the visible look.
     if (clip.captionStyleEl) rememberSlotStyle(ord, "caption", radioValue(clip.captionStyleEl));
+    if (clip.motionToggleEl) rememberSlotStyle(ord, "motion", clip.motionToggleEl.checked);
     if (clip.headerStyleEl) rememberSlotStyle(ord, "header", radioValue(clip.headerStyleEl));
     if (clip.headerLook) rememberSlotStyle(ord, "headerLook", clip.headerLook);
   });
@@ -1640,6 +1654,7 @@ async function renderClip(clip) {
       header: clip.headerEl.value,
       captions_on: clip.captionsToggleEl.checked,
       caption_style: radioValue(clip.captionStyleEl),
+      motion: clip.motionToggleEl.checked,
       header_style: radioValue(clip.headerStyleEl),
       header_look: clip.headerLook,
       geometry: radioValue(clip.geometryEl),

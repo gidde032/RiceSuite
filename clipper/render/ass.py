@@ -6,23 +6,29 @@ Emits the caption layer described in SPEC.md §4-5:
   highlight synced to the word timestamps. Implemented as one Dialogue event per
   active-word window; the whole phrase stays on screen while the highlight walks
   across it. Entirely native to libass (no scripting/second engine).
+* **Motion** (§5, RiceSuite #66) — with ``StyleConfig.motion`` on, each phrase
+  pops in, the active word is scaled up, and a soft shadow layer sits under
+  crisp text; the phrase is broken into lines here (``caption_lines``).
 
 The header (§6) is drawn by Pillow (``render.header_image``) and overlaid by
 ffmpeg (RiceSuite #65). This script carries a header only as the fallback when
 that PNG render fails: a minimal header in the chosen font, size, colour,
 outline, plate, alignment, and position, with square corners and no shadow.
 
-The module is pure standard library and side-effect free, so ASS generation is
-unit-testable without ffmpeg. ``StyleConfig`` is the parameterised template: the
+The module is side-effect free, so ASS generation is unit-testable without
+ffmpeg. Text is measured by a caller-supplied ``measure`` function; only the
+pure line-wrapping helper comes from ``render.text_image``. ``StyleConfig`` is the parameterised template: the
 Wave-2 "caption style/position config" (SPEC.md §7, D11) is filling these
 variables from the UI, not rebuilding this file.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
+from itertools import pairwise
 
+from render.text_image import wrap
 from transcribe.phrasing import Phrase, WordLike, group_words
 
 
@@ -43,6 +49,9 @@ class StyleConfig:
     outline: int = 6  # thick outline for legibility on any bg
     shadow: int = 3
     caption_margin_v: int = 340  # px up from the bottom (lower third)
+    # Phrase pop, active-word bump, and soft shadow (RiceSuite #66). Off keeps
+    # the caption events exactly as they were before #66.
+    motion: bool = False
 
     # Header (drawn by Pillow; RiceSuite #65). Sizes are ASS-equivalent px.
     header_font: str = "arial"  # key into render.text_image.FONT_CHOICES
@@ -77,6 +86,7 @@ CAPTION_STYLE_NAMES = (
     "velvet_serif",
     "din_condensed",
     "baskerville",
+    "montserrat",
 )
 HEADER_STYLE_NAMES = ("plain", "black_plate", "white_plate")
 
@@ -178,6 +188,18 @@ _CAPTION_PRESETS: dict[str, dict[str, object]] = {
         "outline": 3,
         "shadow": 2,
         "caption_margin_v": 355,
+    },
+    # The bundled open-licence heavy font (RiceSuite #66), committed under
+    # render/fonts/ and passed to libass with ``fontsdir``. The Fontname is the
+    # face's full name; libass does not match the bare family "Montserrat".
+    "montserrat": {
+        "font": "Montserrat Black",
+        "font_size": 100,
+        "primary_color": "FFFFFF",
+        "highlight_color": "FFD60A",
+        "outline": 6,
+        "shadow": 3,
+        "caption_margin_v": 340,
     },
 }
 
@@ -310,6 +332,172 @@ def _phrase_events(phrases: Sequence[Phrase], style: StyleConfig) -> list[str]:
     return events
 
 
+# --- motion (RiceSuite #66) --------------------------------------------------
+
+# The phrase pop: (ms after the phrase starts, scale %). It plays once per
+# phrase; an event that starts while it runs continues it on the same clock.
+POP_KEYFRAMES = ((0, 70), (80, 112), (160, 100))
+# The highlighted word's scale, in %.
+ACTIVE_SCALE = 110
+# Caption side margins (the Caption style's MarginL / MarginR).
+CAPTION_SIDE_MARGIN = 60
+# Pillow measures without libass's shaping; lines keep this much spare width.
+LINE_SAFETY = 1.04
+# The soft shadow: offset (px), blur, and opacity (ASS alpha, 00 = opaque).
+SHADOW_OFFSET = (4, 8)
+SHADOW_BLUR = 8
+SHADOW_ALPHA = "60"
+# Width of an average glyph, as a fraction of the size, when nothing measures.
+_ESTIMATE_EM = 0.62
+
+Measure = Callable[[str], float]
+
+
+def caption_lines(
+    tokens: Sequence[str], style: StyleConfig, measure: Measure
+) -> tuple[list[list[int]], float]:
+    """Break a phrase into lines the way libass would, but up front.
+
+    Returns the token indices of each line and the phrase scale (1.0, or less
+    when one word alone is wider than the frame). Lines keep room for the
+    outline, the active-word bump, and Pillow's measuring error, so libass
+    never has to wrap them (``\\q2``); an animated scale would re-wrap them.
+    """
+    widths = [measure(t) for t in tokens]
+    bump = (ACTIVE_SCALE / 100 - 1) * max(widths, default=0.0)
+    usable = style.play_res_x - 2 * CAPTION_SIDE_MARGIN - 2 * style.outline
+    limit = usable / LINE_SAFETY - bump
+    wrapped = wrap(
+        " ".join(str(i) for i in range(len(tokens))),
+        lambda key: (int(key), widths[int(key)]),
+        measure(" "),
+        limit,
+    )
+    lines = [[int(parts) for parts, _w in line] for line, _width in wrapped]
+    widest = max((width for _line, width in wrapped), default=0.0)
+    scale = min(1.0, limit / widest) if widest > 0 else 1.0
+    return lines, scale
+
+
+def _scale(pct: float) -> str:
+    v = round(pct)
+    return f"\\fscx{v}\\fscy{v}"
+
+
+def _pop_tags(factor: float, offset_ms: int) -> str:
+    """The pop for an event starting ``offset_ms`` into it, at ``factor``.
+
+    The scale at ``offset_ms`` is set first, then each remaining keyframe is
+    animated to with ``\\t`` on the pop's own clock.
+    """
+    keys = [(t - offset_ms, v * factor) for t, v in POP_KEYFRAMES]
+    current = keys[-1][1]
+    for (t0, v0), (t1, v1) in pairwise(keys):
+        if t0 <= 0 < t1:
+            current = v0 + (v1 - v0) * (0 - t0) / (t1 - t0)
+            break
+    tags = [_scale(current)]
+    prev = 0
+    for t, v in keys:
+        if t > 0:
+            tags.append(f"\\t({prev},{t},{_scale(v)})")
+            prev = t
+    return "".join(tags)
+
+
+def _motion_scale(factor: float, offset_ms: int | None) -> str:
+    """Scale tags for ``factor``: the pop when ``offset_ms`` is set, else fixed."""
+    if offset_ms is not None:
+        return _pop_tags(factor, offset_ms)
+    return _scale(100 * factor)
+
+
+def _motion_text(
+    tokens: Sequence[str],
+    lines: Sequence[Sequence[int]],
+    active: int,
+    phrase_scale: float,
+    pop_offset: int | None,
+    colours: tuple[str, str] | None,
+) -> str:
+    """One event's words, broken into ``lines``, with ``active`` scaled up.
+
+    ``colours`` is (highlight, base) for the text layer and None for the
+    shadow layer, which carries the scale motion but no colour.
+    """
+    line_of = {i: n for n, line in enumerate(lines) for i in line}
+    on = off = ""
+    if colours is not None:
+        on, off = "\\c" + colours[0], "\\c" + colours[1]
+    out = ""
+    for j, token in enumerate(tokens):
+        if j:
+            out += "\\N" if line_of[j] != line_of[j - 1] else " "
+        if j != active:
+            out += token
+            continue
+        bump = _motion_scale(phrase_scale * ACTIVE_SCALE / 100, pop_offset)
+        rest = _motion_scale(phrase_scale, pop_offset)
+        out += "{" + on + bump + "}" + token + "{" + off + rest + "}"
+    return out
+
+
+def _motion_events(
+    phrases: Sequence[Phrase], style: StyleConfig, measure: Measure | None
+) -> list[str]:
+    """Caption events with the pop, the bump, and the soft shadow.
+
+    Each active-word window is two events: a shadow layer (transparent text
+    whose blurred, offset shadow shows) under a crisp text layer with no
+    shadow. Colour and scale are restored after the active word explicitly;
+    ``\\r`` would drop the pop and the line's other tags.
+    """
+    if measure is None:
+        size = style.font_size
+        measure = lambda text: len(text) * size * _ESTIMATE_EM  # noqa: E731
+    colours = (
+        _inline_color(style.highlight_color),
+        _inline_color(style.primary_color),
+    )
+    pop_end = POP_KEYFRAMES[-1][0]
+    dx, dy = SHADOW_OFFSET
+    x = style.play_res_x // 2
+    events: list[str] = []
+    for phrase in phrases:
+        ws = phrase.words
+        tokens = [_escape(w.text.strip()) for w in ws]
+        lines, phrase_scale = caption_lines(
+            [w.text.strip() for w in ws], style, measure
+        )
+        bottom = style.play_res_y - style.caption_margin_v
+        y = round(bottom - len(lines) * style.font_size * phrase_scale / 2)
+        lead = f"\\an5\\pos({x},{y})\\q2"
+        phrase_cs = round(phrase.start * 100)
+        n = len(ws)
+        for i, word in enumerate(ws):
+            start = word.start
+            end = ws[i + 1].start if i + 1 < n else max(word.end, phrase.end)
+            if end <= start:
+                end = start + 0.01
+            offset_ms = (round(start * 100) - phrase_cs) * 10
+            pop = offset_ms if offset_ms < pop_end else None
+            lead_scale = ""
+            if pop is not None or phrase_scale != 1.0:
+                lead_scale = _motion_scale(phrase_scale, pop)
+            shadow = (
+                f"{{{lead}\\1a&HFF&\\3a&HFF&\\4a&H{SHADOW_ALPHA}&"
+                f"\\xshad{dx}\\yshad{dy}\\blur{SHADOW_BLUR}{lead_scale}}}"
+                + _motion_text(tokens, lines, i, phrase_scale, pop, None)
+            )
+            crisp = f"{{{lead}\\shad0{lead_scale}}}" + _motion_text(
+                tokens, lines, i, phrase_scale, pop, colours
+            )
+            span = f"{_ass_time(start)},{_ass_time(end)}"
+            events.append(f"Dialogue: 0,{span},Caption,,0,0,0,,{shadow}")
+            events.append(f"Dialogue: 1,{span},Caption,,0,0,0,,{crisp}")
+    return events
+
+
 _ALIGN_TOP = {"left": 7, "center": 8, "right": 9}
 
 
@@ -409,11 +597,14 @@ def build_ass(
     style: StyleConfig | None = None,
     fallback_header: str = "",
     fallback_family: str = "Arial",
+    measure: Measure | None = None,
 ) -> str:
     """Render the complete ASS script for one clip.
 
     ``fallback_header`` is set only when the Pillow header failed; it adds the
-    minimal libass header in ``fallback_family``.
+    minimal libass header in ``fallback_family``. ``measure(text) -> px`` sizes
+    caption text for the line breaks Motion makes (``caption_lines``); without
+    it, widths are estimated from the character count.
     """
     style = style or StyleConfig()
 
@@ -432,7 +623,11 @@ def build_ass(
         )
 
     phrases = group_words(words) if captions_on else []
-    events = _phrase_events(phrases, style) + header_events
+    if style.motion:
+        caption_events = _motion_events(phrases, style, measure)
+    else:
+        caption_events = _phrase_events(phrases, style)
+    events = caption_events + header_events
 
     lines = [
         "[Script Info]",
