@@ -158,15 +158,12 @@ files only.
   only outbound calls are source acquisition (yt-dlp fetch) and the scoring LLM
   API; neither touches any account, platform, or posting surface.
 
-## 5. Non-functional budgets (initial targets — calibrate against the walking skeleton)
+## 5. Non-functional budgets
 
-> No code exists yet, so these are **targets to measure and ratchet at Phase 1**,
-> not floors the tree currently meets. Bootstrap rule: set the real numbers by
-> measuring the skeleton before wiring them as gates.
-
-- **Coverage floor:** target ≈ 80% on core extraction/scoring/dedup/handoff logic;
-  the *enforced* floor is set just under the measured skeleton coverage at Phase 1
-  and ratcheted up. (Siblings: RicePoster 43%, RiceClipper 85%.)
+- **Coverage floor:** 90% is enforced locally and in RiceSuite CI through pytest.
+  The Phase-1 walking skeleton measured 98.2%, and the floor was calibrated below
+  that result to leave headroom for later phases. (Siblings: RicePoster 43%,
+  RiceClipper 85%.)
 - **Scoring cost:** LLM sees only shortlisted windows; target **≤ N tokens per
   30-min episode** — N fixed after the Phase-2 skeleton measures real shortlist size.
 - **Pull latency:** on-demand pull of one ~30-min source completes transcription +

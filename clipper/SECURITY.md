@@ -52,8 +52,18 @@ feature works fully offline.
   own machine (`uvicorn app.main:app`). Do **not** expose it to untrusted
   networks or the public internet; it has no authentication and is not hardened
   as a public web service.
-- Uploaded sources, intermediates, and rendered outputs live under the local,
-  gitignored `.riceclipper_work/` cache until you clear them from the UI.
+- Uploaded sources, intermediates, job state, and rendered outputs stay in
+  Clipper's local work directory until you clear them from the UI. The path
+  depends on how Clipper is run:
+  - A fresh RiceSuite install uses `<configured data root>/clipper/`, defaulting
+    to `~/.ricesuite/clipper/`. `RICESUITE_DATA_DIR` can select another root;
+    `rice data location` reports the effective path.
+  - An existing RiceSuite install can keep its legacy work directory until an
+    explicit data cutover.
+  - Standalone Clipper defaults to `.riceclipper_work/` under the checkout.
+    `RICECLIPPER_WORK_DIR` can select a custom path in either mode.
+- See [RiceSuite data location and migration](../docs/data-migration.md) before
+  moving existing data.
 
 ## Handling private media
 

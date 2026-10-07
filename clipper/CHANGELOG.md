@@ -7,6 +7,13 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Documentation
+
+- Clipper setup and integration docs now match RiceSuite's Python 3.12 minimum,
+  distinguish suite, legacy, standalone, and custom work paths, and describe the
+  implemented manual Send and Pull flow (RiceSuite
+  [#68](https://github.com/gidde032/RiceSuite/issues/68)).
+
 ### Added
 - **Header controls and a live header preview** (RiceSuite
   [#65](https://github.com/gidde032/RiceSuite/issues/65), SPEC §6.3, D11).
@@ -133,7 +140,7 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   pulled Searcher batch still open in Clipper by batch ID and clip count. It is
   read-only and includes batches held by a failed render, so the Suite home
   does not lose them when the Searcher inbox becomes empty.
-- **First-time-user README.** Requirements table (Python 3.11–3.14, ffmpeg with
+- **First-time-user README.** Requirements table (Python 3.12–3.14, ffmpeg with
   libass, macOS emoji fonts, the Whisper model download), venv install steps, a
   configuration table verified against the code, a first run with a generated
   sample clip, a feature walkthrough, and troubleshooting.
