@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 import pytest
+from ricesuite import env as suite_env
 
 from ricesearcher.acquire.base import AcquiredSource
 from ricesearcher.models import SourceKind, TranscriptWord
@@ -41,13 +42,21 @@ def _hermetic_suite_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     """Unset paths resolve through the suite config (#73); keep it in tmp_path.
 
     A temporary HOME and an absent ricesuite.env stop any test from resolving
-    into the developer's real ~/.ricesuite or ~/.ricesearcher.
+    into the developer's real ~/.ricesuite or ~/.ricesearcher. The other
+    pillars' paths go too: load_config() falls back to Clipper's inbox and
+    checks every data path for overlap.
     """
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("RICESUITE_ENV", str(tmp_path / "ricesuite.env"))
-    monkeypatch.delenv("RICESUITE_DATA_DIR", raising=False)
+    for key in (
+        "RICESUITE_DATA_DIR",
+        *suite_env.DATA_PATHS,
+        "RICECLIPPER_SEARCHER_INBOX",
+        "HANDOFF_DIR",
+    ):
+        monkeypatch.delenv(key, raising=False)
 
 
 @pytest.fixture

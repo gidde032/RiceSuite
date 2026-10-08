@@ -68,18 +68,23 @@ def load_config() -> Config:
 
     The shell wins, then ricesuite.env, then the suite data location. The suite
     is consulted only when a path is unset or blank, so explicit paths (as
-    `rice start` passes them) never depend on the rest of the suite config.
+    `rice start` passes them) never depend on the rest of the suite config;
+    only ricesuite.env's RICESEARCHER_PROFILES_DIR is still read for them.
     Otherwise raises ``ricesuite.env.SuiteConfigError`` when the suite
     configuration is invalid (for example an interrupted cutover), exactly as
     `rice start` refuses it.
     """
     data = (os.getenv(_DATA_ENV) or "").strip()
     handoff = (os.getenv(_HANDOFF_ENV) or "").strip()
-    profiles = ""
-    if not (data and handoff):
-        suite = suite_env.load()
-        data, handoff = suite[_DATA_ENV], suite[_HANDOFF_ENV]
-        profiles = suite.get(_PROFILES_ENV, "").strip()
+    if data and handoff:
+        # `rice start` still passes ricesuite.env's profiles directory (a
+        # custom-profiles cutover files it there); read only that, unvalidated.
+        path = Path(os.getenv("RICESUITE_ENV") or suite_env.DEFAULT_ENV_FILE)
+        filed = suite_env.read_env_file(path.expanduser())
+    else:
+        filed = suite_env.load()
+        data, handoff = filed[_DATA_ENV], filed[_HANDOFF_ENV]
+    profiles = filed.get(_PROFILES_ENV, "").strip()
     return Config(
         data_dir=Path(data).expanduser(),
         handoff_dir=Path(handoff).expanduser(),

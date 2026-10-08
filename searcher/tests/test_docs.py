@@ -62,3 +62,34 @@ def test_ui_offline_marker_matches_scorer_constant() -> None:
 
     app_js = (_ROOT / "ricesearcher/web/static/app.js").read_text()
     assert f's.scorer_model === "{OFFLINE_MODEL_NAME}"' in app_js
+
+
+def test_readme_config_table_is_contiguous() -> None:
+    # #74 review: prose inside the table rendered later rows as literal pipes.
+    lines = (_ROOT / "README.md").read_text().splitlines()
+    start = lines.index("| Variable | Default | Purpose |")
+    rows = []
+    for line in lines[start:]:
+        if not line.startswith("|"):
+            break
+        rows.append(line)
+    for variable in (
+        "RICESEARCHER_DATA_DIR",
+        "RICESEARCHER_PROFILES_DIR",
+        "RICESEARCHER_HANDOFF_DIR",
+        "RICESEARCHER_EMBED_MODEL",
+    ):
+        assert any(f"`{variable}`" in row for row in rows), variable
+
+
+def test_docs_do_not_pin_the_legacy_data_paths() -> None:
+    # #74 review: after a cutover (or on a fresh install) these legacy paths are
+    # stale, and creating ~/.ricesearcher makes the suite see a legacy install.
+    readme = (_ROOT / "README.md").read_text()
+    assert "~/.ricesearcher/profiles" not in readme
+    assert "which also defaults to `~/ricesearcher-handoff`" not in readme
+    example = (_ROOT / "credentials.env.example").read_text()
+    assert "RICESEARCHER_DATA_DIR=~/.ricesearcher" not in example
+    assert "RICESEARCHER_HANDOFF_DIR=~/ricesearcher-handoff" not in example
+    trial = readme[readme.index("To try RiceSearcher without touching") :]
+    assert "export RICESEARCHER_PROFILES_DIR=" in trial.split("```")[1]

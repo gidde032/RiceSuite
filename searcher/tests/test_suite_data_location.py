@@ -120,3 +120,54 @@ def test_explicit_paths_do_not_consult_the_suite(
     assert cfg.data_dir == tmp_path / "data"
     assert cfg.handoff_dir == tmp_path / "handoff"
     assert cfg.profiles_dir == tmp_path / "data" / "profiles"
+
+
+def test_explicit_paths_still_take_the_filed_profiles_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `rice start` passes ricesuite.env's RICESEARCHER_PROFILES_DIR to a child
+    # that also has both paths, so the standalone CLI must read it too.
+    _cut_over(tmp_path, f"RICESEARCHER_PROFILES_DIR={tmp_path / 'filed'}")
+    monkeypatch.setenv("RICESEARCHER_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("RICESEARCHER_HANDOFF_DIR", str(tmp_path / "handoff"))
+    assert load_config().profiles_dir == tmp_path / "filed"
+
+
+def test_inherited_suite_paths_are_cleared() -> None:
+    # The fixture must drop every path variable load_config() reads or checks
+    # for overlap, or an exported Clipper inbox redirects the handoff.
+    from ricesuite.env import DATA_PATHS
+
+    leaked = {*DATA_PATHS, "RICECLIPPER_SEARCHER_INBOX", "HANDOFF_DIR"} & {*os.environ}
+    assert not leaked
+
+
+def test_web_entry_reports_a_suite_configuration_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from ricesearcher.web.__main__ import main as web_main
+
+    root = _cut_over(tmp_path)
+    (root / ".cutover.json").write_text(
+        json.dumps({"version": 1, "digest": "d", "phase": "pending"}),
+        encoding="utf-8",
+    )
+    assert web_main() == 2
+    assert "RiceSuite configuration: data cutover was interrupted" in (
+        capsys.readouterr().err
+    )
+
+
+def test_web_entry_serves_on_loopback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import uvicorn
+
+    from ricesearcher.web.__main__ import main as web_main
+
+    monkeypatch.setenv("RICESEARCHER_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("RICESEARCHER_HANDOFF_DIR", str(tmp_path / "handoff"))
+    served: dict[str, object] = {}
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kw: served.update(kw))
+    assert web_main() == 0
+    assert served == {"host": "127.0.0.1", "port": 8765}
