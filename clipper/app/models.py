@@ -83,10 +83,15 @@ class EmojiPick(BaseModel):
     emoji: list[EmojiCluster] = Field(min_length=1, max_length=2)
 
 
+# The emoji picker's prompt numbers every word; this bounds it. A long clip at
+# speaking pace is well under a few thousand words.
+WORDS_MAX = 5000
+
+
 class EmojiRequest(BaseModel):
     """Body of ``POST /api/jobs/{id}/emoji``: the reviewed words to pick for."""
 
-    words: list[Word] = Field(default_factory=list)
+    words: list[Word] = Field(default_factory=list, max_length=WORDS_MAX)
 
 
 class LyricsRequest(BaseModel):

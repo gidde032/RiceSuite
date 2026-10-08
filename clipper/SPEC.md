@@ -262,10 +262,15 @@ and `RenderRequest.emoji_on` turns them on.
   each word with its global index, and a system prompt that asks for sparse
   use: about one phrase in four, never more than one in three, none when
   nothing fits, a concrete anchor word, and one or two emoji. The reply is
-  JSON. Items with an unknown word, text that is not emoji, or the wrong shape
-  are dropped, a third emoji is dropped, and the earliest anchor in a phrase
-  wins. A failure (no key: 503; a failed call or unusable reply: 502) leaves
-  the current picks alone, and the request does not hold the job lock while
+  JSON; the first object holding a `picks` list is used, so prose around it
+  may contain braces. Items with an unknown word, text that is not emoji, or
+  the wrong shape are dropped, a third emoji is dropped, and the earliest
+  anchor in a phrase wins. A request carries at most 5,000 words. The reply's
+  text blocks are read by type, since the model may think first. A failure
+  leaves the current picks alone: 503 when there is no key or the API rejects
+  the key (401, 403) or the model (404), naming the setting to fix; 502 for any
+  other failed call or an unusable reply, logged with its cause. The header
+  endpoint answers the same way. The request does not hold the job lock while
   the model runs, so the rest of the review UI keeps working. Suggestions
   replace the clip's picks, so a clip that already has picks asks for a
   second click first; a reply that arrives after the words were replaced

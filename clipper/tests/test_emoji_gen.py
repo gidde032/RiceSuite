@@ -1,4 +1,4 @@
-"""The Sonnet emoji picker and Clipper's one Anthropic call site (#66).
+"""The caption emoji picker and Clipper's one Anthropic call site (#66).
 
 ADR-001 fact 1: Clipper has exactly one ``messages.create`` call. The header
 generator and the emoji picker both go through ``app.anthropic_text``. No test
@@ -16,26 +16,9 @@ from fastapi import HTTPException
 from app import anthropic_text, emoji_gen, header_gen, jobs, main
 from app.models import EmojiPick, EmojiRequest, RenderRequest, Word
 from app.probe import MediaInfo
+from tests._anthropic_fakes import FakeClient as _Client
 
 ROOT = Path(__file__).resolve().parents[1]
-
-
-class _Messages:
-    def __init__(self, text, calls):
-        self.text = text
-        self.calls = calls
-
-    def create(self, **kwargs):
-        self.calls.append(kwargs)
-
-        block = type("Block", (), {"text": self.text})()
-        return type("Response", (), {"content": (block,)})()
-
-
-class _Client:
-    def __init__(self, text):
-        self.calls: list[dict] = []
-        self.messages = _Messages(text, self.calls)
 
 
 def _words(*texts):

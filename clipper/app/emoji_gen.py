@@ -14,7 +14,6 @@ The request goes through Clipper's one Anthropic call site,
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Sequence
 from typing import Any
 
@@ -26,8 +25,9 @@ from transcribe.phrasing import WordLike, group_words
 EmojiConfigError = anthropic_text.TextConfigError
 EmojiGenerationError = anthropic_text.TextGenerationError
 
-# A reply for a long clip lists at most a few dozen picks.
-MAX_TOKENS = 1024
+# A reply for a long clip lists at most a few dozen picks. The model thinks
+# first, and thinking counts against this budget too (RiceSuite #66).
+MAX_TOKENS = 4096
 
 SYSTEM_PROMPT = (
     "You add emoji to the burned-in captions of a short vertical video. You "
@@ -45,7 +45,7 @@ SYSTEM_PROMPT = (
     'An empty list, {"picks": []}, is a good answer.'
 )
 
-_JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
+_DECODER = json.JSONDecoder()
 
 
 def _indexed_phrases(words: Sequence[WordLike]) -> list[list[tuple[int, str]]]:
@@ -64,6 +64,24 @@ def build_prompt(phrases: list[list[tuple[int, str]]]) -> str:
     return "\n".join(lines)
 
 
+def _picks_object(reply: str) -> dict[str, Any] | None:
+    """The first JSON object in the reply that holds a ``picks`` list.
+
+    Decoding starts at each ``{`` in turn and stops at the end of that object,
+    so prose around the JSON may contain braces of its own.
+    """
+    start = reply.find("{")
+    while start != -1:
+        try:
+            data, _end = _DECODER.raw_decode(reply, start)
+        except json.JSONDecodeError:
+            data = None
+        if isinstance(data, dict) and isinstance(data.get("picks"), list):
+            return data
+        start = reply.find("{", start + 1)
+    return None
+
+
 def parse_picks(reply: str, phrases: list[list[tuple[int, str]]]) -> list[EmojiPick]:
     """Validate the model's reply into picks, one per phrase at most.
 
@@ -72,12 +90,8 @@ def parse_picks(reply: str, phrases: list[list[tuple[int, str]]]) -> list[EmojiP
     with no JSON object holding a ``picks`` list raises
     :class:`EmojiGenerationError`.
     """
-    match = _JSON_RE.search(reply or "")
-    try:
-        data: Any = json.loads(match.group(0)) if match else None
-    except json.JSONDecodeError:
-        data = None
-    if not isinstance(data, dict) or not isinstance(data.get("picks"), list):
+    data = _picks_object(reply or "")
+    if data is None:
         raise EmojiGenerationError("the emoji reply was not the expected JSON")
 
     phrase_of = {i: n for n, phrase in enumerate(phrases) for i, _t in phrase}

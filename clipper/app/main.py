@@ -378,7 +378,9 @@ def generate_header(job_id: str, req: HeaderRequest) -> dict:
         except header_gen.HeaderConfigError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except header_gen.HeaderGenerationError as exc:
-            logger.warning("header generation failed: %s", exc)
+            logger.warning(
+                "header generation failed: %s (cause: %r)", exc, exc.__cause__
+            )
             raise HTTPException(
                 status_code=502, detail="header generation failed"
             ) from exc
@@ -407,7 +409,7 @@ def suggest_emoji(job_id: str, req: EmojiRequest) -> dict:
     except emoji_gen.EmojiConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except emoji_gen.EmojiGenerationError as exc:
-        logger.warning("emoji suggestion failed: %s", exc)
+        logger.warning("emoji suggestion failed: %s (cause: %r)", exc, exc.__cause__)
         raise HTTPException(status_code=502, detail="emoji suggestion failed") from exc
     return {"picks": [pick.model_dump() for pick in picks]}
 

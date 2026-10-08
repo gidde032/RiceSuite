@@ -31,9 +31,9 @@ PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 _DEFAULT_STYLE = "generic-header"
 _STYLE_ENV = "RICECLIPPER_HEADER_STYLE"
 
-# The header sits on the request path of an interactive review UI; a ten-minute
-# SDK default read timeout would be indistinguishable from a hang.
-_MAX_TOKENS = 200
+# The header is one line, but the model thinks first and thinking counts
+# against this budget too (RiceSuite #66); _fit_header trims the reply.
+_MAX_TOKENS = 1024
 
 
 # Missing/invalid configuration (no API key, unknown style), and a failed or

@@ -59,7 +59,8 @@ def generate(
     ``client`` is injectable for tests; without it a client is built from
     the API key with ``create`` (default ``_create_client``) and closed after.
     Raises :class:`TextConfigError` before anything is sent when no key is
-    set, and :class:`TextGenerationError` when the call fails.
+    set, or when the API rejects the key or the model; and
+    :class:`TextGenerationError` when the call fails or a reply has no text.
     """
     api_key = os.getenv(API_KEY_ENV, "").strip()
     if client is None and not api_key:
@@ -69,19 +70,63 @@ def generate(
     owns_client = client is None
     if owns_client:
         client = (create or _create_client)(api_key)
-    replies: list[str] = []
+    responses: list[Any] = []
     try:
         for _ in range(max(1, n)):
-            response = client.messages.create(
-                model=model(),
-                max_tokens=max_tokens,
-                system=system,
-                messages=[{"role": "user", "content": content}],
+            responses.append(
+                client.messages.create(
+                    model=model(),
+                    max_tokens=max_tokens,
+                    system=system,
+                    messages=[{"role": "user", "content": content}],
+                )
             )
-            replies.append(response.content[0].text.strip())
     except Exception as exc:
-        raise TextGenerationError(f"{purpose} generation failed") from exc
+        config = _config_error(exc, purpose)
+        if config is not None:
+            raise config from exc
+        raise TextGenerationError(
+            f"{purpose} generation failed ({type(exc).__name__})"
+        ) from exc
     finally:
         if owns_client:
             close_client(client)
-    return replies
+    return [_reply_text(response, purpose) for response in responses]
+
+
+def _reply_text(response: Any, purpose: str) -> str:
+    """The reply's text blocks, joined and stripped.
+
+    Read by block type, not position: current models think by default, so a
+    reply can start with a ``thinking`` block, or hold only thinking when it
+    ran out of ``max_tokens`` (RiceSuite #66).
+    """
+    text = "".join(
+        block.text for block in response.content if block.type == "text"
+    ).strip()
+    if not text:
+        raise TextGenerationError(
+            f"the {purpose} reply had no text (stop_reason={response.stop_reason!r})"
+        )
+    return text
+
+
+def _config_error(exc: Exception, purpose: str) -> TextConfigError | None:
+    """A rejected key or unknown model: a setting to fix, not a retry."""
+    import anthropic
+
+    name = type(exc).__name__
+    if isinstance(
+        exc, (anthropic.AuthenticationError, anthropic.PermissionDeniedError)
+    ):
+        return TextConfigError(
+            f"The Anthropic API rejected {API_KEY_ENV} ({name}). Set a valid key "
+            f"in ricesuite.env and restart RiceSuite to generate the {purpose}."
+        )
+    if isinstance(exc, anthropic.NotFoundError):
+        return TextConfigError(
+            f"The Anthropic API does not know the model {model()!r} ({name}). "
+            f"Set {MODEL_ENV} to a valid model in ricesuite.env and restart "
+            "RiceSuite."
+        )
+    return None

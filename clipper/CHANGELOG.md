@@ -98,6 +98,15 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   automatic-pull timer, never pulls, and leaves the progress bar alone.
 
 ### Fixed
+- **✨ Suggest emoji no longer fails with 502 on every click** (RiceSuite
+  [#66](https://github.com/gidde032/RiceSuite/issues/66), PR #72 review). The
+  model thinks by default, so a reply can start with a thinking block; the
+  shared call site read the first block's text and failed. It now joins the
+  text blocks by type, a reply with no text names its `stop_reason`, and the
+  emoji and header token budgets (4096 and 1024) leave room for thinking. A
+  rejected key or unknown model returns 503 naming the setting to fix, and
+  other 502s log their cause. Reply JSON may now sit in prose that contains
+  braces, and a picker request is capped at 5,000 words.
 - **Basic header backgrounds stay with their text.** The libass fallback uses
   a fixed shared position and includes plate padding and outlines when keeping
   the header above captions.
