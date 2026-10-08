@@ -7,6 +7,20 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Standalone Clipper (`uvicorn app.main:app`) now uses the paths
+  `rice data location` reports when `RICECLIPPER_SEARCHER_INBOX`,
+  `RICECLIPPER_HANDOFF_DIR` or `RICECLIPPER_WORK_DIR` is unset, as standalone
+  Searcher and Poster do. It had kept reading `~/ricesearcher-handoff`, writing
+  `~/riceclipper-handoff`, and storing jobs in the checkout after
+  `rice data cutover` (RiceSuite #73 follow-up). An invalid suite configuration
+  now stops the server at startup.
+  - `.env.example` no longer sets the handoff paths. **If your `.env` was copied
+    from it**, delete its `RICECLIPPER_HANDOFF_DIR` and
+    `RICECLIPPER_SEARCHER_INBOX` lines, or standalone Clipper keeps the legacy
+    paths. `rice start` is unaffected: its values win over `.env`.
+
 ### Documentation
 
 - Clipper setup and integration docs now match RiceSuite's Python 3.12 minimum,

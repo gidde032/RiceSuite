@@ -20,9 +20,10 @@ from pathlib import Path
 
 from ricesuite.progress import Progress, notify
 
+from app import suite_paths
+
 SCHEMA_VERSION = 1
 _HANDOFF_ENV = "RICECLIPPER_HANDOFF_DIR"
-_DEFAULT_HANDOFF_DIR = "~/riceclipper-handoff"
 
 
 class HandoffError(RuntimeError):
@@ -41,9 +42,8 @@ class HandoffEntry:
 
 
 def handoff_root() -> Path:
-    """Resolve the configured handoff root (env-overridable, ``~`` expanded)."""
-    raw = os.getenv(_HANDOFF_ENV) or _DEFAULT_HANDOFF_DIR
-    return Path(raw).expanduser()
+    """The configured handoff root; unset, what `rice data location` reports."""
+    return suite_paths.resolve(_HANDOFF_ENV)
 
 
 def _now() -> datetime:

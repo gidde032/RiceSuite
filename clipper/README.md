@@ -135,8 +135,18 @@ locally and the header field is manual-only. The variables are documented in
 | `RICECLIPPER_WHISPER_COMPUTE` | `int8` | ctranslate2 compute type. |
 | `RICECLIPPER_WHISPER_CPU_THREADS` | half the logical cores | Transcription threads. |
 | `RICECLIPPER_FFMPEG_THREADS` | half the logical cores | ffmpeg encode threads. |
-| `RICECLIPPER_HANDOFF_DIR` | `~/riceclipper-handoff` | Where **Send to RicePoster** writes batches. |
-| `RICECLIPPER_SEARCHER_INBOX` | `~/ricesearcher-handoff` | Where **Pull from RiceSearcher** reads batches. |
+| `RICECLIPPER_HANDOFF_DIR` | as `rice data location` | Where **Send to RicePoster** writes batches. |
+| `RICECLIPPER_SEARCHER_INBOX` | as `rice data location` | Where **Pull from RiceSearcher** reads batches. |
+| `RICECLIPPER_WORK_DIR` | as `rice data location` | Uploaded sources, intermediates, and renders. |
+
+If one of the last three is not set by the shell or `.env`, it is the path
+`rice start` would pass, from `ricesuite.env` and the suite data location:
+under `~/.ricesuite` (`clipper/`, `handoff/clipper-to-poster/`,
+`handoff/searcher-to-clipper/`) after `rice data cutover` or on a fresh install,
+and `.riceclipper_work/`, `~/riceclipper-handoff`, `~/ricesearcher-handoff` on a
+legacy one. A blank value counts as unset. `rice data location` prints the paths
+in use. An invalid suite configuration (for example an interrupted cutover)
+stops the server at startup, as `rice start` refuses it.
 
 The easiest way to set them is a `.env` file in the repo root. The server
 loads it automatically at startup:
@@ -157,7 +167,7 @@ The Whisper settings are read once, when the server starts. Restart the server
 after you change them.
 
 > **Handoff directory is shared.** If you also run RicePoster, it pulls from
-> `RICECLIPPER_HANDOFF_DIR` (default `~/riceclipper-handoff`). When you are
+> `RICECLIPPER_HANDOFF_DIR` (default: as `rice data location`). When you are
 > experimenting, point it somewhere else, for example
 > `RICECLIPPER_HANDOFF_DIR=/tmp/rc-handoff`, so test batches don't reach your
 > live RicePoster queue.
@@ -222,8 +232,8 @@ Set `RICECLIPPER_WHISPER_MODEL=tiny` for a quick first try.
    directory under `RICECLIPPER_HANDOFF_DIR`. Only local files are written. The contract is in
    [`docs/integration/riceposter-handoff.md`](./docs/integration/riceposter-handoff.md).
 
-Uploaded sources, intermediate files, and renders stay in the local
-`.riceclipper_work/` cache until you click **Clear media cache**. Clearing is
+Uploaded sources, intermediate files, and renders stay in the local work
+directory (`RICECLIPPER_WORK_DIR`) until you click **Clear media cache**. Clearing is
 disabled while a transcription or render is running. It does not remove your
 original files or the Whisper model cache.
 

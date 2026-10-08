@@ -89,11 +89,12 @@ side. See `ROADMAP.md` and `docs/integration/riceposter-handoff.md`.
 ## Relationship to RiceSearcher (upstream)
 
 Separate project, separate repo. **RiceSearcher** finds source material and
-surfaces selected clips; it writes them to its **own** handoff root
-`~/ricesearcher-handoff` (`RICESEARCHER_HANDOFF_DIR`). RiceClipper **pulls** from
+surfaces selected clips; it writes them to its **own** handoff root, the
+Searcher→Clipper stage (`RICESEARCHER_HANDOFF_DIR`). RiceClipper **pulls** from
 that dir (`RICECLIPPER_SEARCHER_INBOX`, same path) via `POST /api/pull-from-searcher`
 / the "Pull from RiceSearcher" button, ingesting each clip as a review job. Its
-own output to RicePoster (`~/riceclipper-handoff`) is unchanged. So RiceClipper is
-the **intermediary**: it reads `~/ricesearcher-handoff` and writes
-`~/riceclipper-handoff`; RiceSearcher and RicePoster never share a directory. See
+own output to RicePoster (`RICECLIPPER_HANDOFF_DIR`, the Clipper→Poster stage) is
+unchanged. So RiceClipper is the **intermediary**; RiceSearcher and RicePoster
+never share a directory. Unset, every Clipper path is what `rice data location`
+reports (`app/suite_paths.py`), with or without `rice start`. See
 `docs/integration/searcher-pickup.md`. Still no posting or network here.

@@ -17,13 +17,13 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from app import suite_paths
 from app.models import CropPlan, JobState, Word
 from app.probe import MediaInfo
 
-WORK_ROOT = Path(
-    os.getenv("RICECLIPPER_WORK_DIR")
-    or Path(__file__).resolve().parent.parent / ".riceclipper_work"
-).expanduser()
+# An override (tests patch it). None resolves RICECLIPPER_WORK_DIR on each use,
+# so an unset work dir is what `rice data location` reports (suite_paths).
+WORK_ROOT: Path | None = None
 JOB_METADATA_FILENAME = "job.json"
 RENDERED_OUTPUT_FILENAME = "output.mp4"
 _JOB_METADATA_SCHEMA = 1
@@ -109,15 +109,22 @@ def job_operation_lock():
         yield
 
 
+def work_root() -> Path:
+    """The jobs root: ``WORK_ROOT`` if set, else ``RICECLIPPER_WORK_DIR``."""
+    if WORK_ROOT is not None:
+        return Path(WORK_ROOT)
+    return suite_paths.resolve("RICECLIPPER_WORK_DIR")
+
+
 def _ensure_work_root() -> Path:
-    """Return ``WORK_ROOT`` after validating it is a real directory.
+    """Return ``work_root()`` after validating it is a real directory.
 
     Cache cleanup is intentionally anchored to this directory.  Refusing a
     symlinked root makes that anchor explicit instead of allowing a changed
     configuration to redirect cleanup somewhere else.
     """
 
-    root = Path(WORK_ROOT)
+    root = work_root()
     try:
         root_stat = root.lstat()
     except FileNotFoundError:

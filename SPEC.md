@@ -111,9 +111,11 @@ Each requirement is written so a test can check it. "The launcher" means the
   over the file. `RICESUITE_ENV` (shell only) selects another file.
 - **FR-8** The launcher sets all four handoff variables itself from one value
   per stage: Searcher→Clipper (`RICESEARCHER_HANDOFF_DIR` =
-  `RICECLIPPER_SEARCHER_INBOX`, default `~/ricesearcher-handoff`) and
-  Clipper→Poster (`RICECLIPPER_HANDOFF_DIR` = `HANDOFF_DIR`, default
-  `~/riceclipper-handoff`). Contradictory ends of one stage, or one directory
+  `RICECLIPPER_SEARCHER_INBOX`, default `<data root>/handoff/searcher-to-clipper`,
+  `~/ricesearcher-handoff` on a legacy install) and Clipper→Poster
+  (`RICECLIPPER_HANDOFF_DIR` = `HANDOFF_DIR`, default
+  `<data root>/handoff/clipper-to-poster`, `~/riceclipper-handoff` on a legacy
+  install). Contradictory ends of one stage, or one directory
   for both stages, are refused at startup.
 - **FR-9** Poster's data root is configurable with `RICEPOSTER_DATA_DIR`
   (Q10). Unset or blank, Poster uses the directory the launcher would pass:
@@ -306,8 +308,8 @@ FR-9 after an explicit migration. Fresh installations default to
 keep their old effective paths until `rice data cutover` completes; an
 ordinary start never migrates data. Explicit per-pillar overrides remain
 effective, and contradictory handoff ends or overlapping roots are refused.
-Searcher and Poster run outside the launcher resolve unset paths the same way,
-so they use what `rice data location` reports (#45, #73).
+Searcher, Clipper and Poster run outside the launcher resolve unset paths the
+same way, so they use what `rice data location` reports (#45, #73).
 The offline `rice data plan`, `copy`, `cutover` and `rollback` commands and their
 preconditions are documented in [the migration guide](docs/data-migration.md).
 Originals remain in place. Rollback after new activity is refused without

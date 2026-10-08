@@ -8,15 +8,16 @@ over unchanged.
 ## Directory topology (RiceClipper is the intermediary)
 
 ```
-RiceSearcher --writes--> ~/ricesearcher-handoff/   (RICESEARCHER_HANDOFF_DIR)
-RiceClipper  --reads --> ~/ricesearcher-handoff/    (RICECLIPPER_SEARCHER_INBOX — this pickup)
-             --writes--> ~/riceclipper-handoff/     (RICECLIPPER_HANDOFF_DIR — unchanged, to RicePoster)
-RicePoster   --reads --> ~/riceclipper-handoff/     (unchanged)
+RiceSearcher --writes--> <searcher-to-clipper>/   (RICESEARCHER_HANDOFF_DIR)
+RiceClipper  --reads --> <searcher-to-clipper>/   (RICECLIPPER_SEARCHER_INBOX — this pickup)
+             --writes--> <clipper-to-poster>/     (RICECLIPPER_HANDOFF_DIR — unchanged, to RicePoster)
+RicePoster   --reads --> <clipper-to-poster>/     (unchanged)
 ```
 
 RiceSearcher and RicePoster **never share a directory.** `RICECLIPPER_SEARCHER_INBOX`
-(default `~/ricesearcher-handoff`) must equal RiceSearcher's
-`RICESEARCHER_HANDOFF_DIR`. RiceClipper still performs no posting — it reads local
+must equal RiceSearcher's `RICESEARCHER_HANDOFF_DIR`. Unset, both are what
+`rice data location` reports (`<root>/handoff/searcher-to-clipper`, or
+`~/ricesearcher-handoff` on a legacy install), with or without `rice start`. RiceClipper still performs no posting — it reads local
 files here and writes local files to the separate RicePoster handoff.
 
 ## What RiceSearcher writes (consumed here)
@@ -54,7 +55,7 @@ carried for future use.
   Clipper still creates its own word timings and does not auto-trim the padded clip.
   Failed intake remains retryable without creating duplicate jobs.
 - The ingested clips become normal review jobs; the human reviews and renders,
-  then "Send to RicePoster" writes the separate `~/riceclipper-handoff` as before.
+  then "Send to RicePoster" writes the separate Clipper→Poster stage as before.
 
 ## Automatic pull, manual send (RiceSuite, ADR-001 Q12 as amended)
 
