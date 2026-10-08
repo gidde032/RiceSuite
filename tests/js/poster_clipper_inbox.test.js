@@ -253,12 +253,12 @@ test("a caption typed while generation runs is never overwritten", async () => {
     FormData: class { append() {} }, console,
     state: { slots, defaultCaptionStyle: "generic", accountState: {} },
     fetchWithTimeout: fetch, handleFetchError: async () => {},
-    el: () => element(), slotEl: () => element(), setCaptionError() {}, autoGrow() {},
+    el: () => element(), slotEl: () => element(), slotElOpt: () => null, setCaptionError() {}, autoGrow() {},
     updateCharCount() {}, updateButtons() {}, CAPTION_TIMEOUT_MS: 1000,
     // page globals from the account-swap guard (#19)
     draftWork: 0, accountChangeInFlight: false,
   });
-  vm.runInContext(KNOWN_STYLE + slice("async function generateAll()", "\n}\n") + "\n}\n", ctx);
+  vm.runInContext(KNOWN_STYLE + slice("function styleOptions(slot)", "// Approved monochrome") + slice("async function generateAll()", "\n}\n") + "\n}\n", ctx);
   await vm.runInContext("generateAll()", ctx);
   assert.equal(slots.A.caption, "typed by hand");
 });

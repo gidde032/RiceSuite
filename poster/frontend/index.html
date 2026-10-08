@@ -1069,6 +1069,7 @@
             <li>Captions reflect scene details and intent.</li>
             <li>Each account has a caption default. Set it in Accounts.</li>
             <li>Change the style on a draft, then Regenerate or Undo as needed.</li>
+            <li>Pull keeps a style you explicitly chose in Review; otherwise it uses the account default, then the configured ingest style.</li>
             <li>If a draft's style no longer exists, the draft uses the account default, then the standard default.</li>
           </ul>
           <div class="help-example">From field to future.<br>Built on patience.<br>#RiceLife #FarmToFuture</div>
@@ -1191,7 +1192,7 @@ const state = {
 };
 
 function emptySlot() {
-  return { file: null, filename: '', mediaType: '', topic: '', caption: '', style: '', prevCaption: '', thumb: '', previewUrl: '', previewIsObjectUrl: false };
+  return { file: null, filename: '', mediaType: '', topic: '', caption: '', style: '', reviewStyleChanged: false, prevCaption: '', thumb: '', previewUrl: '', previewIsObjectUrl: false };
 }
 
 // --- shared fetch and DOM helpers (tech-debt audit FE-2, FE-3, FE-5, FE-8) ---
@@ -1391,8 +1392,17 @@ function knownStyle(style, slot) {
   return state.captionStyles[0].name;
 }
 
+// Keep the visible selection aligned whenever a draft style is normalized.
+function syncCaptionStyle(slot) {
+  const options = styleOptions(slot);
+  const picker = slotElOpt('captionStyle', slot);
+  if (picker) picker.innerHTML = options;
+}
+
 function styleOptions(slot) {
+  const previous = state.slots[slot].style;
   const current = state.slots[slot].style = knownStyle(state.slots[slot].style, slot);
+  if (current !== previous) state.slots[slot].reviewStyleChanged = false;
   return (state.captionStyles || []).map(st =>
     `<option value="${escAttr(st.name)}" ${st.name === current ? 'selected' : ''}>${esc(st.display_name)}</option>`
   ).join('');
@@ -1523,7 +1533,7 @@ function renderSlots() {
         </div>
         <div>
           <div class="field-label">Caption style</div>
-          <select aria-label="${escAttr('Caption style for slot ' + num)}" onchange="state.slots['${slot}'].style = this.value">
+          <select id="captionStyle_${slot}" aria-label="${escAttr('Caption style for slot ' + num)}" onchange="state.slots['${slot}'].style = this.value; state.slots['${slot}'].reviewStyleChanged = true">
             ${styleOptions(slot)}
           </select>
         </div>
@@ -1836,7 +1846,14 @@ function applyPulledSlot(entry) {
   s.filename = entry.filename;
   s.mediaType = entry.media_type || 'video';
   s.topic = entry.topic || '';
-  s.style = knownStyle(entry.style || s.style, slot);
+  // Only an explicit Review choice outranks the saved account default.
+  // A style initialized by a previous pull must not become a user override.
+  const names = new Set(state.captionStyles.map(style => style.name));
+  const reviewStyle = s.reviewStyleChanged && names.has(s.style) ? s.style : '';
+  const accountStyle = state.accountState.caption_defaults?.[slot];
+  s.style = knownStyle(reviewStyle || (names.has(accountStyle) ? accountStyle : entry.style), slot);
+  if (!reviewStyle) s.reviewStyleChanged = false;
+  syncCaptionStyle(slot);
   s.caption = '';
   s.thumb = '';
 
@@ -1889,6 +1906,7 @@ function captureDrafts() {
       topic: s.topic || '',
       caption: s.caption || '',
       style: s.style || '',
+      reviewStyleChanged: !!s.reviewStyleChanged,
     };
   }).filter(Boolean);
 }
@@ -1984,6 +2002,7 @@ function applyRestoredDraft(slot, d) {
   // Same account: its own style. Another account: that account's default, as
   // when drafts move between accounts (#19); the caption text is kept.
   s.style = knownStyle(d.account === slot ? d.style : '', slot);
+  s.reviewStyleChanged = d.account === slot && !!d.reviewStyleChanged && s.style === d.style;
   setCaptionError(slot, '');
 }
 
@@ -2343,6 +2362,7 @@ async function generateAll() {
     const formData = new FormData();
     formData.append('media_type', s.mediaType);
     formData.append('topic', s.topic);
+    syncCaptionStyle(slot);
     formData.append('style', s.style = knownStyle(s.style, slot));
     if (s.thumb) formData.append('thumbnail', s.thumb);
 
@@ -2391,6 +2411,7 @@ async function regenerateCaption(slot) {
   const formData = new FormData();
   formData.append('media_type', s.mediaType);
   formData.append('topic', s.topic);
+  syncCaptionStyle(slot);
   formData.append('style', s.style = knownStyle(s.style, slot));
   formData.append('avoid_caption', s.caption);
   formData.append('feedback', slotEl('feedback', slot).value);
@@ -2843,6 +2864,7 @@ async function applyActiveAccounts(ids) {
     delete state.slots[from];
     clearSlotPreview(state.slots[to]);
     draft.style = knownStyle('', to);
+    draft.reviewStyleChanged = false;
     return [to, draft];
   });
   for (const id of removed) {
@@ -2908,7 +2930,8 @@ async function setCaptionDefault(accountId, style) {
   state.accountState.caption_defaults[accountId] = style;
   try {
     await persistAccountState();
-    if (state.slots[accountId] && !state.slots[accountId].filename && !state.slots[accountId].caption) {
+    if (state.slots[accountId] && !state.slots[accountId].reviewStyleChanged
+      && !state.slots[accountId].filename && !state.slots[accountId].caption) {
       state.slots[accountId].style = style;
       if (state.accounts.some(a => a.slot === accountId)) renderSlots();
     }
