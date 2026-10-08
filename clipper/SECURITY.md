@@ -73,7 +73,8 @@ fully offline.
     `rice data location` reports the effective path.
   - An existing RiceSuite install can keep its legacy work directory until an
     explicit data cutover.
-  - Standalone Clipper defaults to `.riceclipper_work/` under the checkout.
+  - Standalone Clipper (outside `rice start`) resolves an unset work
+    directory the same way, so it uses the path `rice data location` reports.
     `RICECLIPPER_WORK_DIR` can select a custom path in either mode.
 - See [RiceSuite data location and migration](../docs/data-migration.md) before
   moving existing data.

@@ -1,8 +1,9 @@
 """In-memory job store with per-job work directories.
 
 Single-clip, single-process (SPEC.md §9: no batch in v1). Each job owns a work
-dir under ``.riceclipper_work/<id>/`` holding the uploaded source, any music
-track, the generated ASS, and the rendered output. The dir is gitignored.
+dir ``<id>/`` under the work root (``RICECLIPPER_WORK_DIR``; unset, what
+``rice data location`` reports) holding the uploaded source, any music track,
+the generated ASS, and the rendered output.
 """
 
 from __future__ import annotations
@@ -17,13 +18,14 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from app import suite_paths
 from app.models import CropPlan, JobState, Word
 from app.probe import MediaInfo
 
-WORK_ROOT = Path(
-    os.getenv("RICECLIPPER_WORK_DIR")
-    or Path(__file__).resolve().parent.parent / ".riceclipper_work"
-).expanduser()
+_WORK_ENV = "RICECLIPPER_WORK_DIR"
+# An override (tests patch it). None resolves _WORK_ENV through suite_paths,
+# so an unset work dir is what `rice data location` reports.
+WORK_ROOT: Path | None = None
 JOB_METADATA_FILENAME = "job.json"
 RENDERED_OUTPUT_FILENAME = "output.mp4"
 _JOB_METADATA_SCHEMA = 1
@@ -111,15 +113,22 @@ def job_operation_lock():
         yield
 
 
+def work_root() -> Path:
+    """The jobs root: ``WORK_ROOT`` if set, else ``RICECLIPPER_WORK_DIR``."""
+    if WORK_ROOT is not None:
+        return Path(WORK_ROOT)
+    return suite_paths.resolve(_WORK_ENV)
+
+
 def _ensure_work_root() -> Path:
-    """Return ``WORK_ROOT`` after validating it is a real directory.
+    """Return ``work_root()`` after validating it is a real directory.
 
     Cache cleanup is intentionally anchored to this directory.  Refusing a
     symlinked root makes that anchor explicit instead of allowing a changed
     configuration to redirect cleanup somewhere else.
     """
 
-    root = Path(WORK_ROOT)
+    root = work_root()
     try:
         root_stat = root.lstat()
     except FileNotFoundError:
@@ -391,7 +400,7 @@ def _cache_info_unlocked() -> dict[str, int]:
 
     ``files`` and ``total_bytes`` include regular files and symlink entries
     below each direct job directory, plus regular/symlink files directly below
-    ``WORK_ROOT``.  Symlink targets are never traversed or measured.
+    ``work_root()``.  Symlink targets are never traversed or measured.
     """
 
     root = _ensure_work_root()
@@ -434,7 +443,7 @@ def clear_cache() -> dict[str, int]:
 
 
 def _clear_cache_unlocked() -> dict[str, int]:
-    """Delete only direct children of ``WORK_ROOT`` and report what was removed.
+    """Delete only direct children of ``work_root()`` and report what was removed.
 
     A direct directory is treated as one job cache and removed recursively;
     direct files are removed individually.  The root itself is opened and

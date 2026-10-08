@@ -105,6 +105,12 @@ async def lifespan(_app: FastAPI):
             "  brew unlink ffmpeg && "
             "brew install homebrew-ffmpeg/ffmpeg/ffmpeg"
         )
+    # Unset data paths resolve through the suite config; refuse an invalid one
+    # (e.g. an interrupted cutover) at startup, as `rice start` does, rather
+    # than on the first pull or send.
+    jobs.work_root()
+    searcher_pickup.inbox_root()
+    handoff.handoff_root()
     try:
         yield
     finally:
@@ -788,10 +794,10 @@ def pull_from_searcher(
 ) -> dict:
     """Ingest the oldest RiceSearcher handoff batch as new review jobs.
 
-    Reads local files from the searcher inbox (``~/ricesearcher-handoff``) and
-    copies each clip into a job work dir — no posting, no network. The clips then
-    flow through the normal review → render → "Send to RicePoster" path (which
-    writes the separate ``~/riceclipper-handoff``).
+    Reads local files from the searcher inbox (``RICECLIPPER_SEARCHER_INBOX``)
+    and copies each clip into a job work dir — no posting, no network. The clips
+    then flow through the normal review → render → "Send to RicePoster" path
+    (which writes the separate ``RICECLIPPER_HANDOFF_DIR``).
     """
     progress = _start_progress(observation_id, "pull")
     try:

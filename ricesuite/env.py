@@ -77,7 +77,7 @@ SHARED_VARIABLES = ("ANTHROPIC_API_KEY",)
 # Read by the pillars but set by the launcher itself, so a value in
 # ricesuite.env is ignored.
 LAUNCHER_VARIABLES = ("RICESUITE_GATEWAY_PORT",)
-# Read by RiceSuite itself, never by a pillar.
+# Read by RiceSuite itself. RICECLIPPER_WORK_DIR is also read by Clipper.
 SUITE_VARIABLES = (
     "RICESUITE_ENV",
     "RICESUITE_RUN_DIR",

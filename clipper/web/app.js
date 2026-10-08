@@ -1712,7 +1712,7 @@ async function pullNext({ automatic }) {
     }
     stopProgress();
     if (!data.clip_count) {
-      localProgress("Pull from Searcher", "✓ Complete", 0, 0, "imported", "No batches waiting in ~/ricesearcher-handoff.");
+      localProgress("Pull from Searcher", "✓ Complete", 0, 0, "imported", "No batches waiting in the RiceSearcher handoff.");
       return;
     }
     localProgress("Pull from Searcher", "✓ Complete", data.clip_count, data.clip_count, "imported", `Imported batch ${data.batch_id}.`);

@@ -307,3 +307,78 @@ def test_a_missing_ricesuite_package_is_reported(monkeypatch):
     monkeypatch.setitem(sys.modules, "ricesuite.env", None)
     with pytest.raises(ValueError, match="pip install -e"):
         config.suite_data_root()
+
+
+# HANDOFF_DIR (#77 review M1): standalone Clipper now writes the Clipper→Poster
+# stage `rice data location` reports, so standalone Poster must read it too.
+def _handoff_dir(
+    tmp_path: Path, lines: tuple[str, ...] = (), *, legacy: bool = False
+) -> str:
+    # RICEPOSTER_DATA_DIR is explicit, so only HANDOFF_DIR consults the suite.
+    data = tmp_path / "poster-data"
+    data.mkdir()
+    env = _suite_environ(tmp_path, lines)
+    # Blank counts as unset, and keeps a HANDOFF_DIR in the developer's
+    # credentials.env (loaded before HANDOFF_DIR is read) out of the child.
+    env.update(RICEPOSTER_DATA_DIR=str(data), HANDOFF_DIR="")
+    if legacy:
+        (Path(env["HOME"]) / "riceclipper-handoff").mkdir()
+    result = subprocess.run(
+        [sys.executable, "-c", "from backend import config; print(config.HANDOFF_DIR)"],
+        cwd=PROJECT_ROOT, env=env, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    return result.stdout.strip().splitlines()[-1]
+
+
+def test_unset_handoff_dir_follows_the_suite_data_location(tmp_path):
+    root = _unified_root(tmp_path)
+    got = _handoff_dir(tmp_path, (f"RICESUITE_DATA_DIR={root}",))
+    assert got == str(root / "handoff" / "clipper-to-poster")
+
+
+def test_unset_handoff_dir_follows_clippers_end_of_the_stage(tmp_path):
+    stage = tmp_path / "stage"
+    assert _handoff_dir(tmp_path, (f"RICECLIPPER_HANDOFF_DIR={stage}",)) == str(stage)
+
+
+def test_a_legacy_install_keeps_the_legacy_handoff_dir(tmp_path):
+    got = _handoff_dir(tmp_path, legacy=True)
+    assert got == str(tmp_path / "home" / "riceclipper-handoff")
+
+
+def test_an_explicit_handoff_dir_does_not_consult_the_suite(tmp_path):
+    data = tmp_path / "poster-data"
+    data.mkdir()
+    env = _suite_environ(tmp_path, ("RICESUITE_DATA_DIR=not-absolute",))
+    env.update(RICEPOSTER_DATA_DIR=str(data), HANDOFF_DIR=str(tmp_path / "h"))
+    result = subprocess.run(
+        [sys.executable, "-c", "from backend import config; print(config.HANDOFF_DIR)"],
+        cwd=PROJECT_ROOT, env=env, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().splitlines()[-1] == str(tmp_path / "h")
+
+
+def test_a_suite_configuration_error_stops_an_unset_handoff_dir(tmp_path):
+    data = tmp_path / "poster-data"
+    data.mkdir()
+    env = _suite_environ(tmp_path, ("RICESUITE_DATA_DIR=not-absolute",))
+    env.update(RICEPOSTER_DATA_DIR=str(data), HANDOFF_DIR="")
+    result = _import_config(env)
+    assert result.returncode != 0
+    assert "RiceSuite configuration" in result.stderr
+
+
+def test_handoff_dir_from_another_checkout_is_refused(tmp_path, monkeypatch):
+    _fake_suite(monkeypatch, tmp_path / "other", tmp_path / "other" / "poster")
+    with pytest.raises(ValueError, match="another checkout.*HANDOFF_DIR"):
+        config.suite_handoff_dir()
+
+
+def test_suite_handoff_dir_reports_the_suite_value(tmp_path, monkeypatch):
+    _fake_suite(monkeypatch, PROJECT_ROOT.resolve().parent, tmp_path)
+    from ricesuite import env as suite_env
+
+    monkeypatch.setattr(suite_env, "load", lambda: {"HANDOFF_DIR": "/x/stage"})
+    assert config.suite_handoff_dir() == "/x/stage"

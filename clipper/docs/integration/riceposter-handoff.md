@@ -62,9 +62,9 @@ uses `<configured data root>/handoff/clipper-to-poster`, which defaults to
 `~/.ricesuite/handoff/clipper-to-poster`. Suite sets Clipper's
 `RICECLIPPER_HANDOFF_DIR` and Poster's `HANDOFF_DIR` to the same path. Existing
 installations can retain the legacy `~/riceclipper-handoff` location until an
-explicit data cutover. Standalone Clipper and Poster also default to
-`~/riceclipper-handoff`; either side can be pointed elsewhere, but both settings
-must resolve to the same directory. Run `rice data location` to inspect the
+explicit data cutover. Standalone Clipper and Poster resolve an unset setting
+the same way, so they also use that path; either side can be pointed
+elsewhere, but both settings must resolve to the same directory. Run `rice data location` to inspect the
 effective paths. See [RiceSuite data location and migration](../../../docs/data-migration.md)
 before moving existing data.
 
@@ -160,7 +160,7 @@ For a fresh RiceSuite data root, the shared handoff path is
 `<root>/handoff/clipper-to-poster` (default root: `~/.ricesuite`). A custom
 `RICESUITE_DATA_DIR` changes that root. Existing installs may still use the
 legacy path until cutover; use `rice data location` to check. In a standalone
-setup, both handoff variables default to `~/riceclipper-handoff`. If overriding
+setup, both handoff variables default to that same path. If overriding
 either path outside RiceSuite, configure both sides to the same directory.
 
 ## Explicitly outside this contract

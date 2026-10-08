@@ -181,10 +181,13 @@ def test_endpoint_malformed_is_400(env: Path) -> None:
     assert r.status_code == 400
 
 
-def test_inbox_default_is_ricesearcher_handoff(monkeypatch) -> None:
+def test_inbox_default_is_searchers_own_stage(monkeypatch) -> None:
+    # Unset, the inbox is what `rice data location` reports: on a fresh install
+    # (the hermetic HOME) the Searcher→Clipper stage, never Clipper's output.
     monkeypatch.delenv("RICECLIPPER_SEARCHER_INBOX", raising=False)
     root = searcher_pickup.inbox_root()
-    assert root.name == "ricesearcher-handoff"
+    assert root == Path.home() / ".ricesuite/handoff/searcher-to-clipper"
+    assert "clipper-to-poster" not in str(root)
     assert "riceclipper-handoff" not in str(root)
 
 

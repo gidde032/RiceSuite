@@ -97,8 +97,8 @@ from app import jobs, main, probe
 from app.models import Word
 from app.probe import MediaInfo
 
-assert jobs.WORK_ROOT == Path(sys.argv[1])
-jobs.WORK_ROOT.mkdir(parents=True, exist_ok=True)
+assert jobs.work_root() == Path(sys.argv[1])
+jobs.work_root().mkdir(parents=True, exist_ok=True)
 probe.probe = lambda _p: MediaInfo(
     width=1080, height=1920, duration=30.0, has_audio=True)
 main.whisper.transcribe = lambda _p: [Word(text="hello", start=0.0, end=0.5),

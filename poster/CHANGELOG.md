@@ -5,6 +5,14 @@
 This section contains changes merged into `main` that have not yet been
 published as a tagged release or GitHub Release.
 
+### Fixed
+
+- **Standalone Poster reads the same Clipper handoff as standalone Clipper.**
+  When `HANDOFF_DIR` is unset or blank, Poster now uses the Clipper→Poster
+  stage `rice data location` reports, as `rice start` passes it, instead of
+  `~/riceclipper-handoff`. Standalone Clipper resolves its side the same way
+  (RiceSuite #77). A legacy install keeps `~/riceclipper-handoff`.
+
 ### Changed
 
 - **Captions use Claude Haiku 5.5** (`claude-haiku-5-5`, RiceSuite

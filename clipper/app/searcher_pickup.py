@@ -2,10 +2,10 @@
 
 Consumer side of the RiceSearcher→RiceClipper contract (see
 ``docs/integration/searcher-pickup.md``). RiceClipper reads batches RiceSearcher
-wrote to its **own** handoff root ``~/ricesearcher-handoff`` (``RICECLIPPER_SEARCHER_INBOX``)
-and turns each clip into a normal review job — the existing review → render →
-"Send to RicePoster" flow (which writes the *separate* ``~/riceclipper-handoff``)
-is unchanged. So RiceClipper is the intermediary: it *reads* the searcher inbox
+wrote to its **own** handoff root, the Searcher→Clipper stage
+(``RICECLIPPER_SEARCHER_INBOX``), and turns each clip into a normal review job —
+the existing review → render → "Send to RicePoster" flow (which writes the
+*separate* Clipper→Poster stage) is unchanged. So RiceClipper is the intermediary: it *reads* the searcher inbox
 and *writes* the RicePoster handoff; RiceSearcher and RicePoster never share a
 directory.
 
@@ -27,10 +27,9 @@ from pathlib import Path
 
 from ricesuite.progress import Progress, notify
 
-from app import jobs, probe
+from app import jobs, probe, suite_paths
 
 _INBOX_ENV = "RICECLIPPER_SEARCHER_INBOX"
-_DEFAULT_INBOX = "~/ricesearcher-handoff"
 _CONSUMED_FILE = ".riceclipper_consumed.json"
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
 # Pulled batches not yet sent or discarded, oldest first, in the work root.
@@ -47,10 +46,11 @@ class PickupError(RuntimeError):
 def inbox_root() -> Path:
     """The RiceSearcher handoff root RiceClipper pulls from (``~`` expanded).
 
-    Must match RiceSearcher's ``RICESEARCHER_HANDOFF_DIR``. This is NOT
-    ``~/riceclipper-handoff`` (that is RiceClipper's *output* for RicePoster).
+    Must match RiceSearcher's ``RICESEARCHER_HANDOFF_DIR``; unset, it is what
+    `rice data location` reports. This is NOT Clipper's *output* stage for
+    RicePoster (``RICECLIPPER_HANDOFF_DIR``).
     """
-    return Path(os.getenv(_INBOX_ENV) or _DEFAULT_INBOX).expanduser()
+    return suite_paths.resolve(_INBOX_ENV)
 
 
 def _consumed_path(root: Path) -> Path:

@@ -7,6 +7,23 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Standalone Clipper (`uvicorn app.main:app`) now uses the paths
+  `rice data location` reports when `RICECLIPPER_SEARCHER_INBOX`,
+  `RICECLIPPER_HANDOFF_DIR` or `RICECLIPPER_WORK_DIR` is unset, as standalone
+  Searcher and Poster do. It had kept reading `~/ricesearcher-handoff`, writing
+  `~/riceclipper-handoff`, and storing jobs in the checkout after
+  `rice data cutover` (RiceSuite #73 follow-up). The paths are resolved once
+  per process, so they cannot move mid-run. An invalid suite configuration, or
+  a `ricesuite` imported from another checkout while a path is unset, now stops
+  the server at startup. Standalone Poster's `HANDOFF_DIR` follows the suite the
+  same way, so both ends of the Clipper→Poster stage agree.
+  - `.env.example` no longer sets the handoff paths. **If your `.env` was copied
+    from it**, delete its `RICECLIPPER_HANDOFF_DIR` and
+    `RICECLIPPER_SEARCHER_INBOX` lines, or standalone Clipper keeps the legacy
+    paths. `rice start` is unaffected: its values win over `.env`.
+    
 ### Changed
 - **The header generator and caption emoji picker default to Claude Haiku
   5.5** (`claude-haiku-5-5`, RiceSuite [#75](https://github.com/gidde032/RiceSuite/issues/75)), by maintainer direction.
