@@ -44,14 +44,17 @@ GitHub Pro on a private repo.
 
 The **color-emoji burn-in spike** (`docs/spikes/emoji-burn-in.md`) passed via the
 PNG-overlay fallback. The Wave-1 auto-header is implemented with manual
-fallback and remains the only outbound network feature.
+fallback. It and the caption emoji picker (RiceSuite #66) are the only outbound
+network features, both opt-in, through one Anthropic call site
+(`app/anthropic_text.py`).
 
 ## Hard rules
 
 1. **No posting, publishing, or content upload — ever.** RiceClipper reads local
    files and writes local files. It performs no social posting. The only outbound
-   network call in the whole design is the header agent (Wave 1), which
-   generates text and posts nothing. Posting and its approval gate belong to
+   network calls in the whole design are the header agent (Wave 1) and the
+   caption emoji picker (RiceSuite #66), through one call site; both generate
+   text and post nothing. Posting and its approval gate belong to
    **RicePoster**, a separate repo, after RiceClipper writes the local handoff.
 2. **No implementation code without explicit approval.** When a build task comes
    up, first present a triage/plan (what will change, where, why) and get a clear

@@ -48,7 +48,12 @@ BODY = {
     "id": "msg_stub", "type": "message", "role": "assistant",
     "model": "stub", "stop_reason": "end_turn", "stop_sequence": None,
     "usage": {"input_tokens": 1, "output_tokens": 1},
-    "content": [{"type": "text", "text": REPLY}],
+    # Current models think by default: a reply can start with a thinking
+    # block whose text is omitted (RiceSuite #66).
+    "content": (
+        [{"type": "thinking", "thinking": "", "signature": "sig"}]
+        if THINKING_FIRST else []
+    ) + [{"type": "text", "text": REPLY}],
 }
 
 class _Handler(BaseHTTPRequestHandler):
@@ -84,6 +89,13 @@ result = [[r.score, r.rationale] for r in scored]
 from app.header_gen import generate_headers
 result = generate_headers("a transcript", n=1)
 """,
+    # The emoji picker shares the header's call site (RiceSuite #66).
+    "clipper_emoji": r"""
+from app.emoji_gen import suggest_emoji
+from app.models import Word
+words = [Word(text="pizza", start=0.0, end=0.4), Word(text="night", start=0.4, end=0.8)]
+result = [[p.word, p.emoji] for p in suggest_emoji(words)]
+""",
     "poster": r"""
 import asyncio
 from backend import captions
@@ -92,9 +104,16 @@ result = asyncio.run(captions.generate_caption("video", "a topic", "generic"))
 }
 
 
-def _run(pillar: str, code: str, tmp_path, reply: str = "stub reply") -> dict:
+def _run(
+    pillar: str,
+    code: str,
+    tmp_path,
+    reply: str = "stub reply",
+    thinking_first: bool = False,
+) -> dict:
     script = (
         f"REPLY = {reply!r}\n"
+        f"THINKING_FIRST = {thinking_first!r}\n"
         + _STUB
         + code
         + "\nprint(json.dumps({'result': result, 'calls': CALLS}))\n"
@@ -152,6 +171,19 @@ def test_clipper_header_call_site_on_anthropic_1x(tmp_path):
     assert call["body"]["model"] == "claude-sonnet-5"
 
 
+def test_clipper_emoji_picker_uses_the_same_call_site(tmp_path):
+    reply = '{"picks": [{"word": 0, "emoji": ["\U0001f355"]}]}'
+    out = _run("clipper", _CALLERS["clipper_emoji"], tmp_path, reply=reply)
+    assert out["result"] == [[0, ["\U0001f355"]]]
+    (call,) = out["calls"]
+    assert call["path"] == "/v1/messages"
+    assert call["body"]["model"] == "claude-sonnet-5"
+    # Only the phrase text goes out: no image, nothing else.
+    (message,) = call["body"]["messages"]
+    assert isinstance(message["content"], str)
+    assert "[0] pizza [1] night" in message["content"]
+
+
 def test_searcher_scorer_call_site_on_anthropic_1x(tmp_path):
     reply = '[{"index": 0, "score": 0.75, "rationale": "clear hook"}]'
     out = _run("searcher", _CALLERS["searcher"], tmp_path, reply=reply)
@@ -160,3 +192,16 @@ def test_searcher_scorer_call_site_on_anthropic_1x(tmp_path):
     assert call["path"] == "/v1/messages"
     assert call["body"]["model"] == "claude-haiku-4-5"
     assert call["body"]["max_tokens"] == 2048
+
+
+def test_clipper_header_reads_a_thinking_first_reply(tmp_path):
+    out = _run("clipper", _CALLERS["clipper"], tmp_path, thinking_first=True)
+    assert out["result"] == ["stub reply"]
+
+
+def test_clipper_emoji_picker_reads_a_thinking_first_reply(tmp_path):
+    reply = '{"picks": [{"word": 0, "emoji": ["\U0001f355"]}]}'
+    out = _run(
+        "clipper", _CALLERS["clipper_emoji"], tmp_path, reply=reply, thinking_first=True
+    )
+    assert out["result"] == [[0, ["\U0001f355"]]]

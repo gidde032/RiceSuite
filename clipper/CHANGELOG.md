@@ -15,6 +15,40 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   [#68](https://github.com/gidde032/RiceSuite/issues/68)).
 
 ### Added
+- **Caption emoji rows and the ✨ Suggest emoji picker** (RiceSuite
+  [#66](https://github.com/gidde032/RiceSuite/issues/66), SPEC §3, §5.1, D8).
+  A per-clip **Emoji** toggle, off by default and saved per slot, shows a row
+  of one or two colour emoji above or below some phrases: above when the
+  anchor word is on a phrase's top line (or the phrase has one line), below
+  otherwise. Picks are stored by word index, so text edits keep them; a
+  phrase shows its first anchor's pick. With any row shown, the captions rise
+  by one row for the whole clip, clear of the platforms' bottom interface, and
+  such a clip's header stays above a 760 px caption zone (clips without rows
+  keep 540 px). Pillow draws one transparent frame per phrase row; an
+  `ffconcat` list (blank gaps, the last file repeated, absolute times on a
+  1 ms time base so nothing drifts) is composited with a single overlay,
+  popping in with Motion. Without a colour-emoji font the clip renders without
+  emoji, and an emoji the font cannot draw is left out; the card says so
+  (`emoji_note`). In the editor (inline
+  markers, chosen 2026-10-06), each phrase's emoji show as a pill after the
+  anchor word in the transcript, phrase breaks are marked, and a strip under
+  the transcript adds, replaces, removes, or moves them; a pick is one emoji,
+  never a run. **✨ Suggest emoji** asks before it replaces existing picks and makes
+  one Sonnet call per clip, only on the click, sending only the caption
+  phrases; it shares the header's call site, now `app/anthropic_text.py`, so
+  Clipper still has exactly one `messages.create`.
+- **Caption Motion and the Montserrat preset** (RiceSuite
+  [#66](https://github.com/gidde032/RiceSuite/issues/66), SPEC §5, §5.1, D8,
+  D11). A per-clip **Motion** switch, on by default and saved per slot, gives
+  every caption preset a phrase pop-in (70% → 112% → 100% over 160 ms, once per
+  phrase), a 110% scale bump on the highlighted word, and a soft blurred drop
+  shadow under crisp text. libass still draws the captions. With Motion off the
+  subtitle script of a clip without emoji rows is byte-identical to before.
+  With it on, Clipper breaks each phrase into lines itself, measured in the
+  caption's own font at libass's scale, because libass re-wraps a line while
+  its scale animates. The new
+  **Montserrat** preset uses the bundled Montserrat Black (SIL OFL 1.1, licence
+  in `render/fonts/OFL.txt`), passed to libass with `fontsdir`.
 - **Header controls and a live header preview** (RiceSuite
   [#65](https://github.com/gidde032/RiceSuite/issues/65), SPEC §6.3, D11).
   Every header is now drawn by Pillow and overlaid, with or without emoji;
@@ -64,6 +98,15 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   automatic-pull timer, never pulls, and leaves the progress bar alone.
 
 ### Fixed
+- **✨ Suggest emoji no longer fails with 502 on every click** (RiceSuite
+  [#66](https://github.com/gidde032/RiceSuite/issues/66), PR #72 review). The
+  model thinks by default, so a reply can start with a thinking block; the
+  shared call site read the first block's text and failed. It now joins the
+  text blocks by type, a reply with no text names its `stop_reason`, and the
+  emoji and header token budgets (4096 and 1024) leave room for thinking. A
+  rejected key or unknown model returns 503 naming the setting to fix, and
+  other 502s log their cause. Reply JSON may now sit in prose that contains
+  braces, and a picker request is capped at 5,000 words.
 - **Basic header backgrounds stay with their text.** The libass fallback uses
   a fixed shared position and includes plate padding and outlines when keeping
   the header above captions.

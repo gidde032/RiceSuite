@@ -93,6 +93,7 @@ def test_visual_preset_catalog_keeps_classic_and_exposes_requested_choices():
         "velvet_serif",
         "din_condensed",
         "baskerville",
+        "montserrat",  # the bundled-font preset (RiceSuite #66)
     )
     assert HEADER_STYLE_NAMES == ("plain", "black_plate", "white_plate")
 
