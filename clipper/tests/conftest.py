@@ -15,6 +15,8 @@ app.env.DOTENV_PATH = Path(__file__).resolve().parent / "fixtures" / "no-such.en
 import pytest  # noqa: E402
 from ricesuite import env as suite_env  # noqa: E402
 
+from app import suite_paths  # noqa: E402
+
 
 @pytest.fixture(autouse=True)
 def _hermetic_suite_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -37,3 +39,5 @@ def _hermetic_suite_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
         "HANDOFF_DIR",
     ):
         monkeypatch.delenv(key, raising=False)
+    # Paths resolve once per process; each test starts unresolved.
+    monkeypatch.setattr(suite_paths, "_resolved", None)

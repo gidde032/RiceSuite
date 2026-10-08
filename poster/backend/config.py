@@ -65,6 +65,39 @@ def resolve_data_root(raw: str | None) -> Path:
     return path
 
 
+def _suite_env(variable: str):
+    """``ricesuite.env``, for resolving an unset ``variable`` as `rice start` would."""
+    try:
+        from ricesuite import SUITE_ROOT
+        from ricesuite import env as suite_env
+    except ImportError as exc:
+        raise ValueError(
+            f"{variable} is unset and RiceSuite cannot be imported "
+            f"({exc}). Run `pip install -e .` from the RiceSuite root, or set "
+            f"{variable}."
+        ) from exc
+    # A ricesuite from another checkout would name that checkout's paths.
+    if Path(SUITE_ROOT) != PROJECT_ROOT.resolve().parent:
+        raise ValueError(
+            f"ricesuite is imported from another checkout ({SUITE_ROOT}). "
+            f"Reinstall it from {PROJECT_ROOT.resolve().parent}, or set "
+            f"{variable}."
+        )
+    return suite_env
+
+
+def suite_handoff_dir() -> str:
+    """The HANDOFF_DIR `rice start` would pass: the Clipper→Poster stage that
+    `rice data location` reports. Standalone Clipper resolves its
+    RICECLIPPER_HANDOFF_DIR the same way, so both ends agree outside the
+    launcher (RiceSuite #77)."""
+    suite_env = _suite_env("HANDOFF_DIR")
+    try:
+        return suite_env.load()["HANDOFF_DIR"]
+    except suite_env.SuiteConfigError as exc:
+        raise ValueError(f"RiceSuite configuration: {exc}") from exc
+
+
 def suite_data_root() -> str:
     """The Poster data directory `rice start` would pass in RICEPOSTER_DATA_DIR.
 
@@ -73,22 +106,7 @@ def suite_data_root() -> str:
     of the suite data location (#45). The launcher and this function share
     ricesuite.env.prepare_poster_dir, so both resolve the same directory.
     """
-    try:
-        from ricesuite import SUITE_ROOT
-        from ricesuite import env as suite_env
-    except ImportError as exc:
-        raise ValueError(
-            f"RICEPOSTER_DATA_DIR is unset and RiceSuite cannot be imported "
-            f"({exc}). Run `pip install -e .` from the RiceSuite root, or set "
-            f"RICEPOSTER_DATA_DIR."
-        ) from exc
-    # A ricesuite from another checkout would name that checkout's poster/.
-    if Path(SUITE_ROOT) != PROJECT_ROOT.resolve().parent:
-        raise ValueError(
-            f"ricesuite is imported from another checkout ({SUITE_ROOT}). "
-            f"Reinstall it from {PROJECT_ROOT.resolve().parent}, or set "
-            f"RICEPOSTER_DATA_DIR."
-        )
+    suite_env = _suite_env("RICEPOSTER_DATA_DIR")
     try:
         poster = suite_env.prepare_poster_dir(suite_env.load())
     except suite_env.SuiteConfigError as exc:
@@ -386,8 +404,13 @@ HEADLESS = env_bool("HEADLESS", True)
 # directory RiceClipper writes finished batches into and this app reads from;
 # it must match RiceClipper's RICECLIPPER_HANDOFF_DIR. CLIPPER_INGEST_STYLE is
 # the caption style applied to pulled clips; local workflows may override the
-# tracked content-neutral default in credentials.env.
-HANDOFF_DIR = Path(os.getenv("HANDOFF_DIR", "~/riceclipper-handoff")).expanduser()
+# tracked content-neutral default in credentials.env. If HANDOFF_DIR is unset or
+# blank (shell and credentials.env), the suite decides, as for DATA_ROOT; under
+# pytest the legacy default stays.
+HANDOFF_DIR = Path(
+    (os.getenv("HANDOFF_DIR") or "").strip()
+    or ("~/riceclipper-handoff" if UNDER_PYTEST else suite_handoff_dir())
+).expanduser()
 CLIPPER_INGEST_STYLE = os.getenv("CLIPPER_INGEST_STYLE", "generic")
 
 # How long a successful session health check stays valid, in seconds

@@ -145,8 +145,11 @@ under `~/.ricesuite` (`clipper/`, `handoff/clipper-to-poster/`,
 `handoff/searcher-to-clipper/`) after `rice data cutover` or on a fresh install,
 and `.riceclipper_work/`, `~/riceclipper-handoff`, `~/ricesearcher-handoff` on a
 legacy one. A blank value counts as unset. `rice data location` prints the paths
-in use. An invalid suite configuration (for example an interrupted cutover)
-stops the server at startup, as `rice start` refuses it.
+in use. The paths are resolved once, when the server starts. An invalid suite
+configuration (for example an interrupted cutover) stops the server at startup,
+as `rice start` refuses it. So does a `ricesuite` installed from another
+checkout (for example a worktree sharing a virtualenv) while any of the three is
+unset: reinstall it from this checkout, or set all three.
 
 The easiest way to set them is a `.env` file in the repo root. The server
 loads it automatically at startup:

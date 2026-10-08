@@ -134,3 +134,45 @@ def test_env_example_does_not_pin_the_data_paths() -> None:
         "RICECLIPPER_HANDOFF_DIR",
         "RICECLIPPER_WORK_DIR",
     }
+
+
+@pytest.mark.usefixtures("unset_work_root")
+def test_paths_do_not_move_mid_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # #77 review M2: fresh-install detection depends on whether a legacy path
+    # exists, so re-resolving after the first Send created ~/riceclipper-handoff
+    # moved the work root and inbox to legacy paths in the same process.
+    monkeypatch.setenv("RICECLIPPER_HANDOFF_DIR", "~/riceclipper-handoff")
+    before = (jobs.work_root(), searcher_pickup.inbox_root(), handoff.handoff_root())
+    assert before[0] == Path.home() / ".ricesuite" / "clipper"
+    (Path.home() / "riceclipper-handoff").mkdir()
+    after = (jobs.work_root(), searcher_pickup.inbox_root(), handoff.handoff_root())
+    assert after == before
+
+
+@pytest.mark.usefixtures("unset_work_root")
+def test_ricesuite_from_another_checkout_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # #77 review m1: its legacy work root would name the other checkout's live
+    # clipper/.riceclipper_work (Poster refuses the same case).
+    import ricesuite
+    from ricesuite.env import SuiteConfigError
+
+    monkeypatch.setattr(ricesuite, "SUITE_ROOT", tmp_path / "other")
+    with pytest.raises(SuiteConfigError, match="another checkout"):
+        jobs.work_root()
+
+
+@pytest.mark.usefixtures("unset_work_root")
+def test_explicit_paths_skip_the_checkout_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import ricesuite
+
+    monkeypatch.setattr(ricesuite, "SUITE_ROOT", tmp_path / "other")
+    for name in ("RICECLIPPER_SEARCHER_INBOX", "RICECLIPPER_HANDOFF_DIR"):
+        monkeypatch.setenv(name, str(tmp_path / name))
+    monkeypatch.setenv("RICECLIPPER_WORK_DIR", str(tmp_path / "work"))
+    assert jobs.work_root() == tmp_path / "work"
