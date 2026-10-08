@@ -115,6 +115,8 @@ cp credentials.env.example credentials.env   # then edit it
 RiceSearcher reads `credentials.env`, then `.env`, **from the current working
 directory** each time a command starts. Run commands from the directory that holds
 the file. A variable already exported in your shell always wins over the file.
+A value in either file counts as set, exactly like an export, including the
+path variables below. `rice start` never reads these files.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -125,12 +127,24 @@ the file. A variable already exported in your shell always wins over the file.
 | `RICESEARCHER_HANDOFF_DIR` | `~/ricesearcher-handoff` | Where handoff batches are written for RiceClipper. |
 | `RICESEARCHER_EMBED_MODEL` | `all-MiniLM-L6-v2` | sentence-transformers model used by `dedup`. |
 
-To try RiceSearcher without touching a real library or RiceClipper's inbox,
-point the data and handoff directories somewhere disposable first:
+If the data or handoff path is not set by the shell, `credentials.env` or
+`.env`, it comes from `ricesuite.env` and the suite data location, exactly as
+`rice start` passes it: `~/.ricesuite/searcher` and
+`~/.ricesuite/handoff/searcher-to-clipper` after `rice data cutover` or on a
+fresh install, `~/.ricesearcher` and `~/ricesearcher-handoff` on a legacy one.
+A blank value counts as unset, but a blank shell export still masks a value in
+`ricesuite.env`, as it does under `rice start`. `ricesuite.env` may also set
+`RICESEARCHER_PROFILES_DIR`, and it applies even when both paths are set.
+`rice data location` prints the paths in use.
+
+To try RiceSearcher without touching a real library, your profiles, or
+RiceClipper's inbox, point all three directories somewhere disposable first
+(`ricesuite.env` may file a profiles directory that would otherwise apply):
 
 ```bash
 export RICESEARCHER_DATA_DIR=/tmp/rs-trial/data
 export RICESEARCHER_HANDOFF_DIR=/tmp/rs-trial/handoff
+export RICESEARCHER_PROFILES_DIR=/tmp/rs-trial/profiles
 ```
 
 ## First run
@@ -199,11 +213,14 @@ success and `2` with a one-line `error:` message on failure.
 
 A profile is a JSON file named `<id>.json` in the profiles directory. The id must
 be lowercase letters, digits, and hyphens, up to 40 characters. The first
-`profiles` or `score` run seeds `example-beat.json`. To make your own, copy it and
-edit it:
+`profiles` or `score` run seeds `example-beat.json`. To make your own, copy it
+within the profiles directory (`rice data location` shows the data directory;
+profiles live in its `profiles/` unless `RICESEARCHER_PROFILES_DIR` says
+otherwise) and edit it:
 
 ```bash
-cp ~/.ricesearcher/profiles/example-beat.json ~/.ricesearcher/profiles/my-beat.json
+cd <profiles_dir>
+cp example-beat.json my-beat.json
 ```
 
 ```json
@@ -239,7 +256,7 @@ site's page (RiceSuite SPEC FR-3).
 Each handoff writes one batch under `RICESEARCHER_HANDOFF_DIR`:
 
 ```
-~/ricesearcher-handoff/
+<RICESEARCHER_HANDOFF_DIR>/
   batch_20260922_181500_a1b2c3/
     clip_1.mp4
     clip_2.mp4
@@ -254,9 +271,10 @@ profile id and version. RiceSearcher only ever writes new
 batch directories. A batch is complete only once `manifest.json` exists, so a
 reader never sees a half-written batch.
 
-RiceClipper picks batches up from its Searcher inbox, `RICECLIPPER_SEARCHER_INBOX`,
-which also defaults to `~/ricesearcher-handoff`. RiceClipper transcribes and
-renders the clips. If you change either setting, set the other to the same path.
+RiceClipper picks batches up from its Searcher inbox, `RICECLIPPER_SEARCHER_INBOX`.
+`rice start` sets both ends of this stage to the path `rice data location`
+reports. RiceClipper transcribes and renders the clips. If you run either pillar
+outside `rice start` and change either setting, set the other to the same path.
 Don't point `RICESEARCHER_HANDOFF_DIR` at `~/riceclipper-handoff`. That is
 RiceClipper's output to RicePoster. See
 [`docs/integration/riceclipper-pickup-plan.md`](docs/integration/riceclipper-pickup-plan.md).

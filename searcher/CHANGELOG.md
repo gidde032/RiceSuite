@@ -5,6 +5,23 @@ All notable changes to RiceSearcher are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Fixed
+
+- The standalone CLI (`ricesearcher score`, `profiles`, `handoff`, ...) now
+  uses the paths `rice data location` reports when `RICESEARCHER_DATA_DIR` or
+  `RICESEARCHER_HANDOFF_DIR` is unset. After `rice data cutover` it had kept
+  reading the stale `~/.ricesearcher` copy (RiceSuite
+  [#73](https://github.com/gidde032/RiceSuite/issues/73)).
+  - **Before using it on a cut-over install:** the old CLI recreated
+    `~/.ricesearcher` (and may have written `~/ricesearcher-handoff`) after the
+    cutover, and the fixed CLI no longer reads either. Check both by hand, move
+    any profiles, sources, or unpicked batches you want into the paths
+    `rice data location` reports, then delete them.
+  - With both paths set, `ricesuite.env`'s `RICESEARCHER_PROFILES_DIR` now still
+    applies, as it does under `rice start`.
+  - `python -m ricesearcher.web` reports an invalid suite configuration as a
+    one-line error (exit 2) instead of a traceback.
+    
 ### Changed
 
 - **The scorer defaults to Claude Haiku 5.5** (`claude-haiku-5-5`, RiceSuite

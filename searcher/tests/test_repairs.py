@@ -109,7 +109,16 @@ def test_c3_resolve_prefix_treats_wildcards_literally(tmp_path: Path) -> None:
 def test_s1_module_entrypoint_runs(tmp_path: Path) -> None:
     import os
 
-    env = {**os.environ, "RICESEARCHER_DATA_DIR": str(tmp_path / "data")}
+    # Both paths explicit, so the child never consults the suite; a refused
+    # ricesuite.env proves it (#73).
+    refused = tmp_path / "ricesuite.env"
+    refused.write_text("RICESUITE_DATA_DIR=not-absolute\n", encoding="utf-8")
+    env = {
+        **os.environ,
+        "RICESEARCHER_DATA_DIR": str(tmp_path / "data"),
+        "RICESEARCHER_HANDOFF_DIR": str(tmp_path / "handoff"),
+        "RICESUITE_ENV": str(refused),
+    }
     result = subprocess.run(
         [sys.executable, "-m", "ricesearcher", "list"],
         env=env,

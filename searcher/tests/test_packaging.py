@@ -54,6 +54,12 @@ def test_wheel_contains_profile_and_web_assets_and_can_seed(
     env = {k: v for k, v in os.environ.items() if not k.startswith("RICESEARCHER_")}
     env["PYTHONPATH"] = str(tmp_path / "installed")
     env["RICESEARCHER_DATA_DIR"] = str(data_dir)
+    # Both paths explicit, so the child never consults the suite; a refused
+    # ricesuite.env proves it (#73).
+    env["RICESEARCHER_HANDOFF_DIR"] = str(tmp_path / "cold-handoff")
+    refused = tmp_path / "ricesuite.env"
+    refused.write_text("RICESUITE_DATA_DIR=not-absolute\n", encoding="utf-8")
+    env["RICESUITE_ENV"] = str(refused)
     subprocess.run(
         [
             sys.executable,

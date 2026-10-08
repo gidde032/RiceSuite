@@ -210,7 +210,8 @@ cache dir keyed by hash, referenced by the row — never inlined in SQLite.
 Mirrors the RiceClipper→RicePoster **mechanism** (see
 `RiceClipper/docs/integration/riceposter-handoff.md`) — **not its directory**.
 RiceSearcher writes to its **own** handoff root, `RICESEARCHER_HANDOFF_DIR`
-(default `~/ricesearcher-handoff`), which RiceClipper reads from; RiceClipper's
+(default: the path `rice data location` reports, `~/ricesearcher-handoff` on a
+legacy install), which RiceClipper reads from; RiceClipper's
 rendered output goes to the **separate** `~/riceclipper-handoff` (where RicePoster
 pulls). RiceSearcher and RicePoster never share a directory — RiceClipper is the
 intermediary. The mechanism: one directory per batch; media files + `manifest.json`
