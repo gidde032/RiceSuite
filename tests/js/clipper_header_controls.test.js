@@ -53,7 +53,7 @@ function card(extra = {}) {
     isPhoto: false,
     headerEl: { value: "Hook" },
     headerStyleEl: { querySelector: () => ({ value: "plain" }) },
-    captionsToggleEl: { checked: true },
+    captionsToggleEl: { checked: true }, motionToggleEl: { checked: true }, emojiToggleEl: { checked: false },
     musicInputEl: { files: [] },
     musicModeEl: { value: "none" },
     musicVolumeEl: { value: "0.35" },

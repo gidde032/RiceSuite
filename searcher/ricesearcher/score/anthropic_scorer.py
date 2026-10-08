@@ -18,9 +18,11 @@ from ricesearcher.models import CandidateWindow
 from ricesearcher.score.base import ScoredResult
 
 # Scoring is a bounded shortlist-ranking task, so default to the lowest-cost model
-# (maintainer decision): claude-haiku-4-5 at $1/$5 per 1M. Override with
+# (maintainer decision): claude-haiku-5-5 (RiceSuite #75). Override with
 # RICESEARCHER_SCORER_MODEL or --model for a more capable (pricier) model.
-_DEFAULT_MODEL = "claude-haiku-4-5"
+_DEFAULT_MODEL = "claude-haiku-5-5"
+# The model thinks before it answers, and thinking counts against this budget.
+_MAX_TOKENS = 8192
 _MODEL_ENV = "RICESEARCHER_SCORER_MODEL"
 
 
@@ -189,7 +191,7 @@ class AnthropicScorer:
         try:
             message = client.messages.create(
                 model=self.model,
-                max_tokens=2048,
+                max_tokens=_MAX_TOKENS,
                 messages=[{"role": "user", "content": build_prompt(windows, profile)}],
             )
         finally:

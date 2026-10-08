@@ -1,7 +1,7 @@
 """Unit tests for the auto-header generator (SPEC §6.2).
 
 The Anthropic client is injected as a fake, so these run fully offline — no
-network, no API key, no SDK dependency exercised.
+network and no API key. Replies are real SDK types (``tests._anthropic_fakes``).
 """
 
 from __future__ import annotations
@@ -9,32 +9,12 @@ from __future__ import annotations
 import pytest
 
 from app import header_gen
+from tests import _anthropic_fakes
 
 
-class _FakeContent:
-    def __init__(self, text: str) -> None:
-        self.text = text
-
-
-class _FakeMessage:
-    def __init__(self, text: str) -> None:
-        self.content = [_FakeContent(text)]
-
-
-class _FakeMessages:
-    def __init__(self, text: str, capture: list | None) -> None:
-        self._text = text
-        self._capture = capture
-
-    def create(self, **kwargs):
-        if self._capture is not None:
-            self._capture.append(kwargs)
-        return _FakeMessage(self._text)
-
-
-class FakeClient:
+class FakeClient(_anthropic_fakes.FakeClient):
     def __init__(self, text: str = "Header from model 🎉", capture: list | None = None):
-        self.messages = _FakeMessages(text, capture)
+        super().__init__(text, calls=capture)
 
 
 def test_generate_header_returns_stripped_text():
@@ -163,3 +143,11 @@ def test_cleanup_failure_does_not_discard_header(monkeypatch):
 
     monkeypatch.setattr(header_gen, "_create_client", lambda key: BadClose())
     assert header_gen.generate_header("hello") == "Header from model 🎉"
+
+
+def test_the_default_model_is_claude_haiku_5_5(monkeypatch):
+    # RiceSuite #75: one model setting for the header and the emoji picker.
+    monkeypatch.delenv("RICECLIPPER_HEADER_MODEL", raising=False)
+    client = FakeClient()
+    header_gen.generate_header("hi", client=client)
+    assert client.calls[0]["model"] == "claude-haiku-5-5"

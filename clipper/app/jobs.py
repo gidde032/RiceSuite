@@ -48,6 +48,7 @@ class Job:
     render_id: str | None = None
     # Why the last render fell back to the libass header (RiceSuite #65).
     header_note: str | None = None
+    emoji_note: str | None = None
     # Per-job render lock (Issue #30). Held only while ``render()`` runs, so two
     # renders of the same job cannot overlap while the global lock stays free for
     # other jobs and for request-serving state reads.
@@ -80,6 +81,7 @@ class Job:
             has_output=bool(self.output_path and self.output_path.exists()),
             render_id=render_id,
             header_note=self.header_note,
+            emoji_note=self.emoji_note,
             crop_plan=self.crop_plan,
             music_plan=self.music_plan,
         )
