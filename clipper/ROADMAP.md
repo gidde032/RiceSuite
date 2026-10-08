@@ -10,7 +10,7 @@ The full v1 → Wave-1 clip pipeline is implemented, merged, and **confirmed
 working end to end** — upload to RiceClipper, batch review/render, filesystem
 handoff, then RicePoster "Pull from Clipper" and post. The behavior-preserving
 **Slate** browser-interface polish and bounded four-preset lyric-caption
-addition are also merged. The **Wave-1 auto-header** (Sonnet vision + transcript)
+addition are also merged. The **Wave-1 auto-header** (vision model + transcript)
 is now implemented as well. The one remaining Wave-1 product addition
 (silence-only trimming) stays deferred behind an explicit phase change.
 
@@ -33,7 +33,7 @@ H.264, through a local FastAPI review UI with a human-in-the-loop gate. Bounded
 batches are reviewed and processed sequentially, with twelve caption presets
 and three header treatments. A per-clip Motion toggle adds a phrase pop-in, an
 active-word bump, and a soft shadow to any preset, and a per-clip Emoji toggle
-adds Sonnet-suggested, hand-edited emoji rows above or below some phrases
+adds model-suggested, hand-edited emoji rows above or below some phrases
 (RiceSuite [#66](https://github.com/gidde032/RiceSuite/issues/66)). Subject crop uses the universal Level-5 strong
 lock for speech and music: minor motion holds, ordinary correction interpolates
 at 30 Hz, and confirmed cuts or target reacquisition remain immediate.
@@ -51,7 +51,7 @@ at 30 Hz, and confirmed cuts or target reacquisition remain immediate.
    generated on a real frame captured from the staged clip.
 2. **Silence-only trimming** — cut long silent gaps via silence detection; keep
    A/V in sync and smooth the jump cuts.
-3. **Auto-header** — Sonnet vision agent: early-frame snapshot + transcript +
+3. **Auto-header** — vision agent (Claude Haiku 5.5 by default): early-frame snapshot + transcript +
    optional user note → one-sentence hook ending in 1–2 emoji, with the manual
    header as fallback. **Implemented and merged**: `render/frame.py`,
    `app/header_gen.py`, and `POST /api/jobs/{id}/header`, with per-clip

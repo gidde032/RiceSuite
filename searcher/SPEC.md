@@ -237,7 +237,7 @@ dedupe by stable `batch_id`; **producer only writes** and never manages lifecycl
       "rights_risk": "low|med|high",
       "beat_profile_version": "...",
       "profile_id": "...",
-      "scorer_model": "claude-haiku-4-5 | heuristic-offline"
+      "scorer_model": "claude-haiku-5-5 | heuristic-offline"
     }
   ]
 }

@@ -311,7 +311,7 @@ def test_caption_client_actually_receives_the_timeout(monkeypatch):
             self.messages = self
 
         async def create(self, **kwargs):
-            return SimpleNamespace(content=[SimpleNamespace(text="c")])
+            return SimpleNamespace(content=[SimpleNamespace(type="text", text="c")])
 
     monkeypatch.setattr(captions.anthropic, "AsyncAnthropic", _Stub)
     monkeypatch.setattr(captions, "ANTHROPIC_API_KEY", SecretStr("test-key"))

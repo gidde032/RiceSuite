@@ -119,7 +119,7 @@ the file. A variable already exported in your shell always wins over the file.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | *(none)* | Required by `score` (not `score --offline`). Nothing else calls a paid API. |
-| `RICESEARCHER_SCORER_MODEL` | `claude-haiku-4-5` | Scorer model (lowest cost). `score --model` overrides it. |
+| `RICESEARCHER_SCORER_MODEL` | `claude-haiku-5-5` | Scorer model (lowest cost). `score --model` overrides it. |
 | `RICESEARCHER_DATA_DIR` | `~/.ricesearcher` | Library (`library.sqlite3`), media cache (`cache/`), and profiles. |
 | `RICESEARCHER_PROFILES_DIR` | `<data_dir>/profiles` | Where profile JSON files live. |
 | `RICESEARCHER_HANDOFF_DIR` | `~/ricesearcher-handoff` | Where handoff batches are written for RiceClipper. |
@@ -184,7 +184,7 @@ ricesearcher list                                 # list library sources
 ricesearcher show <id-or-prefix>                  # print a source's transcript
 ricesearcher profiles                             # list saved profiles and their counts
 ricesearcher score <id-or-prefix> --profile ID    # extract + LLM-score under one profile
-ricesearcher score <id-or-prefix> --profile ID --model claude-sonnet-4-6  # pricier scorer
+ricesearcher score <id-or-prefix> --profile ID --model claude-sonnet-5-5  # pricier scorer
 ricesearcher score <id-or-prefix> --profile ID --offline  # heuristic-only; no API key or network
 ricesearcher slices --profile ID [--source ID]    # list scored candidate slices in a profile
 ricesearcher dedup --profile ID [--threshold 0.65]  # advisory possible-duplicate flags

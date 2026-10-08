@@ -1,7 +1,7 @@
 """Clipper's one Anthropic call site (ADR-001 fact 1).
 
 Clipper makes exactly one kind of outbound request: a text completion from an
-Anthropic Sonnet model. Two opt-in features use it, each only when the user
+Anthropic model (default Claude Haiku 5.5, RiceSuite #75). Two opt-in features use it, each only when the user
 clicks its button in the review UI (SPEC §3):
 
 * the header generator (``app.header_gen``, SPEC §6.2), and
@@ -23,7 +23,7 @@ from ricesuite.anthropic_client import close_client, create_client
 API_KEY_ENV = "ANTHROPIC_API_KEY"
 # One model setting for both features; the name predates the emoji picker.
 MODEL_ENV = "RICECLIPPER_HEADER_MODEL"
-DEFAULT_MODEL = "claude-sonnet-5"
+DEFAULT_MODEL = "claude-haiku-5-5"
 
 
 class TextConfigError(RuntimeError):

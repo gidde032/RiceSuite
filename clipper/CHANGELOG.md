@@ -7,6 +7,11 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **The header generator and caption emoji picker default to Claude Haiku
+  5.5** (`claude-haiku-5-5`, RiceSuite [#75](https://github.com/gidde032/RiceSuite/issues/75)), by maintainer direction.
+  `RICECLIPPER_HEADER_MODEL` still selects another model.
+
 ### Documentation
 
 - Clipper setup and integration docs now match RiceSuite's Python 3.12 minimum,

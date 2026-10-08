@@ -451,7 +451,7 @@ class CapturingAnthropic:
 
     async def create(self, **kwargs):
         CapturingAnthropic.calls.append(kwargs)
-        return SimpleNamespace(content=[SimpleNamespace(text="a caption")])
+        return SimpleNamespace(content=[SimpleNamespace(type="text", text="a caption")])
 
 
 @pytest.fixture

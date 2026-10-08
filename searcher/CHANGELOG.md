@@ -5,6 +5,13 @@ All notable changes to RiceSearcher are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Changed
+
+- **The scorer defaults to Claude Haiku 5.5** (`claude-haiku-5-5`, RiceSuite
+  [#75](https://github.com/gidde032/RiceSuite/issues/75)), by maintainer direction, replacing `claude-haiku-4-5`; its
+  budget rises from 2048 to 8192 tokens because the model thinks before it
+  answers. `RICESEARCHER_SCORER_MODEL` and `score --model` still override it.
+
 ### Documentation
 
 - Updated the Searcher spec and roadmap to reflect the enforced 90% coverage

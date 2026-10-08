@@ -159,8 +159,8 @@ def test_poster_caption_call_site_on_anthropic_1x(tmp_path):
     assert out["result"] == "stub reply"
     (call,) = out["calls"]
     assert call["path"] == "/v1/messages"
-    assert call["body"]["model"] == "claude-sonnet-4-6"
-    assert call["body"]["max_tokens"] == 500
+    assert call["body"]["model"] == "claude-haiku-5-5"
+    assert call["body"]["max_tokens"] == 2048
 
 
 def test_clipper_header_call_site_on_anthropic_1x(tmp_path):
@@ -168,7 +168,7 @@ def test_clipper_header_call_site_on_anthropic_1x(tmp_path):
     assert out["result"] == ["stub reply"]
     (call,) = out["calls"]
     assert call["path"] == "/v1/messages"
-    assert call["body"]["model"] == "claude-sonnet-5"
+    assert call["body"]["model"] == "claude-haiku-5-5"
 
 
 def test_clipper_emoji_picker_uses_the_same_call_site(tmp_path):
@@ -177,7 +177,7 @@ def test_clipper_emoji_picker_uses_the_same_call_site(tmp_path):
     assert out["result"] == [[0, ["\U0001f355"]]]
     (call,) = out["calls"]
     assert call["path"] == "/v1/messages"
-    assert call["body"]["model"] == "claude-sonnet-5"
+    assert call["body"]["model"] == "claude-haiku-5-5"
     # Only the phrase text goes out: no image, nothing else.
     (message,) = call["body"]["messages"]
     assert isinstance(message["content"], str)
@@ -190,8 +190,8 @@ def test_searcher_scorer_call_site_on_anthropic_1x(tmp_path):
     assert out["result"] == [[0.75, "clear hook"]]
     (call,) = out["calls"]
     assert call["path"] == "/v1/messages"
-    assert call["body"]["model"] == "claude-haiku-4-5"
-    assert call["body"]["max_tokens"] == 2048
+    assert call["body"]["model"] == "claude-haiku-5-5"
+    assert call["body"]["max_tokens"] == 8192
 
 
 def test_clipper_header_reads_a_thinking_first_reply(tmp_path):
@@ -205,3 +205,16 @@ def test_clipper_emoji_picker_reads_a_thinking_first_reply(tmp_path):
         "clipper", _CALLERS["clipper_emoji"], tmp_path, reply=reply, thinking_first=True
     )
     assert out["result"] == [[0, ["\U0001f355"]]]
+
+
+def test_poster_captions_read_a_thinking_first_reply(tmp_path):
+    out = _run("poster", _CALLERS["poster"], tmp_path, thinking_first=True)
+    assert out["result"] == "stub reply"
+
+
+def test_searcher_scorer_reads_a_thinking_first_reply(tmp_path):
+    reply = '[{"index": 0, "score": 0.75, "rationale": "clear hook"}]'
+    out = _run(
+        "searcher", _CALLERS["searcher"], tmp_path, reply=reply, thinking_first=True
+    )
+    assert out["result"] == [[0.75, "clear hook"]]

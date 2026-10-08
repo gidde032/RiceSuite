@@ -1,4 +1,4 @@
-"""Sonnet-picked caption emoji (RiceSuite #66, SPEC §5.1).
+"""Model-picked caption emoji (RiceSuite #66, SPEC §5.1).
 
 One model call per clip, made only when the user clicks **✨ Suggest emoji**
 (SPEC §3). It sends the caption phrases as ``transcribe.phrasing.group_words``
