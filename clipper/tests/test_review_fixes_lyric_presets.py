@@ -38,9 +38,11 @@ def test_powder_is_the_visible_name_in_source_of_truth_docs():
     and DIN Condensed renderer font in every affected source-of-truth document.
     """
     expected_visible_contracts = {
-        "SPEC.md": "**Velvet Serif**, **Powder**, and **Baskerville**",
+        # RiceSuite #66 appended the Montserrat preset to both lists.
+        "SPEC.md": "**Velvet Serif**, **Powder**, **Baskerville**, and **Montserrat**",
         "docs/design/slate-ui-spec.md": (
-            "**Lyric Block**, **Velvet Serif**, **Powder**, and **Baskerville**"
+            "**Lyric Block**, **Velvet Serif**, **Powder**, **Baskerville**, and "
+            "**Montserrat**"
         ),
         "CHANGELOG.md": "Powder (DIN Condensed font with powder-blue highlight)",
     }

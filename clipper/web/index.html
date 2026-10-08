@@ -221,6 +221,28 @@
             </label>
           </div>
 
+          <div class="field field-row motion-row">
+            <span class="field-label">Motion</span>
+            <label class="switch-label">
+              <input class="motion-toggle" type="checkbox" checked />
+              <span>Pop phrases in, grow the spoken word, soft shadow</span>
+            </label>
+          </div>
+
+          <div class="field field-row emoji-field">
+            <span class="field-label">Emoji</span>
+            <div>
+              <div class="emoji-controls">
+                <label class="switch-label">
+                  <input class="emoji-toggle" type="checkbox" />
+                  <span>Emoji rows on some phrases</span>
+                </label>
+                <button class="emoji-suggest" type="button" title="Sends the caption text to Anthropic and suggests a few emoji">✨ Suggest emoji</button>
+              </div>
+              <p class="emoji-status status" role="status"></p>
+            </div>
+          </div>
+
           <fieldset class="field choice-field caption-style">
             <legend>Caption style</legend>
             <div class="choice-grid caption-choice-grid">
@@ -235,6 +257,7 @@
               <label class="choice-card"><input type="radio" name="caption-style" value="velvet_serif" /><span class="choice-check" aria-hidden="true">✓</span><span class="caption-sample sample-velvet-serif">Aa</span><span class="choice-label">Velvet Serif</span></label>
               <label class="choice-card"><input type="radio" name="caption-style" value="din_condensed" /><span class="choice-check" aria-hidden="true">✓</span><span class="caption-sample sample-din-condensed">Aa</span><span class="choice-label">Powder</span></label>
               <label class="choice-card"><input type="radio" name="caption-style" value="baskerville" /><span class="choice-check" aria-hidden="true">✓</span><span class="caption-sample sample-baskerville">Aa</span><span class="choice-label">Baskerville</span></label>
+              <label class="choice-card"><input type="radio" name="caption-style" value="montserrat" /><span class="choice-check" aria-hidden="true">✓</span><span class="caption-sample sample-montserrat">Aa</span><span class="choice-label">Montserrat</span></label>
             </div>
           </fieldset>
 
@@ -290,6 +313,7 @@
               <span class="hint">Edit any misheard word. Timing stays locked.</span>
             </div>
             <div class="transcript" contenteditable="false" aria-label="Editable transcript"></div>
+            <div class="emoji-strip" hidden></div>
           </div>
 
           <div class="text-panel lyrics" hidden>

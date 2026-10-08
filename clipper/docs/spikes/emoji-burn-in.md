@@ -138,3 +138,44 @@ captions — emoji burn in full color, on the plate, persisting the whole clip,
 with word-highlight captions intact. Linux note: a fontconfig-backed libass with
 Noto + rejecting `.LastResort` would also work libass-direct, but the overlay is
 the portable answer that covers macOS.
+
+## Caption emoji track (RiceSuite #66)
+
+**Spiked 2026-10-06, built 2026-10-06 (frames inspected).** Caption emoji rows
+take the same PNG path as headers, but they change with the phrase, so they are
+a timed image track rather than one still:
+
+- Pillow draws one transparent 1080×1920 PNG per phrase that shows a row
+  (`render/emoji_track.py`), from Apple Color Emoji's 160 px strike scaled to
+  the row height, centred over the caption block above or below it.
+- An `ffconcat` list gives each PNG a `duration`, with a blank PNG for the
+  gaps. The concat demuxer applies a file's `duration` only when another entry
+  follows, so **the last file is listed again** (confirmed in the spike:
+  without it, the final row's duration is ignored).
+- ffmpeg reads the list as **one** input (`-f concat -safe 0 -i
+  emoji.ffconcat`) and composites it with one `overlay=0:0:eof_action=pass`
+  after `subtitles`, before the header overlay.
+- Durations are whole microseconds, each the difference of two absolute
+  times, so a long clip does not drift. Every entry also sets `option
+  framerate 1000`: the image demuxer's default 1/25 s time base rounded each
+  row boundary to 40 ms (found in cold review, checked with `ffprobe`), and a
+  1 ms time base puts every row within 1 ms of its phrase.
+- With Motion on, a row starts with two pre-scaled frames (70% for 40 ms, then
+  112% for 80 ms) before it rests at 100%, in step with the caption pop.
+
+Spike filter graph:
+
+```
+ffmpeg -f lavfi -i color=c=0x3a4a5a:s=1080x1920:r=30:d=4 -f concat -safe 0 -i emoji.ffconcat \
+  -filter_complex "[0:v]subtitles=cap.ass[s];[s][1:v]overlay=0:0:eof_action=pass[v]" -map "[v]" ...
+```
+
+Two more spike findings shaped the captions themselves (SPEC §5):
+
+- `{\r}`, which the highlight used to close the active word, resets **every**
+  override tag, so a phrase's pop, scale and blur were lost after the active
+  word. Motion restores colour and scale explicitly instead.
+- The subtitles filter's `fontsdir` loads a bundled font (`Loading font file
+  'fonts/Montserrat-Black.ttf'`) with the CoreText provider. Without it, libass
+  **silently** falls back to Helvetica; it also does so when the ASS names the
+  bare family `Montserrat` rather than the face's full name `Montserrat Black`.

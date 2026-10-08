@@ -320,6 +320,131 @@ CHECKS = r"""
 """
 
 
+# Caption emoji, inline in the transcript (RiceSuite #66, option B): pills sit
+# after their anchor words, outside the editable words; a focused word opens
+# its phrase's strip; the strip fits the transcript panel. EMOJI_RESET turns it
+# off again so the layout checks above see the default card.
+EMOJI_CHECKS = r"""
+(() => {
+  const clip = window.__editorFixture;
+  const issues = [];
+  const check = (truth, message) => { if (!truth) issues.push(message); };
+  const rect = (el) => el.getBoundingClientRect();
+  const box = clip.transcriptEl;
+  const word = (i) => box.querySelector('.word[data-index="' + i + '"]');
+  clip.emojiToggleEl.checked = true;
+  clip.emojiToggleEl.dispatchEvent(new Event("change", { bubbles: true }));
+  setEmojiPicks(clip, { 1: ["\u{1F525}"], 5: ["\u{1F355}", "\u{1F389}"] });
+  const pills = Array.from(box.querySelectorAll(".emoji-pill"));
+  check(pills.length === 2, "two emoji pills");
+  check(pills[0] && pills[0].previousElementSibling === word(1), "pill follows its anchor word");
+  check(pills[1] && pills[1].previousElementSibling === word(5) && pills[1].textContent === "\u{1F355}\u{1F389}", "second pill shows both emoji");
+  const seps = box.querySelectorAll(".phrase-sep");
+  check(seps.length === 1 && seps[0].nextElementSibling === word(5), "one phrase break, before the second phrase");
+  check(pills.every((p) => !p.isContentEditable), "pills are not editable text");
+  check(word(1).isContentEditable && word(5).isContentEditable, "words stay editable");
+  check(collectWords(clip).map((w) => w.text).join(" ") === clip.words.map((w) => w.text).join(" "), "markers never reach the words");
+  const lineHeight = parseFloat(getComputedStyle(box).lineHeight);
+  check(pills.every((p) => rect(p).height <= lineHeight), "pills fit the text line");
+  word(6).focus();
+  const strip = clip.emojiStripEl;
+  check(!strip.hidden, "a focused word opens its phrase's strip");
+  check(strip.querySelector(".emoji-move") && strip.querySelector(".emoji-move").textContent.includes("locked"), "strip offers to move the emoji to the focused word");
+  check(strip.querySelectorAll(".emoji-chip").length === 2, "strip lists the phrase's emoji");
+  const panel = rect(clip.el.querySelector(".transcript-panel"));
+  const minimum = matchMedia("(pointer: coarse)").matches ? 44 : 36;
+  for (const control of strip.querySelectorAll("button, input")) {
+    const r = rect(control);
+    check(r.height >= minimum, "target size emoji strip " + (control.className || control.tagName));
+    check(r.x >= panel.x - 1 && r.right <= panel.right + 1, "emoji strip control inside the transcript panel");
+  }
+  check(document.documentElement.scrollWidth <= document.documentElement.clientWidth, "emoji strip adds no horizontal overflow");
+  strip.querySelector(".emoji-chip:last-child").click();
+  check(box.querySelectorAll(".emoji-pill")[1].textContent === "\u{1F355}", "removing a chip updates the pill");
+  clip.emojiStripEl.querySelector(".emoji-move").click();
+  check(word(6).nextElementSibling && word(6).nextElementSibling.classList.contains("emoji-pill"), "Move puts the pill after the focused word");
+  check(!word(5).nextElementSibling.classList.contains("emoji-pill"), "Move leaves no pill behind");
+  return { issues };
+})()
+"""
+
+EMOJI_RESET = r"""
+(() => {
+  const clip = window.__editorFixture;
+  clip.emojiToggleEl.checked = false;
+  clip.emojiToggleEl.dispatchEvent(new Event("change", { bubbles: true }));
+  const clean = !clip.transcriptEl.querySelector(".emoji-pill, .phrase-sep") && clip.emojiStripEl.hidden;
+  resetEmojiPicks(clip);
+  refreshEmoji(clip);
+  if (document.activeElement) document.activeElement.blur();
+  window.scrollTo(0, 0);
+  return clean;
+})()
+"""
+
+
+def _mouse_click(devtools, selector_js):
+    """Click an element with real pointer events (focus moves on press)."""
+    point = devtools.evaluate(
+        f"""(() => {{
+          const el = {selector_js};
+          el.scrollIntoView({{ block: "center" }});
+          const r = el.getBoundingClientRect();
+          return {{ x: r.x + r.width / 2, y: r.y + r.height / 2 }};
+        }})()"""
+    )
+    for kind in ("mousePressed", "mouseReleased"):
+        devtools.call(
+            "Input.dispatchMouseEvent",
+            {
+                "type": kind,
+                "x": point["x"],
+                "y": point["y"],
+                "button": "left",
+                "clickCount": 1,
+            },
+        )
+
+
+def emoji_click_after_edit(devtools):
+    """Cold review S2: the first strip click after typing in a word counts."""
+    devtools.evaluate(
+        r"""(() => {
+          const c = window.__editorFixture;
+          c.emojiToggleEl.checked = true;
+          c.emojiToggleEl.dispatchEvent(new Event("change", { bubbles: true }));
+          setEmojiPicks(c, { 1: ["\u{1F525}"] });
+        })()"""
+    )
+    _mouse_click(
+        devtools,
+        "window.__editorFixture.transcriptEl.querySelector('.word[data-index=\"1\"]')",
+    )
+    devtools.call("Input.insertText", {"text": "y"})
+    _mouse_click(
+        devtools,
+        "window.__editorFixture.emojiStripEl.querySelector('.emoji-palette button')",
+    )
+    time.sleep(0.05)
+    picks = devtools.evaluate("JSON.stringify(window.__editorFixture.emojiPicks)")
+    devtools.evaluate(
+        """(() => {
+          const c = window.__editorFixture;
+          const word = c.transcriptEl.querySelector('.word[data-index="1"]');
+          word.textContent = c.words[1].text;
+          c.emojiToggleEl.checked = false;
+          c.emojiToggleEl.dispatchEvent(new Event("change", { bubbles: true }));
+          resetEmojiPicks(c);
+          refreshEmoji(c);
+          if (document.activeElement) document.activeElement.blur();
+          window.scrollTo(0, 0);
+        })()"""
+    )
+    first = json.loads(picks).get("1", [])
+    if len(first) != 2:
+        raise AssertionError(f"first strip click after a word edit was lost: {picks}")
+
+
 def tab_reachability(devtools, mode, *, disabled_target=None):
     """Walk the real Tab sequence and check focus rings on representative controls."""
     if disabled_target == "lyrics":
@@ -528,6 +653,27 @@ def main():
                             content_arrow_switch(devtools, mode)
                         except AssertionError as error:
                             failures.append(f"{width}x{height} {mode}: {error}")
+                        if mode == "speech":
+                            emoji = devtools.evaluate(EMOJI_CHECKS)
+                            if emoji["issues"]:
+                                failures.append(
+                                    f"{width}x{height} emoji: {emoji['issues']}"
+                                )
+                            shot = devtools.call(
+                                "Page.captureScreenshot",
+                                {"format": "png", "captureBeyondViewport": True},
+                            )
+                            (OUTPUT / f"emoji-{width}x{height}.png").write_bytes(
+                                base64.b64decode(shot["data"])
+                            )
+                            if not devtools.evaluate(EMOJI_RESET):
+                                failures.append(
+                                    f"{width}x{height}: Emoji off left markers behind"
+                                )
+                            try:
+                                emoji_click_after_edit(devtools)
+                            except AssertionError as error:
+                                failures.append(f"{width}x{height}: {error}")
                     music = by_mode["music"]["settings"]
                     speech = by_mode["speech"]["settings"]
                     if any(

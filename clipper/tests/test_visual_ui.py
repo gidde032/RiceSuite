@@ -16,7 +16,7 @@ def test_review_ui_exposes_all_visual_choices_and_sends_them():
     html = _html()
     javascript = _js()
 
-    # All three header treatments and all eleven caption presets are offered as
+    # All three header treatments and all twelve caption presets are offered as
     # per-clip radio-card tiles. The universal pre-upload batch-default selects
     # were removed in favor of per-slot saved defaults.
     assert 'value="plain"' in html
@@ -34,6 +34,7 @@ def test_review_ui_exposes_all_visual_choices_and_sends_them():
         "velvet_serif",
         "din_condensed",
         "baskerville",
+        "montserrat",
     ):
         assert f'value="{style}"' in html
 

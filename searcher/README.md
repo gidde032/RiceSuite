@@ -121,10 +121,10 @@ path variables below. `rice start` never reads these files.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | *(none)* | Required by `score` (not `score --offline`). Nothing else calls a paid API. |
-| `RICESEARCHER_SCORER_MODEL` | `claude-haiku-4-5` | Scorer model (lowest cost). `score --model` overrides it. |
-| `RICESEARCHER_DATA_DIR` | as `rice data location` | Library (`library.sqlite3`), media cache (`cache/`), and profiles. |
-| `RICESEARCHER_PROFILES_DIR` | `ricesuite.env`, else `<data_dir>/profiles` | Where profile JSON files live. |
-| `RICESEARCHER_HANDOFF_DIR` | as `rice data location` | Where handoff batches are written for RiceClipper. |
+| `RICESEARCHER_SCORER_MODEL` | `claude-haiku-5-5` | Scorer model (lowest cost). `score --model` overrides it. |
+| `RICESEARCHER_DATA_DIR` | `~/.ricesearcher` | Library (`library.sqlite3`), media cache (`cache/`), and profiles. |
+| `RICESEARCHER_PROFILES_DIR` | `<data_dir>/profiles` | Where profile JSON files live. |
+| `RICESEARCHER_HANDOFF_DIR` | `~/ricesearcher-handoff` | Where handoff batches are written for RiceClipper. |
 | `RICESEARCHER_EMBED_MODEL` | `all-MiniLM-L6-v2` | sentence-transformers model used by `dedup`. |
 
 If the data or handoff path is not set by the shell, `credentials.env` or
@@ -198,7 +198,7 @@ ricesearcher list                                 # list library sources
 ricesearcher show <id-or-prefix>                  # print a source's transcript
 ricesearcher profiles                             # list saved profiles and their counts
 ricesearcher score <id-or-prefix> --profile ID    # extract + LLM-score under one profile
-ricesearcher score <id-or-prefix> --profile ID --model claude-sonnet-4-6  # pricier scorer
+ricesearcher score <id-or-prefix> --profile ID --model claude-sonnet-5-5  # pricier scorer
 ricesearcher score <id-or-prefix> --profile ID --offline  # heuristic-only; no API key or network
 ricesearcher slices --profile ID [--source ID]    # list scored candidate slices in a profile
 ricesearcher dedup --profile ID [--threshold 0.65]  # advisory possible-duplicate flags

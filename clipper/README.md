@@ -35,10 +35,10 @@ local files and writes local files. Posting — and its approval gate — belong
 RicePoster, which separately pulls from RiceClipper's local handoff. See
 `SPEC.md` §3.
 
-The **only** outbound network feature is the optional on-screen header
-generator, and it is **opt-in**: nothing is sent after transcription
-automatically. It requires an `ANTHROPIC_API_KEY` and runs only when you click
-**✨ Generate** in the review UI. Everything else — transcription, subject
+The **only** outbound network features are the optional on-screen header
+generator and the caption emoji picker, and both are **opt-in**: nothing is
+sent after transcription automatically. They require an `ANTHROPIC_API_KEY` and
+run only when you click **✨ Generate** or **✨ Suggest emoji** in the review UI. Everything else — transcription, subject
 detection, rendering — runs fully offline once the Whisper model has been
 downloaded (see [First run](#first-run)). See [`SECURITY.md`](./SECURITY.md)
 for exactly what is transmitted, and [`.env.example`](./.env.example) for
@@ -52,9 +52,10 @@ configuration.
 - **OpenCV YuNet** for local landscape subject detection (model vendored in
   `render/models/`, no download)
 - **ffmpeg + libass** (ASS subtitles) for caption burn-in and audio mix, and
-  **Pillow** for the header image ffmpeg overlays
-- Anthropic Sonnet for the **opt-in** on-screen header generator (Wave 1) —
-  the only outbound network feature; off unless you set a key and click Generate
+  **Pillow** for the header image and caption emoji rows ffmpeg overlays
+- Anthropic Claude Haiku 5.5 for the **opt-in** on-screen header generator (Wave 1) and
+  caption emoji picker (RiceSuite #66) — the only outbound network features;
+  off unless you set a key and click Generate or Suggest emoji
 
 ## Requirements
 
@@ -127,9 +128,9 @@ locally and the header field is manual-only. The variables are documented in
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | *(unset)* | Enables **✨ Generate** for the header. Without it, clicking Generate returns an error and you type the header by hand. |
+| `ANTHROPIC_API_KEY` | *(unset)* | Enables **✨ Generate** for the header and **✨ Suggest emoji** for caption emoji. Without it, either button returns an error; you type the header and pick emoji by hand. |
 | `RICECLIPPER_HEADER_STYLE` | `generic-header` | Header prompt style; must match a file in `prompts/`. |
-| `RICECLIPPER_HEADER_MODEL` | `claude-sonnet-5` | Anthropic model for header generation. |
+| `RICECLIPPER_HEADER_MODEL` | `claude-haiku-5-5` | Anthropic model for header generation and the caption emoji picker (one setting for both). |
 | `RICECLIPPER_WHISPER_MODEL` | `small` | `tiny` / `base` / `small` / `medium` / `large-v3`. Smaller is a faster, smaller download. |
 | `RICECLIPPER_WHISPER_DEVICE` | `cpu` | `cpu` or `cuda`. |
 | `RICECLIPPER_WHISPER_COMPUTE` | `int8` | ctranslate2 compute type. |

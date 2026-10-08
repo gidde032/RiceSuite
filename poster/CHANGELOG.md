@@ -15,6 +15,11 @@ published as a tagged release or GitHub Release.
 
 ### Changed
 
+- **Captions use Claude Haiku 5.5** (`claude-haiku-5-5`, RiceSuite
+  [#75](https://github.com/gidde032/RiceSuite/issues/75)), by maintainer direction, replacing `claude-sonnet-4-6`. The
+  model thinks before it answers, so the reply's text blocks are read by type,
+  the budget is 2048 tokens, and a reply with no text raises
+  `CaptionReplyError` naming its stop reason.
 - **Pull from Clipper is manual only.** The Post page no longer pulls a
   waiting Clip batch on its own, not even into an empty Review: only your
   **Pull from Clipper** click pulls. The inbox note still lists waiting,

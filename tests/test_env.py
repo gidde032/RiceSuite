@@ -83,6 +83,12 @@ def test_every_known_variable_is_documented_in_the_example():
         assert probe in text and env.is_known(probe)
 
 
+def test_example_says_the_header_model_also_drives_the_emoji_picker():
+    lines = EXAMPLE.read_text(encoding="utf-8").splitlines()
+    at = next(i for i, line in enumerate(lines) if "RICECLIPPER_HEADER_MODEL=" in line)
+    assert "emoji" in lines[at - 1]
+
+
 def test_example_parses_to_nothing_but_comments():
     """Copying the example must not silently configure anything."""
     assert env.read_env_file(EXAMPLE) == {}

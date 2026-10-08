@@ -21,6 +21,13 @@ All notable changes to RiceSearcher are documented here. This project adheres to
     applies, as it does under `rice start`.
   - `python -m ricesearcher.web` reports an invalid suite configuration as a
     one-line error (exit 2) instead of a traceback.
+    
+### Changed
+
+- **The scorer defaults to Claude Haiku 5.5** (`claude-haiku-5-5`, RiceSuite
+  [#75](https://github.com/gidde032/RiceSuite/issues/75)), by maintainer direction, replacing `claude-haiku-4-5`; its
+  budget rises from 2048 to 8192 tokens because the model thinks before it
+  answers. `RICESEARCHER_SCORER_MODEL` and `score --model` still override it.
 
 ### Documentation
 

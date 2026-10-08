@@ -131,10 +131,24 @@ both the visible toolbar symbol and the favicon.
 
 - Per-clip header styles become three accessible radio-card tiles: **Plain
   text**, **Black plate**, and **White plate**.
-- Per-clip caption styles become eleven accessible radio-card tiles: **Classic**,
+- Per-clip caption styles become twelve accessible radio-card tiles: **Classic**,
   **Clean**, **Punch**, **Friendly**, **Sunset**, **Mono**, **Editorial**,
-  **Lyric Block**, **Velvet Serif**, **Powder**, and **Baskerville**. Powder keeps
-  the stable `din_condensed` identifier and uses the DIN Condensed font.
+  **Lyric Block**, **Velvet Serif**, **Powder**, **Baskerville**, and
+  **Montserrat**. Powder keeps the stable `din_condensed` identifier and uses the
+  DIN Condensed font. Montserrat (RiceSuite #66) uses the bundled Montserrat
+  Black font; its tile falls back to Arial Black where the browser lacks it.
+- A **Motion** switch under **Burn captions** (RiceSuite #66), on by default
+  and saved per slot, turns the caption pop-in, active-word bump, and soft
+  shadow on or off. It is disabled while captions are off and hidden on a
+  photo card.
+- An **Emoji** switch and a **✨ Suggest emoji** button sit under **Motion**
+  (RiceSuite #66), off by default, saved per slot, and hidden on a photo card.
+  With Emoji on, the transcript shows phrase breaks as a thin `│` and each
+  phrase's emoji as a pill after its anchor word; a pill or a focused word
+  opens an emoji strip under the transcript (chips, a palette, a paste box,
+  Move, and Done). Strip controls meet the 36 px target size (44 px on a
+  coarse pointer); the inline pills stay text height. ✨ Suggest emoji asks
+  for a second click before it replaces existing picks.
 - Each tile includes a truthful miniature treatment example and a text label.
 - Selection uses a rice-grey border and checkmark, never color alone.
 - The underlying values and API payload shapes remain the existing

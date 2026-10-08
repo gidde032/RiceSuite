@@ -25,7 +25,8 @@ class _FakeAsyncAnthropic:
 
     async def create(self, **kwargs):
         self.last_kwargs = kwargs
-        return SimpleNamespace(content=[SimpleNamespace(text="  a fine caption  ")])
+        block = SimpleNamespace(type="text", text="  a fine caption  ")
+        return SimpleNamespace(content=[block])
 
 
 @pytest.fixture
@@ -63,7 +64,8 @@ def test_owned_async_client_closes_on_success_and_failure(monkeypatch):
             self.messages = self
 
         async def create(self, **kwargs):
-            return SimpleNamespace(content=[SimpleNamespace(text="caption")])
+            block = SimpleNamespace(type="text", text="caption")
+            return SimpleNamespace(content=[block])
 
         async def close(self):
             closed.append(True)
@@ -90,7 +92,8 @@ def test_cleanup_failure_preserves_caption_and_request_error(monkeypatch):
             self.messages = self
 
         async def create(self, **kwargs):
-            return SimpleNamespace(content=[SimpleNamespace(text="caption")])
+            block = SimpleNamespace(type="text", text="caption")
+            return SimpleNamespace(content=[block])
 
         async def close(self):
             raise RuntimeError("cleanup failed")
@@ -104,4 +107,77 @@ def test_cleanup_failure_preserves_caption_and_request_error(monkeypatch):
 
     monkeypatch.setattr(captions.anthropic, "AsyncAnthropic", BadRequest)
     with pytest.raises(ValueError, match="request failed"):
+        asyncio.run(captions.generate_caption("video", "topic"))
+
+
+# --- Claude Haiku 5.5 (RiceSuite #75) ----------------------------------------
+
+
+def _sdk_reply(*blocks, stop_reason="end_turn"):
+    from anthropic.types import Message, Usage
+
+    return Message(
+        id="msg_fake",
+        type="message",
+        role="assistant",
+        model="fake",
+        content=list(blocks),
+        stop_reason=stop_reason,
+        stop_sequence=None,
+        usage=Usage(input_tokens=1, output_tokens=1),
+    )
+
+
+def _thinking():
+    from anthropic.types import ThinkingBlock
+
+    return ThinkingBlock(type="thinking", thinking="", signature="sig")
+
+
+def _text(value):
+    from anthropic.types import TextBlock
+
+    return TextBlock(type="text", text=value)
+
+
+def _client_returning(response, calls):
+    class Client:
+        def __init__(self, *, api_key=None, **kwargs):
+            self.messages = self
+
+        async def create(self, **kwargs):
+            calls.append(kwargs)
+            return response
+
+        async def close(self):
+            pass
+
+    return Client
+
+
+def test_captions_use_claude_haiku_5_5_with_room_to_think(monkeypatch):
+    monkeypatch.setattr(captions, "ANTHROPIC_API_KEY", SecretStr("fake-key"))
+    calls = []
+    client = _client_returning(_sdk_reply(_text("caption")), calls)
+    monkeypatch.setattr(captions.anthropic, "AsyncAnthropic", client)
+    asyncio.run(captions.generate_caption("video", "topic"))
+    assert calls[0]["model"] == "claude-haiku-5-5"
+    assert calls[0]["max_tokens"] >= 2048
+
+
+def test_a_thinking_first_reply_still_returns_the_caption(monkeypatch):
+    # Haiku 5.5 thinks by default: the reply can start with a thinking block.
+    monkeypatch.setattr(captions, "ANTHROPIC_API_KEY", SecretStr("fake-key"))
+    reply = _sdk_reply(_thinking(), _text("  a fine caption  "))
+    client = _client_returning(reply, [])
+    monkeypatch.setattr(captions.anthropic, "AsyncAnthropic", client)
+    assert asyncio.run(captions.generate_caption("video", "topic")) == "a fine caption"
+
+
+def test_a_reply_with_no_text_names_its_stop_reason(monkeypatch):
+    monkeypatch.setattr(captions, "ANTHROPIC_API_KEY", SecretStr("fake-key"))
+    reply = _sdk_reply(_thinking(), stop_reason="max_tokens")
+    client = _client_returning(reply, [])
+    monkeypatch.setattr(captions.anthropic, "AsyncAnthropic", client)
+    with pytest.raises(captions.CaptionReplyError, match="max_tokens"):
         asyncio.run(captions.generate_caption("video", "topic"))

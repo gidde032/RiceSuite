@@ -27,6 +27,11 @@ DEFAULT_STYLE = "generic"
 # notifier.send is.
 CAPTION_API_TIMEOUT_S = TIMEOUT_SECONDS
 
+# Claude Haiku 5.5 (RiceSuite #75). It thinks before it answers, and thinking
+# counts against max_tokens, so the budget is well above a caption's length.
+CAPTION_MODEL = "claude-haiku-5-5"
+CAPTION_MAX_TOKENS = 2048
+
 
 class CaptionStyle(BaseModel):
     name: str
@@ -108,6 +113,28 @@ class CaptionConfigError(RuntimeError):
     """
 
 
+class CaptionReplyError(RuntimeError):
+    """The model's reply held no caption text (for example, it ran out of
+    max_tokens while thinking, or declined). The message names the stop
+    reason."""
+
+
+def _reply_text(response) -> str:
+    """The reply's text blocks, joined and stripped.
+
+    Read by block type, not position: the model thinks by default, so a reply
+    can start with a thinking block (RiceSuite #75).
+    """
+    text = "".join(
+        block.text for block in response.content if block.type == "text"
+    ).strip()
+    if not text:
+        raise CaptionReplyError(
+            f"The caption reply had no text (stop_reason={response.stop_reason!r})."
+        )
+    return text
+
+
 async def generate_caption(
     media_type: str,
     topic: str,
@@ -138,8 +165,8 @@ async def generate_caption(
             media_type, topic, selected.no_topic_fallback, avoid_caption, feedback
         )
         response = await client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=500,
+            model=CAPTION_MODEL,
+            max_tokens=CAPTION_MAX_TOKENS,
             system=selected.system_prompt,
             messages=[{"role": "user", "content": _build_content(user_prompt, thumbnail_b64)}],
         )
@@ -151,4 +178,4 @@ async def generate_caption(
         ) from e
     finally:
         await close_async_client(client)
-    return response.content[0].text.strip()
+    return _reply_text(response)
