@@ -1,9 +1,10 @@
 """Auto-header generator: frame snapshot + transcript -> a one-line hook.
 
-The deferred Wave-1 auto-header (SPEC.md §6.2, D7): an Anthropic Sonnet vision
-model turns an early frame + the reviewed transcript (+ an optional editor note)
-into a single on-screen header ending in one or two emoji. Manual entry stays the
-fallback — the review UI never blocks on this call.
+The deferred Wave-1 auto-header (SPEC.md §6.2, D7): an Anthropic vision-capable
+model (default Claude Haiku 5.5, RiceSuite #75) turns an early frame + the
+reviewed transcript (+ an optional editor note) into a single on-screen header
+ending in one or two emoji. Manual entry stays the fallback — the review UI
+never blocks on this call.
 
 It shares Clipper's one Anthropic call site, ``app.anthropic_text``, with the
 caption emoji picker (SPEC.md §3, ADR-001 fact 1). It generates text and posts

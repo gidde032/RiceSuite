@@ -53,7 +53,7 @@ configuration.
   `render/models/`, no download)
 - **ffmpeg + libass** (ASS subtitles) for caption burn-in and audio mix, and
   **Pillow** for the header image and caption emoji rows ffmpeg overlays
-- Anthropic Sonnet for the **opt-in** on-screen header generator (Wave 1) and
+- Anthropic Claude Haiku 5.5 for the **opt-in** on-screen header generator (Wave 1) and
   caption emoji picker (RiceSuite #66) — the only outbound network features;
   off unless you set a key and click Generate or Suggest emoji
 
@@ -130,7 +130,7 @@ locally and the header field is manual-only. The variables are documented in
 | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | *(unset)* | Enables **✨ Generate** for the header and **✨ Suggest emoji** for caption emoji. Without it, either button returns an error; you type the header and pick emoji by hand. |
 | `RICECLIPPER_HEADER_STYLE` | `generic-header` | Header prompt style; must match a file in `prompts/`. |
-| `RICECLIPPER_HEADER_MODEL` | `claude-sonnet-5` | Anthropic model for header generation and the caption emoji picker (one setting for both). |
+| `RICECLIPPER_HEADER_MODEL` | `claude-haiku-5-5` | Anthropic model for header generation and the caption emoji picker (one setting for both). |
 | `RICECLIPPER_WHISPER_MODEL` | `small` | `tiny` / `base` / `small` / `medium` / `large-v3`. Smaller is a faster, smaller download. |
 | `RICECLIPPER_WHISPER_DEVICE` | `cpu` | `cpu` or `cuda`. |
 | `RICECLIPPER_WHISPER_COMPUTE` | `int8` | ctranslate2 compute type. |

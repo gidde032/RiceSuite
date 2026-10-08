@@ -256,7 +256,7 @@ and `RenderRequest.emoji_on` turns them on.
   are not saved per slot; any change marks a finished render stale. The
   editor groups phrases with the same rule as `group_words`, and accepts the
   same emoji as the render (tests compare both).
-- **✨ Suggest emoji.** `POST /api/jobs/{id}/emoji` makes one Sonnet call per
+- **✨ Suggest emoji.** `POST /api/jobs/{id}/emoji` makes one model call per
   clip, only when the button is clicked (§3), through the header's call site.
   It sends the caption phrases as `transcribe.phrasing.group_words` makes them,
   each word with its global index, and a system prompt that asks for sparse
@@ -302,7 +302,8 @@ for silent clips: the header is the text layer.
 
 ### 6.2 Auto-generated with manual fallback (Wave 1 — implemented)
 **Status: implemented.** After transcription the header auto-fills from an early
-frame snapshot + transcript via an Anthropic Sonnet vision model
+frame snapshot + transcript via an Anthropic vision-capable model (Claude
+Haiku 5.5 by default since RiceSuite [#75](https://github.com/gidde032/RiceSuite/issues/75))
 (`app/header_gen.py`, `render/frame.py`, `POST /api/jobs/{id}/header`); a per-clip
 **Generate** button regenerates with optional guidance, and manual entry stays
 the fallback. Prompt styles live in gitignored `prompts/*.json` (only the neutral
@@ -324,6 +325,9 @@ call is skipped entirely when no `ANTHROPIC_API_KEY` is set. What is sent on an
 explicit trigger is documented in `SECURITY.md`.
 
 **Engine lean (recorded; finalized at build):** Sonnet, keeping the vision frame.
+**Amended 2026-10-08 (RiceSuite [#75](https://github.com/gidde032/RiceSuite/issues/75)):** by maintainer direction the
+default model is Claude Haiku 5.5 (`claude-haiku-5-5`), still with the vision
+frame; `RICECLIPPER_HEADER_MODEL` selects another model.
 A local/free model was considered to match the local transcription stack and
 **rejected** for v1's header: header text is language *generation* (not
 transcription), so "local" means a heavy multi-GB local LLM that writes
@@ -419,7 +423,7 @@ warning. Plans saved before #65 keep their ingest warning.
   1. **RicePoster integration — implemented.** Outputs drop into the harness's pickup contract.
   2. **Silence-only trimming** — cut long gaps (silence detection); keep A/V sync,
      smooth jump cuts.
-  3. **Header generator — implemented (opt-in).** The Sonnet vision agent above
+  3. **Header generator — implemented (opt-in).** The vision agent above
      runs only on an explicit UI action and retains manual entry as the
      fallback; the emoji spike is resolved via the PNG-overlay path (§8).
 - **Wave 2 — early additions:**
@@ -476,7 +480,7 @@ warning. Plans saved before #65 keep their ingest warning.
   seconds on CPU for sub-minute clips). WhisperX only if word sync looks loose.
 - **Rendering:** ffmpeg + libass (ASS captions), Pillow header PNG overlay
   (§6.3), blur-pad filter, audio mix.
-- **Text generation:** Anthropic Sonnet, through one call site
+- **Text generation:** Anthropic Claude Haiku 5.5 (`RICECLIPPER_HEADER_MODEL`), through one call site
   (`app/anthropic_text.py`): the header agent (vision, JSON-styled prompt;
   Wave 1) and the caption emoji picker (text only; RiceSuite #66). Both opt-in.
 - **Output:** 1080×1920, H.264 / AAC, mp4.
@@ -492,7 +496,7 @@ warning. Plans saved before #65 keep their ingest warning.
 | D4 | Manual override | Edit transcript text (timing locked); captions-off → header-only. Hand-timed custom body captions cut from v1. Lyric alignment (D16) writes ordinary words; text stays editable, timing stays locked | Header already covers "text on a silent clip", so no hand-timing UI needed |
 | D5 | Trimming | None in v1 | The "maybe" and the riskiest component; silence-trim is Wave-1 |
 | D6 | Header (v1) | Manual 1–2 line text box, on every clip | Smallest path to end-to-end; doubles as the silent-clip text layer |
-| D7 | Header (auto) | Deferred (Wave 1): Sonnet vision + transcript + optional desc, manual fallback | Most visible line; strong model earns its keep; local LLM writes weaker hooks |
+| D7 | Header (auto) | Deferred (Wave 1): Sonnet vision + transcript + optional desc, manual fallback. **Amended 2026-10-08 (RiceSuite [#75](https://github.com/gidde032/RiceSuite/issues/75)):** the default model is Claude Haiku 5.5 by maintainer direction. | Most visible line; strong model earns its keep; local LLM writes weaker hooks |
 | D8 | Caption style | Word-by-word highlight within ~4–5 word phrase groups; Tier-1 preset. **Amended 2026-10-06 (RiceSuite [#66](https://github.com/gidde032/RiceSuite/issues/66)):** the highlight stays, with no fixed keyword colour; a per-clip Motion toggle (on by default) adds a phrase pop-in, an active-word scale bump, and a soft blurred shadow, still drawn by libass (§5); a per-clip Emoji toggle (off by default) adds a row of one or two colour emoji above or below some phrases, suggested by Sonnet only on a button click, edited by hand, and drawn by Pillow as one overlaid image track (§5.1) | The signature look; entirely native to libass. Flat captions read as dated next to platform-native ones, and Tier-2 motion needs no second engine |
 | D9 | Transcription | faster-whisper, local | Free, private, word timestamps built in; fits local-first setup |
 | D10 | Interface | FastAPI + vanilla HTML/JS localhost, review gate | Hosts override + header entry; matches RicePoster for easy merge |

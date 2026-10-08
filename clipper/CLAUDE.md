@@ -78,7 +78,7 @@ network features, both opt-in, through one Anthropic call site
 
 Python + FastAPI (local server) · vanilla HTML/JS review UI · faster-whisper
 (word-level transcription) · ffmpeg + libass (ASS subtitle burn-in, blur-pad,
-audio mix) · Anthropic Sonnet for the implemented auto-header · local-first
+audio mix) · Anthropic Claude Haiku 5.5 for the implemented auto-header and emoji picker · local-first
 throughout · output 1080×1920 H.264/AAC mp4.
 
 ## Relationship to RicePoster

@@ -143,3 +143,11 @@ def test_cleanup_failure_does_not_discard_header(monkeypatch):
 
     monkeypatch.setattr(header_gen, "_create_client", lambda key: BadClose())
     assert header_gen.generate_header("hello") == "Header from model 🎉"
+
+
+def test_the_default_model_is_claude_haiku_5_5(monkeypatch):
+    # RiceSuite #75: one model setting for the header and the emoji picker.
+    monkeypatch.delenv("RICECLIPPER_HEADER_MODEL", raising=False)
+    client = FakeClient()
+    header_gen.generate_header("hi", client=client)
+    assert client.calls[0]["model"] == "claude-haiku-5-5"
