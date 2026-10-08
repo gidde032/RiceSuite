@@ -318,7 +318,9 @@ def _handoff_dir(
     data = tmp_path / "poster-data"
     data.mkdir()
     env = _suite_environ(tmp_path, lines)
-    env["RICEPOSTER_DATA_DIR"] = str(data)
+    # Blank counts as unset, and keeps a HANDOFF_DIR in the developer's
+    # credentials.env (loaded before HANDOFF_DIR is read) out of the child.
+    env.update(RICEPOSTER_DATA_DIR=str(data), HANDOFF_DIR="")
     if legacy:
         (Path(env["HOME"]) / "riceclipper-handoff").mkdir()
     result = subprocess.run(
@@ -362,7 +364,7 @@ def test_a_suite_configuration_error_stops_an_unset_handoff_dir(tmp_path):
     data = tmp_path / "poster-data"
     data.mkdir()
     env = _suite_environ(tmp_path, ("RICESUITE_DATA_DIR=not-absolute",))
-    env["RICEPOSTER_DATA_DIR"] = str(data)
+    env.update(RICEPOSTER_DATA_DIR=str(data), HANDOFF_DIR="")
     result = _import_config(env)
     assert result.returncode != 0
     assert "RiceSuite configuration" in result.stderr
