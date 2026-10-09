@@ -603,3 +603,54 @@ test("a lost connection after a warning also clears it", async () => {
   assert.equal(warn.hidden, true);
   assert.match(ctx.clip.headerPreviewNoteEl.textContent, /Failed to fetch\. Face position not checked\.$/);
 });
+
+test("a failed request also hides an ingest face-near-captions warning", async () => {
+  const { js, ctx } = boot({
+    "POST api/jobs/j1/header-preview": () => [422, { detail: "bad" }],
+  });
+  const { clip, warn } = warnedCard();
+  clip.geoState.crop_plan = { ...clip.geoState.crop_plan, warning: "caption_zone" };
+  ctx.clip = clip;
+  ctx.clip.headerLook = js('headerPreset("plain")');
+  js("applyGeometry(clip, clip.geoState)");
+  assert.equal(warn.textContent, "face near captions");
+  await js("requestHeaderPreview(clip)");
+  assert.equal(warn.hidden, true);
+  assert.match(ctx.clip.headerPreviewNoteEl.textContent, /Face position not checked\.$/);
+});
+
+test("a failure for older settings leaves the updating state alone", async () => {
+  const replies = [];
+  const { js, ctx, timers } = boot({
+    "POST api/jobs/j1/header-preview": () => new Promise((resolve) => replies.push(resolve)),
+  });
+  const { clip } = warnedCard();
+  ctx.clip = clip;
+  ctx.clip.headerLook = js('headerPreset("plain")');
+  ctx.clip.headerPreviewEl.src = "data:a";
+  js("scheduleHeaderPreview(clip)");
+  timers.filter((t) => t.live)[0].fn();
+  await settle();
+  js("scheduleHeaderPreview(clip)");
+  replies[0]([500, { detail: "boom" }]);
+  await settle();
+  assert.equal(ctx.clip.headerPreviewNoteEl.textContent, "Updating header preview…");
+  assert.equal(ctx.clip.headerPreviewWindowEl.classList.contains("is-updating"), true);
+  assert.equal(ctx.clip.headerPreviewEl.src, "data:a");
+});
+
+test("a burst of edits writes the updating note once", () => {
+  const { js, ctx } = boot();
+  let writes = 0;
+  let text = "";
+  const note = {
+    get textContent() { return text; },
+    set textContent(value) { writes += 1; text = value; },
+  };
+  ctx.clip = card({ headerPreviewNoteEl: note });
+  js("scheduleHeaderPreview(clip)");
+  js("scheduleHeaderPreview(clip)");
+  js("scheduleHeaderPreview(clip)");
+  assert.equal(text, "Updating header preview…");
+  assert.equal(writes, 1);
+});

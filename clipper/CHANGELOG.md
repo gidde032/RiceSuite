@@ -30,8 +30,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   - A reply for older settings is dropped, also when it arrives in the 250 ms
     delay before the next request.
   - While a preview updates, the old image is dimmed, the note says so, and
-    the face warning is hidden.
-  - A failed request clears the old face warning, and the note says the face
+    the face warnings are hidden.
+  - A failed request clears the old face warnings, and the note says the face
     position was not checked.
 - Standalone Clipper (`uvicorn app.main:app`) now uses the paths
   `rice data location` reports when `RICECLIPPER_SEARCHER_INBOX`,

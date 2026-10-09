@@ -426,10 +426,11 @@ Each change makes every earlier reply out of date at once, including during
 the 250 ms delay, and the editor drops such a reply (RiceSuite
 [#69](https://github.com/gidde032/RiceSuite/issues/69)). Until the new reply
 arrives, the old preview is dimmed, the note reads "Updating header preview…",
-and the face warning is hidden. If the request fails, the editor hides the
-preview and the face warning. The note gives the reason and says "Face position
-not checked." The editor does not show the ingest plan's warning in its place,
-because that check assumed the default header.
+and both face warnings ("face near header" and "face near captions") are
+hidden. If the request fails, the editor hides the preview and both face
+warnings. The note gives the reason and says "Face position not checked." The
+editor does not show the ingest plan's warning in its place, because that check
+assumed the default header and caption zone.
 
 **Editor arrangement (variant A, chosen by Finn on 2026-10-06).** The controls
 sit in a closed **Adjust header** disclosure under the header-style cards, and
