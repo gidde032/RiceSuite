@@ -157,8 +157,8 @@ both the visible toolbar symbol and the favicon.
 - Each tile includes a truthful miniature treatment example and a text label.
 - Selection uses a rice-grey border and checkmark, never color alone.
 - The underlying values and API payload shapes remain the existing
-  `header_style` and `caption_style` contracts; the bounded catalog now includes
-  the four approved lyric preset identifiers.
+  `header_style` and `caption_style` contracts. RiceSuite #79 grouped the
+  bounded catalog into families and removed five identifiers (SPEC §5.1).
 - There is no universal batch-default select. Each slot (the "Clip N" ordinal,
   which maps to the RicePoster handoff position) has a saved caption/header
   default persisted in the browser (`localStorage`, local-first — no server
