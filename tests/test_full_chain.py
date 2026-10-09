@@ -127,7 +127,8 @@ for job_id in ids:                                               # human review 
     assert r.status_code == 200 and r.json()["status"] == "done", r.text
 sent = client.post("/api/handoff", json={"clips": [                # the Send click
     {"job_id": j, "position": i + 1, "transcript": "hello world", "header": "Hi",
-     "caption_style": "montserrat", "header_style": "plain"} for i, j in enumerate(ids)]})
+     "caption_style": "montserrat", "header_style": "plain"}
+    for i, j in enumerate(ids)]})
 assert sent.status_code == 200, sent.text
 print(json.dumps({"searcher_batch": pulled["batch_id"], **sent.json()}))
 """
