@@ -152,7 +152,7 @@ def test_each_card_shows_a_text_word_and_a_highlighted_word():
     caption_cards = [c for c in cards if 'name="caption-style"' in c]
     assert len(caption_cards) == len(CAPTION_STYLE_NAMES)
     for card in caption_cards:
-        assert 'so <span class="caption-sample-hi">big</span>' in card
+        assert 'Red <span class="caption-sample-hi">fox</span>' in card
 
 
 def test_the_grid_groups_cards_by_family_in_catalogue_order():

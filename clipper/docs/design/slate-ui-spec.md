@@ -138,7 +138,7 @@ both the visible toolbar symbol and the favicon.
   Block**, **Velvet Serif**, **Powder**). Each row is a labelled group, so a
   screen reader announces the family before the card's color label. Powder
   keeps the stable `din_condensed` identifier and uses the DIN Condensed font.
-- Each caption thumbnail shows "so **big**" in the style's real font: the
+- Each caption thumbnail shows "Red **fox**" in the style's real font: the
   first word in the text color, the second in the highlight color, and both
   with the style's edge color. The page loads the bundled Montserrat Black and
   Luckiest Guy fonts from `fonts/`.
