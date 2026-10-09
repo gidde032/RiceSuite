@@ -41,7 +41,7 @@ def test_write_batch_lays_out_clips_and_manifest(tmp_path):
     assert manifest["clips"][0]["file"] == "clip_1.mp4"
     assert manifest["clips"][0]["transcript"] == "t1"
     assert manifest["clips"][0]["presets"] == {
-        "caption_style": "classic",
+        "caption_style": "montserrat",
         "header_style": "plain",
     }
 

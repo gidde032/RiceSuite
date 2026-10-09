@@ -1,6 +1,8 @@
 import re
 from pathlib import Path
 
+from render.ass import CAPTION_STYLE_NAMES
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -16,26 +18,13 @@ def test_review_ui_exposes_all_visual_choices_and_sends_them():
     html = _html()
     javascript = _js()
 
-    # All three header treatments and all twelve caption presets are offered as
+    # All three header treatments and every caption preset are offered as
     # per-clip radio-card tiles. The universal pre-upload batch-default selects
     # were removed in favor of per-slot saved defaults.
     assert 'value="plain"' in html
     assert 'value="black_plate"' in html
     assert 'value="white_plate"' in html
-    for style in (
-        "classic",
-        "clean",
-        "punch",
-        "friendly",
-        "sunset",
-        "mono",
-        "editorial",
-        "lyric_block",
-        "velvet_serif",
-        "din_condensed",
-        "baskerville",
-        "montserrat",
-    ):
+    for style in CAPTION_STYLE_NAMES:
         assert f'value="{style}"' in html
 
     # The render payload still carries the per-clip visual choices.
@@ -210,7 +199,11 @@ def test_slate_interactions_keep_keyboard_and_status_semantics():
     assert (
         'node.querySelector(".header-label").htmlFor = clip.headerEl.id' in javascript
     )
-    assert "repeat(auto-fit, minmax(76px, 1fr))" in stylesheet
+    # One four-column row per caption style family (RiceSuite #79).
+    assert (
+        ".caption-family { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));"
+        in stylesheet
+    )
     assert "opacity: 0.42" not in stylesheet
     assert "opacity: 0.38" not in stylesheet
     assert ">Render all</button>" in html
@@ -246,8 +239,9 @@ def test_per_slot_saved_styles_seed_and_persist():
     assert "<select id=" not in html
 
     # Each clip seeds its caption/header choice from the slot ordinal's saved
-    # default (v1 classic/plain fallback), keyed in browser localStorage.
-    assert 'slotDefault(clip.ord, "caption", "classic")' in javascript
+    # default (montserrat/plain fallback, RiceSuite #79), keyed in browser
+    # localStorage.
+    assert 'slotDefault(clip.ord, "caption", "montserrat")' in javascript
     assert 'slotDefault(clip.ord, "header", "plain")' in javascript
     assert "localStorage" in javascript
     assert "riceclipper.slotStyles" in javascript

@@ -24,6 +24,7 @@ from app.probe import MediaInfo
 from app.process import ProcessTimeoutError, run_owned
 from render import emoji_track, geometry, text_image
 from render.ass import (
+    DEFAULT_CAPTION_STYLE,
     EMOJI_CAPTION_ZONE_PX,
     StyleConfig,
     apply_header_look,
@@ -235,7 +236,7 @@ def style_for_request(req) -> StyleConfig:
     request; a header preview has none.
     """
     style = style_for_presets(
-        getattr(req, "caption_style", "classic"), req.header_style
+        getattr(req, "caption_style", DEFAULT_CAPTION_STYLE), req.header_style
     )
     if req.header_look is not None:
         style = apply_header_look(style, req.header_look)

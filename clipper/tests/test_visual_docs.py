@@ -9,14 +9,14 @@ def _normalized_doc(name: str) -> str:
 
 def test_spec_records_the_bounded_visual_preset_contract():
     spec = _normalized_doc("SPEC.md")
-    assert "twelve caption presets and three header treatments" in spec
+    assert "nineteen caption presets and three header treatments" in spec
     assert "Plain text is the default" in spec
     assert "user-authored preset persistence" in spec
 
 
 def test_roadmap_keeps_custom_preset_work_deferred():
     roadmap = _normalized_doc("ROADMAP.md")
-    assert "twelve caption presets and three header treatments" in roadmap
+    assert "nineteen caption presets and three header treatments" in roadmap
     assert "persistent saved presets remain deferred" in roadmap
 
 

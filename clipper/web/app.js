@@ -763,7 +763,7 @@ function buildCard(clip) {
   // Seed the visual choices from this slot's saved default (SLOT ordinal =
   // clip.ord), falling back to the v1 defaults. Changing a clip writes that
   // slot's default back so it carries to the next batch/session.
-  setRadioValue(clip.captionStyleEl, slotDefault(clip.ord, "caption", "classic"));
+  setRadioValue(clip.captionStyleEl, slotDefault(clip.ord, "caption", "montserrat"));
   setRadioValue(clip.headerStyleEl, slotDefault(clip.ord, "header", "plain"));
   clip.captionStyleEl.addEventListener("change", () => {
     rememberSlotStyle(clip.ord, "caption", radioValue(clip.captionStyleEl));

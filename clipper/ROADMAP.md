@@ -30,7 +30,7 @@ Decode → transcribe (word-level) → word-highlight captions → manual on-scr
 header → subject crop or blur-pad landscape input and blur-pad non-9:16 vertical
 input → optional added-music (replace / mix with volume) → export 1080×1920
 H.264, through a local FastAPI review UI with a human-in-the-loop gate. Bounded
-batches are reviewed and processed sequentially, with twelve caption presets
+batches are reviewed and processed sequentially, with nineteen caption presets
 and three header treatments. A per-clip Motion toggle adds a phrase pop-in, an
 active-word bump, and a soft shadow to any preset, and a per-clip Emoji toggle
 adds model-suggested, hand-edited emoji rows above or below some phrases

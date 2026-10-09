@@ -127,7 +127,8 @@ def test_render_crop_plan_writes_cmd_and_uses_sendcmd_path(monkeypatch, tmp_path
     assert (
         "[src]sendcmd=f=crop.cmd,crop=608:1080:0:0,scale=1080:1920,setsar=1[base]"
     ) in fc
-    assert "[base]subtitles=captions.ass[vout]" in fc
+    # The default Montserrat style is a bundled font (RiceSuite #79).
+    assert "[base]subtitles=captions.ass:fontsdir=fonts[vout]" in fc
     assert "boxblur" not in fc
     cmd_text = (tmp_path / "crop.cmd").read_text()
     assert cmd_text == "0.000 crop x 0;\n0.200 crop x 120;\n"

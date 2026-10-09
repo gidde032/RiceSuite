@@ -218,8 +218,8 @@ Set `RICECLIPPER_WHISPER_MODEL=tiny` for a quick first try.
    Each file becomes a review card. A video is transcribed automatically. A
    photo (PNG, JPEG, or WebP, under 60 megapixels) has no transcript or
    captions: set its **Length** (3–60 seconds), and add a header and music.
-2. **Review.** Edit the transcript and choose a caption style. The eleven fixed
-   presets include four lyric presets: paste lyrics, then click **Align** to
+2. **Review.** Edit the transcript and choose a caption style. The nineteen fixed
+   presets, grouped by family, include three lyric presets: paste lyrics, then click **Align** to
    time them to the audio, and use **Restore transcript** to go back. Type a
    header, or click **✨ Generate** if `ANTHROPIC_API_KEY` is set, and choose a
    header style. For landscape clips, choose **auto**, **crop**, or

@@ -87,7 +87,7 @@ def _ass(name: str, ws, motion: bool = True) -> tuple[str, str]:
 def test_the_pop_scales_the_drawn_phrase_and_never_rewraps_it(tmp_path):
     ws = words(("so", 0.0, 1.0), ("here's", 1.0, 1.5), ("the", 1.5, 2.0))
     ws += words(("thing", 2.0, 2.5), ("about", 2.5, 3.0))
-    ass, family = _ass("classic", ws)
+    ass, family = _ass("montserrat", ws)
     peak_s = POP_KEYFRAMES[1][0] / 1000
     start, peak, rest = (
         _ink(f) for f in _frames(tmp_path, ass, [0.0, peak_s, 0.5], family)
@@ -185,7 +185,7 @@ def test_emoji_rows_are_drawn_in_colour_where_the_layout_puts_them(
     )
     req = RenderRequest(
         words=words_,
-        caption_style="classic",
+        caption_style="montserrat",
         motion=False,
         emoji_on=True,
         emoji=[EmojiPick(word=anchor, emoji=["\U0001f483"])],
@@ -258,8 +258,8 @@ def test_S4_a_two_line_phrase_holds_still_when_the_highlight_changes_line(tmp_pa
         ("made", 1.5, 2.0),
         ("it", 2.0, 3.0),
     )
-    ass, family = _ass("classic", ws)
-    style = replace(style_for_presets("classic", "plain"), motion=True)
+    ass, family = _ass("montserrat", ws)
+    style = replace(style_for_presets("montserrat", "plain"), motion=True)
     measure = text_image.caption_measurer(
         style.font, style.bold, style.italic, style.font_size
     )

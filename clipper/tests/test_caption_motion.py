@@ -20,7 +20,6 @@ from app.probe import MediaInfo
 from render import pipeline, text_image
 from render.ass import (
     ACTIVE_SCALE,
-    CAPTION_STYLE_NAMES,
     POP_KEYFRAMES,
     StyleConfig,
     build_ass,
@@ -65,7 +64,12 @@ def _motion(style: StyleConfig | None = None) -> StyleConfig:
 # --- Motion off is today's output -------------------------------------------
 
 
-@pytest.mark.parametrize("name", CAPTION_STYLE_NAMES[:11])
+# The pre-#66 presets that RiceSuite #79 kept unchanged. #79 cut the others and
+# thickened Velvet Serif on purpose; the fixture still holds their old output.
+UNCHANGED_SINCE_66 = ("punch", "friendly", "editorial", "lyric_block", "din_condensed")
+
+
+@pytest.mark.parametrize("name", UNCHANGED_SINCE_66)
 def test_motion_off_ass_is_byte_identical_to_before_66(name):
     style = style_for_presets(name, "plain")
     assert style.motion is False
@@ -101,11 +105,12 @@ def test_motion_off_render_writes_the_golden_ass(monkeypatch, tmp_path):
     _stub_ffmpeg(monkeypatch)
     req = RenderRequest(
         words=[Word(text=t, start=s, end=e) for t, s, e in GOLDEN["words"]],
+        caption_style="punch",
         motion=False,
     )
     render(tmp_path, tmp_path / "source.mp4", _info(8.0), req)
     assert (tmp_path / "captions.ass").read_text(encoding="utf-8") == GOLDEN["cases"][
-        "preset:classic"
+        "preset:punch"
     ]
 
 
@@ -341,7 +346,9 @@ def test_render_passes_the_bundled_font_through_fontsdir(monkeypatch, tmp_path):
 
 def test_a_system_font_preset_adds_no_fontsdir(monkeypatch, tmp_path):
     seen = _stub_ffmpeg(monkeypatch)
-    req = RenderRequest(words=[Word(text="hello", start=0.0, end=0.5)])
+    req = RenderRequest(
+        words=[Word(text="hello", start=0.0, end=0.5)], caption_style="punch"
+    )
     render(tmp_path, tmp_path / "source.mp4", _info(1.0), req)
     assert "fontsdir" not in _filter_graph(seen[0])
     assert not (tmp_path / "fonts").exists()

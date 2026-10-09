@@ -221,13 +221,13 @@ def test_header_text_length_is_bounded():
 
 def test_default_header_look_is_the_plain_preset_at_the_issue_20_position():
     from app.models import HeaderLook
-    from render.ass import StyleConfig, apply_header_look, style_for_presets
+    from render.ass import apply_header_look, style_for_presets
 
     look = HeaderLook()
     assert look.y == 210
-    assert apply_header_look(StyleConfig(), look) == style_for_presets(
-        "classic", "plain"
-    )
+    assert apply_header_look(
+        style_for_presets("punch", "black_plate"), look
+    ) == style_for_presets("punch", "plain")
 
 
 def test_render_uses_the_requested_header_look(tmp_path, captured, monkeypatch):
@@ -851,7 +851,7 @@ def test_fallback_header_keeps_the_plate():
         [],
         fallback_header="Hook",
         duration=1.0,
-        style=style_for_presets("classic", "black_plate"),
+        style=style_for_presets("montserrat", "black_plate"),
     )
     plate = next(
         x for x in black.splitlines() if x.startswith("Style: HeaderFallbackPlate")
@@ -872,7 +872,7 @@ def test_fallback_header_keeps_the_plate():
         [],
         fallback_header="Hook",
         duration=1.0,
-        style=style_for_presets("classic", "plain"),
+        style=style_for_presets("montserrat", "plain"),
     )
     assert "HeaderFallbackPlate" not in plain
 

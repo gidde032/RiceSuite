@@ -19,10 +19,10 @@ def test_lyric_block_renderer_preserves_ratified_italic_treatment():
     Fix: carry an explicit italic preset field through to the ASS style row.
     """
     lyric_block = style_for_presets("lyric_block", "plain")
-    classic = style_for_presets("classic", "plain")
+    montserrat = style_for_presets("montserrat", "plain")
 
     assert lyric_block.italic is True
-    assert classic.italic is False
+    assert montserrat.italic is False
 
     ass = build_ass(words(("little", 0.0, 0.4)), duration=1.0, style=lyric_block)
     caption_style = next(
@@ -38,11 +38,10 @@ def test_powder_is_the_visible_name_in_source_of_truth_docs():
     and DIN Condensed renderer font in every affected source-of-truth document.
     """
     expected_visible_contracts = {
-        # RiceSuite #66 appended the Montserrat preset to both lists.
-        "SPEC.md": "**Velvet Serif**, **Powder**, **Baskerville**, and **Montserrat**",
+        # RiceSuite #79 grouped the presets and removed Baskerville.
+        "SPEC.md": "**Powder** (the DIN Condensed font with powder blue `#A8C7E8`)",
         "docs/design/slate-ui-spec.md": (
-            "**Lyric Block**, **Velvet Serif**, **Powder**, **Baskerville**, and "
-            "**Montserrat**"
+            "**Lyric Block**, **Velvet Serif**, **Powder**). Each row is a labelled group"
         ),
         "CHANGELOG.md": "Powder (DIN Condensed font with powder-blue highlight)",
     }
@@ -64,7 +63,6 @@ def test_each_lyric_card_binds_identifier_preview_and_visible_label():
         "lyric_block": ("sample-lyric-block", "Lyric Block"),
         "velvet_serif": ("sample-velvet-serif", "Velvet Serif"),
         "din_condensed": ("sample-din-condensed", "Powder"),
-        "baskerville": ("sample-baskerville", "Baskerville"),
     }
 
     for identifier, (preview_class, visible_label) in expected.items():

@@ -43,7 +43,7 @@ arbitrary caption style/position editing, animated (Tier-3) captions,
 auto-ducking.
 
 The approved post-v1 visual follow-up adds a bounded set of built-in choices:
-twelve caption presets and three header treatments. It does not add a general
+nineteen caption presets and three header treatments. It does not add a general
 text editor, arbitrary font/color input, or user-authored preset persistence.
 
 ## 3. Boundary & safety note
@@ -151,23 +151,48 @@ before #66. With it on, libass still draws the captions:
 
 ### 5.1 Bounded visual preset follow-up
 
-The review UI exposes twelve named caption presets: **Classic** (the original
-v1 treatment), **Clean**, **Punch**, **Friendly**, **Sunset**, **Mono**,
-**Editorial**, **Lyric Block**, **Velvet Serif**, **Powder**,
-**Baskerville**, and **Montserrat**. Each remains a Tier-1 ASS/libass combination of font, size,
-outline/shadow, position, base color, and active-word highlight color. The
-four approved lyric treatments are fixed combinations: Avenir Next Condensed
-italic with cyan (`#00E5FF`), Bodoni 72 with red (`#FF3654`), **Powder** using
-the DIN Condensed font with powder blue (`#A8C7E8`), and Baskerville with teal
-(`#00A7A7`). The stable internal identifier for Powder remains
-`din_condensed`. **Montserrat** (RiceSuite #66) is the one preset with a
-bundled font: Montserrat Black, under the SIL Open Font License 1.1, committed
-with its `OFL.txt` in `render/fonts/`, with a yellow (`#FFD60A`) highlight.
-libass finds it only through the `subtitles` filter's `fontsdir` option and
-otherwise falls back to Helvetica without an error, so the render copies the
-font into the job directory and passes `fontsdir=fonts`. The ASS font name is
-the face's full name, `Montserrat Black`; libass does not match the bare
-family `Montserrat`.
+The review UI exposes nineteen named caption presets in five groups
+(RiceSuite #79). Each is a Tier-1 ASS/libass combination of font, size,
+outline/shadow, position, text color, edge color, and active-word highlight
+color.
+
+- **Montserrat:** Montserrat Black with a white text and a black edge. The
+  highlight is Yellow (`#FFD60A`), Violet (`#B07CFF`), Sky (`#6CCBFF`), or
+  Green (`#17B24A`). **Montserrat (Yellow) is the default style.**
+- **Punch:** Impact with a white text and a black edge. The highlight is Pink
+  (`#FF3B81`), Volt (`#C6FF1A`), Red (`#FF2A2A`), or Blue (`#2F5BFF`).
+- **Pop:** Luckiest Guy, a capitals-only face, with a colored text, a dark
+  colored edge, and a white highlight: Gold (`#FFE14D` on `#3B0A6B`),
+  Bubblegum (`#FF8AD8` on `#1B1464`), Lime (`#B8FF3A` on `#0B3D20`), or Fire
+  (`#FF8A1F` on `#5A0A0A`).
+- **Neon:** Futura Condensed ExtraBold with a thin colored edge and a white
+  highlight: Blue (`#4FC3FF` text, `#FF4FB8` edge) or Pink (`#FF3DB4` text,
+  `#18D6FF` edge).
+- **More:** **Friendly**, **Editorial**, and the three lyric treatments:
+  **Lyric Block** (Avenir Next Condensed italic with cyan `#00E5FF`),
+  **Velvet Serif** (Bodoni 72 Bold with red `#FF3654`, an edge of 5), and
+  **Powder** (the DIN Condensed font with powder blue `#A8C7E8`).
+
+The stable internal identifier for Powder remains `din_condensed`. A family
+variant has the identifier `<family>_<color>`, for example `punch_volt`; the
+first variant of a family has the bare family identifier. The Neon Pink
+identifier is `neon_inverse`.
+
+RiceSuite #79 removed **Classic**, **Clean**, **Sunset**, **Mono**, and
+**Baskerville**. A render request, a handoff clip, or a saved slot default that
+names a removed style uses the default style. Any other unknown style is a
+validation error.
+
+Two fonts are bundled in `render/fonts/`: Montserrat Black (RiceSuite #66,
+SIL Open Font License 1.1, `OFL.txt`) and Luckiest Guy (RiceSuite #79, Apache
+License 2.0, `LuckiestGuy-LICENSE.txt`). libass finds a bundled font only
+through the `subtitles` filter's `fontsdir` option and otherwise falls back to
+Helvetica without an error, so the render copies the font into the job
+directory and passes `fontsdir=fonts`. The ASS font name for Montserrat is the
+face's full name, `Montserrat Black`; libass does not match the bare family
+`Montserrat`. The review page loads both bundled fonts from `GET
+/fonts/{file}` for its thumbnails; that route serves only the bundled font
+files.
 
 The UI also exposes three header treatments at the same compact,
 reference-matched scale: **Plain text**, **Black plate**, and **White plate**.
@@ -178,7 +203,7 @@ emoji, is drawn by Pillow (§6.3); captions stay on libass.
 Caption and header style are chosen per clip, seeded from a **per-slot saved
 default** rather than a universal pre-upload dropdown: each slot (the "Clip N"
 ordinal that maps to the RicePoster handoff position) remembers its style in the
-browser (`localStorage`, local-first), starting from the v1 Classic/Plain
+browser (`localStorage`, local-first), starting from the Montserrat/Plain
 defaults, and editing a clip persists that slot's default for later batches. The
 header controls (§6.3), the caption **Motion** toggle (§5), and the caption
 **Emoji** toggle (below) are saved per slot the same way. On the audio side, choosing a music file defaults the mode to *mix under original*

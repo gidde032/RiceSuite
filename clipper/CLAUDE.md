@@ -22,7 +22,7 @@ end** — upload → RiceClipper batch review/render → filesystem handoff →
 RicePoster "Pull from Clipper" → post. Merged to `main`: the v1 vertical slice,
 the hardening pass, the bounded visual presets, the bounded batch review/render,
 the producer-side handoff writer, the Slate browser-interface redesign, the
-eleven fixed caption presets (including four lyric presets), and the ADR-001
+fixed caption presets (nineteen since RiceSuite #79), and the ADR-001
 subject crop. The music path (ADR-002, `docs/design/music-path-spec.md`) shipped
 2026-09-16. Level-5 subject-crop motion tuning was ratified for both framing
 profiles on 2026-09-20 and is recorded in ADR-001. The

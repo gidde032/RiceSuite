@@ -53,7 +53,10 @@ _NO_GLYPH_PROBE = "\U0010fffd"
 # Fontname libass matches: the face's full name. libass finds them only through
 # the subtitles filter's ``fontsdir``; without it, it silently uses Helvetica.
 BUNDLED_FONTS_DIR = Path(__file__).resolve().parent / "fonts"
-BUNDLED_FONTS = {"Montserrat Black": "Montserrat-Black.ttf"}
+BUNDLED_FONTS = {
+    "Montserrat Black": "Montserrat-Black.ttf",
+    "Luckiest Guy": "LuckiestGuy-Regular.ttf",
+}
 
 # Checked in order; the first existing file wins. macOS system fonts come first,
 # then the common Linux package locations (Debian/Ubuntu, Fedora, Arch).
@@ -340,22 +343,19 @@ def bundled_font_file(family: str) -> Path | None:
 # measure caption lines in the font libass draws (RiceSuite #66).
 _CAPTION_FACES: dict[tuple[str, bool, bool], tuple[str, str | None]] = {
     ("Arial", True, False): (f"{_SUPPLEMENTAL}/Arial Bold.ttf", None),
-    ("Helvetica Neue", True, False): (
-        "/System/Library/Fonts/HelveticaNeue.ttc",
-        "Bold",
-    ),
     ("Impact", True, False): (f"{_SUPPLEMENTAL}/Impact.ttf", None),
     ("Avenir Next", True, False): ("/System/Library/Fonts/Avenir Next.ttc", "Bold"),
-    ("Arial Narrow", True, False): (f"{_SUPPLEMENTAL}/Arial Narrow Bold.ttf", None),
-    ("Courier New", True, False): (f"{_SUPPLEMENTAL}/Courier New Bold.ttf", None),
     ("Georgia", True, False): (f"{_SUPPLEMENTAL}/Georgia Bold.ttf", None),
     ("Avenir Next Condensed", True, True): (
         "/System/Library/Fonts/Avenir Next Condensed.ttc",
         "Bold Italic",
     ),
-    ("Bodoni 72", False, False): (f"{_SUPPLEMENTAL}/Bodoni 72.ttc", "Book"),
+    ("Bodoni 72", True, False): (f"{_SUPPLEMENTAL}/Bodoni 72.ttc", "Bold"),
     ("DIN Condensed", True, False): (f"{_SUPPLEMENTAL}/DIN Condensed Bold.ttf", None),
-    ("Baskerville", False, False): (f"{_SUPPLEMENTAL}/Baskerville.ttc", "Regular"),
+    ("Futura Condensed ExtraBold", False, False): (
+        f"{_SUPPLEMENTAL}/Futura.ttc",
+        "Condensed ExtraBold",
+    ),
 }
 
 

@@ -83,45 +83,101 @@ class StyleConfig:
     caption_zone: int = CAPTION_ZONE_PX
 
 
+# Grouped by family, in the order the review page shows them (RiceSuite #79).
 CAPTION_STYLE_NAMES = (
-    "classic",
-    "clean",
+    "montserrat",
+    "montserrat_violet",
+    "montserrat_sky",
+    "montserrat_green",
     "punch",
+    "punch_volt",
+    "punch_red",
+    "punch_blue",
+    "pop",
+    "pop_bubblegum",
+    "pop_lime",
+    "pop_fire",
+    "neon",
+    "neon_inverse",
     "friendly",
-    "sunset",
-    "mono",
     "editorial",
     "lyric_block",
     "velvet_serif",
     "din_condensed",
-    "baskerville",
-    "montserrat",
 )
+DEFAULT_CAPTION_STYLE = "montserrat"
 HEADER_STYLE_NAMES = ("plain", "black_plate", "white_plate")
 
 
 # These presets deliberately stay within ASS/libass Tier 1. Font families are
-# common macOS fonts and libass/fontconfig can substitute them on other hosts.
-# ``classic`` is the original v1 caption treatment and remains selectable.
+# common macOS fonts or bundled under render/fonts/; libass/fontconfig can
+# substitute the system ones on other hosts.
+
+# The bundled open-licence heavy font (RiceSuite #66), committed under
+# render/fonts/ and passed to libass with ``fontsdir``. The Fontname is the
+# face's full name; libass does not match the bare family "Montserrat".
+_MONTSERRAT: dict[str, object] = {
+    "font": "Montserrat Black",
+    "font_size": 100,
+    "primary_color": "FFFFFF",
+    "highlight_color": "FFD60A",
+    "outline": 6,
+    "shadow": 3,
+    "caption_margin_v": 340,
+}
+_PUNCH: dict[str, object] = {
+    "font": "Impact",
+    "font_size": 92,
+    "primary_color": "FFFFFF",
+    "highlight_color": "FF3B81",
+    "outline": 7,
+    "shadow": 4,
+    "caption_margin_v": 340,
+}
+# Pop and Neon (RiceSuite #79) colour the text and the edge and highlight in
+# white. Luckiest Guy is bundled like Montserrat; it has capitals only.
+_POP: dict[str, object] = {
+    "font": "Luckiest Guy",
+    "font_size": 100,
+    "bold": False,
+    "primary_color": "FFE14D",
+    "highlight_color": "FFFFFF",
+    "outline_color": "3B0A6B",
+    "outline": 8,
+    "shadow": 4,
+    "caption_margin_v": 340,
+}
+_NEON: dict[str, object] = {
+    "font": "Futura Condensed ExtraBold",
+    "font_size": 100,
+    "bold": False,
+    "primary_color": "4FC3FF",
+    "highlight_color": "FFFFFF",
+    "outline_color": "FF4FB8",
+    "outline": 3,
+    "shadow": 3,
+    "caption_margin_v": 340,
+}
+
 _CAPTION_PRESETS: dict[str, dict[str, object]] = {
-    "classic": {},
-    "clean": {
-        "font": "Helvetica Neue",
-        "font_size": 88,
-        "primary_color": "F8FAFC",
-        "highlight_color": "F59E0B",
-        "outline": 5,
-        "shadow": 2,
-        "caption_margin_v": 340,
-    },
-    "punch": {
-        "font": "Impact",
-        "font_size": 92,
-        "primary_color": "FFFFFF",
-        "highlight_color": "FF3B81",
-        "outline": 7,
-        "shadow": 4,
-        "caption_margin_v": 340,
+    "montserrat": _MONTSERRAT,
+    "montserrat_violet": {**_MONTSERRAT, "highlight_color": "B07CFF"},
+    "montserrat_sky": {**_MONTSERRAT, "highlight_color": "6CCBFF"},
+    "montserrat_green": {**_MONTSERRAT, "highlight_color": "17B24A"},
+    "punch": _PUNCH,
+    "punch_volt": {**_PUNCH, "highlight_color": "C6FF1A"},
+    "punch_red": {**_PUNCH, "highlight_color": "FF2A2A"},
+    "punch_blue": {**_PUNCH, "highlight_color": "2F5BFF"},
+    "pop": _POP,
+    "pop_bubblegum": {**_POP, "primary_color": "FF8AD8", "outline_color": "1B1464"},
+    "pop_lime": {**_POP, "primary_color": "B8FF3A", "outline_color": "0B3D20"},
+    "pop_fire": {**_POP, "primary_color": "FF8A1F", "outline_color": "5A0A0A"},
+    "neon": _NEON,
+    "neon_inverse": {
+        **_NEON,
+        "primary_color": "FF3DB4",
+        "outline_color": "18D6FF",
+        "outline": 4,
     },
     "friendly": {
         "font": "Avenir Next",
@@ -131,24 +187,6 @@ _CAPTION_PRESETS: dict[str, dict[str, object]] = {
         "outline": 5,
         "shadow": 3,
         "caption_margin_v": 350,
-    },
-    "sunset": {
-        "font": "Arial Narrow",
-        "font_size": 94,
-        "primary_color": "FFFFFF",
-        "highlight_color": "FF7A45",
-        "outline": 6,
-        "shadow": 3,
-        "caption_margin_v": 330,
-    },
-    "mono": {
-        "font": "Courier New",
-        "font_size": 84,
-        "primary_color": "F5F3FF",
-        "highlight_color": "8B5CF6",
-        "outline": 4,
-        "shadow": 2,
-        "caption_margin_v": 340,
     },
     "editorial": {
         "font": "Georgia",
@@ -169,14 +207,15 @@ _CAPTION_PRESETS: dict[str, dict[str, object]] = {
         "shadow": 3,
         "caption_margin_v": 340,
     },
+    # Bold, larger, and with a heavier edge than before RiceSuite #79, so the
+    # hairline serifs do not look thin.
     "velvet_serif": {
         "font": "Bodoni 72",
-        "font_size": 92,
-        "bold": False,
+        "font_size": 96,
         "primary_color": "FFF8F0",
         "highlight_color": "FF3654",
-        "outline": 3,
-        "shadow": 2,
+        "outline": 5,
+        "shadow": 3,
         "caption_margin_v": 355,
     },
     "din_condensed": {
@@ -188,29 +227,11 @@ _CAPTION_PRESETS: dict[str, dict[str, object]] = {
         "shadow": 3,
         "caption_margin_v": 340,
     },
-    "baskerville": {
-        "font": "Baskerville",
-        "font_size": 92,
-        "bold": False,
-        "primary_color": "FFF8F0",
-        "highlight_color": "00A7A7",
-        "outline": 3,
-        "shadow": 2,
-        "caption_margin_v": 355,
-    },
-    # The bundled open-licence heavy font (RiceSuite #66), committed under
-    # render/fonts/ and passed to libass with ``fontsdir``. The Fontname is the
-    # face's full name; libass does not match the bare family "Montserrat".
-    "montserrat": {
-        "font": "Montserrat Black",
-        "font_size": 100,
-        "primary_color": "FFFFFF",
-        "highlight_color": "FFD60A",
-        "outline": 6,
-        "shadow": 3,
-        "caption_margin_v": 340,
-    },
 }
+
+# Styles cut in RiceSuite #79. A request or a saved slot default that still
+# names one renders the default style.
+RETIRED_CAPTION_STYLES = ("classic", "clean", "sunset", "mono", "baskerville")
 
 # The three header treatments are quick presets that fill in the header
 # controls. Each reproduces the libass look it had before RiceSuite #65: plain
@@ -266,10 +287,15 @@ def apply_header_look(style: StyleConfig, look) -> StyleConfig:
 
 
 def style_for_presets(
-    caption_style: str = "classic", header_style: str = "plain"
+    caption_style: str = DEFAULT_CAPTION_STYLE, header_style: str = "plain"
 ) -> StyleConfig:
-    """Return a defensive StyleConfig for the named built-in choices."""
-    caption_values = _CAPTION_PRESETS.get(caption_style, _CAPTION_PRESETS["classic"])
+    """Return a defensive StyleConfig for the named built-in choices.
+
+    An unknown or retired caption style takes the default style.
+    """
+    caption_values = _CAPTION_PRESETS.get(
+        caption_style, _CAPTION_PRESETS[DEFAULT_CAPTION_STYLE]
+    )
     header_values = _HEADER_PRESETS.get(header_style, _HEADER_PRESETS["plain"])
     return replace(StyleConfig(), **caption_values, **header_values)
 
