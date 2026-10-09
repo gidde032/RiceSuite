@@ -239,9 +239,12 @@ def test_per_slot_saved_styles_seed_and_persist():
     assert "<select id=" not in html
 
     # Each clip seeds its caption/header choice from the slot ordinal's saved
-    # default (montserrat/plain fallback, RiceSuite #79), keyed in browser
-    # localStorage.
-    assert 'slotDefault(clip.ord, "caption", "montserrat")' in javascript
+    # default (montserrat/plain fallback; a cut caption style also seeds
+    # montserrat, RiceSuite #79), keyed in browser localStorage.
+    assert (
+        "setRadioValue(clip.captionStyleEl, slotCaptionStyle(clip.ord))" in javascript
+    )
+    assert 'slotDefault(ord, "caption", DEFAULT_CAPTION_STYLE)' in javascript
     assert 'slotDefault(clip.ord, "header", "plain")' in javascript
     assert "localStorage" in javascript
     assert "riceclipper.slotStyles" in javascript

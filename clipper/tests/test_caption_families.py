@@ -174,3 +174,13 @@ def test_the_page_serves_only_the_bundled_fonts():
         assert response.content == (text_image.BUNDLED_FONTS_DIR / name).read_bytes()
     assert client.get("/fonts/OFL.txt").status_code == 404
     assert client.get("/fonts/..%2F..%2Fapp%2Fmain.py").status_code == 404
+
+
+def test_a_narrow_caption_column_drops_to_two_cards_per_row():
+    # Cold review (#80): four "Red fox" cards spill over below a ~290 px row.
+    css = (ROOT / "web/style.css").read_text(encoding="utf-8")
+    assert re.search(r"\.caption-choice-grid \{[^}]*container-type: inline-size;", css)
+    assert (
+        "@container (max-width: 320px) { .caption-family { "
+        "grid-template-columns: repeat(2, minmax(0, 1fr)); } }" in css
+    )
