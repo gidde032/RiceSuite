@@ -25,6 +25,14 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- The header preview no longer shows out-of-date information
+  (RiceSuite [#69](https://github.com/gidde032/RiceSuite/issues/69)).
+  - A reply for older settings is dropped, also when it arrives in the 250 ms
+    delay before the next request.
+  - While a preview updates, the old image is dimmed, the note says so, and
+    the face warning is hidden.
+  - A failed request clears the old face warning, and the note says the face
+    position was not checked.
 - Standalone Clipper (`uvicorn app.main:app`) now uses the paths
   `rice data location` reports when `RICECLIPPER_SEARCHER_INBOX`,
   `RICECLIPPER_HANDOFF_DIR` or `RICECLIPPER_WORK_DIR` is unset, as standalone

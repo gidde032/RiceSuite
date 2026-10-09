@@ -480,3 +480,126 @@ test("the blur-pad mock draws a cover fill and the fitted picture, like the rend
   assert.equal(Math.round(fh), Math.round((1080 * 180) / 1920));
   assert.equal(Math.round(fy), Math.round((320 - fh) / 2));
 });
+
+// --- current preview during edits and failures (RiceSuite #69) ----------------------
+
+function classes() {
+  const set = new Set();
+  return {
+    set,
+    toggle(name, on) { if (on === undefined ? !set.has(name) : on) set.add(name); else set.delete(name); },
+    add(name) { set.add(name); },
+    remove(name) { set.delete(name); },
+    contains(name) { return set.has(name); },
+  };
+}
+
+function warnedCard(extra = {}) {
+  const warn = { textContent: "", hidden: true, classList: classes() };
+  const plan = { decision: "crop", reason: "ok", face_rate: 1, safe_rate: 1, warning: "header_zone" };
+  const clip = card({
+    contentEl: { querySelector: () => ({ value: "speech" }) },
+    geometryEl: {
+      hidden: true,
+      querySelector: (sel) => (sel === ".geometry-warning" ? warn : { textContent: "", value: "auto" }),
+    },
+    geoState: { width: 1920, height: 1080, crop_plan: plan, music_plan: plan },
+    headerPreviewWindowEl: { hidden: true, style: {}, classList: classes() },
+    ...extra,
+  });
+  return { clip, warn };
+}
+
+test("an older reply that lands during the delay before the next request is dropped", async () => {
+  const replies = [];
+  const { js, ctx, timers } = boot({
+    "POST api/jobs/j1/header-preview": () => new Promise((resolve) => replies.push(resolve)),
+  });
+  const { clip, warn } = warnedCard();
+  ctx.clip = clip;
+  ctx.clip.headerLook = js('headerPreset("plain")');
+  js("scheduleHeaderPreview(clip)");
+  timers.filter((t) => t.live)[0].fn();
+  await settle();
+  assert.equal(replies.length, 1);
+
+  // The next edit starts its 250 ms delay; the older reply then arrives.
+  js("scheduleHeaderPreview(clip)");
+  replies[0]([200, { image: "data:old", warnings: { crop_plan: "header_zone", music_plan: null } }]);
+  await settle();
+  assert.equal(ctx.clip.headerPreviewEl.src, "");
+  assert.equal(warn.hidden, true);
+  assert.equal(ctx.clip.headerPreviewNoteEl.textContent, "Updating header preview…");
+});
+
+test("an edit dims the old preview, says it is updating, and hides the face warning", async () => {
+  const replies = [];
+  const { js, ctx, timers } = boot({
+    "POST api/jobs/j1/header-preview": () => new Promise((resolve) => replies.push(resolve)),
+  });
+  const { clip, warn } = warnedCard();
+  ctx.clip = clip;
+  ctx.clip.headerLook = js('headerPreset("plain")');
+  js("scheduleHeaderPreview(clip)");
+  timers.filter((t) => t.live)[0].fn();
+  await settle();
+  replies[0]([200, { image: "data:a", warnings: { crop_plan: "header_zone", music_plan: null } }]);
+  await settle();
+  assert.equal(warn.textContent, "face near header");
+  assert.equal(ctx.clip.headerPreviewWindowEl.classList.contains("is-updating"), false);
+
+  js("scheduleHeaderPreview(clip)");
+  assert.equal(ctx.clip.headerPreviewWindowEl.classList.contains("is-updating"), true);
+  assert.equal(ctx.clip.headerPreviewEl.src, "data:a");
+  assert.equal(ctx.clip.headerPreviewNoteEl.textContent, "Updating header preview…");
+  assert.equal(warn.hidden, true);
+
+  timers.filter((t) => t.live).at(-1).fn();
+  await settle();
+  replies[1]([200, { image: "data:b", warnings: { crop_plan: null, music_plan: null } }]);
+  await settle();
+  assert.equal(ctx.clip.headerPreviewWindowEl.classList.contains("is-updating"), false);
+  assert.equal(ctx.clip.headerPreviewEl.src, "data:b");
+  assert.doesNotMatch(ctx.clip.headerPreviewNoteEl.textContent, /Updating/);
+});
+
+test("a failed request after a warning clears the warning and says the face was not checked", async () => {
+  let status = 200;
+  const { js, ctx } = boot({
+    "POST api/jobs/j1/header-preview": () => (status === 200
+      ? [200, { image: "data:a", warnings: { crop_plan: "header_zone", music_plan: null } }]
+      : [422, { detail: "the header is too long." }]),
+  });
+  const { clip, warn } = warnedCard();
+  ctx.clip = clip;
+  ctx.clip.headerLook = js('headerPreset("plain")');
+  await js("requestHeaderPreview(clip)");
+  assert.equal(warn.textContent, "face near header");
+
+  status = 422;
+  await js("requestHeaderPreview(clip)");
+  assert.equal(warn.hidden, true);
+  assert.notEqual(ctx.clip.headerWarnings.crop_plan, "header_zone");
+  assert.equal(ctx.clip.headerPreviewWindowEl.hidden, true);
+  assert.equal(ctx.clip.headerPreviewWindowEl.classList.contains("is-updating"), false);
+  assert.equal(ctx.clip.headerPreviewNoteEl.textContent,
+    "Header preview unavailable: the header is too long. Face position not checked.");
+});
+
+test("a lost connection after a warning also clears it", async () => {
+  let fail = false;
+  const { js, ctx } = boot({
+    "POST api/jobs/j1/header-preview": () => {
+      if (fail) throw new TypeError("Failed to fetch");
+      return [200, { image: "data:a", warnings: { crop_plan: "header_zone", music_plan: null } }];
+    },
+  });
+  const { clip, warn } = warnedCard();
+  ctx.clip = clip;
+  ctx.clip.headerLook = js('headerPreset("plain")');
+  await js("requestHeaderPreview(clip)");
+  fail = true;
+  await js("requestHeaderPreview(clip)");
+  assert.equal(warn.hidden, true);
+  assert.match(ctx.clip.headerPreviewNoteEl.textContent, /Failed to fetch\. Face position not checked\.$/);
+});

@@ -411,9 +411,9 @@ plate share a fixed position, so captions cannot move the plate independently.
 **Live preview.** `POST /api/jobs/{id}/header-preview` returns the same PNG the
 render overlays (a data URL), its drawn box, and the "face near header"
 warning re-checked for that box. It writes no files. The editor asks for it
-250 ms after the last change to the text, controls, Geometry, or Content (a reply that a newer
-request overtook is dropped) and draws it over the source preview, scaled to
-the output frame as the render will frame the clip. A 9:16 source shows its
+250 ms after the last change to the text, controls, Geometry, or Content and
+draws it over the source preview, scaled to the output frame as the render
+will frame the clip. A 9:16 source shows its
 whole picture. A clip that blur-pads (every photo that is not 1080×1920, a
 non-9:16 portrait or square video, and a landscape clip whose Geometry or plan
 resolves to blur-pad) shows a mock of the output under the header, inside the
@@ -421,6 +421,15 @@ source box: the current frame blurred to cover 9:16, with the whole picture
 fitted on top (decided by Finn on 2026-10-06 in review). A subject-crop clip
 shows the header in the source's centred 9:16 window, outlined, as an
 approximation of the moving crop; the rendered clip shows the exact result.
+
+Each change makes every earlier reply out of date at once, including during
+the 250 ms delay, and the editor drops such a reply (RiceSuite
+[#69](https://github.com/gidde032/RiceSuite/issues/69)). Until the new reply
+arrives, the old preview is dimmed, the note reads "Updating header preview…",
+and the face warning is hidden. If the request fails, the editor hides the
+preview and the face warning. The note gives the reason and says "Face position
+not checked." The editor does not show the ingest plan's warning in its place,
+because that check assumed the default header.
 
 **Editor arrangement (variant A, chosen by Finn on 2026-10-06).** The controls
 sit in a closed **Adjust header** disclosure under the header-style cards, and
