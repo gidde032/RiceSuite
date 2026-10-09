@@ -73,7 +73,7 @@ See `credentials.env.example` for the full template. The essentials:
 | `PREFLIGHT_CHECK_PLATFORMS` | Which platforms get a browser pre-flight check before a scheduled batch. Default, and empty/unset, = `instagram,tiktok`; the literal `none` disables both |
 | `INTER_SLOT_DELAY_MIN_S` / `INTER_SLOT_DELAY_MAX_S` | Randomised gap between account slots in a run, in seconds (default `60`/`180`). Both `0` disables |
 | `HANDOFF_DIR` | Shared folder RiceClipper writes finished clips into and **Pull from Clipper** reads from (default: the Clipper→Poster stage `rice data location` reports, `~/riceclipper-handoff` on a legacy install). Must match RiceClipper's `RICECLIPPER_HANDOFF_DIR` |
-| `CLIPPER_INGEST_STYLE` | Caption style applied to clips pulled from RiceClipper (default `generic`; local styles can be selected in `credentials.env`) |
+| `CLIPPER_INGEST_STYLE` | Fallback caption style for clips pulled from RiceClipper, after an explicit Review choice and the saved account default (default `generic`; set in `ricesuite.env`) |
 | `RICEPOSTER_DATA_DIR` | Root for everything the app writes: `sessions/`, `debug/`, `media/`, `queue.jsonl`, `queue_media/`, `history.jsonl` (default: the Poster directory that `rice start` uses, from the suite data location — see **Session login**). Must be an existing absolute directory (`~` allowed). Read from the process environment only — **not** from `credentials.env`, which, like `prompts/` and `frontend/`, stays in the checkout. RiceSuite sets it to use an existing data set in place |
 
 The `INTER_SLOT_DELAY_*`, `SESSION_CHECK_TTL_S` and `PREFLIGHT_CHECK_PLATFORMS` knobs reduce Instagram's automation signal. Instagram flags accounts
@@ -214,9 +214,11 @@ A **No session** tracker cannot be toggled; log in first.
 clips, it writes finished batches into a shared handoff folder (`HANDOFF_DIR`).
 **Pull from Clipper** ingests the oldest batch — assigning clips to the current
 active account IDs in roster order and staging their media — then shows a
-playable preview per account and writes a `CLIPPER_INGEST_STYLE` caption for
-each, grounded on a frame from the clip plus its transcript (the same caption
-path a manual upload uses). Before the ready batch leaves the producer queue,
+playable preview per account and generates captions grounded on a frame from
+each clip plus its transcript (the same caption path a manual upload uses).
+A style explicitly selected in Review wins; otherwise Pull uses the saved
+account default, then `CLIPPER_INGEST_STYLE` as a fallback. The Review dropdown
+updates to show the style actually used. Before the ready batch leaves the producer queue,
 RicePoster writes a receipt with its frozen targets and file hashes, then moves
 the complete source batch into `HANDOFF_DIR/.riceposter-consumed/`. A browser
 failure or lost response replays that same unacknowledged receipt; changing to
@@ -327,9 +329,12 @@ request, no restart needed. A malformed file is skipped with a console warning.
 
 If you remove or rename a style, drafts that still use it fall back without
 a notice. A draft takes its account's default style, then `generic`, then the
-first listed style. A Clipper pull takes `CLIPPER_INGEST_STYLE`, then
-`generic`. The style dropdown shows the style that Generate and Regenerate
-send. If you change `prompts/` while the page is open, refresh the page.
+first listed style. A Clipper pull uses a valid explicit Review choice, then
+the saved account default, then `CLIPPER_INGEST_STYLE`, then `generic`. A style
+inherited from an earlier pull does not count as an explicit Review choice.
+New Run keeps that choice; Restore retains it for the same account, and
+moving a draft to another account clears it. The style dropdown shows the
+style that Generate and Regenerate send. If you change `prompts/` while the page is open, refresh the page.
 
 ## Troubleshooting
 
