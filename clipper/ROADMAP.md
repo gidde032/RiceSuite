@@ -20,9 +20,9 @@ Slate redesigns the existing local review UI around a dark carbon/grey editing
 console, rice-grey interaction states, treatment-preview cards for per-clip
 header and caption selection, and a symbol-only rice-and-shears mark. The Slate
 UI slice preserves the existing API, render pipeline, batch semantics, and
-RicePoster handoff. The bounded lyric-preset addition extends the catalog to
-eleven fixed caption presets while keeping the original defaults and deferred
-custom-preset boundary.
+RicePoster handoff. The bounded lyric-preset addition extended the catalog to
+eleven fixed caption presets and kept the deferred custom-preset boundary.
+RiceSuite #79 later regrouped the catalog into nineteen presets.
 
 ## v1 (current — see SPEC.md)
 
@@ -30,7 +30,7 @@ Decode → transcribe (word-level) → word-highlight captions → manual on-scr
 header → subject crop or blur-pad landscape input and blur-pad non-9:16 vertical
 input → optional added-music (replace / mix with volume) → export 1080×1920
 H.264, through a local FastAPI review UI with a human-in-the-loop gate. Bounded
-batches are reviewed and processed sequentially, with twelve caption presets
+batches are reviewed and processed sequentially, with nineteen caption presets
 and three header treatments. A per-clip Motion toggle adds a phrase pop-in, an
 active-word bump, and a soft shadow to any preset, and a per-clip Emoji toggle
 adds model-suggested, hand-edited emoji rows above or below some phrases

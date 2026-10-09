@@ -21,6 +21,7 @@ from pathlib import Path
 from ricesuite.progress import Progress, notify
 
 from app import suite_paths
+from render.ass import DEFAULT_CAPTION_STYLE
 
 SCHEMA_VERSION = 1
 _HANDOFF_ENV = "RICECLIPPER_HANDOFF_DIR"
@@ -36,7 +37,7 @@ class HandoffEntry:
     source: Path
     transcript: str = ""
     header: str = ""
-    caption_style: str = "classic"
+    caption_style: str = DEFAULT_CAPTION_STYLE
     header_style: str = "plain"
     item_id: str = ""
 

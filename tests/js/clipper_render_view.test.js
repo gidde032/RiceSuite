@@ -253,10 +253,10 @@ for (const dropped of [false, true]) {
       "GET api/jobs/j1": () => [200, job],
     });
     ctx.clip = card(false);
-    let selected = "clean";
+    let selected = "friendly";
     ctx.clip.captionStyleEl = { querySelector: () => ({ value: selected }) };
     const urls = [];
-    for (const style of ["clean", "punch", "editorial"]) {
+    for (const style of ["friendly", "punch", "editorial"]) {
       selected = style;
       if (urls.length) js("noteClipEdited(clip)");
       assert.equal(await js("renderClip(clip)"), true);
@@ -265,7 +265,7 @@ for (const dropped of [false, true]) {
       assert.equal(urls.at(-1).split("?")[0], OUTPUT);
       assert.equal(js("clipCurrent(clip)"), true);
     }
-    assert.deepEqual(requests.map((r) => r.caption_style), ["clean", "punch", "editorial"]);
+    assert.deepEqual(requests.map((r) => r.caption_style), ["friendly", "punch", "editorial"]);
     assert.equal(new Set(urls).size, 3, "each completed render needs a fresh media URL");
   });
 }
@@ -313,7 +313,7 @@ test("#49: a rerender lost before it reached Clipper never passes for its comple
   // Clipper keeps the Clean render's id; the Punch request never arrives.
   const { js, ctx, calls, received } = renderServer((n) => (n === 2 ? "before" : null));
   ctx.clip = card(false);
-  let selected = "clean";
+  let selected = "friendly";
   ctx.clip.captionStyleEl = { querySelector: () => ({ value: selected }) };
   assert.equal(await js("renderClip(clip)"), true);
   selected = "punch";

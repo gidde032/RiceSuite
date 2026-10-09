@@ -857,4 +857,12 @@ def slate_css() -> FileResponse:
     )
 
 
+@app.get("/fonts/{name}", include_in_schema=False)
+def bundled_font(name: str) -> FileResponse:
+    """A bundled caption font, for the review page's style thumbnails (#79)."""
+    if name not in text_image.BUNDLED_FONTS.values():
+        raise HTTPException(status_code=404, detail="Unknown font")
+    return FileResponse(text_image.BUNDLED_FONTS_DIR / name, media_type="font/ttf")
+
+
 app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")

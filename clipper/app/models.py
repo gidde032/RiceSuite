@@ -10,23 +10,41 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field
 
+from render.ass import DEFAULT_CAPTION_STYLE, RETIRED_CAPTION_STYLES
 from render.text_image import is_emoji_cluster
 
-CaptionStyle = Literal[
-    "classic",
-    "clean",
-    "punch",
-    "friendly",
-    "sunset",
-    "mono",
-    "editorial",
-    "lyric_block",
-    "velvet_serif",
-    "din_condensed",
-    "baskerville",
-    "montserrat",
+
+def _retire_caption_style(value: object) -> object:
+    """A caption style cut in RiceSuite #79 takes the default style."""
+    return DEFAULT_CAPTION_STYLE if value in RETIRED_CAPTION_STYLES else value
+
+
+# Matches ``render.ass.CAPTION_STYLE_NAMES``.
+CaptionStyle = Annotated[
+    Literal[
+        "montserrat",
+        "montserrat_violet",
+        "montserrat_sky",
+        "montserrat_green",
+        "punch",
+        "punch_volt",
+        "punch_red",
+        "punch_blue",
+        "pop",
+        "pop_bubblegum",
+        "pop_lime",
+        "pop_fire",
+        "neon",
+        "neon_inverse",
+        "friendly",
+        "editorial",
+        "lyric_block",
+        "velvet_serif",
+        "din_condensed",
+    ],
+    BeforeValidator(_retire_caption_style),
 ]
 HeaderStyle = Literal["plain", "black_plate", "white_plate"]
 # The curated header fonts; keys of ``render.text_image.FONT_CHOICES``.
@@ -185,7 +203,7 @@ class RenderRequest(HeaderFields):
 
     words: list[Word] = Field(default_factory=list)
     captions_on: bool = True
-    caption_style: CaptionStyle = "classic"
+    caption_style: CaptionStyle = DEFAULT_CAPTION_STYLE
     # Caption pop, active-word bump, and soft shadow (RiceSuite #66). Off
     # renders the captions exactly as before.
     motion: bool = True
@@ -231,7 +249,7 @@ class HandoffClip(BaseModel):
     position: int = Field(ge=1)
     transcript: str = ""
     header: str = ""
-    caption_style: CaptionStyle = "classic"
+    caption_style: CaptionStyle = DEFAULT_CAPTION_STYLE
     header_style: HeaderStyle = "plain"
 
 

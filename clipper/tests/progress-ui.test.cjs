@@ -104,7 +104,7 @@ test('render failure preserves successful output and names the held clip (#59)',
 test('lost send response keeps key; explicit retry confirms without duplicate send key', async () => {
   const h = harness();
   h.run(`clips.push({ord:1,jobId:'one',status:'done',headerEl:{value:'Title'}});
-    batchSnapshot = () => 'unchanged'; radioValue = () => 'classic'; collectWords = () => [{text:'text'}];`);
+    batchSnapshot = () => 'unchanged'; radioValue = () => 'montserrat'; collectWords = () => [{text:'text'}];`);
   const payloads = [];
   h.context.fetch = async (url, options) => {
     assert.equal(url, 'api/handoff'); payloads.push(JSON.parse(options.body));
@@ -176,7 +176,7 @@ test('an upstream transcription failure is not reported as a render failure', as
 test('a pending keyed retry remains unknown before publication and later replay confirms once', async () => {
   const h = harness();
   h.run(`clips.push({ord:1,jobId:'one',status:'done',headerEl:{value:'Title'}});
-    batchSnapshot = () => 'unchanged'; radioValue = () => 'classic'; collectWords = () => [{text:'text'}];`);
+    batchSnapshot = () => 'unchanged'; radioValue = () => 'montserrat'; collectWords = () => [{text:'text'}];`);
   const payloads = [];
   h.context.fetch = async (url, options) => {
     if (!options) return {ok:true,json:async()=>({...snapshot('unconfirmed'),total:0,completed:0,current:null,batch_id:'',published:false,detail:'A send of these clips has not finished.'})};

@@ -88,7 +88,7 @@ without a manifest, so it cannot pick up a partially written batch.
       "position": 1,
       "transcript": "full plain-text transcript of the clip",
       "header": "the on-screen header text the user typed",
-      "presets": { "caption_style": "classic", "header_style": "plain" }
+      "presets": { "caption_style": "montserrat", "header_style": "plain" }
     }
   ]
 }

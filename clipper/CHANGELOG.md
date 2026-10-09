@@ -7,6 +7,22 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Caption styles are four color families plus five standalone styles**
+  (RiceSuite [#79](https://github.com/gidde032/RiceSuite/issues/79)).
+  - New Montserrat colors: Violet, Sky, and Green.
+  - New Punch colors: Volt, Red, and Blue.
+  - New **Pop** family in the bundled Luckiest Guy font: Gold, Bubblegum,
+    Lime, and Fire.
+  - New **Neon** family in Futura Condensed ExtraBold: Blue and Pink.
+  - **Velvet Serif** is bold, larger, and has a heavier edge.
+  - **Montserrat** replaces Classic as the default style.
+  - Classic, Clean, Sunset, Mono, and Baskerville are removed. A clip or saved
+    slot default that names one of them uses Montserrat.
+  - The review page groups the styles by family. Each thumbnail shows the real
+    font, text color, highlight color, and edge.
+
 ### Fixed
 
 - Standalone Clipper (`uvicorn app.main:app`) now uses the paths

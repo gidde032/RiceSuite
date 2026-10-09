@@ -73,7 +73,7 @@ def test_plain_emoji_header_is_transparent_without_a_plate():
     ):
         pytest.skip("Pillow-compatible text and color-emoji fonts are unavailable")
 
-    layer = header_layer("hello 😂", style_for_presets("classic", "plain"))
+    layer = header_layer("hello 😂", style_for_presets("montserrat", "plain"))
     box = layer.box
     # Just left of the first glyph, inside the line box: nothing drawn.
     assert layer.image.getpixel((box.left - 3, (box.top + box.bottom) // 2))[3] == 0

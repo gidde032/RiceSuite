@@ -131,12 +131,17 @@ both the visible toolbar symbol and the favicon.
 
 - Per-clip header styles become three accessible radio-card tiles: **Plain
   text**, **Black plate**, and **White plate**.
-- Per-clip caption styles become twelve accessible radio-card tiles: **Classic**,
-  **Clean**, **Punch**, **Friendly**, **Sunset**, **Mono**, **Editorial**,
-  **Lyric Block**, **Velvet Serif**, **Powder**, **Baskerville**, and
-  **Montserrat**. Powder keeps the stable `din_condensed` identifier and uses the
-  DIN Condensed font. Montserrat (RiceSuite #66) uses the bundled Montserrat
-  Black font; its tile falls back to Arial Black where the browser lacks it.
+- Per-clip caption styles are nineteen accessible radio-card tiles in five
+  family rows (RiceSuite #79): **Montserrat** (Yellow, Violet, Sky, Green),
+  **Punch** (Pink, Volt, Red, Blue), **Pop** (Gold, Bubblegum, Lime, Fire),
+  **Neon** (Blue, Pink), and **More** (**Friendly**, **Editorial**, **Lyric
+  Block**, **Velvet Serif**, **Powder**). Each row is a labelled group, so a
+  screen reader announces the family before the card's color label. Powder
+  keeps the stable `din_condensed` identifier and uses the DIN Condensed font.
+- Each caption thumbnail shows "Red **fox**" in the style's real font: the
+  first word in the text color, the second in the highlight color, and both
+  with the style's edge color. The page loads the bundled Montserrat Black and
+  Luckiest Guy fonts from `fonts/`.
 - A **Motion** switch under **Burn captions** (RiceSuite #66), on by default
   and saved per slot, turns the caption pop-in, active-word bump, and soft
   shadow on or off. It is disabled while captions are off and hidden on a
@@ -152,13 +157,13 @@ both the visible toolbar symbol and the favicon.
 - Each tile includes a truthful miniature treatment example and a text label.
 - Selection uses a rice-grey border and checkmark, never color alone.
 - The underlying values and API payload shapes remain the existing
-  `header_style` and `caption_style` contracts; the bounded catalog now includes
-  the four approved lyric preset identifiers.
+  `header_style` and `caption_style` contracts. RiceSuite #79 grouped the
+  bounded catalog into families and removed five identifiers (SPEC §5.1).
 - There is no universal batch-default select. Each slot (the "Clip N" ordinal,
   which maps to the RicePoster handoff position) has a saved caption/header
   default persisted in the browser (`localStorage`, local-first — no server
   state). A clip in slot N seeds from slot N's saved default, falling back to
-  the v1 **Classic**/**Plain text** defaults when unset; changing a clip writes
+  the **Montserrat**/**Plain text** defaults when unset; changing a clip writes
   that slot's default back so it carries to the next batch and session.
 
 ### Transcript

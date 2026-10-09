@@ -65,7 +65,7 @@ const ACTIVE_JOB_STATUSES = new Set(["transcribing", "rendering"]);
 // Replaces the old universal pre-upload dropdown: each slot (the "Clip N"
 // ordinal, which maps to RicePoster's handoff position) remembers its caption
 // and header style in the browser (local-first, no server state). A clip in
-// slot N is seeded from slot N's saved default; classic/plain when never set.
+// slot N is seeded from slot N's saved default; montserrat/plain when never set.
 const SLOT_STYLE_KEY = "riceclipper.slotStyles.v1";
 
 function loadSlotStyles() {
@@ -85,6 +85,18 @@ function slotDefault(ord, kind, fallback) {
 function slotFlag(ord, kind, fallback) {
   const slot = loadSlotStyles()[String(ord)];
   return slot && typeof slot[kind] === "boolean" ? slot[kind] : fallback;
+}
+
+// RiceSuite #79 cut these caption styles. A slot that saved one seeds the
+// default style, and the slot forgets the cut style.
+const DEFAULT_CAPTION_STYLE = "montserrat";
+const RETIRED_CAPTION_STYLES = new Set(["classic", "clean", "sunset", "mono", "baskerville"]);
+
+function slotCaptionStyle(ord) {
+  const saved = slotDefault(ord, "caption", DEFAULT_CAPTION_STYLE);
+  if (!RETIRED_CAPTION_STYLES.has(saved)) return saved;
+  rememberSlotStyle(ord, "caption", DEFAULT_CAPTION_STYLE);
+  return DEFAULT_CAPTION_STYLE;
 }
 
 function rememberSlotStyle(ord, kind, value) {
@@ -763,7 +775,7 @@ function buildCard(clip) {
   // Seed the visual choices from this slot's saved default (SLOT ordinal =
   // clip.ord), falling back to the v1 defaults. Changing a clip writes that
   // slot's default back so it carries to the next batch/session.
-  setRadioValue(clip.captionStyleEl, slotDefault(clip.ord, "caption", "classic"));
+  setRadioValue(clip.captionStyleEl, slotCaptionStyle(clip.ord));
   setRadioValue(clip.headerStyleEl, slotDefault(clip.ord, "header", "plain"));
   clip.captionStyleEl.addEventListener("change", () => {
     rememberSlotStyle(clip.ord, "caption", radioValue(clip.captionStyleEl));

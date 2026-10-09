@@ -48,10 +48,21 @@ def test_motion_toggle_is_offered_on_by_default_and_sent():
     assert ".photo-card .motion-row" in css
 
 
-def test_the_bundled_font_preset_has_a_card():
+def test_the_bundled_font_presets_have_cards_in_their_family():
+    # RiceSuite #79: a family row names the font; each card names the colour.
     html = _html()
-    assert 'value="montserrat"' in html
-    assert '<span class="choice-label">Montserrat</span>' in html
+    for family, value, label in (
+        ("Montserrat", "montserrat", "Yellow"),
+        ("Pop", "pop", "Gold"),
+    ):
+        group = re.search(
+            rf'<div class="caption-family" role="group" aria-label="{family}">(.*?)</div>',
+            html,
+            re.S,
+        )
+        assert group is not None
+        card = re.search(rf'value="{value}"[^\n]*', group.group(1)).group(0)
+        assert f'<span class="choice-label">{label}</span>' in card
 
 
 # --- caption emoji: the inline transcript editor (RiceSuite #66) -------------

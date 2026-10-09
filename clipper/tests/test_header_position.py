@@ -41,7 +41,7 @@ def _ink_rows(text: str, style: StyleConfig) -> tuple[int, int]:
 def test_header_margin_v_is_pinned_near_eleven_percent():
     assert StyleConfig().header_margin_v == HEADER_TOP_PX
     for name in HEADER_STYLE_NAMES:
-        assert style_for_presets("classic", name).header_margin_v == HEADER_TOP_PX
+        assert style_for_presets("montserrat", name).header_margin_v == HEADER_TOP_PX
 
 
 # --- header-image path -------------------------------------------------------
@@ -49,7 +49,7 @@ def test_header_margin_v_is_pinned_near_eleven_percent():
 
 def test_header_image_top_follows_header_margin_v(text_font):
     """The PNG path reads ``style.header_margin_v``, not a constant of its own."""
-    plate = style_for_presets("classic", "black_plate")
+    plate = style_for_presets("montserrat", "black_plate")
     for margin_v in (HEADER_TOP_PX, 333):
         top, _ = _ink_rows("Hook", replace(plate, header_margin_v=margin_v))
         assert top == margin_v - plate.header_padding
@@ -57,7 +57,7 @@ def test_header_image_top_follows_header_margin_v(text_font):
 
 @pytest.mark.parametrize("name", HEADER_STYLE_NAMES)
 def test_header_image_sits_at_the_new_position(text_font, name):
-    style = style_for_presets("classic", name)
+    style = style_for_presets("montserrat", name)
     top, _ = _ink_rows("Hook", style)
     # Plates start 16 px above the margin; plain text ink a few px below.
     assert HEADER_TOP_PX - 16 <= top <= HEADER_TOP_PX + 12
@@ -73,7 +73,7 @@ def test_header_zone_is_derived_from_the_header_position():
 
 @pytest.mark.parametrize("name", HEADER_STYLE_NAMES)
 def test_header_zone_covers_a_two_line_header_with_its_plate(text_font, name):
-    style = style_for_presets("classic", name)
+    style = style_for_presets("montserrat", name)
     top, bottom = _ink_rows(TWO_LINE, style)
     assert HEADER_TOP_PX - 16 <= top and bottom <= HEADER_ZONE_PX
 

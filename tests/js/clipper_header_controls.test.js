@@ -122,7 +122,7 @@ test("removing an earlier clip compacts the surviving look onto its handoff slot
   survivor.titleEl.textContent = "Clip 2 — second.mp4";
   survivor.headerLook = js('seedHeaderLook(2, "plain")');
   survivor.headerStyleEl = { querySelector: () => ({ value: "plain" }) };
-  survivor.captionStyleEl = { querySelector: () => ({ value: "classic" }) };
+  survivor.captionStyleEl = { querySelector: () => ({ value: "montserrat" }) };
   ctx.first = first;
   ctx.survivor = survivor;
   js("clips.push(first, survivor)");

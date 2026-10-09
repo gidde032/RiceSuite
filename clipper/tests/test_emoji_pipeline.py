@@ -114,7 +114,7 @@ def test_emoji_rows_lift_the_captions(ffmpeg, tmp_path):
     info = MediaInfo(width=1080, height=1920, duration=4.0, has_audio=False)
     render(tmp_path, tmp_path / "source.mp4", info, _req(motion=False))
     ass = (tmp_path / "captions.ass").read_text()
-    style = style_for_presets("classic", "plain")
+    style = style_for_presets("montserrat", "plain")
     measure = text_image.caption_measurer(
         style.font, style.bold, style.italic, style.font_size
     )

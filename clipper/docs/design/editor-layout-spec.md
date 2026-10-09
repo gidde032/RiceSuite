@@ -110,9 +110,8 @@ up to **440 px**, and both panes must always have the same computed height in
 Music mode. Use normal letter spacing for reading text. Uppercase control
 labels retain the Slate **12 px** size and use one shared **0.02em**
 letter-spacing value; other interface text uses normal letter spacing. Keep the
-existing Slate **15 px** body scale. Caption preset samples, including the actual
-**Mono** preset sample, keep their established treatment fonts because they
-preview rendered output.
+existing Slate **15 px** body scale. Caption preset samples keep their
+rendered fonts because they preview rendered output.
 
 Generated transcript words have ordinary single-space separation, matching
 pasted-lyrics text. Editable word targets add no horizontal padding between

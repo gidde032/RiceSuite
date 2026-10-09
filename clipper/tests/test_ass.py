@@ -80,39 +80,47 @@ def test_style_config_parameterised():
     assert ",200,1" in ass  # MarginV in the caption style line
 
 
-def test_visual_preset_catalog_keeps_classic_and_exposes_requested_choices():
+def test_visual_preset_catalog_lists_the_style_families_in_page_order():
+    # RiceSuite #79: four colour families, then the standalone styles.
     assert CAPTION_STYLE_NAMES == (
-        "classic",
-        "clean",
+        "montserrat",
+        "montserrat_violet",
+        "montserrat_sky",
+        "montserrat_green",
         "punch",
+        "punch_volt",
+        "punch_red",
+        "punch_blue",
+        "pop",
+        "pop_bubblegum",
+        "pop_lime",
+        "pop_fire",
+        "neon",
+        "neon_inverse",
         "friendly",
-        "sunset",
-        "mono",
         "editorial",
         "lyric_block",
         "velvet_serif",
         "din_condensed",
-        "baskerville",
-        "montserrat",  # the bundled-font preset (RiceSuite #66)
     )
     assert HEADER_STYLE_NAMES == ("plain", "black_plate", "white_plate")
 
-    classic = style_for_presets("classic", "plain")
-    assert classic.font == "Arial"
-    assert classic.highlight_color == "35E36B"
-    assert classic.header_font_size == 42
+    default = style_for_presets()
+    assert default.font == "Montserrat Black"
+    assert default.highlight_color == "FFD60A"
+    assert default.header_font_size == 42
 
-    white_plate = style_for_presets("classic", "white_plate")
+    white_plate = style_for_presets("montserrat", "white_plate")
     assert white_plate.header_color == "FFFFFF"
     assert white_plate.header_outline_color == "000000"
 
 
 def test_caption_presets_change_font_and_highlight_without_leaving_ass():
-    clean = style_for_presets("clean", "plain")
+    friendly = style_for_presets("friendly", "plain")
     punch = style_for_presets("punch", "plain")
 
-    assert clean.font == "Helvetica Neue"
-    assert clean.highlight_color == "F59E0B"
+    assert friendly.font == "Avenir Next"
+    assert friendly.highlight_color == "4DD4AC"
     assert punch.font == "Impact"
     assert punch.highlight_color == "FF3B81"
 
@@ -125,27 +133,24 @@ def test_lyric_presets_match_the_ratified_font_and_color_treatments():
     lyric_block = style_for_presets("lyric_block", "plain")
     velvet_serif = style_for_presets("velvet_serif", "plain")
     din_condensed = style_for_presets("din_condensed", "plain")
-    baskerville = style_for_presets("baskerville", "plain")
 
     assert (lyric_block.font, lyric_block.highlight_color, lyric_block.bold) == (
         "Avenir Next Condensed",
         "00E5FF",
         True,
     )
-    assert (velvet_serif.font, velvet_serif.highlight_color, velvet_serif.bold) == (
-        "Bodoni 72",
-        "FF3654",
-        False,
-    )
+    # RiceSuite #79 made Velvet Serif bold, larger, and heavier-edged.
+    assert (
+        velvet_serif.font,
+        velvet_serif.highlight_color,
+        velvet_serif.bold,
+        velvet_serif.font_size,
+        velvet_serif.outline,
+    ) == ("Bodoni 72", "FF3654", True, 96, 5)
     assert (din_condensed.font, din_condensed.highlight_color, din_condensed.bold) == (
         "DIN Condensed",
         "A8C7E8",
         True,
-    )
-    assert (baskerville.font, baskerville.highlight_color, baskerville.bold) == (
-        "Baskerville",
-        "00A7A7",
-        False,
     )
 
     ass = build_ass(words(("little", 0.0, 0.4)), duration=1.0, style=din_condensed)
@@ -154,14 +159,14 @@ def test_lyric_presets_match_the_ratified_font_and_color_treatments():
 
 
 def test_header_presets_share_compact_scale_and_plain_has_no_plate():
-    styles = [style_for_presets("classic", name) for name in HEADER_STYLE_NAMES]
+    styles = [style_for_presets("montserrat", name) for name in HEADER_STYLE_NAMES]
     assert [style.header_font_size for style in styles] == [42, 42, 42]
     assert [style.header_plate for style in styles] == ["none", "translucent", "solid"]
 
-    black = style_for_presets("classic", "black_plate")
+    black = style_for_presets("montserrat", "black_plate")
     assert (black.header_plate_color, black.header_plate_opacity) == ("000000", 75)
     assert black.header_outline == 0  # libass drew no edge inside the box
-    white = style_for_presets("classic", "white_plate")
+    white = style_for_presets("montserrat", "white_plate")
     assert (white.header_plate_color, white.header_outline) == ("FFFFFF", 2)
     assert all(style.header_padding == 16 for style in styles)
     assert all(style.header_plate_radius == 0 for style in styles)
@@ -177,7 +182,7 @@ def test_header_preset_fills_every_header_control():
 
 def test_fallback_header_is_a_minimal_text_line_at_the_header_position():
     style = replace(
-        style_for_presets("classic", "white_plate"),
+        style_for_presets("montserrat", "white_plate"),
         header_font_size=60,
         header_color="FFCC00",
         header_align="left",
