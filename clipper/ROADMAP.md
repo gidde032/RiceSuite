@@ -20,9 +20,9 @@ Slate redesigns the existing local review UI around a dark carbon/grey editing
 console, rice-grey interaction states, treatment-preview cards for per-clip
 header and caption selection, and a symbol-only rice-and-shears mark. The Slate
 UI slice preserves the existing API, render pipeline, batch semantics, and
-RicePoster handoff. The bounded lyric-preset addition extends the catalog to
-eleven fixed caption presets while keeping the original defaults and deferred
-custom-preset boundary.
+RicePoster handoff. The bounded lyric-preset addition extended the catalog to
+eleven fixed caption presets and kept the deferred custom-preset boundary.
+RiceSuite #79 later regrouped the catalog into nineteen presets.
 
 ## v1 (current — see SPEC.md)
 

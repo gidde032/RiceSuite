@@ -190,9 +190,8 @@ through the `subtitles` filter's `fontsdir` option and otherwise falls back to
 Helvetica without an error, so the render copies the font into the job
 directory and passes `fontsdir=fonts`. The ASS font name for Montserrat is the
 face's full name, `Montserrat Black`; libass does not match the bare family
-`Montserrat`. The review page loads both bundled fonts from `GET
-/fonts/{file}` for its thumbnails; that route serves only the bundled font
-files.
+`Montserrat`. The review page loads both bundled fonts for its thumbnails
+from `GET /fonts/{file}`. That route serves only the bundled font files.
 
 The UI also exposes three header treatments at the same compact,
 reference-matched scale: **Plain text**, **Black plate**, and **White plate**.

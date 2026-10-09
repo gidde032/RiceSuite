@@ -38,7 +38,7 @@ def _write_batch(root, batch_id, clips, *, schema_version=1, write_files=None):
                 "position": position,
                 "transcript": transcript,
                 "header": "",
-                "presets": {"caption_style": "classic", "header_style": "plain"},
+                "presets": {"caption_style": "montserrat", "header_style": "plain"},
             }
         )
     manifest = {
