@@ -135,7 +135,8 @@ _PUNCH: dict[str, object] = {
     "caption_margin_v": 340,
 }
 # Pop and Neon (RiceSuite #79) colour the text and the edge and highlight in
-# white. Luckiest Guy is bundled like Montserrat; it has capitals only.
+# white. Luckiest Guy is bundled like Montserrat; its lowercase letters are
+# small capitals.
 _POP: dict[str, object] = {
     "font": "Luckiest Guy",
     "font_size": 100,

@@ -161,8 +161,9 @@ color.
   Green (`#17B24A`). **Montserrat (Yellow) is the default style.**
 - **Punch:** Impact with a white text and a black edge. The highlight is Pink
   (`#FF3B81`), Volt (`#C6FF1A`), Red (`#FF2A2A`), or Blue (`#2F5BFF`).
-- **Pop:** Luckiest Guy, a capitals-only face, with a colored text, a dark
-  colored edge, and a white highlight: Gold (`#FFE14D` on `#3B0A6B`),
+- **Pop:** Luckiest Guy with a colored text, a dark colored edge, and a white
+  highlight. Its lowercase letters are small capitals. The variants are Gold
+  (`#FFE14D` on `#3B0A6B`),
   Bubblegum (`#FF8AD8` on `#1B1464`), Lime (`#B8FF3A` on `#0B3D20`), or Fire
   (`#FF8A1F` on `#5A0A0A`).
 - **Neon:** Futura Condensed ExtraBold with a thin colored edge and a white

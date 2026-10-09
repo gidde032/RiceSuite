@@ -110,15 +110,19 @@ def test_every_preset_font_resolves_for_measurement_on_this_host():
 # --- thumbnails ---------------------------------------------------------------
 
 
-def _sample_declarations(css: str, name: str) -> str:
-    """Every declaration that applies to the ``.sample-<name>`` thumbnail."""
-    cls = ".sample-" + name.replace("_", "-")
+def _rule(css: str, selector: str) -> str:
+    """Every top-level declaration for ``selector``."""
     css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
     found = []
     for selectors, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
-        if cls in [s.strip() for s in selectors.split(",")]:
+        if selector in [s.strip() for s in selectors.split(",")]:
             found.append(body)
     return ";".join(found)
+
+
+def _sample_declarations(css: str, name: str) -> str:
+    """Every declaration that applies to the ``.sample-<name>`` thumbnail."""
+    return _rule(css, ".sample-" + name.replace("_", "-"))
 
 
 def _var(declarations: str, var: str, default: str) -> str:
@@ -184,3 +188,68 @@ def test_a_narrow_caption_column_drops_to_two_cards_per_row():
         "@container (max-width: 320px) { .caption-family { "
         "grid-template-columns: repeat(2, minmax(0, 1fr)); } }" in css
     )
+
+
+# The CSS family that draws each ASS font in a thumbnail (cold review #80).
+THUMBNAIL_FAMILY = {
+    "Montserrat Black": '"Caption Montserrat"',
+    "Luckiest Guy": '"Caption Luckiest Guy"',
+    "Futura Condensed ExtraBold": '"Caption Futura Condensed"',
+    "Impact": "Impact",
+    "Avenir Next": '"Avenir Next"',
+    "Georgia": "Georgia",
+    "Avenir Next Condensed": '"Avenir Next Condensed"',
+    "Bodoni 72": '"Bodoni 72"',
+    "DIN Condensed": '"DIN Condensed"',
+}
+# libass draws these italic: Lyric Block asks for it, and Friendly's
+# "Avenir Next" bold resolves to the Bold Italic face on macOS.
+ITALIC_THUMBNAILS = {"lyric_block", "friendly"}
+
+
+def _prop(declarations: str, prop: str, default: str) -> str:
+    values = re.findall(rf"(?<![-\w]){prop}:\s*([^;]+)", declarations)
+    return values[-1].strip() if values else default
+
+
+@pytest.mark.parametrize("name", CAPTION_STYLE_NAMES)
+def test_each_thumbnail_uses_the_style_font_slant_and_edge_width(name):
+    css = (ROOT / "web/style.css").read_text(encoding="utf-8")
+    base = _rule(css, ".caption-sample")
+    style = style_for_presets(name)
+    declarations = _sample_declarations(css, name)
+
+    family = _prop(declarations, "font-family", "")
+    assert family.split(",")[0].strip() == THUMBNAIL_FAMILY[style.font]
+    slant = _prop(declarations, "font-style", "normal")
+    assert (slant == "italic") == (name in ITALIC_THUMBNAILS)
+
+    # Half of the stroke shows under the fill. It keeps the ASS edge-to-size
+    # ratio, with a 2 px floor so a thin edge still shows at thumbnail size.
+    size = float(_prop(declarations, "font-size", "18px").removesuffix("px"))
+    width = _prop(declarations, "--sample-edge-width", "")
+    if not width:
+        width = re.search(r"--sample-edge-width:\s*([\d.]+)px", base).group(1)
+    expected = max(2.0, 2 * style.outline * size / style.font_size)
+    assert float(width.removesuffix("px")) == pytest.approx(expected, abs=0.15)
+
+
+def test_each_thumbnail_web_font_loads_the_face_libass_draws():
+    css = (ROOT / "web/style.css").read_text(encoding="utf-8")
+    faces = dict(
+        (re.search(r'font-family: ("[^"]+")', f).group(1), f)
+        for f in re.findall(r"@font-face \{([^}]*)\}", css)
+    )
+    for font, file in text_image.BUNDLED_FONTS.items():
+        assert f'url("fonts/{file}")' in faces[THUMBNAIL_FAMILY[font]]
+    futura = faces['"Caption Futura Condensed"']
+    assert 'local("Futura Condensed ExtraBold")' in futura
+    # A face declares the weight its thumbnails ask for, so Chrome adds no
+    # synthetic bold that libass does not draw.
+    for family, face in faces.items():
+        weight = _prop(face, "font-weight", "400")
+        for name in CAPTION_STYLE_NAMES:
+            style = style_for_presets(name)
+            if THUMBNAIL_FAMILY[style.font] == family:
+                declarations = _sample_declarations(css, name)
+                assert _prop(declarations, "font-weight", "700") == weight, name

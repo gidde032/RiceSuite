@@ -99,11 +99,11 @@ input[type="file"]::file-selector-button { margin-right: 10px; border: 1px solid
 .sample-black { border: 1px solid var(--hairline); background: #020303; color: #fff; }
 .sample-white { background: #f1f1ef; color: #fff; text-shadow: -1px -1px #000, 1px -1px #000, -1px 1px #000, 1px 1px #000; }
 /* Each thumbnail shows its style's font, text and highlight colours, and edge
-   (RiceSuite #79). The edge widths keep the ASS outline-to-size ratio; the
-   stroke is painted under the fill, so half of it shows. */
+   (RiceSuite #79). The edge widths keep the ASS outline-to-size ratio, at
+   least 2 px; the stroke is painted under the fill, so half of it shows. */
 @font-face { font-family: "Caption Montserrat"; src: url("fonts/Montserrat-Black.ttf") format("truetype"); font-weight: 900; }
 @font-face { font-family: "Caption Luckiest Guy"; src: url("fonts/LuckiestGuy-Regular.ttf") format("truetype"); }
-@font-face { font-family: "Caption Futura Condensed"; src: local("Futura Condensed ExtraBold"), local("Futura-CondensedExtraBold"); }
+@font-face { font-family: "Caption Futura Condensed"; src: local("Futura Condensed ExtraBold"), local("Futura-CondensedExtraBold"); font-weight: 800; }
 .caption-sample { --sample-edge: #000; --sample-edge-width: 2px; display: flex; min-width: 50px; min-height: 32px; padding: calc(var(--editor-space) * 0.5); align-items: center; justify-content: center; gap: 0.25em; border: 1px solid var(--hairline); border-radius: 5px; background: #050607; color: var(--sample-text, #fff); font-size: 18px; font-weight: 700; line-height: 1; white-space: nowrap; -webkit-text-stroke: var(--sample-edge-width) var(--sample-edge); paint-order: stroke fill; text-shadow: 1px 1px 0 #000; }
 .caption-sample-hi { color: var(--sample-hi); }
 .sample-montserrat, .sample-montserrat-violet, .sample-montserrat-sky, .sample-montserrat-green { font-family: "Caption Montserrat", "Arial Black", sans-serif; font-weight: 900; --sample-edge-width: 2.2px; }
@@ -122,14 +122,14 @@ input[type="file"]::file-selector-button { margin-right: 10px; border: 1px solid
 .sample-pop-lime { --sample-text: #b8ff3a; --sample-edge: #0b3d20; }
 .sample-pop-fire { --sample-text: #ff8a1f; --sample-edge: #5a0a0a; }
 .sample-neon, .sample-neon-inverse { font-family: "Caption Futura Condensed", Futura, sans-serif; font-weight: 800; font-size: 20px; --sample-hi: #ffffff; }
-.sample-neon { --sample-text: #4fc3ff; --sample-edge: #ff4fb8; --sample-edge-width: 1.5px; }
-.sample-neon-inverse { --sample-text: #ff3db4; --sample-edge: #18d6ff; --sample-edge-width: 1.6px; }
+.sample-neon { --sample-text: #4fc3ff; --sample-edge: #ff4fb8; --sample-edge-width: 2px; }
+.sample-neon-inverse { --sample-text: #ff3db4; --sample-edge: #18d6ff; --sample-edge-width: 2px; }
 /* libass on macOS draws "Avenir Next" bold as its Bold Italic face. */
 .sample-friendly { --sample-text: #fff6e5; --sample-hi: #4dd4ac; font-family: "Avenir Next", Avenir, sans-serif; font-style: italic; }
 .sample-editorial { --sample-text: #fffdf5; --sample-hi: #ffd60a; font-family: Georgia, serif; }
 .sample-lyric-block { --sample-text: #f7f3ee; --sample-hi: #00e5ff; font-family: "Avenir Next Condensed", "Arial Narrow", sans-serif; font-weight: 800; font-style: italic; font-size: 20px; }
 .sample-velvet-serif { --sample-text: #fff8f0; --sample-hi: #ff3654; font-family: "Bodoni 72", Georgia, serif; font-size: 20px; }
-.sample-din-condensed { --sample-text: #f7f3ee; --sample-hi: #a8c7e8; font-family: "DIN Condensed", "Arial Narrow", sans-serif; font-size: 21px; --sample-edge-width: 1.8px; }
+.sample-din-condensed { --sample-text: #f7f3ee; --sample-hi: #a8c7e8; font-family: "DIN Condensed", "Arial Narrow", sans-serif; font-size: 21px; --sample-edge-width: 2.1px; }
 
 .switch-label { display: flex; min-height: 36px; padding: 0 !important; align-items: center; gap: var(--editor-space); font-size: 14px !important; font-weight: 400 !important; letter-spacing: 0 !important; text-transform: none !important; }
 .switch-label input { width: 38px; height: 22px; accent-color: var(--rice); }
