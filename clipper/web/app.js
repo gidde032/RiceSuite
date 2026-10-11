@@ -158,6 +158,9 @@ const HEADER_CONTROLS = [
 ];
 // Wait this long after the last edit before asking for a header preview.
 const HEADER_PREVIEW_DELAY_MS = 250;
+// Header warnings while a preview is pending or after it failed: no plan has a
+// current warning, so the face warning stays hidden.
+const HEADER_WARNINGS_UNCHECKED = Object.freeze({ crop_plan: null, music_plan: null });
 let headerFontAvailability = null;
 
 function headerPreset(name) {
@@ -273,15 +276,33 @@ function headerPreviewPayload(clip) {
   };
 }
 
-// Debounced: only the last edit in a burst asks the server.
+// Debounced: only the last edit in a burst asks the server. The edit itself
+// makes every earlier reply out of date (RiceSuite #69), so the page marks the
+// preview as updating and hides the face warning until the new reply.
 function scheduleHeaderPreview(clip) {
   if (!clip.jobId) return;
   clearTimeout(clip.headerPreviewTimer);
+  markHeaderPreviewPending(clip);
   clip.headerPreviewTimer = setTimeout(() => requestHeaderPreview(clip), HEADER_PREVIEW_DELAY_MS);
 }
 
+function markHeaderPreviewPending(clip) {
+  clip.headerPreviewSeq = (clip.headerPreviewSeq || 0) + 1;
+  clip.headerWarnings = HEADER_WARNINGS_UNCHECKED;
+  setHeaderPreviewUpdating(clip, true);
+  setHeaderPreviewNote(clip, "Updating header preview…");
+  if (clip.geoState) applyGeometry(clip, clip.geoState);
+}
+
+function setHeaderPreviewUpdating(clip, on) {
+  if (clip.headerPreviewWindowEl) clip.headerPreviewWindowEl.classList.toggle("is-updating", on);
+}
+
+// The note is a live region: an unchanged text is not written again, so a
+// burst of edits does not repeat it to a screen reader.
 function setHeaderPreviewNote(clip, text) {
-  if (clip.headerPreviewNoteEl) clip.headerPreviewNoteEl.textContent = text || "";
+  const el = clip.headerPreviewNoteEl;
+  if (el && el.textContent !== (text || "")) el.textContent = text || "";
 }
 
 // Ask for the exact header PNG (RiceSuite #65). A reply that a newer request
@@ -302,12 +323,20 @@ async function requestHeaderPreview(clip) {
     }
   } catch (err) {
     if (seq !== clip.headerPreviewSeq) return;
+    // A failed check leaves no current face warning, header or caption zone:
+    // neither the last reply's nor the ingest plan's, which assumed the
+    // default header and caption zone (#69).
+    clip.headerWarnings = HEADER_WARNINGS_UNCHECKED;
+    setHeaderPreviewUpdating(clip, false);
     showHeaderPreview(clip, null);
-    setHeaderPreviewNote(clip, `Header preview unavailable: ${err.message}`);
+    const reason = String(err.message).replace(/\.$/, "");
+    setHeaderPreviewNote(clip, `Header preview unavailable: ${reason}. Face position not checked.`);
+    if (clip.geoState) applyGeometry(clip, clip.geoState);
     return;
   }
   if (seq !== clip.headerPreviewSeq) return;
   clip.headerWarnings = data.warnings || null;
+  setHeaderPreviewUpdating(clip, false);
   showHeaderPreview(clip, data.image || null);
   setHeaderPreviewNote(clip, data.note || (clip.headerPreviewApprox
     ? "Preview drawn in the centre 9:16 of this source; the render follows the subject crop."
