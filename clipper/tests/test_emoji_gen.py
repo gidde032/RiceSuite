@@ -77,19 +77,34 @@ def test_an_owned_client_is_closed(monkeypatch):
 # --- the prompt --------------------------------------------------------------
 
 
-def test_the_prompt_sends_the_phrases_with_word_indices_and_asks_for_few():
+def test_the_prompt_sends_the_phrases_with_times_and_word_indices():
     client = _Client('{"picks": []}')
     words = [*_words("so", "pizza", "", "night"), Word(text="later", start=5, end=6)]
     emoji_gen.suggest_emoji(words, client=client)
     (call,) = client.calls
     prompt = call["messages"][0]["content"]
     # group_words drops the empty word; indices stay global.
-    assert "1. [0] so [1] pizza [3] night" in prompt
-    assert "2. [4] later" in prompt
-    system = call["system"]
-    assert "one phrase in three" in system
-    assert "JSON" in system
+    assert "1. (0.0s) [0] so [1] pizza [3] night" in prompt
+    assert "2. (5.0s) [4] later" in prompt
+    assert "JSON" in call["system"]
     assert call["max_tokens"] == emoji_gen.MAX_TOKENS
+
+
+def test_the_prompt_asks_for_most_phrases_and_spaced_repeats():
+    # #82: the old prompt capped picks at one phrase in three, so only ~25% of
+    # phrases got emoji. The maintainer wants 80%+, skipping only filler.
+    system = emoji_gen.SYSTEM_PROMPT
+    assert "one phrase in" not in system
+    assert "Most phrases get no emoji" not in system
+    assert "at least four phrases in five" in system
+    assert "filler" in system
+    assert f"at most {emoji_gen.MAX_USES_PER_EMOJI} times" in system
+    assert f"within {emoji_gen.REPEAT_GAP_S:g} seconds" in system
+
+
+def test_the_token_budget_fits_a_reply_for_every_phrase():
+    # A pick costs about 20 output tokens; the model thinks first as well.
+    assert emoji_gen.MAX_TOKENS >= 8000
 
 
 def test_no_words_sends_nothing():
@@ -145,6 +160,58 @@ def test_bad_items_are_dropped_and_the_first_pick_per_phrase_wins():
     )
     picks = _parse(reply, words)
     assert [(p.word, p.emoji) for p in picks] == [(1, ["🍕"]), (4, ["🐶", "🔊"])]
+
+
+def _spaced(*starts):
+    """One single-word phrase per start time: starts 0.8s or more apart leave
+    a silent gap longer than ``group_words``' 0.7s, which splits phrases."""
+    return [Word(text=f"w{i}", start=t, end=t + 0.05) for i, t in enumerate(starts)]
+
+
+def _picks(*emoji_lists):
+    return json.dumps(
+        {"picks": [{"word": i, "emoji": e} for i, e in enumerate(emoji_lists)]}
+    )
+
+
+def test_a_repeat_within_the_gap_is_dropped():
+    gap = emoji_gen.REPEAT_GAP_S
+    words = _spaced(0.0, 2.0, gap - 0.1, gap + 1.0)
+    picks = _parse(_picks(["🍕"], ["🍕", "🌙"], ["🍕"], ["🍕"]), words)
+    # 2.0s: 🍕 too soon, 🌙 kept. gap-0.1s: still too soon, the pick goes.
+    # gap+1.0s: far enough from the 0.0s use.
+    assert [(p.word, p.emoji) for p in picks] == [
+        (0, ["🍕"]),
+        (1, ["🌙"]),
+        (3, ["🍕"]),
+    ]
+
+
+def test_an_emoji_is_used_at_most_the_capped_number_of_times():
+    step = emoji_gen.REPEAT_GAP_S + 1
+    n = emoji_gen.MAX_USES_PER_EMOJI + 2
+    words = _spaced(*(i * step for i in range(n)))
+    picks = _parse(_picks(*(["🐶"] for _ in range(n))), words)
+    assert [p.word for p in picks] == list(range(emoji_gen.MAX_USES_PER_EMOJI))
+
+
+def test_variation_selectors_do_not_make_a_new_emoji():
+    words = _spaced(0.0, 1.0)
+    picks = _parse(_picks(["❤️"], ["❤"]), words)
+    assert [(p.word, p.emoji) for p in picks] == [(0, ["❤️"])]
+
+
+def test_the_same_emoji_twice_in_one_pick_keeps_one():
+    picks = _parse(_picks(["🔥", "🔥"]), _spaced(0.0))
+    assert [(p.word, p.emoji) for p in picks] == [(0, ["🔥"])]
+
+
+def test_the_picks_never_exceed_what_a_render_accepts(monkeypatch):
+    monkeypatch.setattr(emoji_gen, "EMOJI_PICKS_MAX", 3)
+    words = _spaced(*(i * 1.0 for i in range(6)))
+    letters = "🍎🍌🍇🍉🍓🍒"
+    picks = _parse(_picks(*([e] for e in letters)), words)
+    assert [p.word for p in picks] == [0, 1, 2]
 
 
 @pytest.mark.parametrize("reply", ["no json here", '{"picks": 3}', "[1, 2]", ""])

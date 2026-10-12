@@ -284,13 +284,20 @@ and `RenderRequest.emoji_on` turns them on.
 - **✨ Suggest emoji.** `POST /api/jobs/{id}/emoji` makes one model call per
   clip, only when the button is clicked (§3), through the header's call site.
   It sends the caption phrases as `transcribe.phrasing.group_words` makes them,
-  each word with its global index, and a system prompt that asks for sparse
-  use: about one phrase in four, never more than one in three, none when
-  nothing fits, a concrete anchor word, and one or two emoji. The reply is
-  JSON; the first object holding a `picks` list is used, so prose around it
-  may contain braces. Items with an unknown word, text that is not emoji, or
-  the wrong shape are dropped, a third emoji is dropped, and the earliest
-  anchor in a phrase wins. A request carries at most 5,000 words. The reply's
+  each phrase with its start time and each word with its global index, and a
+  system prompt that asks for emoji on most phrases (at least four in five,
+  RiceSuite #82): any phrase with a word that reasonably suggests a specific
+  emoji gets one, only pure filler between statements is skipped, the anchor
+  is that word, and each pick has one or two emoji, varied rather than
+  generic. The reply is JSON; the first object holding a `picks` list is used,
+  so prose around it may contain braces. Items with an unknown word, text that
+  is not emoji, or the wrong shape are dropped, a third emoji is dropped, and
+  the earliest anchor in a phrase wins. Repeats are then limited in phrase
+  order, in code rather than trusted to the model: one emoji appears at most
+  three times in a clip and never in a phrase starting less than 8 seconds
+  after its previous use (an emoji with or without its presentation selector
+  counts as one); a pick left with no emoji is dropped, and at most the
+  render's 500-pick limit is kept. A request carries at most 5,000 words. The reply's
   text blocks are read by type, since the model may think first. A failure
   leaves the current picks alone: 503 when there is no key or the API rejects
   the key (401, 403) or the model (404), naming the setting to fix; 502 for any

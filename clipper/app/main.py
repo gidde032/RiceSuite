@@ -395,7 +395,7 @@ def generate_header(job_id: str, req: HeaderRequest) -> dict:
 
 @app.post("/api/jobs/{job_id}/emoji")
 def suggest_emoji(job_id: str, req: EmojiRequest) -> dict:
-    """Suggest sparse caption emoji for the reviewed words (RiceSuite #66).
+    """Suggest caption emoji for the reviewed words (RiceSuite #66, #82).
 
     Opt-in: only the editor's ✨ Suggest emoji button calls this. It sends the
     caption phrases' text, through the same call site as the header, and

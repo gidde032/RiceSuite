@@ -22,6 +22,12 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
     slot default that names one of them uses Montserrat.
   - The review page groups the styles by family. Each thumbnail shows the real
     font, text color, highlight color, and edge.
+- **✨ Suggest emoji covers most caption phrases**
+  (RiceSuite [#82](https://github.com/gidde032/RiceSuite/issues/82)).
+  - The picker aims for emoji on at least four phrases in five and skips only
+    filler between statements. It used to aim for one phrase in four.
+  - One emoji appears at most three times in a clip, and never again within 8
+    seconds of its previous use. Clipper enforces both limits after the reply.
 
 ### Fixed
 
