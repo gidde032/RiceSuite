@@ -28,6 +28,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
     filler between statements. It used to aim for one phrase in four.
   - One emoji appears at most three times in a clip, and never again within 8
     seconds of its previous use. Clipper enforces both limits after the reply.
+- **The neutral header comments on the clip instead of describing it**
+  (RiceSuite [#84](https://github.com/gidde032/RiceSuite/issues/84)). The
+  `generic-header` style writes a punchy one- or two-line take ending in one
+  or two emoji, with good and bad examples, a voice, and tone by content type.
 
 ### Fixed
 

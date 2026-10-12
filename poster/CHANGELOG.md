@@ -15,6 +15,14 @@ published as a tagged release or GitHub Release.
 
 ### Changed
 
+- **The seed caption styles comment and tag carefully** (RiceSuite
+  [#84](https://github.com/gidde032/RiceSuite/issues/84)). `generic`,
+  `meme-humor`, `music-fanpage` and `sports` ask for short, widely used
+  hashtags, with good and bad examples for each style, and never invented
+  ones. They tag the artist or subject only with a handle that is given or
+  certain to be the same verified account on TikTok and Instagram; otherwise
+  no @. `generic`, `music-fanpage` and `sports` now comment on the clip
+  instead of describing it.
 - **Captions use Claude Haiku 5.5** (`claude-haiku-5-5`, RiceSuite
   [#75](https://github.com/gidde032/RiceSuite/issues/75)), by maintainer direction, replacing `claude-sonnet-4-6`. The
   model thinks before it answers, so the reply's text blocks are read by type,

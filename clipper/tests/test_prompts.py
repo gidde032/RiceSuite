@@ -30,3 +30,16 @@ def test_only_the_neutral_header_prompt_is_tracked():
         "Only the neutral header prompt may be committed; a persona-specific "
         f"style must stay local and gitignored. Tracked: {tracked}"
     )
+
+
+def test_the_neutral_header_comments_instead_of_describing():
+    # RiceSuite #84: a header is a 1-2 line take on the clip, not a summary.
+    import json
+
+    data = json.loads((ROOT / "prompts" / "generic-header.json").read_text())
+    prompt = data["system_prompt"]
+    assert "Commentary, not description" in prompt
+    assert "Never narrate or summarize" in prompt
+    assert "one or two lines on screen" in prompt
+    assert "Describe what the clip actually shows" not in prompt
+    assert "not a description" in data["no_topic_fallback"]

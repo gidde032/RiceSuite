@@ -272,3 +272,33 @@ def test_frontend_has_per_slot_style_selector(frontend_src):
     assert "styleOptions" in html
     assert "formData.append('style'" in html
     assert "default_caption_style" in html
+
+
+# --- seed prompt rules (RiceSuite #84) ---------------------------------------
+
+
+def _seed_prompt(name):
+    return json.loads((PROJECT_ROOT / "prompts" / f"{name}.json").read_text())[
+        "system_prompt"
+    ]
+
+
+@pytest.mark.parametrize("name", sorted(SEED_STYLES))
+def test_seed_styles_never_invent_handles_or_hashtags(name):
+    prompt = _seed_prompt(name)
+    # A wrong @ tags a stranger on both platforms; a made-up tag reaches no one.
+    assert "Never invent, guess, or build a handle" in prompt
+    assert "same on both TikTok and Instagram" in prompt
+    assert "use no @ at all" in prompt
+    assert "Never invent long, compound, or hyper-specific tags" in prompt
+    hashtags = prompt.split("\nHashtags\n", 1)[1]
+    assert "Good: #" in hashtags and "Bad: #" in hashtags
+
+
+@pytest.mark.parametrize("name", sorted(SEED_STYLES - {"meme-humor"}))
+def test_seed_styles_comment_instead_of_describing(name):
+    # meme-humor already says "Never explain the joke or the clip".
+    prompt = _seed_prompt(name)
+    assert "Commentary, not description" in prompt
+    assert "never narrate or summarize" in prompt
+    assert "describe the content" not in prompt
