@@ -291,13 +291,17 @@ and `RenderRequest.emoji_on` turns them on.
   is that word, and each pick has one or two emoji, varied rather than
   generic. The reply is JSON; the first object holding a `picks` list is used,
   so prose around it may contain braces. Items with an unknown word, text that
-  is not emoji, or the wrong shape are dropped, a third emoji is dropped, and
-  the earliest anchor in a phrase wins. Repeats are then limited in phrase
-  order, in code rather than trusted to the model: one emoji appears at most
-  three times in a clip and never in a phrase starting less than 8 seconds
-  after its previous use (an emoji with or without its presentation selector
-  counts as one); a pick left with no emoji is dropped, and at most the
-  render's 500-pick limit is kept. A request carries at most 5,000 words. The reply's
+  is not emoji, or the wrong shape are dropped. Repeats are then limited in
+  phrase order, in code rather than trusted to the model (the prompt also
+  asks it to swap in another fitting emoji rather than skip a phrase): one
+  emoji appears at most three times in a clip and never in a phrase starting
+  less than 8 seconds after its previous use, measured on the 0.1 s times the
+  prompt shows. Presentation selectors and skin tones do not make a new emoji.
+  Each phrase gets the earliest anchor with emoji left after these limits and
+  duplicates are removed, with two emoji at most; a phrase with none left gets
+  no pick, and at most the render's 500-pick limit is kept. The reply budget
+  is 12,000 tokens, enough for several minutes of speech; a reply cut off at
+  the budget is unusable (502). A request carries at most 5,000 words. The reply's
   text blocks are read by type, since the model may think first. A failure
   leaves the current picks alone: 503 when there is no key or the API rejects
   the key (401, 403) or the model (404), naming the setting to fix; 502 for any

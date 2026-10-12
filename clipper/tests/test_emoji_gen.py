@@ -100,6 +100,16 @@ def test_the_prompt_asks_for_most_phrases_and_spaced_repeats():
     assert "filler" in system
     assert f"at most {emoji_gen.MAX_USES_PER_EMOJI} times" in system
     assert f"within {emoji_gen.REPEAT_GAP_S:g} seconds" in system
+    # Skeptic review of #83: a used-up emoji should be swapped, not skipped,
+    # and stock reaction emoji are named so they don't fill the gaps.
+    assert "instead of skipping the phrase" in system
+    assert "Avoid stock reaction emoji" in system
+
+
+def test_the_suggest_button_no_longer_promises_a_few():
+    html = (ROOT / "web" / "index.html").read_text()
+    assert "suggests a few emoji" not in html
+    assert "suggests emoji for most phrases" in html
 
 
 def test_the_token_budget_fits_a_reply_for_every_phrase():
@@ -212,6 +222,54 @@ def test_the_picks_never_exceed_what_a_render_accepts(monkeypatch):
     letters = "🍎🍌🍇🍉🍓🍒"
     picks = _parse(_picks(*([e] for e in letters)), words)
     assert [p.word for p in picks] == [0, 1, 2]
+
+
+def test_a_repeat_exactly_at_the_gap_is_kept():
+    words = _spaced(0.0, emoji_gen.REPEAT_GAP_S)
+    picks = _parse(_picks(["🍕"], ["🍕"]), words)
+    assert [p.word for p in picks] == [0, 1]
+
+
+def test_the_gap_uses_the_times_the_prompt_shows():
+    # The prompt shows 0.0s and 8.0s; the raw gap is 7.96s. The model was told
+    # these are 8 seconds apart, so the code must agree (review of #83).
+    words = _spaced(0.04, emoji_gen.REPEAT_GAP_S)
+    picks = _parse(_picks(["🍕"], ["🍕"]), words)
+    assert [p.word for p in picks] == [0, 1]
+
+
+def test_a_blocked_anchor_falls_back_to_the_phrases_next_anchor():
+    # Phrase 2 holds "pizza" and "moon"; its first anchor repeats 🍕 too soon.
+    words = [
+        Word(text="pizza", start=0.0, end=0.1),
+        Word(text="pizza", start=2.0, end=2.1),
+        Word(text="moon", start=2.2, end=2.3),
+    ]
+    picks = _parse(_picks(["🍕"], ["🍕"], ["🌙"]), words)
+    assert [(p.word, p.emoji) for p in picks] == [(0, ["🍕"]), (2, ["🌙"])]
+
+
+def test_dropped_emoji_do_not_take_a_pick_slot():
+    picks = _parse(_picks(["🔥", "🔥", "🎉"]), _spaced(0.0))
+    assert [p.emoji for p in picks] == [["🔥", "🎉"]]
+    picks = _parse(_picks(["🍕"], ["🍕", "🌙", "🎉"]), _spaced(0.0, 1.0))
+    assert [p.emoji for p in picks] == [["🍕"], ["🌙", "🎉"]]
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [("❤️", "❤\ufe0e"), ("👍", "👍🏽"), ("👍🏻", "👍🏿")],
+)
+def test_selectors_and_skin_tones_do_not_make_a_new_emoji(first, second):
+    picks = _parse(_picks([first], [second]), _spaced(0.0, 1.0))
+    assert [p.word for p in picks] == [0]
+
+
+def test_the_cap_applies_after_spacing(monkeypatch):
+    # Capping first would keep phrases 0 and 1, then lose 1 to spacing.
+    monkeypatch.setattr(emoji_gen, "EMOJI_PICKS_MAX", 2)
+    picks = _parse(_picks(["🍕"], ["🍕"], ["🌙"]), _spaced(0.0, 1.0, 2.0))
+    assert [p.word for p in picks] == [0, 2]
 
 
 @pytest.mark.parametrize("reply", ["no json here", '{"picks": 3}', "[1, 2]", ""])

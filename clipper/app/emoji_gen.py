@@ -30,7 +30,9 @@ EmojiGenerationError = anthropic_text.TextGenerationError
 
 # A reply now covers most phrases, so a long clip lists many picks. The model
 # thinks first, and thinking counts against this budget too (RiceSuite #66).
-# Kept under the SDK's non-streaming ceiling.
+# At about 20 tokens a pick this fits several minutes of speech. The shared
+# client's 60 s per-attempt timeout bounds a reply as well; a reply cut off at
+# the budget is not valid JSON and fails the request (502).
 MAX_TOKENS = 12000
 
 # Repeat limits (RiceSuite #82): one emoji appears at most this many times in
@@ -50,10 +52,12 @@ SYSTEM_PROMPT = (
     "idea. Skip only phrases that are pure filler between statements, such as "
     '"you know", "I mean", "and so" or "like, um". Anchor on '
     "the word that suggests the emoji, never on a filler or function word.\n\n"
-    "Keep the emoji varied and specific to each phrase. Prefer a fitting, "
-    "less common emoji over a generic one you have already used. An emoji "
-    f"may appear at most {MAX_USES_PER_EMOJI} times in the whole clip, and "
-    f"never again within {REPEAT_GAP_S:g} seconds of its last use.\n\n"
+    "Keep the emoji varied and specific to each phrase. Avoid stock reaction "
+    "emoji such as 🔥 😂 💯 ✨ 👀 unless the word literally means that. An "
+    f"emoji may appear at most {MAX_USES_PER_EMOJI} times in the whole clip, "
+    f"and never again within {REPEAT_GAP_S:g} seconds of its last use. If the "
+    "best emoji for a phrase was used too recently or too often, choose "
+    "another fitting emoji instead of skipping the phrase.\n\n"
     "For each pick give the index of that word and one or two emoji. Answer "
     "with JSON only, in this shape: "
     '{"picks": [{"word": 12, "emoji": ["🍕"]}]}.'
@@ -89,42 +93,56 @@ def build_prompt(phrases: list[IndexedPhrase]) -> str:
     return "\n".join(lines)
 
 
+_VARIANT_MARKS = {"\ufe0e", "\ufe0f", *map(chr, range(0x1F3FB, 0x1F400))}
+
+
 def _emoji_key(emoji: str) -> str:
-    """Compare ❤️ and ❤ as one emoji: drop the emoji-presentation selector."""
-    return emoji.replace("\ufe0f", "")
+    """One key per emoji: ❤️ and ❤︎, or 👍 and 👍🏽, count as the same emoji.
+
+    Drops the presentation selectors and the skin-tone modifiers.
+    """
+    return "".join(c for c in emoji if c not in _VARIANT_MARKS)
 
 
 def _space_repeats(
-    picks: list[tuple[int, EmojiPick]], phrases: list[IndexedPhrase]
+    candidates: dict[int, list[tuple[int, list[str]]]], phrases: list[IndexedPhrase]
 ) -> list[EmojiPick]:
-    """Apply the repeat limits in phrase order; a pick left empty is dropped.
+    """Choose each phrase's pick under the repeat limits, in phrase order.
 
-    An emoji is dropped from a pick when it has already appeared
-    ``MAX_USES_PER_EMOJI`` times, or when its last appearance began less than
-    ``REPEAT_GAP_S`` seconds before this phrase. The same emoji twice in one
-    pick keeps one.
+    ``candidates`` maps a phrase to its (anchor word, emoji) items. An emoji
+    is skipped when it has already appeared ``MAX_USES_PER_EMOJI`` times, or
+    when its last appearance began less than ``REPEAT_GAP_S`` seconds before
+    this phrase, measured on the times the prompt shows (0.1 s). A duplicate
+    in one item is skipped too, and the first two emoji left are kept. The
+    earliest anchor with any emoji left wins; a phrase with none gets no pick.
     """
     uses: dict[str, int] = {}
     last_start: dict[str, float] = {}
     kept: list[EmojiPick] = []
-    for n, pick in picks:
-        start = phrases[n].start
-        emoji: list[str] = []
-        for e in pick.emoji:
-            key = _emoji_key(e)
-            if key in {_emoji_key(k) for k in emoji}:
-                continue
-            if uses.get(key, 0) >= MAX_USES_PER_EMOJI:
-                continue
-            if key in last_start and start - last_start[key] < REPEAT_GAP_S:
-                continue
-            emoji.append(e)
-        for e in emoji:
-            key = _emoji_key(e)
-            uses[key] = uses.get(key, 0) + 1
-            last_start[key] = start
-        if emoji:
-            kept.append(EmojiPick(word=pick.word, emoji=emoji))
+    for n in sorted(candidates):
+        start = round(phrases[n].start, 1)
+        for word, emoji in sorted(candidates[n], key=lambda c: c[0]):
+            chosen: list[str] = []
+            for e in emoji:
+                key = _emoji_key(e)
+                if key in {_emoji_key(c) for c in chosen}:
+                    continue
+                if uses.get(key, 0) >= MAX_USES_PER_EMOJI:
+                    continue
+                if key in last_start and round(start - last_start[key], 1) < (
+                    REPEAT_GAP_S
+                ):
+                    continue
+                chosen.append(e)
+                if len(chosen) == 2:
+                    break
+            if chosen:
+                for e in chosen:
+                    key = _emoji_key(e)
+                    uses[key] = uses.get(key, 0) + 1
+                    last_start[key] = start
+                kept.append(EmojiPick(word=word, emoji=chosen))
+                break
     return kept[:EMOJI_PICKS_MAX]
 
 
@@ -149,10 +167,10 @@ def _picks_object(reply: str) -> dict[str, Any] | None:
 def parse_picks(reply: str, phrases: list[IndexedPhrase]) -> list[EmojiPick]:
     """Validate the model's reply into picks, one per phrase at most.
 
-    Items with an unknown word, no valid emoji, or the wrong shape are dropped;
-    a third emoji is dropped; the earliest anchor in a phrase wins. Then the
-    repeat limits apply (:func:`_space_repeats`), and at most
-    ``EMOJI_PICKS_MAX`` picks are kept so a render can accept them all. A
+    Items with an unknown word, no valid emoji, or the wrong shape are dropped.
+    Each phrase then gets the earliest anchor that has emoji left under the
+    repeat limits, with two emoji at most (:func:`_space_repeats`), and at
+    most ``EMOJI_PICKS_MAX`` picks are kept so a render can accept them all. A
     reply with no JSON object holding a ``picks`` list raises
     :class:`EmojiGenerationError`.
     """
@@ -161,7 +179,7 @@ def parse_picks(reply: str, phrases: list[IndexedPhrase]) -> list[EmojiPick]:
         raise EmojiGenerationError("the emoji reply was not the expected JSON")
 
     phrase_of = {i: n for n, phrase in enumerate(phrases) for i, _t in phrase.words}
-    best: dict[int, EmojiPick] = {}
+    candidates: dict[int, list[tuple[int, list[str]]]] = {}
     for item in data["picks"]:
         if not isinstance(item, dict):
             continue
@@ -172,13 +190,10 @@ def parse_picks(reply: str, phrases: list[IndexedPhrase]) -> list[EmojiPick]:
             or not isinstance(emoji, list)
         ):
             continue
-        valid = [e for e in emoji if isinstance(e, str) and is_emoji_cluster(e)][:2]
-        if not valid:
-            continue
-        phrase = phrase_of[word]
-        if phrase not in best or word < best[phrase].word:
-            best[phrase] = EmojiPick(word=word, emoji=valid)
-    return _space_repeats([(n, best[n]) for n in sorted(best)], phrases)
+        valid = [e for e in emoji if isinstance(e, str) and is_emoji_cluster(e)]
+        if valid:
+            candidates.setdefault(phrase_of[word], []).append((word, valid))
+    return _space_repeats(candidates, phrases)
 
 
 def suggest_emoji(
