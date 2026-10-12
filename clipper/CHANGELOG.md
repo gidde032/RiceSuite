@@ -28,6 +28,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
     filler between statements. It used to aim for one phrase in four.
   - One emoji appears at most three times in a clip, and never again within 8
     seconds of its previous use. Clipper enforces both limits after the reply.
+  - The picker answers in seconds on long clips. With Claude Haiku 5.5 it no
+    longer thinks first, which made clips of about 500 words time out with a
+    502 after several minutes. Each reply item copies its anchor word, so a
+    miscounted index no longer puts the emoji on the wrong word.
 
 ### Fixed
 

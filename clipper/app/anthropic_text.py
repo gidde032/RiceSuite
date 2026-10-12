@@ -50,12 +50,15 @@ def generate(
     content: Any,
     max_tokens: int,
     n: int = 1,
+    thinking: dict[str, Any] | None = None,
     client: Any | None = None,
     create: Callable[[str], Any] | None = None,
 ) -> list[str]:
     """Ask the model ``n`` times and return the stripped reply texts.
 
     ``purpose`` names the feature ("header" or "emoji") for tests and logs.
+    ``thinking`` is sent as the request's thinking setting when given;
+    without it the model's default applies.
     ``client`` is injectable for tests; without it a client is built from
     the API key with ``create`` (default ``_create_client``) and closed after.
     Raises :class:`TextConfigError` before anything is sent when no key is
@@ -79,6 +82,7 @@ def generate(
                     max_tokens=max_tokens,
                     system=system,
                     messages=[{"role": "user", "content": content}],
+                    **({"thinking": thinking} if thinking else {}),
                 )
             )
     except Exception as exc:
