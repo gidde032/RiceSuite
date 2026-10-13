@@ -94,7 +94,8 @@ def test_the_prompt_asks_for_most_phrases_and_spaced_repeats():
     # #82: the old prompt capped picks at one phrase in three, so only ~25% of
     # phrases got emoji. The maintainer wants 80%+, skipping only filler.
     system = emoji_gen.SYSTEM_PROMPT
-    assert "one phrase in" not in system
+    assert "one phrase in four" not in system
+    assert "one phrase in three" not in system
     assert "Most phrases get no emoji" not in system
     assert "at least four phrases in five" in system
     assert "filler" in system
@@ -376,3 +377,103 @@ def test_rendering_with_emoji_never_calls_the_picker(monkeypatch, isolated_jobs)
         words=_words("pizza"), emoji_on=True, emoji=[EmojiPick(word=0, emoji=["🍕"])]
     )
     assert main.render_job(job.id, req).status == "done"
+
+
+# --- the 502 on long clips (review of #83) -----------------------------------
+
+
+def test_haiku_runs_the_picker_with_thinking_off(monkeypatch):
+    # With adaptive thinking, ~500 words ran past the 60 s timeout or the
+    # token budget: a 502 after minutes of retries.
+    monkeypatch.setenv(anthropic_text.MODEL_ENV, "claude-haiku-5-5")
+    client = _Client('{"picks": []}')
+    emoji_gen.suggest_emoji(_words("pizza"), client=client)
+    assert client.calls[0]["thinking"] == {"type": "disabled"}
+
+
+@pytest.mark.parametrize("model", ["claude-sonnet-5-5", "claude-opus-5-5"])
+def test_models_that_reject_disabled_thinking_keep_their_default(monkeypatch, model):
+    monkeypatch.setenv(anthropic_text.MODEL_ENV, model)
+    client = _Client('{"picks": []}')
+    emoji_gen.suggest_emoji(_words("pizza"), client=client)
+    assert "thinking" not in client.calls[0]
+
+
+def test_the_header_keeps_the_models_default_thinking(monkeypatch):
+    monkeypatch.setenv(anthropic_text.MODEL_ENV, "claude-haiku-5-5")
+    client = _Client("A header")
+    header_gen.generate_headers("a transcript", client=client)
+    assert "thinking" not in client.calls[0]
+
+
+def test_the_prompt_asks_for_one_item_per_phrase():
+    # Without thinking, a model asked only for picks stopped after a few
+    # (15-27% coverage measured); one item per phrase keeps it going.
+    assert "one item for every phrase" in emoji_gen.SYSTEM_PROMPT
+    assert "Skipping is rare" in emoji_gen.SYSTEM_PROMPT
+    assert "copied exactly" in emoji_gen.SYSTEM_PROMPT
+    assert '"phrase": 1' in emoji_gen.SYSTEM_PROMPT
+
+
+def test_an_item_whose_word_is_not_in_its_phrase_is_dropped():
+    words = _spaced(0.0, 1.0, 2.0)
+    reply = json.dumps(
+        {
+            "picks": [
+                {"phrase": 1, "word": 0, "emoji": ["🍕"]},
+                {"phrase": 2, "word": 2, "emoji": ["🥪"]},  # word 2 is phrase 3
+                {"phrase": 3, "word": 2, "emoji": []},  # a skipped phrase
+                {"phrase": "2", "word": 1, "emoji": ["🌙"]},
+            ]
+        }
+    )
+    assert [(p.word, p.emoji) for p in _parse(reply, words)] == [(0, ["🍕"])]
+
+
+def test_a_copied_word_corrects_a_miscounted_index():
+    # Measured: the model often anchors one word off ("in" for "traffic").
+    words = [
+        *(
+            Word(text=t, start=i * 0.3, end=i * 0.3 + 0.2)
+            for i, t in enumerate(["stuck", "in", "Traffic,", "in", "traffic"])
+        ),
+        Word(text="radio", start=3.0, end=3.2),
+    ]
+    reply = json.dumps(
+        {
+            "picks": [
+                {"phrase": 1, "word": 1, "text": "traffic", "emoji": ["🚦"]},
+                {"phrase": 2, "word": 5, "text": "static", "emoji": ["📻"]},
+            ]
+        }
+    )
+    # "traffic" matches words 2 and 4; word 2 is nearer the index given.
+    # "static" names no word of its phrase, so that item is dropped.
+    assert [(p.word, p.emoji) for p in _parse(reply, words)] == [(2, ["🚦"])]
+
+
+def test_the_stated_phrase_and_copied_word_beat_a_miscounted_index():
+    # Measured on #82: {"phrase": 14, "word": 63, "text": "music"} where word
+    # 63 sat at the end of phrase 13 and "music" was in phrase 14.
+    words = [
+        Word(text="nobody", start=0.0, end=0.2),
+        Word(text="cared.", start=0.3, end=0.5),
+        Word(text="music", start=1.5, end=1.7),
+        Word(text="was", start=1.8, end=2.0),
+    ]
+    reply = json.dumps(
+        {"picks": [{"phrase": 2, "word": 1, "text": "music", "emoji": ["🎵"]}]}
+    )
+    assert [(p.word, p.emoji) for p in _parse(reply, words)] == [(2, ["🎵"])]
+
+
+def test_a_possessive_or_plural_matches_the_copied_word():
+    words = [
+        Word(text="a", start=0.0, end=0.2),
+        Word(text="friend's", start=0.3, end=0.5),
+        Word(text="couch", start=0.6, end=0.8),
+    ]
+    reply = json.dumps(
+        {"picks": [{"phrase": 1, "word": 2, "text": "friend", "emoji": ["🫂"]}]}
+    )
+    assert [p.word for p in _parse(reply, words)] == [1]

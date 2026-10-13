@@ -289,8 +289,13 @@ and `RenderRequest.emoji_on` turns them on.
   RiceSuite #82): any phrase with a word that reasonably suggests a specific
   emoji gets one, only pure filler between statements is skipped, the anchor
   is that word, and each pick has one or two emoji, varied rather than
-  generic. The reply is JSON; the first object holding a `picks` list is used,
-  so prose around it may contain braces. Items with an unknown word, text that
+  generic; skipping is rare. The reply is JSON with one item per phrase (its
+  number, the anchor's index, the anchor word copied, and the emoji, empty for
+  a skipped phrase); the first object holding a `picks` list is used, so prose
+  around it may contain braces. The stated phrase and the copied word decide
+  the anchor, because the model miscounts indices (often by one, across a
+  phrase boundary); the index only chooses between repeats of the word, and
+  `friend's` matches a copied `friend`. Items that cannot be placed, text that
   is not emoji, or the wrong shape are dropped. Repeats are then limited in
   phrase order, in code rather than trusted to the model (the prompt also
   asks it to swap in another fitting emoji rather than skip a phrase): one
@@ -299,9 +304,14 @@ and `RenderRequest.emoji_on` turns them on.
   prompt shows. Presentation selectors and skin tones do not make a new emoji.
   Each phrase gets the earliest anchor with emoji left after these limits and
   duplicates are removed, with two emoji at most; a phrase with none left gets
-  no pick, and at most the render's 500-pick limit is kept. The reply budget
-  is 12,000 tokens, enough for several minutes of speech; a reply cut off at
-  the budget is unusable (502). A request carries at most 5,000 words. The reply's
+  no pick, and at most the render's 500-pick limit is kept. On Claude Haiku
+  5.5 the request turns thinking off: with adaptive thinking the model
+  reasoned through every phrase, so a clip of some 500 words ran past the
+  60 s timeout or the budget and failed with a 502 after minutes of retries
+  (measured: 600 words now answer in about 12 s). Other models, some of which
+  reject a disabled setting, keep their default. The reply budget is 12,000
+  tokens, about 400 phrases; a reply cut off at the budget is unusable (502).
+  A request carries at most 5,000 words. The reply's
   text blocks are read by type, since the model may think first. A failure
   leaves the current picks alone: 503 when there is no key or the API rejects
   the key (401, 403) or the model (404), naming the setting to fix; 502 for any
