@@ -284,13 +284,34 @@ and `RenderRequest.emoji_on` turns them on.
 - **✨ Suggest emoji.** `POST /api/jobs/{id}/emoji` makes one model call per
   clip, only when the button is clicked (§3), through the header's call site.
   It sends the caption phrases as `transcribe.phrasing.group_words` makes them,
-  each word with its global index, and a system prompt that asks for sparse
-  use: about one phrase in four, never more than one in three, none when
-  nothing fits, a concrete anchor word, and one or two emoji. The reply is
-  JSON; the first object holding a `picks` list is used, so prose around it
-  may contain braces. Items with an unknown word, text that is not emoji, or
-  the wrong shape are dropped, a third emoji is dropped, and the earliest
-  anchor in a phrase wins. A request carries at most 5,000 words. The reply's
+  each phrase with its start time and each word with its global index, and a
+  system prompt that asks for emoji on most phrases (at least four in five,
+  RiceSuite #82): any phrase with a word that reasonably suggests a specific
+  emoji gets one, only pure filler between statements is skipped, the anchor
+  is that word, and each pick has one or two emoji, varied rather than
+  generic; skipping is rare. The reply is JSON with one item per phrase (its
+  number, the anchor's index, the anchor word copied, and the emoji, empty for
+  a skipped phrase); the first object holding a `picks` list is used, so prose
+  around it may contain braces. The stated phrase and the copied word decide
+  the anchor, because the model miscounts indices (often by one, across a
+  phrase boundary); the index only chooses between repeats of the word, and
+  `friend's` matches a copied `friend`. Items that cannot be placed, text that
+  is not emoji, or the wrong shape are dropped. Repeats are then limited in
+  phrase order, in code rather than trusted to the model (the prompt also
+  asks it to swap in another fitting emoji rather than skip a phrase): one
+  emoji appears at most three times in a clip and never in a phrase starting
+  less than 8 seconds after its previous use, measured on the 0.1 s times the
+  prompt shows. Presentation selectors and skin tones do not make a new emoji.
+  Each phrase gets the earliest anchor with emoji left after these limits and
+  duplicates are removed, with two emoji at most; a phrase with none left gets
+  no pick, and at most the render's 500-pick limit is kept. On Claude Haiku
+  5.5 the request turns thinking off: with adaptive thinking the model
+  reasoned through every phrase, so a clip of some 500 words ran past the
+  60 s timeout or the budget and failed with a 502 after minutes of retries
+  (measured: 600 words now answer in about 12 s). Other models, some of which
+  reject a disabled setting, keep their default. The reply budget is 12,000
+  tokens, about 400 phrases; a reply cut off at the budget is unusable (502).
+  A request carries at most 5,000 words. The reply's
   text blocks are read by type, since the model may think first. A failure
   leaves the current picks alone: 503 when there is no key or the API rejects
   the key (401, 403) or the model (404), naming the setting to fix; 502 for any
