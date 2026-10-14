@@ -114,7 +114,8 @@ order, then writes the manifest last via atomic rename. Clipper only writes the
 batch and does not manage its later lifecycle.
 
 The send rules are part of the current contract: Send refuses a batch with an
-unrendered, failed, or edited clip, and never sends only part of a batch. A
+unrendered or failed clip, or one whose settings changed since its render
+(RiceSuite #86), and never sends only part of a batch. A
 second send of a sent batch asks first. A successful Render all stops at the
 send step and prompts the user to send when ready. These rules are recorded in
 the [Manual Clipper send ADR amendment](../../../docs/adr/ADR-001-ricesuite-consolidation.md).

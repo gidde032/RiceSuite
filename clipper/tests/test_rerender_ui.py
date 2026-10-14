@@ -57,5 +57,5 @@ def test_stale_note_says_render_all_re_renders_the_clip():
     html = (ROOT / "web/index.html").read_text(encoding="utf-8")
     assert (
         '<div class="result-stale"><span>Edited since this render'
-        " · Render all will re-render it</span></div>" in html
+        " — Render all will re-render it</span></div>" in html
     )

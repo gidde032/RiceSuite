@@ -19,7 +19,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
     some clips need a render, and is disabled when none do.
   - **Render this clip** / **Re-render this clip** under each clip's Download
     renders that clip alone, changed or not.
-  - The stale note reads "Edited since this render · Render all will
+  - No render starts while a Send or a media-cache clear is running.
+  - The stale note reads "Edited since this render — Render all will
     re-render it".
 - **Caption styles are four color families plus five standalone styles**
   (RiceSuite [#79](https://github.com/gidde032/RiceSuite/issues/79)).

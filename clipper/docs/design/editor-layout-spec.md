@@ -53,9 +53,9 @@ At viewport widths of **881 px and above**, the editor has two rows:
    render, and after lyric alignment or a transcript restore replaces the
    words, it is an empty frame that marks the header band (`header_margin_v`
    to `header_margin_v` + 160 px of 1920) and the caption band (340 to 540 px
-   up from the bottom) and offers no download. Any other edit after a render
-   keeps that render on show, with Download, marked "Edited since this
-   render · Render all will re-render it" until the clip renders again or the
+   up from the bottom) and offers no download. Any other change to a rendered
+   setting after a render keeps that render on show, with Download, marked "Edited since this
+   render — Render all will re-render it" until the clip renders again or the
    edit is put back (RiceSuite #86). Under Download, the clip's own render
    button ("Render this clip", then "Re-render this clip") shows in every
    state, at Download's width. Seeking or changing volume in either

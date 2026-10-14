@@ -43,18 +43,20 @@ function fakeClip(ord, { photo = false } = {}) {
     musicModeEl: { value: 'none' }, musicInputEl: { files: [] },
     musicVolumeEl: { value: '0.3' }, musicStartEl: { value: '0' },
     photoLengthEl: { value: '10' },
+    lyricsInputEl: { value: '' }, headerFeedbackEl: { value: '' },
     outputVideoEl: { pause() {}, load() {}, removeAttribute() {}, inert: false, src: '' },
     downloadEl: { removeAttribute() {}, href: '', download: '' },
     resultEl: { classList: classes() },
     lyricsAlignEl: { disabled: false }, lyricsRestoreEl: { disabled: false },
     statusEl: { className: '', textContent: '', setAttribute() {} },
-    renderOneEl: { disabled: false, textContent: '', addEventListener() {} },
+    renderOneEl: { disabled: false, textContent: '', attrs: {}, addEventListener() {}, setAttribute(k, v) { this.attrs[k] = v; } },
   };
 }
 
 // Load app.js with `count` ready clips. `h.renders` lists the job of every
 // render request, in order. A job in `h.fail` gets a failed render; while
-// `h.hold` is a pending promise, render requests wait on it.
+// `h.hold` is a pending promise, render requests wait on it, and while
+// `h.holdInfo` is, media-cache reads wait on it.
 function harness(count = 3, opts = {}) {
   const elements = new Map();
   const element = (id) => {
@@ -79,6 +81,8 @@ function harness(count = 3, opts = {}) {
       }
       const music = /^api\/jobs\/([^/]+)\/music$/.exec(url);
       if (music) { h.uploads.push(music[1]); return { ok: true, json: async () => ({ filename: 'music.mp3' }) }; }
+      if (url === 'api/media-info' && h.holdInfo) await h.holdInfo;
+      if (url === 'api/handoff' && h.holdSend) await h.holdSend;
       if (url === 'api/handoff') { h.sent = (h.sent || 0) + 1; return { ok: true, status: 200, json: async () => ({ batch_id: 'b1', clip_count: 1 }) }; }
       return { ok: true, status: 200, json: async () => ({ header: 'A generated header' }) };
     } });
@@ -328,10 +332,145 @@ test('Send holds a changed slot and not one that was put back', async () => {
 test('the sent-batch snapshot ignores an edit that is put back', async () => {
   const h = await renderedHarness(2);
   const before = h.run('batchSnapshot()');
-  h.clip(2).headerEl.value = 'changed';
-  h.run('noteClipEdited(__clips[1])');
-  assert.notEqual(h.run('batchSnapshot()'), before);
+  for (const [edit, undo] of [
+    [(c) => { c.headerEl.value = 'changed'; }, (c) => { c.headerEl.value = 'Header 2'; }],
+    [(c) => { c.captionsToggleEl.checked = false; }, (c) => { c.captionsToggleEl.checked = true; }],
+  ]) {
+    edit(h.clip(2));
+    h.run('noteClipEdited(__clips[1])');
+    assert.notEqual(h.run('batchSnapshot()'), before);
+    undo(h.clip(2));
+    h.run('noteClipEdited(__clips[1])');
+    assert.equal(h.run('batchSnapshot()'), before);
+  }
+});
+
+// --- cold-review repairs ----------------------------------------------------
+
+// Pasted lyrics and header guidance are not rendered settings, but they are
+// unsent work: a sent batch with them typed must not be replaced by a pull.
+for (const field of ['lyricsInputEl', 'headerFeedbackEl']) {
+  test(`text typed in ${field} after a send holds the workspace`, async () => {
+    const h = await renderedHarness(1);
+    await h.run('sendBatch()');
+    assert.equal(h.sent, 1);
+    assert.equal(h.run('nothingUnsent()'), true);
+    h.clip(1)[field].value = 'typed after the send';
+    h.run('noteClipEdited(__clips[0])');
+    assert.equal(h.run('nothingUnsent()'), false);
+    assert.equal(h.run('clipCurrent(__clips[0])'), true, 'the render itself is still current');
+    h.clip(1)[field].value = '';
+    assert.equal(h.run('nothingUnsent()'), true);
+  });
+}
+
+test('a stale clip status line follows each edit, even after a render error', async () => {
+  const h = await renderedHarness(1, { photo: true });
+  h.clip(1).photoLengthEl.value = '2';
+  h.run('noteClipEdited(__clips[0])');
+  await h.run('renderOne(__clips[0])'); // refused: the length is out of range
+  assert.deepEqual(h.renders, []);
+  assert.match(h.clip(1).statusEl.textContent, /photo length/);
+  h.clip(1).photoLengthEl.value = '12';
+  h.run('noteClipEdited(__clips[0])');
+  assert.match(h.clip(1).statusEl.textContent, /Render all will re-render it/);
+});
+
+test('Render all skips a target that was put back before its turn', async () => {
+  const h = await renderedHarness(2);
+  for (const c of h.context.__clips) { c.headerEl.value = 'changed'; h.run(`noteClipEdited(__clips[${c.ord - 1}])`); }
+  let release;
+  h.hold = new Promise((resolve) => { release = resolve; });
+  const running = h.run('handleRenderAll()');
+  await tick();
+  assert.deepEqual(h.renders, ['job1']);
   h.clip(2).headerEl.value = 'Header 2';
   h.run('noteClipEdited(__clips[1])');
-  assert.equal(h.run('batchSnapshot()'), before);
+  release();
+  await running;
+  assert.deepEqual(h.renders, ['job1']);
+  assert.equal(h.element('progress-count').textContent, '2 / 2 rendered');
+  assert.match(h.element('batch-status').textContent, /^Rendered 1 clip\./);
+});
+
+for (const [name, start] of [['a slot render', 'renderOne(__clips[0])'], ['Render all', 'handleRenderAll()']]) {
+  test(`${name} keeps every render button disabled until its outcome is shown`, async () => {
+    const h = harness(2);
+    let release;
+    h.holdInfo = new Promise((resolve) => { release = resolve; });
+    const running = h.run(start);
+    await tick();
+    assert.ok(h.renders.length > 0, 'the render ran');
+    assert.equal(h.button().disabled, true);
+    for (const c of h.context.__clips) assert.equal(c.renderOneEl.disabled, true, `slot ${c.ord}`);
+    release();
+    await running;
+    assert.equal(h.clip(2).renderOneEl.disabled, false);
+    assert.match(h.element('progress-state').textContent, /Complete/);
+  });
+}
+
+test('a slot whose render was cleared offers a first render again', async () => {
+  const h = await renderedHarness(1);
+  assert.equal(h.clip(1).renderOneEl.textContent, 'Re-render this clip');
+  // Lyric alignment or a transcript restore replaces the words and clears it.
+  h.run('__clips[0].status = "ready"; clearResult(__clips[0]); updateRenderAllButton();');
+  assert.equal(h.clip(1).renderOneEl.textContent, 'Render this clip');
+});
+
+// A render during a send could replace an MP4 while the handoff copies it.
+test('while a send is in flight, no render can start', async () => {
+  const h = await renderedHarness(2);
+  let release;
+  h.holdSend = new Promise((resolve) => { release = resolve; });
+  const sending = h.run('sendBatch()');
+  await tick();
+  for (const c of h.context.__clips) assert.equal(c.renderOneEl.disabled, true, `slot ${c.ord}`);
+  assert.equal(h.button().disabled, true);
+  await h.run('renderOne(__clips[1])');
+  h.clip(2).headerEl.value = 'changed during the send';
+  await h.run('handleRenderAll()');
+  assert.deepEqual(h.renders, []);
+  release();
+  await sending;
+  assert.equal(h.clip(1).renderOneEl.disabled, false);
+});
+
+test('while the media cache is being cleared, no render can start', async () => {
+  const h = harness(1);
+  h.run('clearInProgress = true; updateRenderAllButton();');
+  assert.equal(h.clip(1).renderOneEl.disabled, true);
+  assert.equal(h.button().disabled, true);
+  await h.run('renderOne(__clips[0])');
+  await h.run('handleRenderAll()');
+  assert.deepEqual(h.renders, []);
+});
+
+test('a slot render that changed while it ran does not report plain success', async () => {
+  const h = harness(1);
+  let release;
+  h.hold = new Promise((resolve) => { release = resolve; });
+  const running = h.run('renderOne(__clips[0])');
+  await tick();
+  h.clip(1).headerEl.value = 'Typed while rendering';
+  h.run('noteClipEdited(__clips[0])');
+  release();
+  await running;
+  assert.match(h.element('progress-state').textContent, /Held/);
+  assert.match(h.element('batch-status').textContent, /changed while it rendered/);
+});
+
+test('each slot button names its clip for assistive technology', async () => {
+  const h = harness(2);
+  assert.equal(h.clip(1).renderOneEl.attrs['aria-label'], 'Render this clip (clip 1)');
+  await h.run('renderOne(__clips[1])');
+  assert.equal(h.clip(2).renderOneEl.attrs['aria-label'], 'Re-render this clip (clip 2)');
+});
+
+test('the stale status line does not suggest Send renders', async () => {
+  const h = await renderedHarness(1);
+  h.clip(1).headerEl.value = 'changed';
+  h.run('noteClipEdited(__clips[0])');
+  assert.equal(h.clip(1).statusEl.textContent,
+    'Edited since its render — Render all will re-render it. Send waits until it is rendered again.');
 });

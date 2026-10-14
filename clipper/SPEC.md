@@ -334,7 +334,7 @@ volume, start, and track (by file name, size, and last-modified time). With
 no music track, the volume and start are unused by the render and do not
 count. A clip is current while its card still matches its last render's
 fingerprint, so an edit that is put back leaves it current. A clip that is
-not current shows the stale note "Edited since this render · Render all will
+not current shows the stale note "Edited since this render — Render all will
 re-render it" on its frame.
 
 - **Render all** renders only ready clips that are not current: never
@@ -344,8 +344,15 @@ re-render it" on its frame.
 - **Render this clip** (before a clip's first render) or **Re-render this
   clip** sits under each clip's Download. It renders that clip alone, changed
   or not, and leaves the other clips as they are.
-- The page runs one render at a time. While any render runs, Render all and
-  every clip's button are disabled.
+- Render all checks each clip again when its turn comes and skips one whose
+  edit was put back meanwhile.
+- No render starts while another render, a transcription, a Send, or a
+  media-cache clear runs: a render replaces its MP4 in place, which a Send
+  may be copying. Render all and every clip's button stay disabled until the
+  running render's outcome is shown.
+- Lyrics or header guidance typed into a card are not rendered settings, so
+  they do not make a render stale, but after a Send they hold the workspace
+  like any unsent work.
 
 ### 5.2 Slate browser-interface polish
 

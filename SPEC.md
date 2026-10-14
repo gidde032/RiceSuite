@@ -175,8 +175,9 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
   `GET api/handoff/inbox` only to report waiting batches; it never pulls from
   the poll.
   Clipper pulls only when nothing unsent would be displaced: the workspace is
-  empty, or it holds exactly what was last sent (a later edit or re-render
-  holds it). While it holds an unsent batch, Clipper's page names the
+  empty, or it holds exactly what was last sent. A later change to a
+  rendered setting, lyrics or header guidance typed into a card, or a
+  re-render holds it; an edit that is put back does not (#86). While it holds an unsent batch, Clipper's page names the
   Searcher batch waiting behind it (#61); it still does not pull. The Pull
   button follows the same rule, and one pull runs at a
   time, whether the button or the timer started it. One Searcher batch stays

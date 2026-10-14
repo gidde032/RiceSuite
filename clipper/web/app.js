@@ -647,11 +647,18 @@ function renderTargets() {
   return clips.filter((c) => clipReady(c) && !clipCurrent(c));
 }
 
+// No render starts while another render, a transcription, a send, or a media
+// clear runs: a render replaces its MP4 in place, which a send may be copying
+// (RiceSuite #86).
+function renderBlocked() {
+  return batchBusy || ingesting || sendInFlight || clearInProgress;
+}
+
 function updateRenderAllButton() {
   const ready = clips.filter(clipReady).length;
   const targets = renderTargets().length;
   const renderAll = $("render-all-btn");
-  renderAll.disabled = batchBusy || ingesting || targets === 0;
+  renderAll.disabled = renderBlocked() || targets === 0;
   renderAll.textContent = targets > 0 && targets < ready ? `Render ${targets} changed` : "Render all";
   clips.forEach(syncRenderOne);
   // Handoff is offered once at least one clip has a rendered output.
@@ -662,11 +669,15 @@ function updateRenderAllButton() {
 }
 
 // A slot's own render button renders that slot alone, changed or not. Like
-// Render all, it waits while any render or transcription runs (RiceSuite #86).
+// Render all, it waits while renderBlocked() (RiceSuite #86).
 function syncRenderOne(c) {
   if (!c.renderOneEl) return;
-  c.renderOneEl.disabled = batchBusy || ingesting || !clipReady(c);
-  c.renderOneEl.textContent = c.renders ? "Re-render this clip" : "Render this clip";
+  c.renderOneEl.disabled = renderBlocked() || !clipReady(c);
+  // Named by the render on show; it keeps its name while it renders.
+  if (c.status === "done") c.renderOneEl.textContent = "Re-render this clip";
+  else if (c.status !== "rendering") c.renderOneEl.textContent = "Render this clip";
+  // Every card has one, so its accessible name says which clip it renders.
+  c.renderOneEl.setAttribute("aria-label", `${c.renderOneEl.textContent} (clip ${c.ord})`);
 }
 
 // Rendered, and every setting the render sent is still what the card shows
@@ -777,8 +788,9 @@ function noteClipEdited(clip) {
 function syncResultStale(clip) {
   const stale = clip.status === "done" && !clipCurrent(clip);
   clip.resultEl.classList.toggle("is-stale", stale);
-  // The status line changes only when the clip turns stale or current again.
-  if (clip.status === "done" && stale !== Boolean(clip.shownStale)) {
+  // A stale clip says so after every edit, as before; a current one only
+  // when it turns current again, so other news on its line stays.
+  if (clip.status === "done" && (stale || clip.shownStale)) {
     setRenderedStatus(clip, clip.headerNote, clip.emojiNote);
   }
   clip.shownStale = stale;
@@ -799,8 +811,9 @@ function buildCard(clip) {
   const node = $("clip-card-template").content.firstElementChild.cloneNode(true);
   clip.el = node;
   // Every control in the card (captions, geometry, content, music, lyrics…)
-  // bubbles its input/change events here, so any edit made after a send makes
-  // the batch differ from what was sent and holds the workspace.
+  // bubbles its input/change events here. A change to a rendered setting, or
+  // typed lyrics or header guidance, after a send makes the batch differ from
+  // what was sent and holds the workspace (RiceSuite #86).
   const markEdited = (event) => {
     if (isReviewEdit(event)) noteClipEdited(clip);
   };
@@ -1979,7 +1992,7 @@ $("render-all-btn").addEventListener("click", handleRenderAll);
 // (RiceSuite #86). The count covers the whole batch, so slots already
 // current count as rendered.
 async function handleRenderAll() {
-  if (batchBusy || ingesting) return;
+  if (renderBlocked()) return;
   const ready = clips.filter(clipReady).length;
   const targets = renderTargets();
   if (targets.length === 0) {
@@ -1994,16 +2007,20 @@ async function handleRenderAll() {
   updateCacheControls();
 
   let ok = 0;
+  let putBack = 0; // targets whose edit was undone before their turn
   const failedRenders = [];
   for (let i = 0; i < targets.length; i++) {
-    localProgress("Render all", "↻ Working", current + ok, clips.length, "rendered", `Now: rendering clip ${targets[i].ord} of ${clips.length} — ${clipName(targets[i])}`);
+    if (clipCurrent(targets[i])) {
+      putBack += 1;
+      continue;
+    }
+    localProgress("Render all", "↻ Working", current + putBack + ok, clips.length, "rendered", `Now: rendering clip ${targets[i].ord} of ${clips.length} — ${clipName(targets[i])}`);
     if (await renderClip(targets[i])) ok += 1;
     else failedRenders.push(targets[i]);
   }
 
-  batchBusy = false;
-  updateRenderAllButton();
-  updateCacheControls();
+  // The buttons stay disabled until this run's outcome is shown, so a render
+  // started next never has its progress overwritten by this one.
   await refreshCacheInfo();
   const heldAfterRender = clips.filter((c) => !clipCurrent(c));
   const unknownRenders = failedRenders.filter((c) => c.renderUnknown);
@@ -2013,11 +2030,15 @@ async function handleRenderAll() {
     ? `${failedRenders.length} failed: ${failedRenders.map((c) => `Clip ${c.ord} — ${c.error}`).join("; ")}.`
     : heldAfterRender.length ? `${heldAfterRender.map(heldReason).join("; ")}.`
       : "Send the batch to Poster when ready.";
-  localProgress("Render all", unknownRenders.length ? "? Connection lost / result unknown" : heldAfterRender.length ? "! Held / failed" : "✓ Complete", current + ok, clips.length, "rendered", heldDetail, heldAfterRender.length > 0);
+  localProgress("Render all", unknownRenders.length ? "? Connection lost / result unknown" : heldAfterRender.length ? "! Held / failed" : "✓ Complete", current + putBack + ok, clips.length, "rendered", heldDetail, heldAfterRender.length > 0);
+  const rendering = targets.length - putBack;
   $("batch-status").textContent =
-    ok === targets.length
+    ok === rendering
       ? `Rendered ${ok}${changed} clip${ok === 1 ? "" : "s"}. Download from each clip's frame.`
-      : `Rendered ${ok} of ${targets.length}; see the per-clip errors above.`;
+      : `Rendered ${ok} of ${rendering}; see the per-clip errors above.`;
+  batchBusy = false;
+  updateRenderAllButton();
+  updateCacheControls();
 }
 
 function clipName(clip) {
@@ -2027,16 +2048,13 @@ function clipName(clip) {
 // One slot's render button (RiceSuite #86): renders that slot alone, changed
 // or not, as the only render running. The other slots are left as they are.
 async function renderOne(clip) {
-  if (batchBusy || ingesting || !clipReady(clip)) return;
+  if (renderBlocked() || !clipReady(clip)) return;
   const operation = `Render clip ${clip.ord}`;
   batchBusy = true;
   updateRenderAllButton();
   updateCacheControls();
   localProgress(operation, "↻ Working", 0, 1, "rendered", `Now: rendering clip ${clip.ord} — ${clipName(clip)}`);
   const ok = await renderClip(clip, operation);
-  batchBusy = false;
-  updateRenderAllButton();
-  updateCacheControls();
   await refreshCacheInfo();
   const held = !clipCurrent(clip);
   const detail = clip.renderUnknown
@@ -2045,9 +2063,13 @@ async function renderOne(clip) {
       : held ? `${heldReason(clip)}.` : `Clip ${clip.ord} rendered.`;
   localProgress(operation, clip.renderUnknown ? "? Connection lost / result unknown" : held ? "! Held / failed" : "✓ Complete",
     ok ? 1 : 0, 1, "rendered", detail, held);
-  $("batch-status").textContent = ok
-    ? `Rendered clip ${clip.ord}. Download it from its frame.`
-    : `Clip ${clip.ord} did not render; see its error above.`;
+  $("batch-status").textContent = !ok
+    ? `Clip ${clip.ord} did not render; see its error above.`
+    : held ? `Rendered clip ${clip.ord}, but it changed while it rendered; render it again before it is sent.`
+      : `Rendered clip ${clip.ord}. Download it from its frame.`;
+  batchBusy = false; // only now, as in Render all
+  updateRenderAllButton();
+  updateCacheControls();
 }
 
 // Job reads that may show another render before this one counts as never
@@ -2070,7 +2092,7 @@ function setRenderedStatus(clip, headerNote, emojiNote) {
   // The emoji note names what was left out ("Caption emoji left out: …").
   if (emojiNote) basic = basic ? `${basic} ${emojiNote}` : ` Rendered ✓. ${emojiNote}`;
   if (!clipCurrent(clip)) {
-    setClipStatus(clip, `Edited since its render. Render all will re-render it before it is sent.${basic}`, Boolean(basic));
+    setClipStatus(clip, `Edited since its render — Render all will re-render it. Send waits until it is rendered again.${basic}`, Boolean(basic));
   } else if (basic) {
     setClipStatus(clip, basic.trim(), true);
   } else {
@@ -2260,8 +2282,16 @@ $("send-handoff-btn").addEventListener("click", () => sendBatch());
 function batchSnapshot() {
   return JSON.stringify(
     // The fingerprint holds the transcript, header, and styles that are sent,
-    // so an edit that is put back leaves the snapshot as it was (#86).
-    clips.map((c) => [c.jobId, c.status, c.renders || 0, c.headerEl ? renderFingerprint(c) : ""]),
+    // so an edit that is put back leaves the snapshot as it was (#86). Pasted
+    // lyrics and header guidance are not rendered, but they are unsent work.
+    clips.map((c) => [
+      c.jobId,
+      c.status,
+      c.renders || 0,
+      c.headerEl ? renderFingerprint(c) : "",
+      c.lyricsInputEl ? c.lyricsInputEl.value : "",
+      c.headerFeedbackEl ? c.headerFeedbackEl.value : "",
+    ]),
   );
 }
 
@@ -2299,6 +2329,7 @@ async function sendBatch() {
   }
   const resend = batchSent; // the reviewer confirmed a second send above
   sendInFlight = true;
+  updateRenderAllButton(); // no render replaces an MP4 the send is copying
   const snapshot = batchSnapshot();
   // One key per send (W1-01). A retry of the unchanged batch after a reply
   // that never came reuses it, so Clipper returns the batch that attempt
@@ -2616,6 +2647,7 @@ $("clear-cache-btn").addEventListener("click", async () => {
   status.textContent = "Clearing media cache…";
   clearInProgress = true;
   updateCacheControls();
+  updateRenderAllButton();
 
   try {
     const response = await fetch("api/media/clear", { method: "POST" });
@@ -2639,6 +2671,7 @@ $("clear-cache-btn").addEventListener("click", async () => {
   } finally {
     clearInProgress = false;
     updateCacheControls();
+    updateRenderAllButton();
   }
 });
 
