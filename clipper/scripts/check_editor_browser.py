@@ -229,6 +229,8 @@ CHECKS = r"""
   check(css(stale).display === "none", "stale note hidden while the render is current");
   const download = rect(clip.downloadEl);
   check(download.y >= frameBox.bottom && download.bottom <= resultBox.bottom - unit + 1 && near(download.width, frameBox.width), "download sits under the frame inside its column");
+  const renderOne = rect(clip.renderOneEl);
+  check(css(clip.renderOneEl).visibility !== "hidden" && renderOne.y >= download.bottom && renderOne.bottom <= resultBox.bottom - unit + 1 && near(renderOne.width, frameBox.width), "slot render button sits under Download inside its column");
   for (const el of clip.el.querySelectorAll(".choice-card, .header-sample")) {
     if (el.getClientRects().length && el.scrollWidth > el.clientWidth + 1) {
       check(false, "choice content overflows its card: " + el.textContent.trim().slice(0, 24));

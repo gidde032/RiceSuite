@@ -9,6 +9,18 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Render all renders only changed clips, and each clip has its own render
+  button** (RiceSuite [#86](https://github.com/gidde032/RiceSuite/issues/86)).
+  - A clip counts as changed when its settings differ from the ones its last
+    render used. Putting an edit back makes it unchanged again. This rule also
+    drives the stale note, the Send hold, and the check for whether a sent
+    batch has changed. Before, touching any control marked the clip changed.
+  - Render all skips unchanged clips. It reads "Render N changed" when only
+    some clips need a render, and is disabled when none do.
+  - **Render this clip** / **Re-render this clip** under each clip's Download
+    renders that clip alone, changed or not.
+  - The stale note reads "Edited since this render · Render all will
+    re-render it".
 - **Caption styles are four color families plus five standalone styles**
   (RiceSuite [#79](https://github.com/gidde032/RiceSuite/issues/79)).
   - New Montserrat colors: Violet, Sky, and Green.

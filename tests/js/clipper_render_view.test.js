@@ -65,6 +65,8 @@ function card(rendered) {
     musicModeEl: { value: "none" },
     musicInputEl: { files: [] },
     headerEl: { value: "Hook" },
+    headerLook: { y: 210 },
+    emojiPicks: {},
     captionsToggleEl: { checked: true }, motionToggleEl: { checked: true }, emojiToggleEl: { checked: false },
   };
   return new Proxy(clip, {
@@ -194,6 +196,7 @@ test("an edit during a render leaves the landed render marked stale", async () =
   ctx.clip = card(true);
   const done = js("renderClip(clip)");
   await settle();
+  ctx.clip.headerEl.value = "Edited hook";
   js("noteClipEdited(clip)");
   hold.release();
   await done;

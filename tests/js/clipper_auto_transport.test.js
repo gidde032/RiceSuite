@@ -21,8 +21,20 @@ function job(id) {
 
 // A clip the send path can serialise, so a test that expects "no send" fails
 // only because of the rule under test, never because the send would throw.
+// A "done" clip was rendered with the settings it shows (RiceSuite #86).
+const RADIO = `{ querySelector: () => ({ value: "x" }) }`;
 function sendable(jobId, status) {
-  return `{ jobId: "${jobId}", status: "${status}", headerEl: { value: "" }, captionStyleEl: {}, headerStyleEl: {}, transcriptEl: {} }`;
+  return `(() => {
+    const clip = { jobId: "${jobId}", status: "${status}", headerEl: { value: "" },
+      captionStyleEl: ${RADIO}, headerStyleEl: ${RADIO}, geometryEl: ${RADIO}, contentEl: ${RADIO},
+      transcriptEl: { querySelectorAll: () => [] }, headerLook: {}, emojiPicks: {},
+      captionsToggleEl: { checked: true }, motionToggleEl: { checked: true }, emojiToggleEl: { checked: false },
+      musicModeEl: { value: "none" }, musicInputEl: { files: [] }, musicVolumeEl: { value: "0.5" },
+      musicStartEl: { value: "0" }, statusEl: { setAttribute() {} },
+      resultEl: { classList: { add() {}, remove() {}, toggle() {} } } };
+    if (clip.status === "done") clip.renderedFingerprint = renderFingerprint(clip);
+    return clip;
+  })()`;
 }
 
 function boot(routes, extra = {}) {
@@ -207,12 +219,14 @@ test("any edit inside a clip card after a send holds the workspace", async () =>
     { document },
   );
   js("collectWords = () => []; radioValue = () => 'x';");
-  js(`clips.push({ jobId: "j1", status: "done" }); buildCard(clips[0]);`);
+  js(`clips.push({ jobId: "j1", status: "done" }); buildCard(clips[0]);
+      clips[0].renderedFingerprint = renderFingerprint(clips[0]);`);
   await js("sendBatch()");
   assert.equal(posts(calls, "api/handoff").length, 1);
   const edits = cardListeners.filter((l) => l.type === "input" || l.type === "change");
   assert.ok(edits.length >= 2, "the card must watch input and change events");
-  edits.find((l) => l.type === "change").fn({ target: {} }); // e.g. captions toggled off
+  js("clips[0].captionsToggleEl.checked = false"); // e.g. captions toggled off
+  edits.find((l) => l.type === "change").fn({ target: {} });
   await js("autoPullFromSearcher()");
   assert.equal(posts(calls, "api/pull-from-searcher").length, 0);
   assert.equal(js("clips.length"), 1);
@@ -381,8 +395,9 @@ function renderable(jobId, ord) {
   return `{ jobId: "${jobId}", ord: ${ord}, status: "ready", headerEl: { value: "first header" },
     captionStyleEl: {}, headerStyleEl: {}, transcriptEl: {}, geometryEl: {}, contentEl: {},
     captionsToggleEl: { checked: true }, motionToggleEl: { checked: true }, emojiToggleEl: { checked: false }, musicModeEl: { value: "none" },
-    musicInputEl: { files: [] }, musicVolumeEl: { value: "0.5" },
-    resultEl: { classList: { add() {}, remove() {} } },
+    musicInputEl: { files: [] }, musicVolumeEl: { value: "0.5" }, musicStartEl: { value: "0" },
+    headerLook: {}, emojiPicks: {},
+    resultEl: { classList: { add() {}, remove() {}, toggle() {} } },
     outputVideoEl: { pause() {}, load() {}, removeAttribute() {} },
     downloadEl: { removeAttribute() {} }, lyricsAlignEl: {}, lyricsRestoreEl: {} }`;
 }
@@ -445,8 +460,8 @@ test("W1-06: an edit to a rendered clip while another renders holds the send", a
   js(`clips.push(${renderable("jA", 1)}, ${renderable("jB", 2)})`);
   const run = js("handleRenderAll()");
   await settle(); // clip A is rendered; clip B's render is in flight
-  // What the card's input listener records when the reviewer edits A.
-  js(`clips[0].headerEl.value = "a new header"; clips[0].edits = 1;`);
+  // The reviewer edits A; the card's input listener notes it.
+  js(`clips[0].headerEl.value = "a new header"; noteClipEdited(clips[0]);`);
   reply.release();
   await run;
   await settle();
@@ -470,7 +485,7 @@ test("W1-06: an edit during a clip's own render holds the send until it renders 
   js(`clips.push(${renderable("jA", 1)})`);
   const run = js("handleRenderAll()");
   await settle(); // the render request carries "first header"
-  js(`clips[0].headerEl.value = "a new header"; clips[0].edits = 1;`);
+  js(`clips[0].headerEl.value = "a new header"; noteClipEdited(clips[0]);`);
   reply.release();
   await run;
   await settle();
@@ -599,8 +614,8 @@ test("C-1: an edit after a lost send reply goes out as a new send, never a repla
   js("collectWords = () => []; radioValue = () => 'x';");
   await js("sendBatch()");
   // The reviewer fixes the header and renders the clip again.
-  js(`clips[0].headerEl.value = "fixed header"; clips[0].edits = 1;
-      clips[0].renderedEdits = 1; clips[0].renders = 1;`);
+  js(`clips[0].headerEl.value = "fixed header";
+      clips[0].renderedFingerprint = renderFingerprint(clips[0]); clips[0].renders = 1;`);
   await js("sendBatch()");
   assert.equal(bodies.length, 2);
   assert.notEqual(bodies[1].send_key, bodies[0].send_key, "a changed batch is a new send");
@@ -617,7 +632,7 @@ test("C-3: a render found done by polling after an edit is not shown as current"
       throw new TypeError("network connection lost");
     },
     "GET api/jobs/jA": () => {
-      js("clips[0].edits = 1"); // the reviewer edits while the page polls
+      js("clips[0].headerEl.value = 'edited while polling'"); // the reviewer edits while the page polls
       return [200, { status: "done", has_output: true, render_id: sent }];
     },
   }));
@@ -712,7 +727,7 @@ test("#61: a sent batch shows no cue: the next batch is pulled, not held", async
   js("collectWords = () => []; radioValue = () => 'x';");
   await js("autoPullFromSearcher()");
   assert.equal(cue(byId).hidden, false, "held while j1 is not rendered");
-  js(`clips[0].status = "done"`);
+  js(`clips[0].status = "done"; clips[0].renderedFingerprint = renderFingerprint(clips[0]);`);
   await js("sendBatch()");
   js("autoPullPausedUntil = Date.now() + 60000"); // an earlier pull failed
   await js("autoPullFromSearcher()");

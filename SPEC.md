@@ -153,10 +153,12 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
   successful Render all, the progress bar reads "Send the batch to Poster when
   ready." Send refuses while any clip is unrendered, failed, or edited since
   its render, names those clips, and never sends part of a batch. A clip
-  edited after its render request (any card control, or a generated header)
-  counts as unrendered until it renders again, so the MP4 always matches the
-  header and transcript sent with it. Removing a clip from the batch is the
-  reviewer's way to send the rest.
+  whose render settings differ from those its last render request sent (any
+  card control, or a generated header) counts as unrendered until it renders
+  again, so the MP4 always matches the header and transcript sent with it. An
+  edit that is put back does not count. Render all renders only unrendered,
+  failed, and changed clips, and each clip has its own render button (#86).
+  Removing a clip from the batch is the reviewer's way to send the rest.
 - **FR-14 Poster ingest.** A complete Clipper batch is ingested only when the
   maintainer clicks **Pull from Clipper**, never on its own, even when Poster's
   draft workspace is empty (ADR-001 amendment "Manual Poster ingest",
