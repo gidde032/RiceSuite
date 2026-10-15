@@ -125,7 +125,7 @@ def test_geometry_summary_strings_for_speech_and_music():
 
 def test_render_failure_remains_retryable_after_geometry_change():
     javascript = _js()
-    render_clip = javascript.split("async function renderClip(clip)", 1)[1].split(
+    render_clip = javascript.split("async function renderClip(", 1)[1].split(
         "async function showResult", 1
     )[0]
 

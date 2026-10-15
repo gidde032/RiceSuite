@@ -17,7 +17,7 @@ const $ = (id) => document.getElementById(id);
 const clips = []; // clip objects (see makeClip)
 let clipSeq = 0; // monotonically assigned ids for stable card identifiers
 let ingesting = false; // upload+transcribe queue is draining
-let batchBusy = false; // render-all in progress
+let batchBusy = false; // a render (Render all or one slot) is in progress
 let clearInProgress = false;
 let batchSent = false; // the loaded batch has reached RicePoster
 let sentBatchId = ""; // the handoff batch id it was sent as
@@ -637,9 +637,30 @@ function lostProgress(message) {
     $("progress-count").textContent, `${$("progress-current").textContent} ${message}`, true);
 }
 
+function clipReady(c) {
+  return Boolean(c.jobId) && (c.status === "ready" || c.status === "done");
+}
+
+// The slots Render all renders: ready ones without a current render, so
+// never rendered, failed, or changed since their render (RiceSuite #86).
+function renderTargets() {
+  return clips.filter((c) => clipReady(c) && !clipCurrent(c));
+}
+
+// No render starts while another render, a transcription, a send, or a media
+// clear runs: a render replaces its MP4 in place, which a send may be copying
+// (RiceSuite #86).
+function renderBlocked() {
+  return batchBusy || ingesting || sendInFlight || clearInProgress;
+}
+
 function updateRenderAllButton() {
-  const ready = clips.some((c) => c.jobId && (c.status === "ready" || c.status === "done"));
-  $("render-all-btn").disabled = batchBusy || ingesting || !ready;
+  const ready = clips.filter(clipReady).length;
+  const targets = renderTargets().length;
+  const renderAll = $("render-all-btn");
+  renderAll.disabled = renderBlocked() || targets === 0;
+  renderAll.textContent = targets > 0 && targets < ready ? `Render ${targets} changed` : "Render all";
+  clips.forEach(syncRenderOne);
   // Handoff is offered once at least one clip has a rendered output.
   const anyDone = clips.some((c) => c.jobId && c.status === "done");
   $("send-handoff-btn").disabled = batchBusy || ingesting || !anyDone;
@@ -647,10 +668,82 @@ function updateRenderAllButton() {
   $("pull-searcher-btn").disabled = !workspaceFree();
 }
 
-// Rendered, and nothing in the card changed since its render request (W1-06):
-// the MP4 matches the header and transcript that would be sent with it.
+// A slot's own render button renders that slot alone, changed or not. Like
+// Render all, it waits while renderBlocked() (RiceSuite #86).
+function syncRenderOne(c) {
+  if (!c.renderOneEl) return;
+  c.renderOneEl.disabled = renderBlocked() || !clipReady(c);
+  // Named by the render on show; it keeps its name while it renders.
+  if (c.status === "done") c.renderOneEl.textContent = "Re-render this clip";
+  else if (c.status !== "rendering") c.renderOneEl.textContent = "Render this clip";
+  // Every card has one, so its accessible name says which clip it renders.
+  c.renderOneEl.setAttribute("aria-label", `${c.renderOneEl.textContent} (clip ${c.ord})`);
+}
+
+// Rendered, and every setting the render sent is still what the card shows
+// (W1-06, RiceSuite #86): the MP4 matches what would be sent with it. An edit
+// that is put back leaves the clip current.
 function clipCurrent(c) {
-  return Boolean(c.jobId) && c.status === "done" && (c.edits || 0) === (c.renderedEdits || 0);
+  return Boolean(c.jobId) && c.status === "done" && c.renderedFingerprint === renderFingerprint(c);
+}
+
+// The music a render of the card would use: the chosen mode and track.
+function cardMusic(clip) {
+  return { mode: clip.musicModeEl.value, file: clip.musicInputEl.files[0] || null };
+}
+
+// What a render of the clip sends, from the card's settings. A render passes
+// the music and photo length it captured before its music upload, and the
+// uploaded track's server filename.
+function renderSettings(clip, { music = cardMusic(clip), photoDuration = clip.isPhoto === true ? photoLength(clip) : null, filename = null } = {}) {
+  const settings = {
+    words: collectWords(clip),
+    header: clip.headerEl.value,
+    captions_on: clip.captionsToggleEl.checked,
+    caption_style: radioValue(clip.captionStyleEl),
+    motion: clip.motionToggleEl.checked,
+    emoji_on: clip.emojiToggleEl.checked,
+    emoji: emojiPayload(clip.emojiPicks || {}),
+    header_style: radioValue(clip.headerStyleEl),
+    header_look: clip.headerLook,
+    geometry: radioValue(clip.geometryEl),
+    content: radioValue(clip.contentEl),
+    music: {
+      mode: music.file ? music.mode : "none",
+      volume: Number(clip.musicVolumeEl.value),
+      filename,
+      start: music.file ? Number(clip.musicStartEl.value) || 0 : 0,
+    },
+  };
+  if (clip.isPhoto === true) settings.photo_duration = photoDuration;
+  return settings;
+}
+
+// JSON with object keys sorted, so the same values always match.
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${stableJson(value[k])}`).join(",")}}`;
+  }
+  return JSON.stringify(value === undefined ? null : value);
+}
+
+// Everything in `settings` that shapes the MP4. The track is named by its
+// file, since the server filename only exists once a render uploads it. With
+// no music, the volume and start are unused (render.pipeline), so they do not
+// count.
+function settingsFingerprint(settings, musicFile) {
+  const { music, ...rest } = settings;
+  const sound = music.mode === "none"
+    ? { mode: "none" }
+    : { mode: music.mode, volume: music.volume, start: music.start,
+      track: [musicFile.name, musicFile.size, musicFile.lastModified] };
+  return stableJson({ ...rest, music: sound });
+}
+
+function renderFingerprint(clip) {
+  const music = cardMusic(clip);
+  return settingsFingerprint(renderSettings(clip, { music }), music.file);
 }
 
 function radioValue(group) {
@@ -684,18 +777,23 @@ function handleContentChange(clip) {
 
 // --- clip cards -------------------------------------------------------------
 
-// Any edit after a render leaves that render on show but marks it stale, in
-// the status line and on the rendered frame (Issue #20).
+// A change to a rendered setting leaves that render on show but marks it
+// stale, in the status line and on the rendered frame (Issue #20), and makes
+// the clip a Render all target (RiceSuite #86). Putting it back undoes both.
 function noteClipEdited(clip) {
-  clip.edits = (clip.edits || 0) + 1;
-  if (clip.status === "done") {
-    setClipStatus(clip, "Edited since its render. Render it again before it is sent.");
-  }
   syncResultStale(clip);
+  updateRenderAllButton();
 }
 
 function syncResultStale(clip) {
-  clip.resultEl.classList.toggle("is-stale", clip.status === "done" && !clipCurrent(clip));
+  const stale = clip.status === "done" && !clipCurrent(clip);
+  clip.resultEl.classList.toggle("is-stale", stale);
+  // A stale clip says so after every edit, as before; a current one only
+  // when it turns current again, so other news on its line stays.
+  if (clip.status === "done" && (stale || clip.shownStale)) {
+    setRenderedStatus(clip, clip.headerNote, clip.emojiNote);
+  }
+  clip.shownStale = stale;
 }
 
 // A seek or volume drag on a player's built-in controls reaches the card as an
@@ -713,8 +811,9 @@ function buildCard(clip) {
   const node = $("clip-card-template").content.firstElementChild.cloneNode(true);
   clip.el = node;
   // Every control in the card (captions, geometry, content, music, lyrics…)
-  // bubbles its input/change events here, so any edit made after a send makes
-  // the batch differ from what was sent and holds the workspace.
+  // bubbles its input/change events here. A change to a rendered setting, or
+  // typed lyrics or header guidance, after a send makes the batch differ from
+  // what was sent and holds the workspace (RiceSuite #86).
   const markEdited = (event) => {
     if (isReviewEdit(event)) noteClipEdited(clip);
   };
@@ -766,6 +865,7 @@ function buildCard(clip) {
   clip.resultEl = node.querySelector(".clip-result");
   clip.outputVideoEl = node.querySelector(".output-video");
   clip.downloadEl = node.querySelector(".download-link");
+  clip.renderOneEl = node.querySelector(".render-one");
 
   node.querySelectorAll('.header-style input[type="radio"]').forEach((option) => {
     option.name = `header-style-${clip.localId}`;
@@ -927,6 +1027,7 @@ function buildCard(clip) {
   clip.lyricsAlignEl.addEventListener("click", () => alignLyrics(clip));
   clip.lyricsRestoreEl.addEventListener("click", () => restoreTranscript(clip));
   node.querySelector(".clip-remove").addEventListener("click", () => removeClip(clip));
+  clip.renderOneEl.addEventListener("click", () => renderOne(clip));
 
   // Preview from the File (blob), muted — some re-encoded sources throw
   // MEDIA_ERR_DECODE mid-play with audio; muting avoids it. Clean-audio review
@@ -1508,6 +1609,7 @@ async function alignLyrics(clip) {
     }
     clearResult(clip);
     setClipStatus(clip, "Ready — review & render");
+    updateRenderAllButton();
   } catch (err) {
     setClipStatus(clip, err.message, true);
   } finally {
@@ -1534,6 +1636,7 @@ async function restoreTranscript(clip) {
     clip.lyricsBadgeEl.removeAttribute("title");
     clearResult(clip);
     setClipStatus(clip, "Ready — review & render");
+    updateRenderAllButton();
   } catch (err) {
     setClipStatus(clip, err.message, true);
   } finally {
@@ -1614,7 +1717,7 @@ async function requestHeader(clip, { feedback = "", avoid = "" } = {}) {
     if (data.header) {
       clip.headerEl.value = data.header;
       scheduleHeaderPreview(clip);
-      clip.edits = (clip.edits || 0) + 1; // a new header needs a new render
+      noteClipEdited(clip); // a new header needs a new render
     }
     setHeaderGenStatus(clip, "");
   } catch (err) {
@@ -1885,29 +1988,39 @@ async function ingestClip(clip) {
 
 $("render-all-btn").addEventListener("click", handleRenderAll);
 
+// Render every slot that is not current; an unchanged render is kept
+// (RiceSuite #86). The count covers the whole batch, so slots already
+// current count as rendered.
 async function handleRenderAll() {
-  if (batchBusy || ingesting) return;
-  const targets = clips.filter((c) => c.jobId && (c.status === "ready" || c.status === "done"));
+  if (renderBlocked()) return;
+  const ready = clips.filter(clipReady).length;
+  const targets = renderTargets();
   if (targets.length === 0) {
-    setBatchStatus("No clips are ready to render yet.", true);
+    setBatchStatus(ready ? "Nothing changed since the last render." : "No clips are ready to render yet.", !ready);
     return;
   }
+  const current = clips.filter(clipCurrent).length;
+  const changed = targets.length < ready ? " changed" : "";
 
   batchBusy = true;
   updateRenderAllButton();
   updateCacheControls();
 
   let ok = 0;
+  let putBack = 0; // targets whose edit was undone before their turn
   const failedRenders = [];
   for (let i = 0; i < targets.length; i++) {
-    localProgress("Render all", "↻ Working", ok, clips.length, "rendered", `Now: rendering clip ${targets[i].ord} of ${clips.length} — ${targets[i].name || targets[i].file?.name || "clip"}`);
+    if (clipCurrent(targets[i])) {
+      putBack += 1;
+      continue;
+    }
+    localProgress("Render all", "↻ Working", current + putBack + ok, clips.length, "rendered", `Now: rendering clip ${targets[i].ord} of ${clips.length} — ${clipName(targets[i])}`);
     if (await renderClip(targets[i])) ok += 1;
     else failedRenders.push(targets[i]);
   }
 
-  batchBusy = false;
-  updateRenderAllButton();
-  updateCacheControls();
+  // The buttons stay disabled until this run's outcome is shown, so a render
+  // started next never has its progress overwritten by this one.
   await refreshCacheInfo();
   const heldAfterRender = clips.filter((c) => !clipCurrent(c));
   const unknownRenders = failedRenders.filter((c) => c.renderUnknown);
@@ -1917,11 +2030,46 @@ async function handleRenderAll() {
     ? `${failedRenders.length} failed: ${failedRenders.map((c) => `Clip ${c.ord} — ${c.error}`).join("; ")}.`
     : heldAfterRender.length ? `${heldAfterRender.map(heldReason).join("; ")}.`
       : "Send the batch to Poster when ready.";
-  localProgress("Render all", unknownRenders.length ? "? Connection lost / result unknown" : heldAfterRender.length ? "! Held / failed" : "✓ Complete", ok, clips.length, "rendered", heldDetail, heldAfterRender.length > 0);
+  localProgress("Render all", unknownRenders.length ? "? Connection lost / result unknown" : heldAfterRender.length ? "! Held / failed" : "✓ Complete", current + putBack + ok, clips.length, "rendered", heldDetail, heldAfterRender.length > 0);
+  const rendering = targets.length - putBack;
   $("batch-status").textContent =
-    ok === targets.length
-      ? `Rendered ${ok} clip${ok === 1 ? "" : "s"}. Download from each clip's frame.`
-      : `Rendered ${ok} of ${targets.length}; see the per-clip errors above.`;
+    ok === rendering
+      ? `Rendered ${ok}${changed} clip${ok === 1 ? "" : "s"}. Download from each clip's frame.`
+      : `Rendered ${ok} of ${rendering}; see the per-clip errors above.`;
+  batchBusy = false;
+  updateRenderAllButton();
+  updateCacheControls();
+}
+
+function clipName(clip) {
+  return clip.name || clip.file?.name || "clip";
+}
+
+// One slot's render button (RiceSuite #86): renders that slot alone, changed
+// or not, as the only render running. The other slots are left as they are.
+async function renderOne(clip) {
+  if (renderBlocked() || !clipReady(clip)) return;
+  const operation = `Render clip ${clip.ord}`;
+  batchBusy = true;
+  updateRenderAllButton();
+  updateCacheControls();
+  localProgress(operation, "↻ Working", 0, 1, "rendered", `Now: rendering clip ${clip.ord} — ${clipName(clip)}`);
+  const ok = await renderClip(clip, operation);
+  await refreshCacheInfo();
+  const held = !clipCurrent(clip);
+  const detail = clip.renderUnknown
+    ? `Render result unknown for Clip ${clip.ord}; work may still be running.`
+    : !ok ? `Clip ${clip.ord} — ${clip.error}.`
+      : held ? `${heldReason(clip)}.` : `Clip ${clip.ord} rendered.`;
+  localProgress(operation, clip.renderUnknown ? "? Connection lost / result unknown" : held ? "! Held / failed" : "✓ Complete",
+    ok ? 1 : 0, 1, "rendered", detail, held);
+  $("batch-status").textContent = !ok
+    ? `Clip ${clip.ord} did not render; see its error above.`
+    : held ? `Rendered clip ${clip.ord}, but it changed while it rendered; render it again before it is sent.`
+      : `Rendered clip ${clip.ord}. Download it from its frame.`;
+  batchBusy = false; // only now, as in Render all
+  updateRenderAllButton();
+  updateCacheControls();
 }
 
 // Job reads that may show another render before this one counts as never
@@ -1944,7 +2092,7 @@ function setRenderedStatus(clip, headerNote, emojiNote) {
   // The emoji note names what was left out ("Caption emoji left out: …").
   if (emojiNote) basic = basic ? `${basic} ${emojiNote}` : ` Rendered ✓. ${emojiNote}`;
   if (!clipCurrent(clip)) {
-    setClipStatus(clip, `Edited since its render. Render it again before it is sent.${basic}`, Boolean(basic));
+    setClipStatus(clip, `Edited since its render — Render all will re-render it. Send waits until it is rendered again.${basic}`, Boolean(basic));
   } else if (basic) {
     setClipStatus(clip, basic.trim(), true);
   } else {
@@ -1997,7 +2145,7 @@ async function pollRenderCompletion(clip, renderId) {
   return false;
 }
 
-async function renderClip(clip) {
+async function renderClip(clip, operation = "Render all") {
   // Check the photo length before touching the card, so a bad value leaves
   // the last render on show and sends nothing.
   const length = clip.isPhoto === true ? photoLength(clip) : null;
@@ -2019,15 +2167,14 @@ async function renderClip(clip) {
   setClipStatus(clip, "Rendering…");
   updateCacheControls();
 
-  const mode = clip.musicModeEl.value;
-  const musicFile = clip.musicInputEl.files[0];
+  const music = cardMusic(clip);
   try {
     let filename = null;
-    if (mode !== "none" && musicFile) {
+    if (music.mode !== "none" && music.file) {
       setClipStatus(clip, "Uploading music…");
-      showProgress("Render all", "↻ Working", $("progress-count").textContent, `Now: uploading music for clip ${clip.ord}`);
+      showProgress(operation, "↻ Working", $("progress-count").textContent, `Now: uploading music for clip ${clip.ord}`);
       const form = new FormData();
-      form.append("file", musicFile);
+      form.append("file", music.file);
       const mres = await fetch(`api/jobs/${clip.jobId}/music`, { method: "POST", body: form });
       const mdata = await mres.json();
       if (!mres.ok) throw new Error(mdata.detail || "music upload failed");
@@ -2035,29 +2182,11 @@ async function renderClip(clip) {
     }
 
     setClipStatus(clip, "Rendering… (captions, header & audio)");
-    showProgress("Render all", "↻ Working", $("progress-count").textContent, `Now: rendering clip ${clip.ord} — captions, header & audio`);
-    // Any edit after this point is not in the MP4 (W1-06).
-    const editsAtRender = clip.edits || 0;
-    const payload = {
-      words: collectWords(clip),
-      header: clip.headerEl.value,
-      captions_on: clip.captionsToggleEl.checked,
-      caption_style: radioValue(clip.captionStyleEl),
-      motion: clip.motionToggleEl.checked,
-      emoji_on: clip.emojiToggleEl.checked,
-      emoji: emojiPayload(clip.emojiPicks || {}),
-      header_style: radioValue(clip.headerStyleEl),
-      header_look: clip.headerLook,
-      geometry: radioValue(clip.geometryEl),
-      content: radioValue(clip.contentEl),
-      music: {
-        mode: musicFile ? mode : "none",
-        volume: Number(clip.musicVolumeEl.value),
-        filename,
-        start: musicFile ? Number(clip.musicStartEl.value) || 0 : 0,
-      },
-    };
-    if (clip.isPhoto === true) payload.photo_duration = length;
+    showProgress(operation, "↻ Working", $("progress-count").textContent, `Now: rendering clip ${clip.ord} — captions, header & audio`);
+    // The MP4 holds exactly these settings; any later edit makes it stale
+    // (W1-06, RiceSuite #86).
+    const payload = renderSettings(clip, { music, photoDuration: length, filename });
+    const renderedFingerprint = settingsFingerprint(payload, music.file);
     // Names this render in job state, for recovery after a lost reply (#49).
     const renderId = newSendKey();
     payload.render_id = renderId;
@@ -2078,7 +2207,7 @@ async function renderClip(clip) {
       lostProgress(`Render response lost for clip ${clip.ord}; checking its existing job state.`);
       if (await pollRenderCompletion(clip, renderId)) {
         clip.renders = (clip.renders || 0) + 1;
-        clip.renderedEdits = editsAtRender;
+        clip.renderedFingerprint = renderedFingerprint;
         clip.status = "done";
         setRenderedStatus(clip, clip.headerNote, clip.emojiNote);
         await showResult(clip);
@@ -2090,9 +2219,11 @@ async function renderClip(clip) {
     if (!res.ok) throw new Error(requestErrorText(data, "render failed"));
 
     clip.renders = (clip.renders || 0) + 1;
-    clip.renderedEdits = editsAtRender;
+    clip.renderedFingerprint = renderedFingerprint;
     clip.status = "done";
-    setRenderedStatus(clip, data.header_note, data.emoji_note);
+    clip.headerNote = data.header_note || "";
+    clip.emojiNote = data.emoji_note || "";
+    setRenderedStatus(clip, clip.headerNote, clip.emojiNote);
     await showResult(clip);
     return true;
   } catch (err) {
@@ -2150,15 +2281,16 @@ $("send-handoff-btn").addEventListener("click", () => sendBatch());
 // tells "nothing unsent" apart from "rendered or edited again after sending".
 function batchSnapshot() {
   return JSON.stringify(
+    // The fingerprint holds the transcript, header, and styles that are sent,
+    // so an edit that is put back leaves the snapshot as it was (#86). Pasted
+    // lyrics and header guidance are not rendered, but they are unsent work.
     clips.map((c) => [
       c.jobId,
       c.status,
       c.renders || 0,
-      c.edits || 0,
-      c.headerEl ? c.headerEl.value : "",
-      c.captionStyleEl ? radioValue(c.captionStyleEl) : "",
-      c.headerStyleEl ? radioValue(c.headerStyleEl) : "",
-      c.transcriptEl ? collectWords(c).map((w) => w.text).join(" ") : "",
+      c.headerEl ? renderFingerprint(c) : "",
+      c.lyricsInputEl ? c.lyricsInputEl.value : "",
+      c.headerFeedbackEl ? c.headerFeedbackEl.value : "",
     ]),
   );
 }
@@ -2197,6 +2329,7 @@ async function sendBatch() {
   }
   const resend = batchSent; // the reviewer confirmed a second send above
   sendInFlight = true;
+  updateRenderAllButton(); // no render replaces an MP4 the send is copying
   const snapshot = batchSnapshot();
   // One key per send (W1-01). A retry of the unchanged batch after a reply
   // that never came reuses it, so Clipper returns the batch that attempt
@@ -2514,6 +2647,7 @@ $("clear-cache-btn").addEventListener("click", async () => {
   status.textContent = "Clearing media cache…";
   clearInProgress = true;
   updateCacheControls();
+  updateRenderAllButton();
 
   try {
     const response = await fetch("api/media/clear", { method: "POST" });
@@ -2537,6 +2671,7 @@ $("clear-cache-btn").addEventListener("click", async () => {
   } finally {
     clearInProgress = false;
     updateCacheControls();
+    updateRenderAllButton();
   }
 });
 

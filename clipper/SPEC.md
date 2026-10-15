@@ -326,6 +326,34 @@ Rerendering applies the currently selected styles. Each completed render uses a
 fresh media URL for both preview and Download, and output responses are not
 cached, so replacing a job's MP4 cannot leave its previous subtitles on show.
 
+**Changed clips only, and a render button per clip (RiceSuite #86).** Each
+render keeps a fingerprint of the settings it sent: the words, the header, its
+style and look, the caption style, the captions, Motion, and emoji toggles,
+the emoji picks, geometry, content, a photo's length, and the music mode,
+volume, start, and track (by file name, size, and last-modified time). With
+no music track, the volume and start are unused by the render and do not
+count. A clip is current while its card still matches its last render's
+fingerprint, so an edit that is put back leaves it current. A clip that is
+not current shows the stale note "Edited since this render — Render all will
+re-render it" on its frame.
+
+- **Render all** renders only ready clips that are not current: never
+  rendered, failed, or changed since their render. An unchanged clip keeps
+  its render. The button reads "Render all" when that is every ready clip,
+  "Render N changed" when it is some of them, and is disabled when it is none.
+- **Render this clip** (before a clip's first render) or **Re-render this
+  clip** sits under each clip's Download. It renders that clip alone, changed
+  or not, and leaves the other clips as they are.
+- Render all checks each clip again when its turn comes and skips one whose
+  edit was put back meanwhile.
+- No render starts while another render, a transcription, a Send, or a
+  media-cache clear runs: a render replaces its MP4 in place, which a Send
+  may be copying. Render all and every clip's button stay disabled until the
+  running render's outcome is shown.
+- Lyrics or header guidance typed into a card are not rendered settings, so
+  they do not make a render stale, but after a Send they hold the workspace
+  like any unsent work.
+
 ### 5.2 Slate browser-interface polish
 
 **Slate** is the ratified visual theme for the local browser review UI. It
@@ -579,8 +607,10 @@ geometry remains unchanged. Pull reports actual importing/imported boundaries;
 transcription reports uploading/transcribing/ready; render-all reports music
 upload/render/rendered outcomes; send reports copying/copied and whole-batch
 publication. A failed render preserves other successful renders and names the
-held clip. A successful Render all reads “Send the batch to Poster when
-ready.” Only the Send to RicePoster click sends (RiceSuite #59). Confirmed
+held clip. Render all's count covers the whole batch, so clips that were
+already current count as rendered (RiceSuite #86). A single clip's render
+reports as “Render clip N” with a count of 1. A successful Render all reads
+“Send the batch to Poster when ready.” Only the Send to RicePoster click sends (RiceSuite #59). Confirmed
 handoff says the batch waits in Poster’s inbox.
 
 A render whose reply is lost is checked against job state (Issue #30). Each

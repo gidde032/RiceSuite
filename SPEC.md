@@ -153,10 +153,12 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
   successful Render all, the progress bar reads "Send the batch to Poster when
   ready." Send refuses while any clip is unrendered, failed, or edited since
   its render, names those clips, and never sends part of a batch. A clip
-  edited after its render request (any card control, or a generated header)
-  counts as unrendered until it renders again, so the MP4 always matches the
-  header and transcript sent with it. Removing a clip from the batch is the
-  reviewer's way to send the rest.
+  whose render settings differ from those its last render request sent (any
+  card control, or a generated header) counts as unrendered until it renders
+  again, so the MP4 always matches the header and transcript sent with it. An
+  edit that is put back does not count. Render all renders only unrendered,
+  failed, and changed clips, and each clip has its own render button (#86).
+  Removing a clip from the batch is the reviewer's way to send the rest.
 - **FR-14 Poster ingest.** A complete Clipper batch is ingested only when the
   maintainer clicks **Pull from Clipper**, never on its own, even when Poster's
   draft workspace is empty (ADR-001 amendment "Manual Poster ingest",
@@ -173,8 +175,9 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
   `GET api/handoff/inbox` only to report waiting batches; it never pulls from
   the poll.
   Clipper pulls only when nothing unsent would be displaced: the workspace is
-  empty, or it holds exactly what was last sent (a later edit or re-render
-  holds it). While it holds an unsent batch, Clipper's page names the
+  empty, or it holds exactly what was last sent. A later change to a
+  rendered setting, lyrics or header guidance typed into a card, or a
+  re-render holds it; an edit that is put back does not (#86). While it holds an unsent batch, Clipper's page names the
   Searcher batch waiting behind it (#61); it still does not pull. The Pull
   button follows the same rule, and one pull runs at a
   time, whether the button or the timer started it. One Searcher batch stays

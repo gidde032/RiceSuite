@@ -63,15 +63,16 @@ The review page polls `GET /api/searcher-inbox` (read-only, no job lock).
 When a complete batch is waiting and nothing unsent would be displaced (the
 workspace is empty, or it holds a batch that was fully rendered and sent), the
 page performs the same pull as the button and starts transcribing. "Nothing
-unsent" means the workspace holds exactly what was last sent; an edit or
-re-render after sending holds it. A rendered batch that is not sent also
+unsent" means the workspace holds exactly what was last sent. A change to a
+rendered setting, lyrics or header guidance typed into a card, or a re-render
+after sending holds it; an edit that is put back does not (RiceSuite #86). A rendered batch that is not sent also
 holds it. One Searcher batch is one Clipper batch. While a batch holds the
 workspace, the page keeps reading the inbox and names the batch waiting behind
 it on a line under the batch actions (RiceSuite #61). That line never pulls.
 The **Pull** button follows the same rule, and only one pull runs at a time.
 The page never sends a batch on its own (RiceSuite #59). Only a **Send to
 RicePoster** click sends, after every clip has rendered. A failed or
-unrendered clip, or one edited since its render, holds the batch until it is
+unrendered clip, or one whose settings changed since its render, holds the batch until it is
 rendered again or removed. The **Send** button refuses such a batch and names
 the clips; it never sends part of a batch. Sending an already-sent batch again
 asks first. Rendering stays a human action.

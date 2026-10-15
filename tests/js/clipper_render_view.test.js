@@ -65,6 +65,8 @@ function card(rendered) {
     musicModeEl: { value: "none" },
     musicInputEl: { files: [] },
     headerEl: { value: "Hook" },
+    headerLook: { y: 210 },
+    emojiPicks: {},
     captionsToggleEl: { checked: true }, motionToggleEl: { checked: true }, emojiToggleEl: { checked: false },
   };
   return new Proxy(clip, {
@@ -180,10 +182,50 @@ test("a re-render makes the old video inert while its file is rewritten", async 
 test("an edit after a render marks the render on show as stale", async () => {
   const { js, ctx } = boot({});
   ctx.clip = card(true);
-  ctx.clip.renderedEdits = 0;
+  ctx.clip.renderedFingerprint = js("renderFingerprint(clip)"); // what was rendered
+  js("syncResultStale(clip)");
   assert.equal(ctx.clip.resultEl.classList.contains("is-stale"), false);
+  js("noteClipEdited(clip)"); // an event that changes nothing is not an edit
+  assert.equal(ctx.clip.resultEl.classList.contains("is-stale"), false);
+  ctx.clip.headerEl.value = "Edited hook";
   js("noteClipEdited(clip)");
   assert.equal(ctx.clip.resultEl.classList.contains("is-stale"), true);
+  ctx.clip.headerEl.value = "Hook"; // put back
+  js("noteClipEdited(clip)");
+  assert.equal(ctx.clip.resultEl.classList.contains("is-stale"), false);
+});
+
+// RiceSuite #86: the card's own button, wired by buildCard, renders that clip.
+test("the card's render button renders its clip", async () => {
+  const listeners = {};
+  const button = element();
+  button.addEventListener = (type, fn) => { listeners[type] = fn; };
+  const node = element();
+  node.querySelector = (selector) => (selector === ".render-one" ? button : element());
+  const template = { content: { firstElementChild: { cloneNode: () => node } } };
+  const { fetch, calls } = scriptedFetch({
+    "GET api/health": { ok: true },
+    "GET api/media-info": { files: 0, bytes: 0 },
+    "POST api/jobs/j1/render": { status: "done" },
+  });
+  const { ctx } = context(fetch, {
+    document: {
+      getElementById: (id) => (id === "clip-card-template" ? template : element()),
+      querySelector: () => element(), querySelectorAll: () => [],
+      createElement: () => element(), createTextNode: () => element(),
+      addEventListener() {}, body: element(),
+    },
+  });
+  const js = run(SOURCE, ctx);
+  js("collectWords = () => []; radioValue = () => 'x';");
+  js(`clips.push({ jobId: "j1", ord: 1, status: "ready" }); buildCard(clips[0]); updateRenderAllButton();`);
+  assert.equal(button.disabled, false);
+  assert.equal(button.textContent, "Render this clip");
+  await listeners.click({ target: button });
+  await settle();
+  assert.equal(calls.filter((c) => c.method === "POST" && c.path === "api/jobs/j1/render").length, 1);
+  assert.equal(js("clips[0].status"), "done");
+  assert.equal(button.textContent, "Re-render this clip");
 });
 
 test("an edit during a render leaves the landed render marked stale", async () => {
@@ -194,6 +236,7 @@ test("an edit during a render leaves the landed render marked stale", async () =
   ctx.clip = card(true);
   const done = js("renderClip(clip)");
   await settle();
+  ctx.clip.headerEl.value = "Edited hook";
   js("noteClipEdited(clip)");
   hold.release();
   await done;

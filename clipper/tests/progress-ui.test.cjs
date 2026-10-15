@@ -91,7 +91,8 @@ test('copy failure and published ambiguity use distinct outcomes', () => {
 test('render failure preserves successful output and names the held clip (#59)', async () => {
   const h = harness();
   h.run(`clips.push({ord:1, jobId:'one',status:'ready'}, {ord:2,jobId:'two',status:'ready'});
-    renderClip = async (clip) => { if (clip.ord === 1) {clip.status='done'; clip.renderedEdits=0; return true;} clip.error='synthetic render failure'; return false; };
+    renderFingerprint = () => 'settings';
+    renderClip = async (clip) => { if (clip.ord === 1) {clip.status='done'; clip.renderedFingerprint='settings'; return true;} clip.error='synthetic render failure'; return false; };
     refreshCacheInfo = async () => {};`);
   h.context.fetch = async () => { throw Error('send must remain held'); };
   await h.run('handleRenderAll()');
@@ -103,8 +104,9 @@ test('render failure preserves successful output and names the held clip (#59)',
 
 test('lost send response keeps key; explicit retry confirms without duplicate send key', async () => {
   const h = harness();
-  h.run(`clips.push({ord:1,jobId:'one',status:'done',headerEl:{value:'Title'}});
-    batchSnapshot = () => 'unchanged'; radioValue = () => 'montserrat'; collectWords = () => [{text:'text'}];`);
+  h.run(`clips.push({ord:1,jobId:'one',status:'done',headerEl:{value:'Title'},renderedFingerprint:'settings'});
+    batchSnapshot = () => 'unchanged'; radioValue = () => 'montserrat'; collectWords = () => [{text:'text'}];
+    renderFingerprint = () => 'settings';`);
   const payloads = [];
   h.context.fetch = async (url, options) => {
     assert.equal(url, 'api/handoff'); payloads.push(JSON.parse(options.body));
@@ -149,7 +151,8 @@ test('edited output and unresolved renders give an honest final summary', async 
     const h = harness();
     h.context.unknown = unknown;
     h.run(`clips.push({ord:1,jobId:'one',status:'ready'});
-      renderClip = async (clip) => { clip.status=unknown?'ready':'done'; clip.edits=1; clip.renderedEdits=0;
+      renderFingerprint = () => 'edited';
+      renderClip = async (clip) => { clip.status=unknown?'ready':'done'; clip.renderedFingerprint='settings';
         clip.error='lost response'; clip.renderUnknown=unknown; return !unknown; };
       refreshCacheInfo = async () => {};`);
     h.context.fetch = async () => { throw Error('send must remain held'); };
@@ -163,7 +166,8 @@ test('an upstream transcription failure is not reported as a render failure', as
   const h = harness();
   h.run(`clips.push({ord:1, jobId:'one',status:'ready'},
     {ord:2,jobId:'two',status:'error',error:'Transcription decoder failed'});
-    renderClip = async (clip) => { clip.status='done'; clip.renderedEdits=0; return true; };
+    renderFingerprint = () => 'settings';
+    renderClip = async (clip) => { clip.status='done'; clip.renderedFingerprint='settings'; return true; };
     refreshCacheInfo = async () => {};`);
   h.context.fetch = async () => { throw Error('send must remain held'); };
   await h.run('handleRenderAll()');
@@ -175,8 +179,9 @@ test('an upstream transcription failure is not reported as a render failure', as
 
 test('a pending keyed retry remains unknown before publication and later replay confirms once', async () => {
   const h = harness();
-  h.run(`clips.push({ord:1,jobId:'one',status:'done',headerEl:{value:'Title'}});
-    batchSnapshot = () => 'unchanged'; radioValue = () => 'montserrat'; collectWords = () => [{text:'text'}];`);
+  h.run(`clips.push({ord:1,jobId:'one',status:'done',headerEl:{value:'Title'},renderedFingerprint:'settings'});
+    batchSnapshot = () => 'unchanged'; radioValue = () => 'montserrat'; collectWords = () => [{text:'text'}];
+    renderFingerprint = () => 'settings';`);
   const payloads = [];
   h.context.fetch = async (url, options) => {
     if (!options) return {ok:true,json:async()=>({...snapshot('unconfirmed'),total:0,completed:0,current:null,batch_id:'',published:false,detail:'A send of these clips has not finished.'})};

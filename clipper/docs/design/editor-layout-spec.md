@@ -53,9 +53,12 @@ At viewport widths of **881 px and above**, the editor has two rows:
    render, and after lyric alignment or a transcript restore replaces the
    words, it is an empty frame that marks the header band (`header_margin_v`
    to `header_margin_v` + 160 px of 1920) and the caption band (340 to 540 px
-   up from the bottom) and offers no download. Any other edit after a render
-   keeps that render on show, with Download, marked "Edited since this
-   render" until the clip renders again. Seeking or changing volume in either
+   up from the bottom) and offers no download. Any other change to a rendered
+   setting after a render keeps that render on show, with Download, marked "Edited since this
+   render — Render all will re-render it" until the clip renders again or the
+   edit is put back (RiceSuite #86). Under Download, the clip's own render
+   button ("Render this clip", then "Re-render this clip") shows in every
+   state, at Download's width. Seeking or changing volume in either
    video player is not an edit: it leaves the render current. A re-render keeps the last render in
    place, paused, dimmed and inert with a "Rendering…" note, and withholds the
    download until it finishes; Align and Restore wait for it to finish.
@@ -156,8 +159,9 @@ styles rather than relying on a screenshot alone:
 - the rendered frame is 9:16 at its specified height, the video fills it with
   no padding and no letterbox (also against landscape size hints), the empty
   frame shows before a render with no download, the Rendering… note covers
-  the frame, the stale note shows only on a stale render, and Download sits
-  under the frame and in view at the top of the page;
+  the frame, the stale note shows only on a stale render, Download sits
+  under the frame and in view at the top of the page, and the clip's render
+  button sits under Download inside the rendered column;
 - no choice card's content overflows it at any tested viewport;
 - Music transcript and lyric panes have equal computed width and height and
   aligned top edges, together spanning the full lower row; Speech transcript
