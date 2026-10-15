@@ -88,7 +88,14 @@
             <!-- Header preview (RiceSuite #65): the server's exact header PNG,
                  scaled over the source's 9:16 frame. -->
             <div class="header-preview-window" hidden><canvas class="header-preview-base" hidden></canvas><img class="header-preview" alt="" hidden /><img class="tiktok-overlay" src="tiktok-preview.svg" alt="" aria-hidden="true" hidden /></div>
-            <div class="preview-tools"><button class="preview-fullscreen" type="button">Fullscreen</button></div>
+            <div class="preview-tools">
+              <button class="preview-play preview-control" type="button" disabled>Play</button>
+              <input class="preview-seek preview-control" type="range" min="0" max="0" step="0.01" value="0" disabled />
+              <button class="preview-mute preview-control" type="button" disabled>Mute</button>
+              <input class="preview-volume preview-control" type="range" min="0" max="1" step="0.05" value="1" disabled />
+              <button class="preview-fullscreen preview-control" type="button">Fullscreen</button>
+              <output class="preview-time hint" aria-live="off">0:00 / 0:00</output>
+            </div>
           </div>
           <p class="geo-note hint"></p>
           <p class="preview-status status" role="status"></p>
@@ -334,7 +341,14 @@
               <div class="result-stale"><span>Edited since this render — Render all will re-render it</span></div>
               <div class="result-busy" aria-hidden="true"><span>Rendering…</span></div>
             </div>
-            <div class="preview-tools"><button class="preview-fullscreen" type="button" disabled>Fullscreen</button></div>
+            <div class="preview-tools">
+              <button class="preview-play preview-control" type="button" disabled>Play</button>
+              <input class="preview-seek preview-control" type="range" min="0" max="0" step="0.01" value="0" disabled />
+              <button class="preview-mute preview-control" type="button" disabled>Mute</button>
+              <input class="preview-volume preview-control" type="range" min="0" max="1" step="0.05" value="1" disabled />
+              <button class="preview-fullscreen preview-control" type="button" disabled>Fullscreen</button>
+              <output class="preview-time hint" aria-live="off">0:00 / 0:00</output>
+            </div>
           </div>
           <a class="download-link primary" download>Download mp4</a>
           <!-- Renders this clip alone, changed or not (RiceSuite #86). -->

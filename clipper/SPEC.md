@@ -505,11 +505,14 @@ warning. Plans saved before #65 keep their ingest warning.
 
 The source video or photo, its output-frame mock and live header PNG share a
 fullscreen ancestor. Each source and rendered preview has a compact fullscreen
-button in its upper-left corner. It expands the composed preview, retains
-playback controls and the current header, supports the browser's Escape action,
-and returns focus to its button on exit. Native video-only fullscreen is hidden
-so it cannot omit the composition. An unsupported or rejected fullscreen request
-leaves the inline preview usable and reports that fullscreen is unavailable.
+button beside the transport controls below its picture. It expands the
+composed preview, retains playback controls and the current header, supports
+the browser's Escape action, and returns focus to its button on exit. Video
+previews use exposed Play/Pause, Seek, Mute/Unmute and Volume controls below
+the composed picture so the TikTok overlay cannot conceal them. Transport
+actions are never review edits. Native video controls are replaced only after
+these controls are wired; photos show only Fullscreen. An unsupported or
+rejected fullscreen request leaves the inline preview usable and reports that fullscreen is unavailable.
 The existing source framing and centred subject-crop approximation (§6.3) also
 apply in fullscreen; the rendered preview remains the exact output.
 

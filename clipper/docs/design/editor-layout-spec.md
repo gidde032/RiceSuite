@@ -91,8 +91,11 @@ column and the layout above are unchanged.
 above the cards holds the shared **TikTok preview** switch and "Sample interface
 · preview only" note. This row adds its measured height to the existing laptop
 scroll allowance; editor columns and frame heights retain their existing
-budgets. Each preview has a 36 px fullscreen icon button (44 px for coarse
-pointers) at its upper-left corner. Fullscreen expands the composed source
+budgets. Video previews have exposed Play/Pause, Seek, Mute/Unmute, Volume and
+elapsed/duration controls beneath their picture, with a 36 px fullscreen icon
+button (44 px for coarse pointers). Photos show only Fullscreen. The transport
+row also adds its measured height to the laptop scroll allowance; the composed
+picture keeps its existing size. Fullscreen expands the composed source
 video/photo, output-frame mock, header PNG and enabled overlay together; rendered
 fullscreen retains its 9:16 shape fitted to the screen. Keep native playback
 controls and visible keyboard focus. The local decorative TikTok overlay has

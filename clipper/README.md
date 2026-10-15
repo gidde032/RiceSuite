@@ -29,7 +29,8 @@ point in the track.
 Use **TikTok preview** above the cards to check placement against a sample
 TikTok interface on both source and rendered previews. The switch is remembered
 in this browser and affects previews only; downloaded clips contain no TikTok
-interface. The fullscreen icon in each preview expands the video/photo with its
+interface. Playback, seek, mute and volume controls sit below the picture. The
+fullscreen icon beside them expands the video/photo with its
 live header and enabled overlay. Press Escape or the icon again to leave.
 Source crop previews remain approximate; the rendered clip is the exact output.
 

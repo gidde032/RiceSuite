@@ -39,7 +39,7 @@ function stageFixture(source = true) {
   const stage = element();
   const listeners = {};
   stage.classList.contains = (name) => source && name === 'source-preview';
-  stage.querySelector = () => button;
+  stage.querySelector = (selector) => selector === ".preview-fullscreen" ? button : null;
   stage.addEventListener = (name, fn) => { listeners[name] = fn; };
   button.addEventListener = (name, fn) => { listeners[name] = fn; };
   return { stage, button, listeners };
@@ -125,4 +125,38 @@ test('empty and busy rendered previews cannot enter fullscreen, but can exit if 
     h.evaluate('syncPreviewFullscreen(clip)'); assert.equal(f.button.disabled, false);
     h.ctx.document.fullscreenElement = null;
   }
+});
+
+test('exposed transport controls play, seek, mute and adjust volume on the same media element', async () => {
+  const h = harness(); const { clip } = clipFixture();
+  const media = { duration: 10, readyState: 4, paused: true, muted: true, volume: 1, currentTime: 2,
+    addEventListener() {}, async play() { this.paused = false; }, pause() { this.paused = true; } };
+  const controls = new Map(); const listeners = new Map();
+  for (const name of ['play', 'seek', 'mute', 'volume', 'time']) {
+    const el = element(); el.addEventListener = (event, fn) => listeners.set(`${name}:${event}`, fn);
+    controls.set(`.preview-${name}`, el);
+  }
+  const stage = { querySelector: (selector) => selector === 'video' ? media : controls.get(selector), classList: { contains: () => true } };
+  h.ctx.clip = clip; h.ctx.stage = stage;
+  h.evaluate('setupPreviewTransport(clip, stage)');
+  assert.equal(media.controls, false);
+  assert.equal(controls.get('.preview-play').textContent, 'Play');
+  await listeners.get('play:click')(); assert.equal(media.paused, false);
+  await listeners.get('play:click')(); assert.equal(media.paused, true);
+  controls.get('.preview-seek').value = '7.5'; listeners.get('seek:input')(); assert.equal(media.currentTime, 7.5);
+  listeners.get('mute:click')(); assert.equal(media.muted, false);
+  controls.get('.preview-volume').value = '0.4'; listeners.get('volume:input')(); assert.equal(media.volume, 0.4);
+  assert.equal(controls.get('.preview-time').textContent, '0:07 / 0:10');
+  media.inert = true; stage.syncTransport();
+  assert.ok(['play', 'seek', 'mute', 'volume'].every((name) => controls.get(`.preview-${name}`).disabled));
+  media.inert = false; media.duration = NaN; stage.syncTransport();
+  assert.equal(controls.get('.preview-seek').disabled, true);
+  media.duration = 10; media.play = async () => { throw Error('decode'); };
+  await listeners.get('play:click')(); assert.match(clip.previewStatusEl.textContent, /Playback unavailable/);
+});
+test('transport slider events are viewing actions, never review edits', () => {
+  const h = harness(); h.ctx.event = { target: { tagName: 'INPUT', classList: { contains: (name) => name === 'preview-control' } } };
+  assert.equal(h.evaluate('isReviewEdit(event)'), false);
+  h.ctx.event.target.classList.contains = () => false;
+  assert.equal(h.evaluate('isReviewEdit(event)'), true);
 });

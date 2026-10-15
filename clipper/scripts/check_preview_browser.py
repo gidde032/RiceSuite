@@ -85,6 +85,33 @@ CHECK = r"""
   };
   checkComposition();
   check(document.documentElement.scrollWidth <= innerWidth, "no document overflow");
+  window.checkTransport = async (stage, video) => {
+    const seek = stage.querySelector(".preview-seek");
+    const frame = stage.classList.contains("source-preview") ? c.headerPreviewWindowEl : stage.querySelector(".result-frame");
+    check(!video.controls, "native controls must not be concealed by overlay");
+    check(rect(seek).top >= rect(frame).bottom - 1, "seek is visibly below the overlay frame");
+    for (const el of stage.querySelectorAll(".preview-play, .preview-seek, .preview-mute, .preview-volume, .preview-fullscreen")) {
+      const r = rect(el);
+      check(r.width > 0 && r.height >= 36 && r.left >= rect(stage).left - 1 && r.right <= rect(stage).right + 1, `exposed, sized transport ${el.className}: ${JSON.stringify(r.toJSON())} in ${JSON.stringify(rect(stage).toJSON())}`);
+    }
+    const snapshot = batchSnapshot(), fingerprint = renderFingerprint(c);
+    video.pause(); seek.value = "0.75"; seek.dispatchEvent(new Event("input", { bubbles: true }));
+    check(Math.abs(video.currentTime - .75) < .05, "seek changes the media position");
+    stage.querySelector(".preview-play").click();
+    for (let attempt = 0; video.paused && attempt < 20; attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    check(!video.paused, `Play starts playback: disabled=${stage.querySelector(".preview-play").disabled}, ready=${video.readyState}, status=${c.previewStatusEl.textContent}`);
+    stage.querySelector(".preview-play").click();
+    check(video.paused, "Pause stops playback");
+    const muted = video.muted; stage.querySelector(".preview-mute").click();
+    check(video.muted !== muted, "mute changes playback");
+    const volume = stage.querySelector(".preview-volume"); volume.value = ".4";
+    volume.dispatchEvent(new Event("input", { bubbles: true }));
+    check(video.volume === .4, "volume changes playback");
+    check(batchSnapshot() === snapshot && renderFingerprint(c) === fingerprint, "transport changes review/send state");
+  };
+  if (!c.isPhoto) await checkTransport(c.previewStages[0], c.sourceVideoEl);
+  await checkTransport(c.previewStages[1], c.outputVideoEl);
   window.previewIssues = issues;
   return issues;
 })()
@@ -211,9 +238,15 @@ def main():
                 )
                 for variant in ("portrait", "crop", "blur", "photo"):
                     issues = evaluate(
-                        devtools, CHECK.replace("VARIANT", json.dumps(variant), 1)
+                        devtools,
+                        CHECK.replace("VARIANT", json.dumps(variant), 1),
+                        gesture=True,
                     )
                     assert not issues, (width, height, variant, issues)
+                    assert evaluate(
+                        devtools,
+                        "Boolean(c.previewStages[1].querySelector('.preview-seek'))",
+                    ), "playback controls need an exposed layer below the overlay"
                     stage = "c.previewStages[0]"
                     evaluate(
                         devtools, f"togglePreviewFullscreen(c, {stage})", gesture=True
@@ -222,7 +255,11 @@ def main():
                         devtools, f"document.fullscreenElement === {stage}"
                     ), "source entered fullscreen"
                     time.sleep(0.05)
-                    issues = evaluate(devtools, "checkComposition(); previewIssues")
+                    issues = evaluate(
+                        devtools,
+                        "(async () => { checkComposition(); if (!c.isPhoto) await checkTransport(c.previewStages[0], c.sourceVideoEl); return previewIssues; })()",
+                        gesture=True,
+                    )
                     assert not issues, (width, height, variant, "fullscreen", issues)
                     if (width, variant) == (1440, "portrait"):
                         screenshot(devtools, "source-fullscreen.png")
@@ -266,6 +303,11 @@ def main():
                     devtools,
                     "(() => { const r=c.outputVideoEl.getBoundingClientRect(); return Math.abs(r.width/r.height-9/16)<.001 && r.bottom<innerHeight && r.width>100; })()",
                 ), "fullscreen rendered fits 9:16"
+                assert not evaluate(
+                    devtools,
+                    "(async () => { await checkTransport(c.previewStages[1], c.outputVideoEl); return previewIssues; })()",
+                    gesture=True,
+                ), "rendered fullscreen controls"
                 if width == 1440:
                     screenshot(devtools, "rendered-fullscreen.png")
                 evaluate(
@@ -277,11 +319,59 @@ def main():
             for state in ("is-empty", "is-busy"):
                 assert evaluate(
                     devtools,
-                    f"c.resultEl.classList.add('{state}'); syncPreviewFullscreen(c); getComputedStyle(c.resultEl.querySelector('.tiktok-overlay')).display === 'none' && c.previewStages[1].querySelector('button').disabled",
+                    f"c.resultEl.classList.add('{state}'); syncPreviewFullscreen(c); getComputedStyle(c.resultEl.querySelector('.tiktok-overlay')).display === 'none' && c.previewStages[1].querySelector('.preview-fullscreen').disabled && [...c.previewStages[1].querySelectorAll('.preview-play, .preview-seek, .preview-mute, .preview-volume')].every((el) => el.disabled)",
                 ), state
                 evaluate(devtools, f"c.resultEl.classList.remove('{state}')")
             evaluate(devtools, CHECK.replace("VARIANT", '"portrait"', 1))
             screenshot(devtools, "inline.png")
+            # The suite embeds Clipper in a same-origin iframe. A real pointer
+            # click gives that child a user gesture, just as the fullscreen button
+            # does in daily use (creating a frame after a gesture does not).
+            evaluate(
+                devtools,
+                """(async () => {
+                  const frame = document.createElement("iframe");
+                  frame.src = location.href; frame.title = "Clip fixture";
+                  frame.style.cssText = "position:fixed;inset:0;width:100%;height:100%;z-index:99;border:0";
+                  const loaded = new Promise((resolve) => { frame.onload = resolve; });
+                  document.body.append(frame); await loaded;
+                  window.fixtureFrame = frame;
+                  const child = frame.contentWindow;
+                  child.mediaURLs = mediaURLs;
+                  await child.eval(CHILD_SETUP);
+                  await child.loadMedia(child.c.sourceVideoEl, mediaURLs.portrait);
+                  child.c.geoState = { width: 1080, height: 1920 };
+                  child.showHeaderPreview(child.c, child.headerPNG);
+                  child.setTikTokPreview(true);
+                })()""".replace("CHILD_SETUP", json.dumps(SETUP)),
+            )
+            point = evaluate(
+                devtools,
+                """(() => {
+                  const button = fixtureFrame.contentWindow.c.previewStages[0].querySelector('.preview-fullscreen');
+                  button.scrollIntoView({ block: "center" });
+                  const r = button.getBoundingClientRect(), f = fixtureFrame.getBoundingClientRect();
+                  return { x: f.x + r.x + r.width / 2, y: f.y + r.y + r.height / 2 };
+                })()""",
+            )
+            for kind in ("mousePressed", "mouseReleased"):
+                devtools.call(
+                    "Input.dispatchMouseEvent",
+                    {"type": kind, **point, "button": "left", "clickCount": 1},
+                )
+            for _ in range(20):
+                embedded = evaluate(
+                    devtools,
+                    "fixtureFrame.contentDocument.fullscreenElement === fixtureFrame.contentWindow.c.previewStages[0]",
+                )
+                if embedded:
+                    break
+                time.sleep(0.05)
+            assert embedded, "composed fullscreen works through the suite's iframe"
+            evaluate(
+                devtools,
+                "(async () => { await fixtureFrame.contentDocument.exitFullscreen(); fixtureFrame.remove(); })()",
+            )
             # Recreate the document while preserving this browser's localStorage.
             devtools.call("Page.reload")
             for _ in range(100):
