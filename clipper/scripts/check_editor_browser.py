@@ -46,6 +46,7 @@ class FixtureHandler(BaseHTTPRequestHandler):
             "/slate.css": ("text/css", ROOT.parent / "ricesuite/shell/slate.css"),
             "/style.css": ("text/css", ROOT / "web/style.css"),
             "/app.js": ("text/javascript", ROOT / "web/app.js"),
+            "/tiktok-preview.svg": ("image/svg+xml", ROOT / "web/tiktok-preview.svg"),
             "/slate-logo.png": ("image/png", ROOT / "web/slate-logo.png"),
         }
         if self.path in assets:
@@ -249,7 +250,10 @@ CHECKS = r"""
     const progressBar = document.getElementById("operation-progress");
     const progressSpace = progressBar && progressBar.getClientRects().length
       ? rect(progressBar).height + parseFloat(css(progressBar).marginBottom) : 0;
-    check(download.bottom <= innerHeight + progressSpace, "download retains its original viewport budget plus progress bar");
+    const preferences = document.querySelector(".preview-preferences");
+    const preferenceSpace = rect(preferences).height + parseFloat(css(preferences).marginBottom);
+    const transportSpace = rect(clip.el.querySelector(".rendered-preview .preview-tools")).height;
+    check(download.bottom <= innerHeight + progressSpace + preferenceSpace + transportSpace, "download retains its viewport budget plus progress and preview controls");
     clip.downloadEl.scrollIntoView({ block: "center" });
     const scrolledDownload = rect(clip.downloadEl);
     check(scrolledDownload.y >= 0 && scrolledDownload.bottom <= innerHeight, "download reachable by scrolling");
@@ -279,7 +283,7 @@ CHECKS = r"""
     check(css(clip.el.querySelector(selector)).fontFamily === "Arial, sans-serif", "Arial operational " + selector);
   }
   check(css(document.getElementById("capbadge")).fontFamily === "Arial, sans-serif", "Arial tool status");
-  check(css(clip.el.querySelector(".sample-mono")).fontFamily.includes("monospace"), "Mono sample font");
+  check(css(clip.el.querySelector(".sample-montserrat")).fontFamily.includes("Caption Montserrat"), "Montserrat sample font");
   const warning = clip.geometryEl.querySelector(".geometry-warning");
   check(!warning.hidden && warning.textContent === "face near header", "header warning remains visible and labeled");
   check(css(warning).backgroundColor === "rgb(216, 65, 59)" && css(warning).color === "rgb(255, 255, 255)", "header warning keeps solid red treatment");

@@ -1,0 +1,162 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { context, run, element } = require('../../tests/js/harness.js');
+const source = fs.readFileSync(path.join(__dirname, '../web/app.js'), 'utf8');
+
+function harness({ saved = null, brokenStorage = false } = {}) {
+  const storage = new Map(saved === null ? [] : [['riceclipper.tiktok-preview.v1', saved]]);
+  const requests = [];
+  const { ctx } = context(async (url) => { requests.push(url); return { ok: true, json: async () => ({}) }; }, {
+    setTimeout() {}, localStorage: {
+      getItem(k) { if (brokenStorage) throw Error('blocked'); return storage.get(k) ?? null; },
+      setItem(k, v) { if (brokenStorage) throw Error('blocked'); storage.set(k, v); },
+    },
+  });
+  const evaluate = run(source, ctx);
+  return { ctx, evaluate, storage, requests };
+}
+function clipFixture() {
+  const image = element();
+  let src = null;
+  image.getAttribute = () => src;
+  Object.defineProperty(image, 'src', { set(v) { src = v; }, get() { return src; } });
+  image.removeAttribute = () => { src = null; };
+  const overlays = [element(), element()];
+  const clip = { el: { querySelectorAll: () => overlays }, headerPreviewEl: image,
+    headerPreviewWindowEl: element(), sourceVideoEl: element(), headerPreviewBaseEl: element(),
+    previewStatusEl: element(), resultEl: element(), ord: 1 };
+  clip.sourceVideoEl.videoWidth = 1080; clip.sourceVideoEl.videoHeight = 1920;
+  clip.sourceVideoEl.clientWidth = 270; clip.sourceVideoEl.clientHeight = 480;
+  clip.sourceVideoEl.clientLeft = clip.sourceVideoEl.clientTop = 0;
+  clip.sourceVideoEl.offsetLeft = clip.sourceVideoEl.offsetTop = 0;
+  clip.geoState = { width: 1080, height: 1920 };
+  return { clip, overlays };
+}
+function stageFixture(source = true) {
+  const button = element();
+  const stage = element();
+  const listeners = {};
+  stage.classList.contains = (name) => source && name === 'source-preview';
+  stage.querySelector = (selector) => selector === ".preview-fullscreen" ? button : null;
+  stage.addEventListener = (name, fn) => { listeners[name] = fn; };
+  button.addEventListener = (name, fn) => { listeners[name] = fn; };
+  return { stage, button, listeners };
+}
+
+test('overlay is initially off; a remembered true is restored, malformed values remain off', () => {
+  for (const [saved, expected] of [[null, false], ['true', true], ['false', false], ['broken', false]]) {
+    assert.equal(harness({ saved }).evaluate('tiktokPreviewEnabled'), expected);
+  }
+});
+test('shared toggle updates every preview and new cards without making network requests', () => {
+  const h = harness();
+  const fixtures = [clipFixture(), clipFixture()];
+  h.ctx.items = fixtures.map((f) => f.clip);
+  h.evaluate('clips.push(...items); setTikTokPreview(true)');
+  for (const f of fixtures) {
+    assert.ok(f.overlays.every((el) => !el.hidden));
+    assert.equal(f.clip.headerPreviewWindowEl.hidden, false);
+  }
+  assert.equal(h.storage.get('riceclipper.tiktok-preview.v1'), 'true');
+  const fresh = clipFixture(); h.ctx.fresh = fresh.clip;
+  h.evaluate('syncTikTokPreview(fresh)');
+  assert.ok(fresh.overlays.every((el) => !el.hidden));
+  const before = h.requests.length;
+  h.evaluate('setTikTokPreview(false)');
+  assert.equal(h.requests.length, before);
+  assert.ok(fixtures.every((f) => f.overlays.every((el) => el.hidden)));
+  assert.ok(fixtures.every((f) => f.clip.headerPreviewWindowEl.hidden));
+});
+test('storage failure keeps a functional in-session toggle', () => {
+  const h = harness({ brokenStorage: true });
+  h.evaluate('setTikTokPreview(true)'); assert.equal(h.evaluate('tiktokPreviewEnabled'), true);
+  h.evaluate('setTikTokPreview(false)'); assert.equal(h.evaluate('tiktokPreviewEnabled'), false);
+});
+test('empty or failed header leaves an enabled overlay visible; disabling overlay preserves a header', () => {
+  const h = harness(); const { clip } = clipFixture(); h.ctx.clip = clip;
+  h.evaluate('setTikTokPreview(true); showHeaderPreview(clip, null)');
+  assert.equal(clip.headerPreviewWindowEl.hidden, false);
+  assert.equal(clip.headerPreviewEl.hidden, true);
+  h.evaluate('showHeaderPreview(clip, "data:image/png;base64,header"); setTikTokPreview(false); syncTikTokPreview(clip)');
+  assert.equal(clip.headerPreviewWindowEl.hidden, false);
+  assert.equal(clip.headerPreviewEl.hidden, false);
+  h.evaluate('showHeaderPreview(clip, null)');
+  assert.equal(clip.headerPreviewWindowEl.hidden, true);
+});
+test('fullscreen requests the composed ancestor and exits without changing playback', async () => {
+  const h = harness(); const { clip } = clipFixture(); const { stage, button } = stageFixture();
+  clip.previewStages = [stage]; h.ctx.clip = clip; h.ctx.stage = stage;
+  let entered = 0, exited = 0;
+  stage.requestFullscreen = async () => { entered++; h.ctx.document.fullscreenElement = stage; };
+  h.ctx.document.exitFullscreen = async () => { exited++; h.ctx.document.fullscreenElement = null; };
+  clip.sourceVideoEl.currentTime = 7.2; clip.sourceVideoEl.muted = false;
+  await h.evaluate('togglePreviewFullscreen(clip, stage)');
+  assert.equal(entered, 1); assert.equal(button.textContent, 'Exit fullscreen');
+  await h.evaluate('togglePreviewFullscreen(clip, stage)');
+  assert.equal(exited, 1); assert.equal(button.textContent, 'Fullscreen');
+  assert.equal(clip.sourceVideoEl.currentTime, 7.2); assert.equal(clip.sourceVideoEl.muted, false);
+});
+test('fullscreen rejection and unavailable API are handled; Escape updates the button and restores focus', async () => {
+  for (const reject of [false, true]) {
+    const h = harness(); const { clip } = clipFixture(); const f = stageFixture();
+    clip.el.querySelectorAll = () => [f.stage]; h.ctx.clip = clip; h.ctx.stage = f.stage;
+    if (reject) f.stage.requestFullscreen = async () => { throw Error('denied'); };
+    else f.stage.requestFullscreen = undefined;
+    h.evaluate('setupPreviewStages(clip)');
+    await h.evaluate('togglePreviewFullscreen(clip, stage)');
+    assert.match(clip.previewStatusEl.textContent, /Fullscreen unavailable/);
+    let focused = 0; f.button.focus = () => { focused++; };
+    h.ctx.document.fullscreenElement = f.stage; f.listeners.fullscreenchange();
+    assert.equal(f.button.textContent, 'Exit fullscreen');
+    h.ctx.document.fullscreenElement = null; f.listeners.fullscreenchange();
+    assert.equal(f.button.textContent, 'Fullscreen'); assert.equal(focused, 2);
+  }
+});
+test('empty and busy rendered previews cannot enter fullscreen, but can exit if already fullscreen', () => {
+  const h = harness(); const { clip } = clipFixture(); const f = stageFixture(false);
+  clip.previewStages = [f.stage]; h.ctx.clip = clip;
+  for (const state of ['is-empty', 'is-busy', 'is-stale', '']) {
+    clip.resultEl.classList.contains = (s) => s === state;
+    h.evaluate('syncPreviewFullscreen(clip)');
+    assert.equal(f.button.disabled, ['is-empty', 'is-busy'].includes(state));
+    h.ctx.document.fullscreenElement = f.stage;
+    h.evaluate('syncPreviewFullscreen(clip)'); assert.equal(f.button.disabled, false);
+    h.ctx.document.fullscreenElement = null;
+  }
+});
+
+test('exposed transport controls play, seek, mute and adjust volume on the same media element', async () => {
+  const h = harness(); const { clip } = clipFixture();
+  const media = { duration: 10, readyState: 4, paused: true, muted: true, volume: 1, currentTime: 2,
+    addEventListener() {}, async play() { this.paused = false; }, pause() { this.paused = true; } };
+  const controls = new Map(); const listeners = new Map();
+  for (const name of ['play', 'seek', 'mute', 'volume', 'time']) {
+    const el = element(); el.addEventListener = (event, fn) => listeners.set(`${name}:${event}`, fn);
+    controls.set(`.preview-${name}`, el);
+  }
+  const stage = { querySelector: (selector) => selector === 'video' ? media : controls.get(selector), classList: { contains: () => true } };
+  h.ctx.clip = clip; h.ctx.stage = stage;
+  h.evaluate('setupPreviewTransport(clip, stage)');
+  assert.equal(media.controls, false);
+  assert.equal(controls.get('.preview-play').textContent, 'Play');
+  await listeners.get('play:click')(); assert.equal(media.paused, false);
+  await listeners.get('play:click')(); assert.equal(media.paused, true);
+  controls.get('.preview-seek').value = '7.5'; listeners.get('seek:input')(); assert.equal(media.currentTime, 7.5);
+  listeners.get('mute:click')(); assert.equal(media.muted, false);
+  controls.get('.preview-volume').value = '0.4'; listeners.get('volume:input')(); assert.equal(media.volume, 0.4);
+  assert.equal(controls.get('.preview-time').textContent, '0:07 / 0:10');
+  media.inert = true; stage.syncTransport();
+  assert.ok(['play', 'seek', 'mute', 'volume'].every((name) => controls.get(`.preview-${name}`).disabled));
+  media.inert = false; media.duration = NaN; stage.syncTransport();
+  assert.equal(controls.get('.preview-seek').disabled, true);
+  media.duration = 10; media.play = async () => { throw Error('decode'); };
+  await listeners.get('play:click')(); assert.match(clip.previewStatusEl.textContent, /Playback unavailable/);
+});
+test('transport slider events are viewing actions, never review edits', () => {
+  const h = harness(); h.ctx.event = { target: { tagName: 'INPUT', classList: { contains: (name) => name === 'preview-control' } } };
+  assert.equal(h.evaluate('isReviewEdit(event)'), false);
+  h.ctx.event.target.classList.contains = () => false;
+  assert.equal(h.evaluate('isReviewEdit(event)'), true);
+});

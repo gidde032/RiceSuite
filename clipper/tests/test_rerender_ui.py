@@ -37,7 +37,8 @@ def test_slot_render_button_sits_under_download_in_the_rendered_column():
     column = [
         c[0] for p, c, _ in _elements() if c and p and p[-1] == "clip-result is-empty"
     ]
-    assert column == ["result-frame", "download-link", "render-one"]
+    assert column == ["rendered-preview", "download-link", "render-one"]
+    assert _find("result-frame")[0][-1] == "rendered-preview"
 
 
 def test_slot_render_button_shows_in_every_result_state_at_every_width():
