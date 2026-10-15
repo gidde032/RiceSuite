@@ -26,6 +26,13 @@ is blur-padded. Optional
 added music can replace or mix under the original audio, from a chosen start
 point in the track.
 
+Use **TikTok preview** above the cards to check placement against a sample
+TikTok interface on both source and rendered previews. The switch is remembered
+in this browser and affects previews only; downloaded clips contain no TikTok
+interface. The fullscreen icon in each preview expands the video/photo with its
+live header and enabled overlay. Press Escape or the icon again to leave.
+Source crop previews remain approximate; the rendered clip is the exact output.
+
 Full scope, deferred roadmap, and the decision log are in [`SPEC.md`](./SPEC.md).
 
 ## Boundary

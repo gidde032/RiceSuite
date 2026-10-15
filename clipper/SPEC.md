@@ -501,6 +501,36 @@ than treating the source as filling the output height. The warning
 follows its position and size, and a clip with no header gets no header
 warning. Plans saved before #65 keep their ingest warning.
 
+### 6.4 Composed fullscreen and TikTok previews (RiceSuite #88, #89)
+
+The source video or photo, its output-frame mock and live header PNG share a
+fullscreen ancestor. Each source and rendered preview has a compact fullscreen
+button in its upper-left corner. It expands the composed preview, retains
+playback controls and the current header, supports the browser's Escape action,
+and returns focus to its button on exit. Native video-only fullscreen is hidden
+so it cannot omit the composition. An unsupported or rejected fullscreen request
+leaves the inline preview usable and reports that fullscreen is unavailable.
+The existing source framing and centred subject-crop approximation (§6.3) also
+apply in fullscreen; the rendered preview remains the exact output.
+
+One **TikTok preview** switch above the clip cards controls all source and
+rendered previews. It starts off and remembers its setting in this browser;
+when storage is unavailable it still works for the current page. Newly added
+cards inherit the current setting. The static local 1080×1920 SVG approximates
+TikTok's top Following / For You tabs and search icon, right-side actions,
+sample username/caption/sound, and bottom navigation. It scales with the output
+9:16 frame, above media and header, including in fullscreen. It is decorative,
+does not receive pointer events or keyboard focus, and uses no platform requests
+or real account data. Its shapes are a composition guide, not a guarantee of
+TikTok's current layout on every device. It also works on photos and when no
+header exists or the header request failed. Empty and busy rendered frames hide
+it; an existing stale render can still show it.
+
+These are viewing preferences only. Toggling or entering fullscreen changes no
+render settings/fingerprint, render eligibility, batch/send snapshot, downloaded
+MP4, or handoff. No overlay is burned into the output. Inline controls and
+fullscreen use the same media element, preserving playback position and volume.
+
 ## 7. Deferred roadmap (ordered)
 
 - **Wave 1 — fast-follow (the "first improvements" cluster):**

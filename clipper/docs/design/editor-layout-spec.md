@@ -87,6 +87,21 @@ from the current frame or photo; for a subject-crop clip, the centred 9:16
 window with a dashed outline, as an approximation of the moving crop. The rendered-clip
 column and the layout above are unchanged.
 
+**Preview viewing controls (RiceSuite #88/#89, 2026-10-15).** One compact row
+above the cards holds the shared **TikTok preview** switch and "Sample interface
+· preview only" note. This row adds its measured height to the existing laptop
+scroll allowance; editor columns and frame heights retain their existing
+budgets. Each preview has a 36 px fullscreen icon button (44 px for coarse
+pointers) at its upper-left corner. Fullscreen expands the composed source
+video/photo, output-frame mock, header PNG and enabled overlay together; rendered
+fullscreen retains its 9:16 shape fitted to the screen. Keep native playback
+controls and visible keyboard focus. The local decorative TikTok overlay has
+top tabs/search, right-side actions, sample username/caption/sound and bottom
+navigation, scaled within the output frame. The switch is off initially and
+remembered in this browser; it applies to every card, including newly added
+ones, inline and fullscreen. It is never an edit or exported content. See
+[SPEC §6.4](../../SPEC.md#64-composed-fullscreen-and-tiktok-previews-ricesuite-88-89).
+
 The two text states share one transcript component and the same settings
 component. Changing Content changes only the lower-row layout and applicable
 lyric actions. The transcript remains editable word by word with timing locked.

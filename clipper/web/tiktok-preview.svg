@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920">
+  <title>Sample TikTok viewing interface</title>
+  <defs>
+    <linearGradient id="shade" x2="0" y2="1"><stop stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".45"/></linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity=".5"/></filter>
+  </defs>
+  <path fill="url(#shade)" d="M0 1480h1080v300H0z"/>
+  <g fill="#fff" font-family="Arial, sans-serif" filter="url(#shadow)">
+    <g font-size="43" font-weight="700" text-anchor="middle">
+      <text x="405" y="115" opacity=".7">Following</text><text x="660" y="115">For You</text>
+      <path d="M612 138h96" stroke="#fff" stroke-width="7"/>
+      <circle cx="978" cy="94" r="25" fill="none" stroke="#fff" stroke-width="7"/><path d="m997 113 22 22" stroke="#fff" stroke-width="7"/>
+    </g>
+    <g transform="translate(969 955)" text-anchor="middle">
+      <circle r="57" fill="#8b8b8b" stroke="#fff" stroke-width="5"/>
+      <circle cy="-10" r="17"/><path d="M-31 32a31 29 0 0 1 62 0z"/>
+      <circle cy="56" r="22" fill="#fe2c55"/><path d="M-11 56h22M0 45v22" stroke="#fff" stroke-width="5"/>
+      <path transform="translate(-43 135)" d="M43 76 7 41C-15 18 14-10 43 15 72-10 101 18 79 41z"/>
+      <text y="250" font-size="30" font-weight="700">12.3K</text>
+      <path d="M-43 330q0-35 43-35t43 35q0 35-43 35h-15l-23 18 3-29q-8-11-8-24"/>
+      <g fill="#555"><circle cx="-19" cy="330" r="4"/><circle cy="330" r="4"/><circle cx="19" cy="330" r="4"/></g>
+      <text y="420" font-size="30" font-weight="700">128</text>
+      <path d="M-29 466h58v75L0 523l-29 18z"/>
+      <text y="590" font-size="30" font-weight="700">456</text>
+      <path d="m10 642 40 34-40 34v-19q-34-5-52 24 1-53 52-57z"/>
+      <text y="730" font-size="30" font-weight="700">Share</text>
+      <circle cy="780" r="41" fill="#222"/><circle cy="780" r="24" fill="#777"/><circle cy="780" r="8" fill="#ddd"/>
+    </g>
+    <g font-size="36">
+      <text x="36" y="1560" font-weight="700">@your_username</text>
+      <text x="36" y="1622">Your caption goes here… #foryou</text>
+      <text x="36" y="1690">♪ Original sound — your_username</text>
+    </g>
+  </g>
+  <path fill="#111" d="M0 1780h1080v140H0z"/>
+  <g fill="#fff" stroke="#fff" stroke-width="6" stroke-linejoin="round" font-family="Arial, sans-serif" font-size="27" text-anchor="middle">
+    <path d="m85 1845 37-32 37 32v38h-27v-26h-20v26H85z" stroke="none"/>
+    <path d="M311 1850h46m-23-23v46" fill="none"/><circle cx="334" cy="1850" r="34" fill="none"/>
+    <rect x="497" y="1820" width="93" height="62" rx="14" fill="#25f4ee" stroke="none"/><rect x="510" y="1820" width="93" height="62" rx="14" fill="#fe2c55" stroke="none"/><rect x="504" y="1820" width="93" height="62" rx="14" stroke="none"/><path d="M533 1851h35m-17-17v34" stroke="#111"/>
+    <path d="M736 1820h65v62h-65zm0 39h18l6 10h17l6-10h18" fill="none"/>
+    <circle cx="969" cy="1835" r="19" fill="none"/><path d="M937 1880a32 26 0 0 1 64 0" fill="none"/>
+    <g stroke="none" font-size="25"><text x="122" y="1912">Home</text><text x="334" y="1912">Friends</text><text x="768" y="1912">Inbox</text><text x="969" y="1912">Profile</text></g>
+  </g>
+</svg>

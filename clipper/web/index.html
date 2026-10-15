@@ -55,6 +55,10 @@
 
     <!-- Step 2: batch review + render -->
     <section id="batch-panel" class="panel hidden">
+      <div class="preview-preferences">
+        <label class="switch-label"><input id="tiktok-preview-toggle" type="checkbox" role="switch" aria-describedby="tiktok-preview-help" /> TikTok preview</label>
+        <span id="tiktok-preview-help" class="hint">Sample interface · preview only</span>
+      </div>
       <div id="clips"></div>
       <div class="batch-actions">
         <button id="restart-btn" type="button">Start over</button>
@@ -78,11 +82,14 @@
 
       <div class="review-grid">
         <div class="preview-col">
-          <video class="source-video" controls playsinline muted></video>
-          <img class="source-photo" alt="" />
-          <!-- Header preview (RiceSuite #65): the server's exact header PNG,
-               scaled over the source's 9:16 frame. -->
-          <div class="header-preview-window" hidden><canvas class="header-preview-base" hidden></canvas><img class="header-preview" alt="" /></div>
+          <div class="source-preview" data-preview-stage>
+            <video class="source-video" controls controlslist="nofullscreen" playsinline muted></video>
+            <img class="source-photo" alt="" />
+            <!-- Header preview (RiceSuite #65): the server's exact header PNG,
+                 scaled over the source's 9:16 frame. -->
+            <div class="header-preview-window" hidden><canvas class="header-preview-base" hidden></canvas><img class="header-preview" alt="" hidden /><img class="tiktok-overlay" src="tiktok-preview.svg" alt="" aria-hidden="true" hidden /></div>
+            <div class="preview-tools"><button class="preview-fullscreen" type="button">Fullscreen</button></div>
+          </div>
           <p class="geo-note hint"></p>
           <p class="preview-status status" role="status"></p>
         </div>
@@ -314,16 +321,20 @@
         <!-- Rendered clip (RiceSuite #20): a 9:16 frame beside the controls,
              empty until a render lands. -->
         <div class="clip-result is-empty">
-          <div class="result-frame">
-            <video class="output-video" controls playsinline preload="metadata"></video>
-            <div class="result-empty">
-              <span class="result-guide guide-header">Header</span>
-              <span class="result-guide guide-caption">Captions</span>
-              <strong>Rendered clip appears here</strong>
-              <span>9:16 · 1080×1920</span>
+          <div class="rendered-preview" data-preview-stage>
+            <div class="result-frame">
+              <video class="output-video" controls controlslist="nofullscreen" playsinline preload="metadata"></video>
+              <img class="tiktok-overlay" src="tiktok-preview.svg" alt="" aria-hidden="true" hidden />
+              <div class="result-empty">
+                <span class="result-guide guide-header">Header</span>
+                <span class="result-guide guide-caption">Captions</span>
+                <strong>Rendered clip appears here</strong>
+                <span>9:16 · 1080×1920</span>
+              </div>
+              <div class="result-stale"><span>Edited since this render — Render all will re-render it</span></div>
+              <div class="result-busy" aria-hidden="true"><span>Rendering…</span></div>
             </div>
-            <div class="result-stale"><span>Edited since this render — Render all will re-render it</span></div>
-            <div class="result-busy" aria-hidden="true"><span>Rendering…</span></div>
+            <div class="preview-tools"><button class="preview-fullscreen" type="button" disabled>Fullscreen</button></div>
           </div>
           <a class="download-link primary" download>Download mp4</a>
           <!-- Renders this clip alone, changed or not (RiceSuite #86). -->
