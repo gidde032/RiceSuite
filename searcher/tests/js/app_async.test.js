@@ -22,7 +22,7 @@ class FakeNode {
     this.textContent = "";
     this.disabled = false;
     this.inert = false;
-    this.classList = { toggle() {} };
+    this.classList = { toggle() { } };
   }
 
   addEventListener(name, callback) {
@@ -334,7 +334,7 @@ test("network window failures preserve typed values and explain the failure", as
 test("offline-scored slices carry an offline badge; LLM-scored slices do not (#2)", async () => {
   const harness = await boot([
     slice("a", "alpha", { scorer_model: "heuristic-offline" }),
-    slice("b", "alpha", { scorer_model: "claude-haiku-4-5" }),
+    slice("b", "alpha", { scorer_model: "claude-haiku-5-5" }),
   ]);
   const offlineBadges = [];
   const collect = (node) => {

@@ -505,13 +505,15 @@ warning. Plans saved before #65 keep their ingest warning.
 
 The source video or photo, its output-frame mock and live header PNG share a
 fullscreen ancestor. Each source and rendered preview has a compact fullscreen
-button beside the transport controls below its picture. It expands the
+button at the upper-left of its picture. It expands the
 composed preview, retains playback controls and the current header, supports
 the browser's Escape action, and returns focus to its button on exit. Video
-previews use exposed Play/Pause, Seek, Mute/Unmute and Volume controls below
-the composed picture so the TikTok overlay cannot conceal them. Transport
-actions are never review edits. Native video controls are replaced only after
-these controls are wired; photos show only Fullscreen. An unsupported or
+previews retain the browser's built-in in-video playback, seek, mute and volume
+controls. Playback actions are never review edits. The decorative overlay does
+not intercept input; its caption area can visually overlap the browser controls
+while those controls are showing. The maintainer prefers the original in-video
+controls to a separate custom transport bar. Photos show only Fullscreen.
+An unsupported or
 rejected fullscreen request leaves the inline preview usable and reports that fullscreen is unavailable.
 The existing source framing and centred subject-crop approximation (§6.3) also
 apply in fullscreen; the rendered preview remains the exact output.
@@ -519,15 +521,21 @@ apply in fullscreen; the rendered preview remains the exact output.
 One **TikTok preview** switch above the clip cards controls all source and
 rendered previews. It starts off and remembers its setting in this browser;
 when storage is unavailable it still works for the current page. Newly added
-cards inherit the current setting. The static local 1080×1920 SVG approximates
-TikTok's top Following / For You tabs and search icon, right-side actions,
-sample username/caption/sound, and bottom navigation. It scales with the output
-9:16 frame, above media and header, including in fullscreen. It is decorative,
-does not receive pointer events or keyboard focus, and uses no platform requests
-or real account data. Its shapes are a composition guide, not a guarantee of
-TikTok's current layout on every device. It also works on photos and when no
-header exists or the header request failed. Empty and busy rendered frames hide
-it; an existing stale render can still show it.
+cards inherit the current setting. The static local 1080×1920 SVG retains
+Following / For You and search, with screenshot-extracted action silhouettes,
+a generic avatar/follow badge, and sample username/caption. Its in-video
+coordinates are calibrated to the maintainer's October 2026 feed reference
+(normalized to 946 px wide, with the 9:16 video starting at y=166). Bottom app navigation
+sits outside that video in the reference and is not painted over clip pixels.
+The SVG embeds local PNG artwork; it makes no platform requests and includes
+no real account identity, post content, notifications, or device status bar.
+Text uses the Helvetica system stack with normal-weight action labels.
+It scales with the output 9:16 frame, above media and header, including in
+fullscreen. It is decorative and receives no pointer events or keyboard focus.
+This reference-specific composition guide cannot guarantee every device's
+layout. It also works on photos and when no header exists or a header request
+failed. Empty and busy rendered frames hide it; an existing stale render can
+still show it.
 
 These are viewing preferences only. Toggling or entering fullscreen changes no
 render settings/fingerprint, render eligibility, batch/send snapshot, downloaded

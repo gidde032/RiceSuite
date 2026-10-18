@@ -252,8 +252,7 @@ CHECKS = r"""
       ? rect(progressBar).height + parseFloat(css(progressBar).marginBottom) : 0;
     const preferences = document.querySelector(".preview-preferences");
     const preferenceSpace = rect(preferences).height + parseFloat(css(preferences).marginBottom);
-    const transportSpace = rect(clip.el.querySelector(".rendered-preview .preview-tools")).height;
-    check(download.bottom <= innerHeight + progressSpace + preferenceSpace + transportSpace, "download retains its viewport budget plus progress and preview controls");
+    check(download.bottom <= innerHeight + progressSpace + preferenceSpace, "download retains its viewport budget plus progress and preview controls");
     clip.downloadEl.scrollIntoView({ block: "center" });
     const scrolledDownload = rect(clip.downloadEl);
     check(scrolledDownload.y >= 0 && scrolledDownload.bottom <= innerHeight, "download reachable by scrolling");
