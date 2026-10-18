@@ -261,7 +261,7 @@ original files or the Whisper model cache.
 | Startup log: *"ffmpeg/ffprobe not found on PATH"* | Install ffmpeg, or start the server from a shell where `which ffmpeg` works. |
 | `ImportError: cannot import name 'UTC' from 'datetime'` | Python is older than 3.11 and lacks `datetime.UTC`; RiceSuite's supported range starts at 3.12. Recreate `.venv` with Python 3.12–3.14. |
 | **✨ Generate** says `ANTHROPIC_API_KEY is not set` | The key isn't in the server's environment. Set it in the repo-root `.env` (or export it), then restart the server. Otherwise, type the header manually. |
-| `Unknown header style '…'` | `RICECLIPPER_HEADER_STYLE` names a file that isn't in `prompts/`. Only `generic-header` ships. |
+| `Unknown header style '…'` | `RICECLIPPER_HEADER_STYLE`, or the style picked in a card's prompt dropdown, names a file that isn't in `prompts/` (for example, renamed or deleted after the page loaded). Only `generic-header` ships. Fix the setting, or reload the page to refresh the dropdown. |
 | The card says *"Rendered with a basic header…"* naming a missing color-emoji or text font | The host has no font Pillow can use, so the header was burned as plain libass text (emoji may show as boxes). On Linux, install `fonts-noto-color-emoji` (and `fonts-liberation` for the text font). The Homebrew Noto build (COLRv1) renders blank, so macOS relies on Apple Color Emoji. |
 | Upload rejected: *"could not read video"* | ffprobe couldn't parse the file. Check it with `ffprobe <file>`. |
 | First transcription hangs or fails offline | The Whisper model is still downloading or can't be reached. Wait, or run once with network access. A smaller `RICECLIPPER_WHISPER_MODEL` downloads faster. |

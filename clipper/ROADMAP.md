@@ -64,8 +64,9 @@ at 30 Hz, and confirmed cuts or target reacquisition remain immediate.
 3. **Auto-header** — vision agent (Claude Haiku 5.5 by default): early-frame snapshot + transcript +
    optional user note → one-sentence hook ending in 1–2 emoji, with the manual
    header as fallback. **Implemented and merged**: `render/frame.py`,
-   `app/header_gen.py`, and `POST /api/jobs/{id}/header`, with per-clip
-   auto-fill + regenerate-with-guidance in the review UI. The emoji spike is
+   `app/header_gen.py`, and `POST /api/jobs/{id}/header`, with a per-clip
+   opt-in Generate (regenerate-with-guidance and a prompt style dropdown, RiceSuite #92)
+   in the review UI. The emoji spike is
    resolved via the PNG-overlay fallback (`docs/spikes/emoji-burn-in.md`).
    Prompt styles live in gitignored `prompts/*.json` (only the neutral
    `generic-header` seed is tracked); default via `RICECLIPPER_HEADER_STYLE`.

@@ -70,13 +70,17 @@ def test_header_options_list_prompt_styles_and_the_default(tmp_path, monkeypatch
     assert "fallback" not in response.text
 
 
-def test_header_options_default_prompt_without_env(monkeypatch):
+def test_header_options_default_prompt_without_env(tmp_path, monkeypatch):
+    # A copy of the tracked seed only, so a failure never prints local styles.
+    seed = ROOT / "prompts" / "generic-header.json"
+    shutil.copy(seed, tmp_path / seed.name)
+    monkeypatch.setattr(header_gen, "PROMPTS_DIR", tmp_path)
     monkeypatch.delenv("RICECLIPPER_HEADER_STYLE", raising=False)
     with TestClient(main.app, base_url="http://127.0.0.1:8000") as client:
         data = client.get("/api/header-options").json()
     assert data["default_prompt"] == "generic-header"
-    assert {"name": "generic-header", "display_name": "Generic / neutral"} in data[
-        "prompts"
+    assert data["prompts"] == [
+        {"name": "generic-header", "display_name": "Generic / neutral"}
     ]
 
 
@@ -158,20 +162,8 @@ def test_prompt_row_wraps_at_narrow_widths():
     assert select is not None and "max-width: 100%" in select.group(1)
 
 
-def test_choosing_a_prompt_style_saves_it_for_the_slot_and_sends_nothing():
-    listener = re.search(
-        r'clip\.headerPromptEl\.addEventListener\("change", \(\) => \{(.*?)\n  \}\);',
-        APP_JS,
-        re.S,
-    )
-    assert listener is not None
-    body = listener.group(1)
-    assert 'rememberSlotStyle(clip.ord, "headerPrompt"' in body
-    assert "fetch" not in body
-    assert "requestHeader" not in body and "regenerateHeader" not in body
-
-
-def test_prompt_style_is_not_a_rendered_setting():
-    # The choice only steers Generate, so it must not make a render stale.
-    settings = APP_JS.split("function renderSettings", 1)[1].split("\n}\n", 1)[0]
-    assert "headerPrompt" not in settings
+def test_every_card_wires_its_prompt_dropdown():
+    # The wiring's behaviour runs in header-prompt-ui.test.cjs; buildCard is
+    # too DOM-heavy for the fake there, so the one call is pinned here.
+    build = APP_JS.split("function buildCard(clip) {", 1)[1].split("\n}\n", 1)[0]
+    assert build.count("wireHeaderPrompt(clip);") == 1

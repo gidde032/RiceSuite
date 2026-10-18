@@ -43,7 +43,7 @@ function fakeClip(ord, { photo = false } = {}) {
     musicModeEl: { value: 'none' }, musicInputEl: { files: [] },
     musicVolumeEl: { value: '0.3' }, musicStartEl: { value: '0' },
     photoLengthEl: { value: '10' },
-    lyricsInputEl: { value: '' }, headerFeedbackEl: { value: '' },
+    lyricsInputEl: { value: '' }, headerFeedbackEl: { value: '' }, headerPromptEl: { value: 'generic-header' },
     outputVideoEl: { pause() {}, load() {}, removeAttribute() {}, inert: false, src: '' },
     downloadEl: { removeAttribute() {}, href: '', download: '' },
     resultEl: { classList: classes() },
@@ -488,4 +488,17 @@ test('preview preference leaves a rendered/sent batch current and renders nothin
   }
   await h.run('handleRenderAll()');
   assert.deepEqual(h.renders, []);
+});
+
+// RiceSuite #92: the header prompt style only steers ✨ Generate.
+test('changing the header prompt style keeps a rendered clip current and Send unheld', async () => {
+  const h = await renderedHarness(2);
+  const before = h.run('batchSnapshot()');
+  h.clip(1).headerPromptEl.value = 'another-style';
+  h.run('noteClipEdited(__clips[0])');
+  assert.equal(h.run('clipCurrent(__clips[0])'), true);
+  assert.equal(h.run('batchSnapshot()'), before);
+  assert.equal(h.clip(1).resultEl.classList.contains('is-stale'), false);
+  h.run('updateRenderAllButton()');
+  assert.equal(h.button().disabled, true);
 });

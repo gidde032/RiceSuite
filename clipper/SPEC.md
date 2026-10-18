@@ -375,7 +375,7 @@ A text box in the review gate. User types a 1–2 line on-screen hook. Present o
 for silent clips: the header is the text layer.
 
 ### 6.2 Auto-generated with manual fallback (Wave 1 — implemented)
-**Status: implemented.** After transcription the header auto-fills from an early
+**Status: implemented.** On a click of **Generate** the header is written from an early
 frame snapshot + transcript via an Anthropic vision-capable model (Claude
 Haiku 5.5 by default since RiceSuite [#75](https://github.com/gidde032/RiceSuite/issues/75))
 (`app/header_gen.py`, `render/frame.py`, `POST /api/jobs/{id}/header`); a per-clip
@@ -386,7 +386,8 @@ the fallback. Prompt styles live in gitignored `prompts/*.json` (only the neutra
 a dropdown under **Generate** picks the style per clip, as RicePoster's caption
 style picker does. It lists the styles `GET /api/header-options` reports (names and
 display names only), each slot remembers its choice in the browser, and a slot
-with no saved choice, or a saved style that is gone, uses the configured default.
+with no saved choice, or a saved style that is gone, uses the configured default
+(if that file is gone too, the neutral `generic-header`, then the first style).
 The choice only steers Generate. It sends nothing on its own and is not a
 rendered setting. The design is unchanged from the note below.
 

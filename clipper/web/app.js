@@ -331,7 +331,8 @@ async function loadHeaderOptions() {
     const data = await res.json();
     headerFontAvailability = Object.fromEntries((data.fonts || []).map((f) => [f.key, Boolean(f.available)]));
     clips.forEach(labelHeaderFonts);
-    headerPrompts = Array.isArray(data.prompts) ? data.prompts : [];
+    // A style without a name could not be told apart from "Default prompt".
+    headerPrompts = (Array.isArray(data.prompts) ? data.prompts : []).filter((p) => p && p.name);
     defaultHeaderPrompt = String(data.default_prompt || "");
     clips.forEach(fillHeaderPrompts);
   } catch {
@@ -340,12 +341,17 @@ async function loadHeaderOptions() {
   }
 }
 
+// The tracked neutral style: the fallback when the configured default is gone.
+const NEUTRAL_HEADER_PROMPT = "generic-header";
+
 // The prompt style a slot starts from (RiceSuite #92): its saved choice while
-// that style still exists, else the configured default, else the first style.
+// that style still exists, else the configured default, else the neutral
+// seed, else the first style.
 function knownHeaderPrompt(name) {
   const names = (headerPrompts || []).map((p) => p.name);
-  if (names.includes(name)) return name;
-  if (names.includes(defaultHeaderPrompt)) return defaultHeaderPrompt;
+  for (const candidate of [name, defaultHeaderPrompt, NEUTRAL_HEADER_PROMPT]) {
+    if (candidate && names.includes(candidate)) return candidate;
+  }
   return names[0] || "";
 }
 
@@ -362,6 +368,21 @@ function fillHeaderPrompts(clip) {
   });
   select.replaceChildren(...options);
   select.value = knownHeaderPrompt(slotDefault(clip.ord, "headerPrompt", ""));
+}
+
+function labelHeaderPrompt(clip) {
+  if (clip.headerPromptEl) clip.headerPromptEl.setAttribute("aria-label", `Header prompt style for clip ${clip.ord}`);
+}
+
+// A card's prompt dropdown: filled now if the list is known, and each choice
+// saved for the slot. The style only steers ✨ Generate: it is not a rendered
+// setting, and choosing one sends nothing.
+function wireHeaderPrompt(clip) {
+  labelHeaderPrompt(clip);
+  fillHeaderPrompts(clip);
+  clip.headerPromptEl.addEventListener("change", () => {
+    if (clip.headerPromptEl.value) rememberSlotStyle(clip.ord, "headerPrompt", clip.headerPromptEl.value);
+  });
 }
 
 function headerPreviewPayload(clip) {
@@ -1008,12 +1029,7 @@ function buildCard(clip) {
   // slot's default back so it carries to the next batch/session.
   setRadioValue(clip.captionStyleEl, slotCaptionStyle(clip.ord));
   setRadioValue(clip.headerStyleEl, slotDefault(clip.ord, "header", "plain"));
-  // The header prompt style (RiceSuite #92) only steers ✨ Generate: it is
-  // not a rendered setting, and choosing one sends nothing.
-  fillHeaderPrompts(clip);
-  clip.headerPromptEl.addEventListener("change", () => {
-    if (clip.headerPromptEl.value) rememberSlotStyle(clip.ord, "headerPrompt", clip.headerPromptEl.value);
-  });
+  wireHeaderPrompt(clip); // RiceSuite #92
   clip.captionStyleEl.addEventListener("change", () => {
     rememberSlotStyle(clip.ord, "caption", radioValue(clip.captionStyleEl));
   });
@@ -1767,6 +1783,7 @@ function compactClipOrdinals() {
     if (clip.emojiToggleEl) rememberSlotStyle(ord, "emoji", clip.emojiToggleEl.checked);
     if (clip.headerStyleEl) rememberSlotStyle(ord, "header", radioValue(clip.headerStyleEl));
     if (clip.headerPromptEl && clip.headerPromptEl.value) rememberSlotStyle(ord, "headerPrompt", clip.headerPromptEl.value);
+    labelHeaderPrompt(clip);
     if (clip.headerLook) rememberSlotStyle(ord, "headerLook", clip.headerLook);
   });
 }

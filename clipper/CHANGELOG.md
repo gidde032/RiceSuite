@@ -30,7 +30,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   [#92](https://github.com/gidde032/RiceSuite/issues/92)). A dropdown under
   **✨ Generate** lists every style in `prompts/*.json`, and Generate uses the
   one you pick. Each slot remembers its choice in this browser. A slot with no
-  saved choice, or whose saved style is gone, starts on `RICECLIPPER_HEADER_STYLE`.
+  saved choice, or whose saved style is gone, starts on `RICECLIPPER_HEADER_STYLE`
+  (if that file is missing too, on the neutral `generic-header`).
   Choosing a style sends nothing, and a rendered clip stays current.
   `GET /api/header-options` also lists the styles (names and display names
   only) and the default. The hint moves to the right of the dropdown and drops
