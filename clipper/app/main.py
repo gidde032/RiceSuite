@@ -553,7 +553,7 @@ def render_job(job_id: str, req: RenderRequest) -> JobState:
 
 @app.get("/api/header-options")
 def header_options() -> dict:
-    """The header presets and curated fonts the editor's controls offer."""
+    """The header presets, curated fonts, and prompt styles the editor offers."""
     return {
         "presets": {name: header_preset(name) for name in HEADER_STYLE_NAMES},
         "fonts": [
@@ -565,6 +565,13 @@ def header_options() -> dict:
             for key, choice in text_image.FONT_CHOICES.items()
         ],
         "max_chars": HEADER_MAX_CHARS,
+        # The prompt styles ✨ Generate can use (RiceSuite #92). Names and
+        # display names only: the prompt text stays on the server.
+        "prompts": [
+            {"name": s.name, "display_name": s.display_name}
+            for s in header_gen.load_styles().values()
+        ],
+        "default_prompt": header_gen.default_style(),
     }
 
 

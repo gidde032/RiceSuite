@@ -382,7 +382,13 @@ Haiku 5.5 by default since RiceSuite [#75](https://github.com/gidde032/RiceSuite
 **Generate** button regenerates with optional guidance, and manual entry stays
 the fallback. Prompt styles live in gitignored `prompts/*.json` (only the neutral
 `generic-header` seed is tracked); the default is selected by
-`RICECLIPPER_HEADER_STYLE`. The design is unchanged from the note below.
+`RICECLIPPER_HEADER_STYLE`. Since RiceSuite [#92](https://github.com/gidde032/RiceSuite/issues/92)
+a dropdown under **Generate** picks the style per clip, as RicePoster's caption
+style picker does. It lists the styles `GET /api/header-options` reports (names and
+display names only), each slot remembers its choice in the browser, and a slot
+with no saved choice, or a saved style that is gone, uses the configured default.
+The choice only steers Generate. It sends nothing on its own and is not a
+rendered setting. The design is unchanged from the note below.
 
 A **new, distinct** generator modeled on RicePoster's caption-writer *pattern*
 but a separate artifact (RicePoster writes the post-caption *field* text;

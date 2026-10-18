@@ -137,7 +137,7 @@ locally and the header field is manual-only. The variables are documented in
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | *(unset)* | Enables **✨ Generate** for the header and **✨ Suggest emoji** for caption emoji. Without it, either button returns an error; you type the header and pick emoji by hand. |
-| `RICECLIPPER_HEADER_STYLE` | `generic-header` | Header prompt style; must match a file in `prompts/`. |
+| `RICECLIPPER_HEADER_STYLE` | `generic-header` | Default header prompt style; must match a file in `prompts/`. Each clip card's prompt dropdown can pick another style for ✨ Generate. |
 | `RICECLIPPER_HEADER_MODEL` | `claude-haiku-5-5` | Anthropic model for header generation and the caption emoji picker (one setting for both). |
 | `RICECLIPPER_WHISPER_MODEL` | `small` | `tiny` / `base` / `small` / `medium` / `large-v3`. Smaller is a faster, smaller download. |
 | `RICECLIPPER_WHISPER_DEVICE` | `cpu` | `cpu` or `cuda`. |
@@ -230,8 +230,8 @@ Set `RICECLIPPER_WHISPER_MODEL=tiny` for a quick first try.
    presets are grouped by family. For the three lyric presets, paste lyrics.
    Then click **Align** to time them to the audio. Use **Restore transcript** to
    go back. Type a
-   header, or click **✨ Generate** if `ANTHROPIC_API_KEY` is set, and choose a
-   header style. For landscape clips, choose **auto**, **crop**, or
+   header, or click **✨ Generate** if `ANTHROPIC_API_KEY` is set (the dropdown
+   under it picks the prompt style), and choose a header style. For landscape clips, choose **auto**, **crop**, or
    **blur-pad**.
 3. **Music (optional).** Attach an audio file, then choose to *replace* the
    original audio or *mix* the music under it. Move **Start at** to choose the part
