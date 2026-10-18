@@ -474,3 +474,18 @@ test('the stale status line does not suggest Send renders', async () => {
   assert.equal(h.clip(1).statusEl.textContent,
     'Edited since its render — Render all will re-render it. Send waits until it is rendered again.');
 });
+
+test('preview preference leaves a rendered/sent batch current and renders nothing', async () => {
+  const h = await renderedHarness(2);
+  h.run('batchSent = true; sentSnapshot = batchSnapshot()');
+  const before = h.run('batchSnapshot()');
+  for (const on of [true, false, true]) {
+    h.run(`setTikTokPreview(${on}); updateRenderAllButton()`);
+    assert.equal(h.run('batchSnapshot()'), before);
+    assert.equal(h.run('workspaceFree()'), true);
+    assert.equal(h.run('clips.every(clipCurrent)'), true);
+    assert.equal(h.button().disabled, true);
+  }
+  await h.run('handleRenderAll()');
+  assert.deepEqual(h.renders, []);
+});

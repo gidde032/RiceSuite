@@ -110,6 +110,122 @@ function rememberSlotStyle(ord, kind, value) {
   }
 }
 
+// --- composed previews (RiceSuite #88/#89) ----------------------------------
+const TIKTOK_PREVIEW_KEY = "riceclipper.tiktok-preview.v1";
+let tiktokPreviewEnabled = false;
+try { tiktokPreviewEnabled = localStorage.getItem(TIKTOK_PREVIEW_KEY) === "true"; }
+catch { /* optional preference storage */ }
+
+function syncTikTokPreview(clip) {
+  if (!clip.el) return;
+  clip.el.querySelectorAll(".tiktok-overlay").forEach((el) => { el.hidden = !tiktokPreviewEnabled; });
+  const win = clip.headerPreviewWindowEl;
+  if (win) {
+    win.hidden = !tiktokPreviewEnabled && !clip.headerPreviewEl?.getAttribute("src");
+    placeHeaderPreview(clip);
+  }
+}
+
+function setTikTokPreview(on) {
+  tiktokPreviewEnabled = Boolean(on);
+  try { localStorage.setItem(TIKTOK_PREVIEW_KEY, String(tiktokPreviewEnabled)); }
+  catch { /* the in-session preference still works */ }
+  clips.forEach(syncTikTokPreview);
+}
+
+function syncPreviewFullscreen(clip) {
+  if (!Array.isArray(clip.previewStages)) return;
+  for (const stage of clip.previewStages) {
+    const button = stage.querySelector(".preview-fullscreen");
+    const active = document.fullscreenElement === stage;
+    button.textContent = active ? "Exit fullscreen" : "Fullscreen";
+    button.title = button.textContent;
+    const kind = stage.classList.contains("source-preview") ? "source" : "rendered";
+    button.setAttribute("aria-label", `${active ? "Exit fullscreen" : "Fullscreen"} ${kind} preview (clip ${clip.ord})`);
+    button.disabled = !active && kind === "rendered" &&
+      (clip.resultEl.classList.contains("is-empty") || clip.resultEl.classList.contains("is-busy"));
+    if (typeof stage.syncTransport === "function") stage.syncTransport();
+  }
+  placeHeaderPreview(clip);
+}
+
+async function togglePreviewFullscreen(clip, stage) {
+  const button = stage.querySelector(".preview-fullscreen");
+  if (button.disabled) return;
+  try {
+    if (document.fullscreenElement === stage) await document.exitFullscreen();
+    else if (typeof stage.requestFullscreen === "function") await stage.requestFullscreen();
+    else throw new Error("Fullscreen is not supported in this browser");
+  } catch {
+    clip.previewStatusEl.textContent = "Fullscreen unavailable. You can continue using the inline preview.";
+  }
+  syncPreviewFullscreen(clip);
+}
+
+// Keep transport outside the composed picture: a decorative overlay over a
+// native player's controls would hide those controls despite pointer-events.
+function setupPreviewTransport(clip, stage) {
+  const media = stage.querySelector("video");
+  if (!media) return;
+  const play = stage.querySelector(".preview-play");
+  const seek = stage.querySelector(".preview-seek");
+  const mute = stage.querySelector(".preview-mute");
+  const volume = stage.querySelector(".preview-volume");
+  const time = stage.querySelector(".preview-time");
+  const kind = stage.classList.contains("source-preview") ? "source" : "rendered";
+  const label = (action) => `${action} ${kind} preview (clip ${clip.ord})`;
+  const sync = () => {
+    const duration = Number.isFinite(media.duration) ? media.duration : 0;
+    const unavailable = kind === "rendered" &&
+      (clip.resultEl.classList.contains("is-empty") || clip.resultEl.classList.contains("is-busy"));
+    const blocked = unavailable || media.inert || !(duration > 0 && media.readyState >= 1);
+    for (const el of [play, seek, mute, volume]) el.disabled = blocked;
+    play.textContent = media.paused ? "Play" : "Pause";
+    play.setAttribute("aria-label", label(play.textContent));
+    seek.max = String(duration);
+    seek.value = String(media.currentTime || 0);
+    seek.setAttribute("aria-label", label("Seek"));
+    mute.textContent = media.muted ? "Unmute" : "Mute";
+    mute.setAttribute("aria-label", label(mute.textContent));
+    volume.value = String(media.volume);
+    volume.setAttribute("aria-label", label("Volume"));
+    time.textContent = `${formatClock(media.currentTime || 0)} / ${formatClock(duration)}`;
+    seek.setAttribute("aria-valuetext", time.textContent);
+  };
+  play.addEventListener("click", async () => {
+    if (media.paused) {
+      try { await media.play(); }
+      catch { clip.previewStatusEl.textContent = "Playback unavailable. Try seeking or reloading the clip."; }
+    } else media.pause();
+    sync();
+  });
+  seek.addEventListener("input", () => { media.currentTime = Number(seek.value); sync(); });
+  mute.addEventListener("click", () => { media.muted = !media.muted; sync(); });
+  volume.addEventListener("input", () => { media.volume = Number(volume.value); sync(); });
+  for (const event of ["loadedmetadata", "durationchange", "timeupdate", "volumechange", "play", "pause", "ended", "emptied"]) {
+    media.addEventListener(event, sync);
+  }
+  stage.syncTransport = sync;
+  media.controls = false;
+  sync();
+}
+
+function setupPreviewStages(clip) {
+  clip.previewStages = [...clip.el.querySelectorAll("[data-preview-stage]")];
+  for (const stage of clip.previewStages) {
+    const button = stage.querySelector(".preview-fullscreen");
+    button.addEventListener("click", () => togglePreviewFullscreen(clip, stage));
+    setupPreviewTransport(clip, stage);
+    // The browser also sends this for Escape / its own Exit fullscreen action.
+    stage.addEventListener("fullscreenchange", () => {
+      syncPreviewFullscreen(clip);
+      button.focus({ preventScroll: true });
+    });
+  }
+  syncPreviewFullscreen(clip);
+  syncTikTokPreview(clip);
+}
+
 // --- header look (RiceSuite #65) ---------------------------------------------
 // Every header control, keyed like the server's HeaderLook. The block between
 // the markers must equal render.ass.header_preset (a Clipper test compares
@@ -348,11 +464,14 @@ function showHeaderPreview(clip, image) {
   const win = clip.headerPreviewWindowEl;
   if (!win || !clip.headerPreviewEl) return;
   if (!image) {
-    win.hidden = true;
     clip.headerPreviewEl.removeAttribute("src");
+    clip.headerPreviewEl.hidden = true;
+    win.hidden = !tiktokPreviewEnabled;
+    placeHeaderPreview(clip);
     return;
   }
   clip.headerPreviewEl.src = image;
+  clip.headerPreviewEl.hidden = false;
   win.hidden = false;
   placeHeaderPreview(clip);
 }
@@ -671,6 +790,7 @@ function updateRenderAllButton() {
 // A slot's own render button renders that slot alone, changed or not. Like
 // Render all, it waits while renderBlocked() (RiceSuite #86).
 function syncRenderOne(c) {
+  syncPreviewFullscreen(c);
   if (!c.renderOneEl) return;
   c.renderOneEl.disabled = renderBlocked() || !clipReady(c);
   // Named by the render on show; it keeps its name while it renders.
@@ -803,7 +923,7 @@ function isReviewEdit(event) {
   const target = event && event.target;
   const tag = String((target && target.tagName) || "").toUpperCase();
   // Typing in the emoji paste box changes nothing until an emoji is added.
-  if (target && target.classList && target.classList.contains("emoji-paste")) return false;
+  if (target && target.classList && (target.classList.contains("emoji-paste") || target.classList.contains("preview-control"))) return false;
   return tag !== "VIDEO" && tag !== "AUDIO";
 }
 
@@ -977,6 +1097,7 @@ function buildCard(clip) {
     writeHeaderControls(clip);
     noteClipEdited(clip);
   });
+  setupPreviewStages(clip);
   clip.headerEl.addEventListener("input", () => scheduleHeaderPreview(clip));
   clip.sourceVideoEl.addEventListener("loadedmetadata", () => placeHeaderPreview(clip));
   // A blur-pad mock shows the frame the video is on.
@@ -2162,6 +2283,7 @@ async function renderClip(clip, operation = "Render all") {
   clip.outputVideoEl.inert = true;
   clip.downloadEl.removeAttribute("href");
   clip.resultEl.classList.add("is-busy");
+  syncPreviewFullscreen(clip);
   clip.lyricsAlignEl.disabled = true;
   clip.lyricsRestoreEl.disabled = true;
   setClipStatus(clip, "Rendering…");
@@ -2253,6 +2375,7 @@ async function showResult(clip) {
   clip.outputVideoEl.inert = false;
   clip.resultEl.classList.remove("is-empty", "is-busy");
   syncResultStale(clip);
+  syncPreviewFullscreen(clip);
 }
 
 // The rendered column keeps its 9:16 frame (Issue #20). With no render to show
@@ -2267,6 +2390,7 @@ function clearResult(clip) {
   clip.downloadEl.removeAttribute("href");
   clip.resultEl.classList.remove("is-busy", "is-stale");
   clip.resultEl.classList.add("is-empty");
+  syncPreviewFullscreen(clip);
 }
 
 // --- send to RicePoster (handoff) -------------------------------------------
@@ -2674,6 +2798,10 @@ $("clear-cache-btn").addEventListener("click", async () => {
     updateRenderAllButton();
   }
 });
+
+const tiktokPreviewToggle = $("tiktok-preview-toggle");
+tiktokPreviewToggle.checked = tiktokPreviewEnabled;
+tiktokPreviewToggle.addEventListener("change", () => setTikTokPreview(tiktokPreviewToggle.checked));
 
 checkHealth();
 loadHeaderOptions();

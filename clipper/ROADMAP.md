@@ -14,6 +14,14 @@ addition are also merged. The **Wave-1 auto-header** (vision model + transcript)
 is now implemented as well. The one remaining Wave-1 product addition
 (silence-only trimming) stays deferred behind an explicit phase change.
 
+## Preview viewing follow-up
+
+Composed fullscreen ([#88](https://github.com/gidde032/RiceSuite/issues/88))
+and a shared TikTok viewing overlay
+([#89](https://github.com/gidde032/RiceSuite/issues/89)) keep header and platform
+UI placement visible during review. The behavior contract is in SPEC §6.4;
+these viewing controls do not change rendering or handoff.
+
 ## Delivered visual polish — Slate
 
 Slate redesigns the existing local review UI around a dark carbon/grey editing
