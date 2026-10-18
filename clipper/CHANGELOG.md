@@ -9,15 +9,19 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### Preview controls
 
+- Calibrate the TikTok overlay to the supplied feed screenshot; replace drawn
+  action icons with extracted silhouettes, use normal-weight system labels,
+  and remove bottom navigation from the video pixels. Retain Following / For You.
+
 - A shared **TikTok preview** switch adds a sample viewing interface to source
   videos/photos and rendered clips, inline and fullscreen. It starts off and
   remembers its setting in this browser; exported clips are unchanged (#89).
 - Fullscreen expands the source composition with its live header, output-frame
   mock and enabled TikTok overlay. Rendered previews support the same viewing
   overlay in fullscreen; Escape returns to the inline player (#88).
-- Play/Pause, Seek, Mute/Unmute and Volume controls sit below each composed
-  video picture so the viewing overlay cannot hide them. Photos show only
-  Fullscreen; playback actions never mark clips edited.
+- Restore the original browser in-video playback controls at the maintainer's
+  request; remove the custom transport bars. The composition fullscreen button
+  sits at the upper-left. Playback actions never mark clips edited.
 
 
 ### Changed

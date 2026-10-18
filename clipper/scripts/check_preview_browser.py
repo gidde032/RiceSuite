@@ -85,33 +85,10 @@ CHECK = r"""
   };
   checkComposition();
   check(document.documentElement.scrollWidth <= innerWidth, "no document overflow");
-  window.checkTransport = async (stage, video) => {
-    const seek = stage.querySelector(".preview-seek");
-    const frame = stage.classList.contains("source-preview") ? c.headerPreviewWindowEl : stage.querySelector(".result-frame");
-    check(!video.controls, "native controls must not be concealed by overlay");
-    check(rect(seek).top >= rect(frame).bottom - 1, "seek is visibly below the overlay frame");
-    for (const el of stage.querySelectorAll(".preview-play, .preview-seek, .preview-mute, .preview-volume, .preview-fullscreen")) {
-      const r = rect(el);
-      check(r.width > 0 && r.height >= 36 && r.left >= rect(stage).left - 1 && r.right <= rect(stage).right + 1, `exposed, sized transport ${el.className}: ${JSON.stringify(r.toJSON())} in ${JSON.stringify(rect(stage).toJSON())}`);
-    }
-    const snapshot = batchSnapshot(), fingerprint = renderFingerprint(c);
-    video.pause(); seek.value = "0.75"; seek.dispatchEvent(new Event("input", { bubbles: true }));
-    check(Math.abs(video.currentTime - .75) < .05, "seek changes the media position");
-    stage.querySelector(".preview-play").click();
-    for (let attempt = 0; video.paused && attempt < 20; attempt++)
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    check(!video.paused, `Play starts playback: disabled=${stage.querySelector(".preview-play").disabled}, ready=${video.readyState}, status=${c.previewStatusEl.textContent}`);
-    stage.querySelector(".preview-play").click();
-    check(video.paused, "Pause stops playback");
-    const muted = video.muted; stage.querySelector(".preview-mute").click();
-    check(video.muted !== muted, "mute changes playback");
-    const volume = stage.querySelector(".preview-volume"); volume.value = ".4";
-    volume.dispatchEvent(new Event("input", { bubbles: true }));
-    check(video.volume === .4, "volume changes playback");
-    check(batchSnapshot() === snapshot && renderFingerprint(c) === fingerprint, "transport changes review/send state");
-  };
-  if (!c.isPhoto) await checkTransport(c.previewStages[0], c.sourceVideoEl);
-  await checkTransport(c.previewStages[1], c.outputVideoEl);
+  for (const video of [c.sourceVideoEl, c.outputVideoEl]) {
+    check(video.controls, "original browser controls are enabled");
+  }
+  check(!c.el.querySelector(".preview-seek"), "no custom transport bar");
   window.previewIssues = issues;
   return issues;
 })()
@@ -136,6 +113,44 @@ def evaluate(devtools, source, *, gesture=False):
 def screenshot(devtools, name):
     data = devtools.call("Page.captureScreenshot", {"format": "png"})
     (OUTPUT / name).write_bytes(base64.b64decode(data["data"]))
+
+
+def check_native_playback(devtools, media, screenshot_name):
+    evaluate(devtools, f"{media}.pause()")
+    point = evaluate(
+        devtools,
+        f"(() => {{ const r={media}.getBoundingClientRect(); return {{x:r.left+30,y:r.bottom-30}}; }})()",
+    )
+    devtools.call("Input.dispatchMouseEvent", {"type": "mouseMoved", **point})
+    time.sleep(0.15)
+    screenshot(devtools, screenshot_name)
+    before = evaluate(
+        devtools, "({fingerprint:renderFingerprint(c),snapshot:batchSnapshot()})"
+    )
+    for kind in ("mousePressed", "mouseReleased"):
+        devtools.call(
+            "Input.dispatchMouseEvent",
+            {"type": kind, **point, "button": "left", "clickCount": 1},
+        )
+    for _ in range(20):
+        if evaluate(devtools, f"!{media}.paused"):
+            break
+        time.sleep(0.05)
+    assert evaluate(devtools, f"!{media}.paused"), (
+        "native Play receives real pointer input with overlay enabled"
+    )
+    for kind in ("mousePressed", "mouseReleased"):
+        devtools.call(
+            "Input.dispatchMouseEvent",
+            {"type": kind, **point, "button": "left", "clickCount": 1},
+        )
+    assert evaluate(devtools, f"{media}.paused"), (
+        "native Pause receives real pointer input"
+    )
+    after = evaluate(
+        devtools, "({fingerprint:renderFingerprint(c),snapshot:batchSnapshot()})"
+    )
+    assert before == after, "native controls never mark a clip edited"
 
 
 def main():
@@ -238,15 +253,9 @@ def main():
                 )
                 for variant in ("portrait", "crop", "blur", "photo"):
                     issues = evaluate(
-                        devtools,
-                        CHECK.replace("VARIANT", json.dumps(variant), 1),
-                        gesture=True,
+                        devtools, CHECK.replace("VARIANT", json.dumps(variant), 1)
                     )
                     assert not issues, (width, height, variant, issues)
-                    assert evaluate(
-                        devtools,
-                        "Boolean(c.previewStages[1].querySelector('.preview-seek'))",
-                    ), "playback controls need an exposed layer below the overlay"
                     stage = "c.previewStages[0]"
                     evaluate(
                         devtools, f"togglePreviewFullscreen(c, {stage})", gesture=True
@@ -255,14 +264,12 @@ def main():
                         devtools, f"document.fullscreenElement === {stage}"
                     ), "source entered fullscreen"
                     time.sleep(0.05)
-                    issues = evaluate(
-                        devtools,
-                        "(async () => { checkComposition(); if (!c.isPhoto) await checkTransport(c.previewStages[0], c.sourceVideoEl); return previewIssues; })()",
-                        gesture=True,
-                    )
+                    issues = evaluate(devtools, "checkComposition(); previewIssues")
                     assert not issues, (width, height, variant, "fullscreen", issues)
                     if (width, variant) == (1440, "portrait"):
-                        screenshot(devtools, "source-fullscreen.png")
+                        check_native_playback(
+                            devtools, "c.sourceVideoEl", "source-fullscreen.png"
+                        )
                     # Browser-level Escape exits without the button handler.
                     devtools.call(
                         "Input.dispatchKeyEvent",
@@ -279,6 +286,13 @@ def main():
                             f"togglePreviewFullscreen(c, {stage})",
                             gesture=True,
                         )
+                    for _ in range(20):
+                        if evaluate(
+                            devtools,
+                            f"!document.fullscreenElement && document.activeElement === {stage}.querySelector('.preview-fullscreen')",
+                        ):
+                            break
+                        time.sleep(0.05)
                     assert evaluate(
                         devtools,
                         f"!document.fullscreenElement && document.activeElement === {stage}.querySelector('.preview-fullscreen')",
@@ -303,13 +317,10 @@ def main():
                     devtools,
                     "(() => { const r=c.outputVideoEl.getBoundingClientRect(); return Math.abs(r.width/r.height-9/16)<.001 && r.bottom<innerHeight && r.width>100; })()",
                 ), "fullscreen rendered fits 9:16"
-                assert not evaluate(
-                    devtools,
-                    "(async () => { await checkTransport(c.previewStages[1], c.outputVideoEl); return previewIssues; })()",
-                    gesture=True,
-                ), "rendered fullscreen controls"
                 if width == 1440:
-                    screenshot(devtools, "rendered-fullscreen.png")
+                    check_native_playback(
+                        devtools, "c.outputVideoEl", "rendered-fullscreen.png"
+                    )
                 evaluate(
                     devtools,
                     "togglePreviewFullscreen(c, c.previewStages[1])",
@@ -319,7 +330,7 @@ def main():
             for state in ("is-empty", "is-busy"):
                 assert evaluate(
                     devtools,
-                    f"c.resultEl.classList.add('{state}'); syncPreviewFullscreen(c); getComputedStyle(c.resultEl.querySelector('.tiktok-overlay')).display === 'none' && c.previewStages[1].querySelector('.preview-fullscreen').disabled && [...c.previewStages[1].querySelectorAll('.preview-play, .preview-seek, .preview-mute, .preview-volume')].every((el) => el.disabled)",
+                    f"c.resultEl.classList.add('{state}'); syncPreviewFullscreen(c); getComputedStyle(c.resultEl.querySelector('.tiktok-overlay')).display === 'none' && c.previewStages[1].querySelector('button').disabled",
                 ), state
                 evaluate(devtools, f"c.resultEl.classList.remove('{state}')")
             evaluate(devtools, CHECK.replace("VARIANT", '"portrait"', 1))

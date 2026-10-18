@@ -144,7 +144,6 @@ function syncPreviewFullscreen(clip) {
     button.setAttribute("aria-label", `${active ? "Exit fullscreen" : "Fullscreen"} ${kind} preview (clip ${clip.ord})`);
     button.disabled = !active && kind === "rendered" &&
       (clip.resultEl.classList.contains("is-empty") || clip.resultEl.classList.contains("is-busy"));
-    if (typeof stage.syncTransport === "function") stage.syncTransport();
   }
   placeHeaderPreview(clip);
 }
@@ -162,60 +161,11 @@ async function togglePreviewFullscreen(clip, stage) {
   syncPreviewFullscreen(clip);
 }
 
-// Keep transport outside the composed picture: a decorative overlay over a
-// native player's controls would hide those controls despite pointer-events.
-function setupPreviewTransport(clip, stage) {
-  const media = stage.querySelector("video");
-  if (!media) return;
-  const play = stage.querySelector(".preview-play");
-  const seek = stage.querySelector(".preview-seek");
-  const mute = stage.querySelector(".preview-mute");
-  const volume = stage.querySelector(".preview-volume");
-  const time = stage.querySelector(".preview-time");
-  const kind = stage.classList.contains("source-preview") ? "source" : "rendered";
-  const label = (action) => `${action} ${kind} preview (clip ${clip.ord})`;
-  const sync = () => {
-    const duration = Number.isFinite(media.duration) ? media.duration : 0;
-    const unavailable = kind === "rendered" &&
-      (clip.resultEl.classList.contains("is-empty") || clip.resultEl.classList.contains("is-busy"));
-    const blocked = unavailable || media.inert || !(duration > 0 && media.readyState >= 1);
-    for (const el of [play, seek, mute, volume]) el.disabled = blocked;
-    play.textContent = media.paused ? "Play" : "Pause";
-    play.setAttribute("aria-label", label(play.textContent));
-    seek.max = String(duration);
-    seek.value = String(media.currentTime || 0);
-    seek.setAttribute("aria-label", label("Seek"));
-    mute.textContent = media.muted ? "Unmute" : "Mute";
-    mute.setAttribute("aria-label", label(mute.textContent));
-    volume.value = String(media.volume);
-    volume.setAttribute("aria-label", label("Volume"));
-    time.textContent = `${formatClock(media.currentTime || 0)} / ${formatClock(duration)}`;
-    seek.setAttribute("aria-valuetext", time.textContent);
-  };
-  play.addEventListener("click", async () => {
-    if (media.paused) {
-      try { await media.play(); }
-      catch { clip.previewStatusEl.textContent = "Playback unavailable. Try seeking or reloading the clip."; }
-    } else media.pause();
-    sync();
-  });
-  seek.addEventListener("input", () => { media.currentTime = Number(seek.value); sync(); });
-  mute.addEventListener("click", () => { media.muted = !media.muted; sync(); });
-  volume.addEventListener("input", () => { media.volume = Number(volume.value); sync(); });
-  for (const event of ["loadedmetadata", "durationchange", "timeupdate", "volumechange", "play", "pause", "ended", "emptied"]) {
-    media.addEventListener(event, sync);
-  }
-  stage.syncTransport = sync;
-  media.controls = false;
-  sync();
-}
-
 function setupPreviewStages(clip) {
   clip.previewStages = [...clip.el.querySelectorAll("[data-preview-stage]")];
   for (const stage of clip.previewStages) {
     const button = stage.querySelector(".preview-fullscreen");
     button.addEventListener("click", () => togglePreviewFullscreen(clip, stage));
-    setupPreviewTransport(clip, stage);
     // The browser also sends this for Escape / its own Exit fullscreen action.
     stage.addEventListener("fullscreenchange", () => {
       syncPreviewFullscreen(clip);
@@ -923,7 +873,7 @@ function isReviewEdit(event) {
   const target = event && event.target;
   const tag = String((target && target.tagName) || "").toUpperCase();
   // Typing in the emoji paste box changes nothing until an emoji is added.
-  if (target && target.classList && (target.classList.contains("emoji-paste") || target.classList.contains("preview-control"))) return false;
+  if (target && target.classList && target.classList.contains("emoji-paste")) return false;
   return tag !== "VIDEO" && tag !== "AUDIO";
 }
 

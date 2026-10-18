@@ -20,7 +20,9 @@ Composed fullscreen ([#88](https://github.com/gidde032/RiceSuite/issues/88))
 and a shared TikTok viewing overlay
 ([#89](https://github.com/gidde032/RiceSuite/issues/89)) keep header and platform
 UI placement visible during review. The behavior contract is in SPEC §6.4;
-these viewing controls do not change rendering or handoff.
+these viewing controls do not change rendering or handoff. The overlay uses
+October 2026 reference coordinates and extracted action artwork; app navigation
+is outside the video, while Following / For You remains the preview header.
 
 ## Delivered visual polish — Slate
 
