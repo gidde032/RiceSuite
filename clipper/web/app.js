@@ -228,6 +228,10 @@ const HEADER_PREVIEW_DELAY_MS = 250;
 // current warning, so the face warning stays hidden.
 const HEADER_WARNINGS_UNCHECKED = Object.freeze({ crop_plan: null, music_plan: null });
 let headerFontAvailability = null;
+// Header prompt styles ✨ Generate can use, from api/header-options
+// (RiceSuite #92): [{name, display_name}], or null until the list loads.
+let headerPrompts = null;
+let defaultHeaderPrompt = "";
 
 function headerPreset(name) {
   return { ...(HEADER_PRESETS[name] || HEADER_PRESETS.plain) };
@@ -327,9 +331,58 @@ async function loadHeaderOptions() {
     const data = await res.json();
     headerFontAvailability = Object.fromEntries((data.fonts || []).map((f) => [f.key, Boolean(f.available)]));
     clips.forEach(labelHeaderFonts);
+    // A style without a name could not be told apart from "Default prompt".
+    headerPrompts = (Array.isArray(data.prompts) ? data.prompts : []).filter((p) => p && p.name);
+    defaultHeaderPrompt = String(data.default_prompt || "");
+    clips.forEach(fillHeaderPrompts);
   } catch {
-    /* the list still works; unavailable fonts just are not marked */
+    /* the list still works; unavailable fonts just are not marked, and
+       ✨ Generate uses the server's default prompt style */
   }
+}
+
+// The tracked neutral style: the fallback when the configured default is gone.
+const NEUTRAL_HEADER_PROMPT = "generic-header";
+
+// The prompt style a slot starts from (RiceSuite #92): its saved choice while
+// that style still exists, else the configured default, else the neutral
+// seed, else the first style.
+function knownHeaderPrompt(name) {
+  const names = (headerPrompts || []).map((p) => p.name);
+  for (const candidate of [name, defaultHeaderPrompt, NEUTRAL_HEADER_PROMPT]) {
+    if (candidate && names.includes(candidate)) return candidate;
+  }
+  return names[0] || "";
+}
+
+// Fill a card's prompt dropdown once the style list is known. Until then it
+// shows "Default prompt" (value ""), which lets the server pick.
+function fillHeaderPrompts(clip) {
+  const select = clip.headerPromptEl;
+  if (!headerPrompts || !select || headerPrompts.length === 0) return;
+  const options = headerPrompts.map((p) => {
+    const option = document.createElement("option");
+    option.value = p.name;
+    option.textContent = p.display_name || p.name;
+    return option;
+  });
+  select.replaceChildren(...options);
+  select.value = knownHeaderPrompt(slotDefault(clip.ord, "headerPrompt", ""));
+}
+
+function labelHeaderPrompt(clip) {
+  if (clip.headerPromptEl) clip.headerPromptEl.setAttribute("aria-label", `Header prompt style for clip ${clip.ord}`);
+}
+
+// A card's prompt dropdown: filled now if the list is known, and each choice
+// saved for the slot. The style only steers ✨ Generate: it is not a rendered
+// setting, and choosing one sends nothing.
+function wireHeaderPrompt(clip) {
+  labelHeaderPrompt(clip);
+  fillHeaderPrompts(clip);
+  clip.headerPromptEl.addEventListener("change", () => {
+    if (clip.headerPromptEl.value) rememberSlotStyle(clip.ord, "headerPrompt", clip.headerPromptEl.value);
+  });
 }
 
 function headerPreviewPayload(clip) {
@@ -900,6 +953,7 @@ function buildCard(clip) {
   clip.headerEl = node.querySelector(".header-input");
   clip.headerGenerateEl = node.querySelector(".header-generate");
   clip.headerFeedbackEl = node.querySelector(".header-feedback");
+  clip.headerPromptEl = node.querySelector(".header-prompt");
   clip.headerGenStatusEl = node.querySelector(".header-gen-status");
   clip.headerStyleEl = node.querySelector(".header-style");
   clip.headerPreviewWindowEl = node.querySelector(".header-preview-window");
@@ -956,7 +1010,6 @@ function buildCard(clip) {
   node.querySelector(".photo-length-label").htmlFor = clip.photoLengthEl.id;
   const headerHelp = node.querySelector("#header-help");
   headerHelp.id = `header-help-${clip.localId}`;
-  clip.headerHelpEl = headerHelp;
   clip.headerEl.id = `header-input-${clip.localId}`;
   clip.lyricsInputEl.id = `lyrics-input-${clip.localId}`;
   node.querySelector(".lyrics .field-label").htmlFor = clip.lyricsInputEl.id;
@@ -976,6 +1029,7 @@ function buildCard(clip) {
   // slot's default back so it carries to the next batch/session.
   setRadioValue(clip.captionStyleEl, slotCaptionStyle(clip.ord));
   setRadioValue(clip.headerStyleEl, slotDefault(clip.ord, "header", "plain"));
+  wireHeaderPrompt(clip); // RiceSuite #92
   clip.captionStyleEl.addEventListener("change", () => {
     rememberSlotStyle(clip.ord, "caption", radioValue(clip.captionStyleEl));
   });
@@ -1152,8 +1206,6 @@ function applyPhotoCard(clip) {
   clip.musicVolumeEl.value = "1";
   clip.volLabelEl.textContent = "1.00";
   clip.previewStatusEl.textContent = "";
-  clip.headerHelpEl.textContent =
-    "1–2 lines, up to 200 characters, burned into the frame. Edit freely.";
 }
 
 // The photo's clip length in whole seconds, or null when it is out of range.
@@ -1730,6 +1782,8 @@ function compactClipOrdinals() {
     if (clip.motionToggleEl) rememberSlotStyle(ord, "motion", clip.motionToggleEl.checked);
     if (clip.emojiToggleEl) rememberSlotStyle(ord, "emoji", clip.emojiToggleEl.checked);
     if (clip.headerStyleEl) rememberSlotStyle(ord, "header", radioValue(clip.headerStyleEl));
+    if (clip.headerPromptEl && clip.headerPromptEl.value) rememberSlotStyle(ord, "headerPrompt", clip.headerPromptEl.value);
+    labelHeaderPrompt(clip);
     if (clip.headerLook) rememberSlotStyle(ord, "headerLook", clip.headerLook);
   });
 }
@@ -1777,6 +1831,8 @@ async function requestHeader(clip, { feedback = "", avoid = "" } = {}) {
       transcript: collectWords(clip).map((w) => w.text).join(" ").trim(),
       feedback,
       avoid,
+      // "" until the style list loads: the server uses its default.
+      style: (clip.headerPromptEl && clip.headerPromptEl.value) || null,
     };
     const res = await fetch(`api/jobs/${clip.jobId}/header`, {
       method: "POST",

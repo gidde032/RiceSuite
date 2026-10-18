@@ -103,8 +103,13 @@
                 <button class="header-generate" type="button" title="Generate a header from the frame + transcript">✨ Generate</button>
                 <input class="header-feedback" type="text" placeholder="Optional guidance for regenerate…" aria-label="Header regeneration guidance" />
               </div>
+              <div class="header-gen-meta">
+                <select class="header-prompt" aria-label="Header prompt style" title="The prompt style ✨ Generate writes with">
+                  <option value="">Default prompt</option>
+                </select>
+                <p id="header-help" class="hint">1–2 lines, up to 200 characters, burned into the frame. Edit freely.</p>
+              </div>
               <p class="header-gen-status status" role="status"></p>
-              <p id="header-help" class="hint">1–2 lines, up to 200 characters, burned into the frame. Auto-filled after transcription; edit freely.</p>
             </div>
           </div>
 

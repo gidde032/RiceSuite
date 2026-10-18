@@ -39,6 +39,18 @@ VIEWPORTS = [
 ]
 
 
+HEADER_OPTIONS = {
+    "presets": {},
+    "fonts": [],
+    "max_chars": 200,
+    "prompts": [
+        {"name": "generic-header", "display_name": "Generic / neutral"},
+        {"name": "fixture-long", "display_name": "A much longer fixture style name"},
+    ],
+    "default_prompt": "generic-header",
+}
+
+
 class FixtureHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         assets = {
@@ -56,6 +68,9 @@ class FixtureHandler(BaseHTTPRequestHandler):
             kind, data = "application/json", b'{"ffmpeg":true,"libass":true}'
         elif self.path == "/api/media-info":
             kind, data = "application/json", b'{"job_dirs":0,"files":0,"total_bytes":0}'
+        elif self.path == "/api/header-options":
+            # Neutral prompt styles for the header prompt dropdown (#92).
+            kind, data = "application/json", json.dumps(HEADER_OPTIONS).encode()
         else:
             self.send_error(404)
             return
@@ -298,10 +313,23 @@ CHECKS = r"""
   check(css(warning).backgroundColor !== "rgb(216, 65, 59)", "caption warning keeps its existing treatment");
   const headerPlan = { ...captionPlan, warning: "header_zone" };
   applyGeometry(clip, { width: 1920, height: 1080, crop_plan: headerPlan, music_plan: headerPlan });
-  for (const selector of [".clip-remove", ".choice-card", ".header-generate", ".lyrics-align", ".lyrics-restore", ".switch-label", ".vol"]) {
+  for (const selector of [".clip-remove", ".choice-card", ".header-generate", ".header-prompt", ".lyrics-align", ".lyrics-restore", ".switch-label", ".vol"]) {
     const el = clip.el.querySelector(selector);
     if (el && el.getClientRects().length) check(rect(el).height >= (matchMedia("(pointer: coarse)").matches ? 44 : 36), "target size " + selector);
   }
+  // Header prompt style (RiceSuite #92): under Generate, left-aligned with it,
+  // the hint to its right when the row fits, else wrapped under it.
+  const promptSelect = clip.el.querySelector(".header-prompt");
+  const generate = rect(clip.el.querySelector(".header-generate"));
+  const prompt = rect(promptSelect);
+  const promptHint = rect(clip.el.querySelector(".header-gen-meta .hint"));
+  const settingsCol = rect(clip.el.querySelector(".edit-col"));
+  check(promptSelect.options.length === 2 && promptSelect.value === "generic-header", "header prompt lists styles and selects the default");
+  check(near(prompt.x, generate.x, 1) && prompt.y >= generate.bottom, "header prompt sits under Generate");
+  check(prompt.right <= settingsCol.right + 1 && promptHint.right <= settingsCol.right + 1, "header prompt row inside settings");
+  const beside = promptHint.x >= prompt.right && promptHint.y < prompt.bottom && promptHint.bottom > prompt.y;
+  check(beside || promptHint.y >= prompt.bottom - 1, "header hint beside or under the prompt");
+  if (innerWidth >= 1366) check(beside, "header hint beside the prompt at desktop width");
   // Header controls (RiceSuite #65): open, every control is a full-size
   // target inside the settings column, with no horizontal overflow.
   const adjust = clip.el.querySelector(".header-adjust");

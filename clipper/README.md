@@ -137,7 +137,7 @@ locally and the header field is manual-only. The variables are documented in
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | *(unset)* | Enables **✨ Generate** for the header and **✨ Suggest emoji** for caption emoji. Without it, either button returns an error; you type the header and pick emoji by hand. |
-| `RICECLIPPER_HEADER_STYLE` | `generic-header` | Header prompt style; must match a file in `prompts/`. |
+| `RICECLIPPER_HEADER_STYLE` | `generic-header` | Default header prompt style; must match a file in `prompts/`. Each clip card's prompt dropdown can pick another style for ✨ Generate. |
 | `RICECLIPPER_HEADER_MODEL` | `claude-haiku-5-5` | Anthropic model for header generation and the caption emoji picker (one setting for both). |
 | `RICECLIPPER_WHISPER_MODEL` | `small` | `tiny` / `base` / `small` / `medium` / `large-v3`. Smaller is a faster, smaller download. |
 | `RICECLIPPER_WHISPER_DEVICE` | `cpu` | `cpu` or `cuda`. |
@@ -230,8 +230,8 @@ Set `RICECLIPPER_WHISPER_MODEL=tiny` for a quick first try.
    presets are grouped by family. For the three lyric presets, paste lyrics.
    Then click **Align** to time them to the audio. Use **Restore transcript** to
    go back. Type a
-   header, or click **✨ Generate** if `ANTHROPIC_API_KEY` is set, and choose a
-   header style. For landscape clips, choose **auto**, **crop**, or
+   header, or click **✨ Generate** if `ANTHROPIC_API_KEY` is set (the dropdown
+   under it picks the prompt style), and choose a header style. For landscape clips, choose **auto**, **crop**, or
    **blur-pad**.
 3. **Music (optional).** Attach an audio file, then choose to *replace* the
    original audio or *mix* the music under it. Move **Start at** to choose the part
@@ -261,7 +261,7 @@ original files or the Whisper model cache.
 | Startup log: *"ffmpeg/ffprobe not found on PATH"* | Install ffmpeg, or start the server from a shell where `which ffmpeg` works. |
 | `ImportError: cannot import name 'UTC' from 'datetime'` | Python is older than 3.11 and lacks `datetime.UTC`; RiceSuite's supported range starts at 3.12. Recreate `.venv` with Python 3.12–3.14. |
 | **✨ Generate** says `ANTHROPIC_API_KEY is not set` | The key isn't in the server's environment. Set it in the repo-root `.env` (or export it), then restart the server. Otherwise, type the header manually. |
-| `Unknown header style '…'` | `RICECLIPPER_HEADER_STYLE` names a file that isn't in `prompts/`. Only `generic-header` ships. |
+| `Unknown header style '…'` | `RICECLIPPER_HEADER_STYLE`, or the style picked in a card's prompt dropdown, names a file that isn't in `prompts/` (for example, renamed or deleted after the page loaded). Only `generic-header` ships. Fix the setting, or reload the page to refresh the dropdown. |
 | The card says *"Rendered with a basic header…"* naming a missing color-emoji or text font | The host has no font Pillow can use, so the header was burned as plain libass text (emoji may show as boxes). On Linux, install `fonts-noto-color-emoji` (and `fonts-liberation` for the text font). The Homebrew Noto build (COLRv1) renders blank, so macOS relies on Apple Color Emoji. |
 | Upload rejected: *"could not read video"* | ffprobe couldn't parse the file. Check it with `ffprobe <file>`. |
 | First transcription hangs or fails offline | The Whisper model is still downloading or can't be reached. Wait, or run once with network access. A smaller `RICECLIPPER_WHISPER_MODEL` downloads faster. |

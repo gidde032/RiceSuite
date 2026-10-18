@@ -34,7 +34,8 @@ At viewport widths of **881 px and above**, the editor has two rows:
    it; portrait clips can retain side letterboxing. Condense Content,
    Geometry, Header style, Burn captions, Caption style, and optional Music
    controls into short, consistently spaced rows. Keep Header and Generate in
-   the settings area. The Music row ends in a **Start at** slider and a **Play
+   the settings area, with the header prompt style dropdown under Generate and
+   the header hint to its right (RiceSuite #92). The Music row ends in a **Start at** slider and a **Play
    segment** button (Issue #55). A **photo card** (Issue #54) shows a still
    preview and a **Length** row, and hides Content, Geometry, Burn captions,
    Caption style, the transcript, and the lyric pane.

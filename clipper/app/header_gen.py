@@ -93,7 +93,8 @@ def _build_user_prompt(
 
 def _build_content(user_prompt: str, thumbnail_b64: str = "") -> Any:
     """Message content. With a frame (base64 JPEG, no data-URL prefix) the image
-    goes first so the model grounds the header in what the clip shows."""
+    goes first, as context for the take: the header comments on the moment and
+    does not describe the frame (RiceSuite #84, #92)."""
     if not thumbnail_b64:
         return user_prompt
     return [
@@ -109,7 +110,8 @@ def _build_content(user_prompt: str, thumbnail_b64: str = "") -> Any:
             "type": "text",
             "text": (
                 f"{user_prompt} The attached image is an early frame from the "
-                "clip — ground the header in what it actually shows."
+                "clip. Use it to understand the moment; the header is a take on "
+                "it, not a description of it."
             ),
         },
     ]
