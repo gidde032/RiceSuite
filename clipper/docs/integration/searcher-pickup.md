@@ -96,7 +96,10 @@ work root until it is sent or discarded. `GET /api/workspace` returns an open
 batch in the pull's shape (`?batch_id=` names one; else the oldest), and
 `DELETE /api/workspace?batch_id=…` discards one (Start over, or removing every
 clip). A pull takes a `pull_key`: a retry with the key of a pull whose reply
-was lost gets the same batch back with `replayed: true`. The page keeps its
+was lost gets the same batch back with `replayed: true`. An unparseable or
+malformed pull reply retains that key for recovery. Restoring a remembered
+batch also checks the inbox read-only, so its waiting cue and freshness reflect
+that check. The page keeps its
 pulled batch in `sessionStorage` and restores it after a reload; an open
 batch the page does not hold (for example after a prior page was closed) is
 named on the page and opens there only on a **Pull** click.

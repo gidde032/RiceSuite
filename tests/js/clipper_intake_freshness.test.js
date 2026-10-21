@@ -107,7 +107,7 @@ test("overlapping return and timer checks perform only one pull/transcription an
   let release;
   const p = page({
     "GET api/searcher-inbox": () => new Promise(resolve => { release = resolve; }),
-    "POST api/pull-from-searcher": { clip_count: 0 },
+    "POST api/pull-from-searcher": { batch_id: null, clip_count: 0, jobs: [] },
   });
   const first = p.js("autoPullFromSearcher()"); await settle();
   const second = p.js("autoPullFromSearcher()"); await settle();
@@ -147,4 +147,66 @@ test("valid JSON with no inbox batch array is unavailable; an old success is exp
   assert.match(p.js("automaticIntakeStatus()"), /delayed/);
   valid = false; await p.js("autoPullFromSearcher()");
   assert.match(p.ids["intake-status"].textContent, /last checked.*unavailable/);
+});
+
+test("a pull with truncated JSON keeps its key and recovers committed custody without a manual click", async () => {
+  const keys = [];
+  const batch = { batch_id: "b1", clip_count: 1, jobs: [{ id: "j1", status: "ready", words: [] }] };
+  const p = page({}, async (url) => {
+    const pathname = String(url).split("?")[0];
+    if (pathname === "api/pull-from-searcher") {
+      keys.push(new URL(url, "http://fixture/").searchParams.get("pull_key"));
+      return { ok: true, json: async () => {
+        if (keys.length === 1) throw SyntaxError("truncated response");
+        return { ...batch, replayed: true };
+      } };
+    }
+    const body = pathname === "api/searcher-inbox" ? { batches: keys.length ? [] : [{ batch_id: "b1", clip_count: 1 }] }
+      : pathname === "api/workspace" ? (keys.length ? batch : {}) : { status: "ready", words: [] };
+    return { ok: true, json: async () => body };
+  });
+  await p.js("autoPullFromSearcher()");
+  assert.ok(p.js("readTab().pendingPullKey"), "unknown pull outcome must retain recovery key");
+  assert.match(p.ids["intake-status"].textContent, /not checked yet.*unavailable/);
+  await p.js("autoPullFromSearcher()"); await settle();
+  assert.equal(keys.length, 2);
+  assert.equal(keys[1], keys[0]);
+  assert.equal(p.js("clips[0].jobId"), "j1");
+  assert.match(p.ids["intake-status"].textContent, /last checked/);
+});
+
+test("malformed successful pull payloads do not advance freshness or discard their recovery key", async () => {
+  for (const malformed of [
+    {}, { clip_count: 1, batch_id: "b1", jobs: [] },
+    { clip_count: 0, batch_id: null, jobs: [{ id: "j1" }] },
+    { clip_count: 1, batch_id: "b1", jobs: [{}] },
+  ]) {
+    const p = page({
+      "GET api/searcher-inbox": { batches: [{ batch_id: "b1", clip_count: 1 }] },
+      "POST api/pull-from-searcher": malformed,
+    });
+    await p.js("autoPullFromSearcher()");
+    assert.match(p.ids["intake-status"].textContent, /not checked yet.*unavailable/);
+    assert.ok(p.js("readTab().pendingPullKey"));
+    assert.equal(p.js("clips.length"), 0);
+  }
+});
+
+test("restoring a remembered batch immediately checks the waiting inbox and never retranscribes held work", async () => {
+  let available = false;
+  const p = page({
+    "GET api/workspace": { batch_id: "b1", clip_count: 1, jobs: [{ id: "j1", status: "ready", words: [] }] },
+    "GET api/searcher-inbox": () => available ? [200, { batches: [{ batch_id: "b2", clip_count: 1 }] }] : [503, {}],
+    "POST api/jobs/j1/transcribe": { status: "ready", words: [] },
+  });
+  p.js('writeTab({ pulledBatchId: "b1" })');
+  await p.js("requestAutomaticIntakeCheck()"); await settle();
+  assert.equal(inboxCalls(p).length, 1, "the restoration must still check the inbox on return");
+  assert.match(p.ids["intake-status"].textContent, /not checked yet.*unavailable/);
+  available = true; p.advance(1000);
+  await p.js("requestAutomaticIntakeCheck()"); await settle();
+  assert.match(p.ids["searcher-waiting"].textContent, /b2/);
+  assert.match(p.ids["intake-status"].textContent, /last checked/);
+  assert.equal(p.calls.filter(c => c.path === "api/jobs/j1/transcribe").length, 1);
+  assert.equal(p.calls.some(c => c.path === "api/pull-from-searcher"), false);
 });

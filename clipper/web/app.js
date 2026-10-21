@@ -1975,12 +1975,22 @@ async function pullNext({ automatic }) {
     const res = await fetch(`api/pull-from-searcher?pull_key=${encodeURIComponent(key)}&observation_id=${encodeURIComponent(observation)}`, {
       method: "POST",
     });
-    writeTab({ pendingPullKey: "" }); // answered: nothing left to retry
     const data = await res.json();
     if (!res.ok) {
-      failed(data.detail || "pull failed");
+      writeTab({ pendingPullKey: "" }); // a definitive failure can be retried anew
+      failed(data?.detail || "pull failed");
       return false;
     }
+    // A truncated or malformed reply leaves custody unknown. Keep the key
+    // until a complete payload can establish exactly which batch arrived.
+    if (!data || !Number.isInteger(data.clip_count) || data.clip_count < 0
+        || !Array.isArray(data.jobs) || data.jobs.length !== data.clip_count
+        || (data.clip_count === 0 ? data.batch_id !== null
+          : typeof data.batch_id !== "string" || !data.batch_id
+            || data.jobs.some((job) => !job || typeof job.id !== "string" || !job.id))) {
+      throw new Error("Invalid pull reply");
+    }
+    writeTab({ pendingPullKey: "" });
     stopProgress();
     if (!data.clip_count) {
       localProgress("Pull from Searcher", "✓ Complete", 0, 0, "imported", "No batches waiting in the RiceSearcher handoff.");
@@ -2768,7 +2778,7 @@ async function checkAutomaticIntake() {
   if (clips.length === 0) {
     const own = readTab().pulledBatchId;
     try {
-      if (own && (await restoreOpenBatch(own, true))) return true;
+      if (own && (await restoreOpenBatch(own, true))) return noteWaitingBatches();
     } catch {
       workspaceChecked = false;
     }
