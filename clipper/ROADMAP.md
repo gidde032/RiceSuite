@@ -14,6 +14,14 @@ addition are also merged. The **Wave-1 auto-header** (vision model + transcript)
 is now implemented as well. The one remaining Wave-1 product addition
 (silence-only trimming) stays deferred behind an explicit phase change.
 
+## Delivered intake freshness — RiceSuite #16
+
+Page-driven Searcher intake stays active across all suite subviews and checks
+immediately on return to the RiceSuite browser tab. Clip and Home show the last
+successful automatic check and unavailable/delayed state. One suite browser tab
+is supported; a background intake service and multiple-tab coordination are
+outside this increment. Poster ingestion remains manual only.
+
 ## Preview viewing follow-up
 
 Composed fullscreen ([#88](https://github.com/gidde032/RiceSuite/issues/88))

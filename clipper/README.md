@@ -13,6 +13,17 @@ sections below cover this pillar alone.
 > [`SPEC.md`](./SPEC.md). Caption burn-in requires an ffmpeg with libass (see
 > setup); the stock Homebrew formula omits it.
 
+## Automatic intake freshness
+
+Keep one RiceSuite browser tab open. Clipper checks for Searcher batches every
+five seconds, including while Search, Post or Home is selected, and checks
+immediately when you return to the browser tab. Clip and Home show the last
+successful automatic intake check; Home's counts refresh time is separate.
+Unavailable or delayed checks retain their last success time. Browser throttling
+and laptop sleep can delay intake; handoff batches wait durably. Unsent work
+stays in Clip, and rendering, Send and Poster's Pull remain human actions.
+See [Searcher pickup](docs/integration/searcher-pickup.md).
+
 ## What it does (v1)
 
 Upload one or more clips → auto-transcribe with word-level timing → review and

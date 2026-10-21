@@ -51,8 +51,8 @@ function harness({ options = { prompts: PROMPTS, default_prompt: 'punchy', fonts
   const element = () => ({ textContent: '', disabled: false, classList: { add() {}, remove() {}, toggle() {}, contains: () => false }, addEventListener() {}, setAttribute() {} });
   const h = { posts: [], optionReads: 0, storage };
   const context = vm.createContext({
-    document: { getElementById: element, createElement: () => ({ value: '', textContent: '' }) },
-    localStorage: store, sessionStorage: store, window: { sessionStorage: store, confirm: () => true },
+    document: { addEventListener() {}, getElementById: element, createElement: () => ({ value: '', textContent: '' }) },
+    localStorage: store, sessionStorage: store, window: { addEventListener() {}, sessionStorage: store, confirm: () => true },
     setInterval() {}, setTimeout() { return 0; }, clearTimeout() {}, console,
     FormData: class { append() {} }, URL: { revokeObjectURL() {}, createObjectURL: () => 'blob:x' },
     fetch: async (url, init) => {

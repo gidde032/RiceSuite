@@ -1975,16 +1975,26 @@ async function pullNext({ automatic }) {
     const res = await fetch(`api/pull-from-searcher?pull_key=${encodeURIComponent(key)}&observation_id=${encodeURIComponent(observation)}`, {
       method: "POST",
     });
-    writeTab({ pendingPullKey: "" }); // answered: nothing left to retry
     const data = await res.json();
     if (!res.ok) {
-      failed(data.detail || "pull failed");
-      return;
+      writeTab({ pendingPullKey: "" }); // a definitive failure can be retried anew
+      failed(data?.detail || "pull failed");
+      return false;
     }
+    // A truncated or malformed reply leaves custody unknown. Keep the key
+    // until a complete payload can establish exactly which batch arrived.
+    if (!data || !Number.isInteger(data.clip_count) || data.clip_count < 0
+        || !Array.isArray(data.jobs) || data.jobs.length !== data.clip_count
+        || (data.clip_count === 0 ? data.batch_id !== null
+          : typeof data.batch_id !== "string" || !data.batch_id
+            || data.jobs.some((job) => !job || typeof job.id !== "string" || !job.id))) {
+      throw new Error("Invalid pull reply");
+    }
+    writeTab({ pendingPullKey: "" });
     stopProgress();
     if (!data.clip_count) {
       localProgress("Pull from Searcher", "✓ Complete", 0, 0, "imported", "No batches waiting in the RiceSearcher handoff.");
-      return;
+      return true;
     }
     localProgress("Pull from Searcher", "✓ Complete", data.clip_count, data.clip_count, "imported", `Imported batch ${data.batch_id}.`);
     addPulledJobs(data.jobs || [], data.batch_id);
@@ -1993,6 +2003,7 @@ async function pullNext({ automatic }) {
     } else {
       $("pull-status").textContent = `Pulled ${data.clip_count} clip(s) from batch ${data.batch_id}.`;
     }
+    return true;
   } catch (err) {
     if (readTab().pendingPullKey) {
       // The reply was lost: the next poll retries with the same key.
@@ -2000,6 +2011,7 @@ async function pullNext({ automatic }) {
     } else {
       failed(err.message);
     }
+    return false;
   } finally {
     pullInFlight = false;
     updateRenderAllButton();
@@ -2638,12 +2650,12 @@ function nothingUnsent() {
 // Open a pulled batch that was not sent: ``batchId``'s (this tab's own, after
 // a reload), or else the oldest (only on a Pull click: it may be another
 // tab's, or a closed tab's).
-async function restoreOpenBatch(batchId = "") {
+async function restoreOpenBatch(batchId = "", automatic = false) {
   pullInFlight = true;
   try {
     const query = batchId ? `?batch_id=${encodeURIComponent(batchId)}` : "";
     const res = await fetch(`api/workspace${query}`);
-    if (!res.ok) return false;
+    if (!res.ok) throw new Error("Workspace unavailable");
     const data = await res.json();
     const pulled = data.jobs || [];
     if (!data.clip_count || !pulled.length) {
@@ -2661,7 +2673,8 @@ async function restoreOpenBatch(batchId = "") {
         ? `Batch ${data.batch_id} from RiceSearcher was restored; transcribing ${n} clip(s) again…`
         : `Opened batch ${data.batch_id}: it was pulled earlier and not sent. If another tab works on it, use that tab.`;
     return true;
-  } catch {
+  } catch (error) {
+    if (automatic) throw error;
     return false;
   } finally {
     pullInFlight = false;
@@ -2673,15 +2686,16 @@ async function restoreOpenBatch(batchId = "") {
 async function noteOpenBatch() {
   try {
     const res = await fetch("api/workspace");
-    if (!res.ok) return;
+    if (!res.ok) return false;
     const data = await res.json();
     if (data.batch_id && $("progress-state").textContent === "○ Idle") {
       setPullStatus(
         `Batch ${data.batch_id} was pulled and not sent (in another tab, or one that was closed). Press Pull to open it here.`,
       );
     }
+    return true;
   } catch {
-    // informational only
+    return false;
   }
 }
 
@@ -2720,12 +2734,13 @@ async function noteWaitingBatches() {
   let waiting;
   try {
     const res = await fetch("api/searcher-inbox");
-    if (!res.ok) return; // an unreadable inbox is not an empty one: keep the line
-    waiting = (await res.json()).batches || [];
+    if (!res.ok) throw new Error("Inbox unavailable");
+    waiting = (await res.json()).batches;
+    if (!Array.isArray(waiting)) throw new Error("Invalid inbox reply");
   } catch {
-    return;
+    return false; // keep the waiting cue after an unreadable inbox
   }
-  if (epoch !== waitingEpoch || read < waitingShown) return;
+  if (epoch !== waitingEpoch || read < waitingShown) return true;
   // The batch may have been sent or cleared while the inbox was read.
   if (pullInFlight || nothingUnsent()) {
     clearWaitingBatches();
@@ -2733,36 +2748,87 @@ async function noteWaitingBatches() {
   }
   waitingShown = read;
   showWaitingBatches(waiting);
+  return true;
 }
 
-async function autoPullFromSearcher() {
-  if (!workspaceFree()) {
-    await noteWaitingBatches();
-    return;
-  }
+// One check at a time also covers focus/visibility events racing the timer.
+let automaticCheck = null;
+let lastIntakeSuccess = null;
+let intakeUnavailable = false;
+let lastReturnCheck = -Infinity;
+
+function automaticIntakeStatus() {
+  const last = lastIntakeSuccess === null ? "not checked yet"
+    : `last checked ${new Date(lastIntakeSuccess).toLocaleString()}`;
+  const delayed = lastIntakeSuccess !== null && Date.now() - lastIntakeSuccess > AUTO_PULL_MS * 3;
+  return `Automatic intake: ${last}${intakeUnavailable ? " · unavailable" : delayed ? " · delayed" : ""}`;
+}
+
+function showIntakeStatus() {
+  $("intake-status").textContent = automaticIntakeStatus();
+}
+
+async function checkAutomaticIntake() {
+  if (!workspaceFree()) return noteWaitingBatches();
   clearWaitingBatches(); // nothing unsent: the next batch is pulled, not held
   if (readTab().pendingPullKey) {
-    await pullNext({ automatic: true }); // a lost reply: same key, same batch
-    return;
+    return pullNext({ automatic: true }); // a lost reply: same key, same batch
   }
+  let workspaceChecked = true;
   if (clips.length === 0) {
     const own = readTab().pulledBatchId;
-    if (own && (await restoreOpenBatch(own))) return;
-    await noteOpenBatch();
+    try {
+      if (own && (await restoreOpenBatch(own, true))) return noteWaitingBatches();
+    } catch {
+      workspaceChecked = false;
+    }
+    // The open-batch cue is informational: failure keeps intake moving, but
+    // cannot make the overall check claim complete success.
+    workspaceChecked = (await noteOpenBatch()) && workspaceChecked;
   }
   if (!workspaceFree() || Date.now() < autoPullPausedUntil) return;
-  let waiting = [];
-  try {
-    const res = await fetch("api/searcher-inbox");
-    if (!res.ok) return;
-    waiting = (await res.json()).batches || [];
-  } catch {
-    return;
-  }
-  if (!waiting.length || !workspaceFree()) return;
-  await pullNext({ automatic: true });
+  const res = await fetch("api/searcher-inbox");
+  if (!res.ok) throw new Error("Inbox unavailable");
+  const waiting = (await res.json()).batches;
+  if (!Array.isArray(waiting)) throw new Error("Invalid inbox reply");
+  if (!waiting.length || !workspaceFree()) return workspaceChecked;
+  return (await pullNext({ automatic: true })) && workspaceChecked;
 }
 
+function autoPullFromSearcher() {
+  if (automaticCheck) return automaticCheck;
+  showIntakeStatus();
+  automaticCheck = checkAutomaticIntake().then((success) => {
+    // Busy/backoff skips have not checked anything; retain the last outcome.
+    if (success === true) {
+      lastIntakeSuccess = Date.now();
+      intakeUnavailable = false;
+    } else if (success === false) intakeUnavailable = true;
+  }).catch(() => {
+    intakeUnavailable = true;
+  }).finally(() => {
+    automaticCheck = null;
+    showIntakeStatus();
+  });
+  return automaticCheck;
+}
+
+// The shell calls this even when the Clip subview is hidden. Focus and
+// visibility often arrive as separate events for the same browser-tab return.
+function requestAutomaticIntakeCheck() {
+  if (Date.now() - lastReturnCheck < 250) return automaticCheck || Promise.resolve();
+  lastReturnCheck = Date.now();
+  return autoPullFromSearcher();
+}
+
+function intakePageReturned() {
+  if (document.visibilityState === "visible") requestAutomaticIntakeCheck();
+}
+document.addEventListener("visibilitychange", intakePageReturned);
+document.addEventListener("resume", intakePageReturned);
+window.addEventListener("focus", intakePageReturned);
+window.addEventListener("pageshow", intakePageReturned);
+showIntakeStatus();
 setInterval(autoPullFromSearcher, AUTO_PULL_MS);
 
 // --- clear media cache ------------------------------------------------------

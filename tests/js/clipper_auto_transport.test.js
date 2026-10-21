@@ -772,7 +772,7 @@ test("#61: an inbox read overtaken by a send and the next pull does not name the
   });
   js(`clips.push(${sendable("j1", "done")})`);
   js("collectWords = () => []; radioValue = () => 'x';");
-  const slow = js("autoPullFromSearcher()"); // held: this inbox read is slow
+  const slow = js("noteWaitingBatches()"); // held: this inbox read is slow
   await settle();
   await js("sendBatch()");
   await js("autoPullFromSearcher()"); // the next tick: sent, so it pulls b2
@@ -784,16 +784,16 @@ test("#61: an inbox read overtaken by a send and the next pull does not name the
   assert.deepEqual(cue(byId), { hidden: true, text: "" }, "b2 is open here, not waiting");
 });
 
-test("#61: inbox replies slower than the timer still show the line", async () => {
+test("#61: overlapping waiting reads still show the line", async () => {
   const replies = [];
   const { js, byId } = bootWithButtons({
     "GET api/searcher-inbox": () => new Promise((resolve) => replies.push(resolve)),
   });
   js(`clips.push(${sendable("j1", "ready")})`); // held: not rendered
   js("collectWords = () => []; radioValue = () => 'x';");
-  const first = js("autoPullFromSearcher()");
+  const first = js("noteWaitingBatches()");
   await settle();
-  const second = js("autoPullFromSearcher()"); // the next tick starts before the reply
+  const second = js("noteWaitingBatches()"); // another waiting read starts before the reply
   await settle();
   replies[0]([200, { batches: [{ batch_id: "b2", clip_count: 1 }] }]);
   await first;
@@ -813,9 +813,9 @@ test("#61: an older reply never overwrites a newer one", async () => {
   });
   js(`clips.push(${sendable("j1", "ready")})`);
   js("collectWords = () => []; radioValue = () => 'x';");
-  const first = js("autoPullFromSearcher()");
+  const first = js("noteWaitingBatches()");
   await settle();
-  const second = js("autoPullFromSearcher()");
+  const second = js("noteWaitingBatches()");
   await settle();
   replies[1]([200, { batches: [{ batch_id: "b3", clip_count: 2 }] }]);
   await second;

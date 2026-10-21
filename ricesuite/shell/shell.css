@@ -46,6 +46,7 @@ h2 { margin: 0; font-size: 17px; font-weight: 620; letter-spacing: -0.01em; }
 .stage-table a:hover { color: var(--primary-text); }
 .batch-list, .schedule ul, .health ul { list-style: none; margin: 0; padding: 0; }
 .batch-list { font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.intake-freshness { margin: 6px 0 0; color: var(--muted-grey); font-size: 12px; }
 .empty, .unavailable { color: var(--muted-grey); }
 .side-panels { display: grid; align-content: start; gap: 18px; }
 .side-panels h2 { padding: 21px 22px 15px; }

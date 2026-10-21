@@ -15,8 +15,8 @@ function harness(saved = {}) {
     return elements.get(id);
   }
   const store = { getItem: (key) => storage.get(key) || null, setItem: (key, value) => storage.set(key, value), removeItem: (key) => storage.delete(key) };
-  const context = vm.createContext({ document: { getElementById: element },
-    sessionStorage: store, localStorage: store, window: { sessionStorage: store },
+  const context = vm.createContext({ document: { addEventListener() {}, getElementById: element },
+    sessionStorage: store, localStorage: store, window: { addEventListener() {}, sessionStorage: store },
     setInterval() {}, setTimeout(fn) { timers.set(++timer, fn); return timer; },
     clearTimeout(id) { timers.delete(id); }, console,
     fetch: async () => ({ ok: true, json: async () => ({ ffmpeg: true, libass: true }) }) });

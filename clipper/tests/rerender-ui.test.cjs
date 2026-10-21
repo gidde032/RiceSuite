@@ -67,8 +67,8 @@ function harness(count = 3, opts = {}) {
   const storage = new Map();
   const store = { getItem: (k) => (storage.has(k) ? storage.get(k) : null), setItem: (k, v) => storage.set(k, v), removeItem: (k) => storage.delete(k) };
   const h = { renders: [], uploads: [], fail: new Set(), hold: null, element };
-  const context = vm.createContext({ document: { getElementById: element }, localStorage: store,
-    sessionStorage: store, window: { sessionStorage: store, confirm: () => true }, setInterval() {},
+  const context = vm.createContext({ document: { addEventListener() {}, getElementById: element }, localStorage: store,
+    sessionStorage: store, window: { addEventListener() {}, sessionStorage: store, confirm: () => true }, setInterval() {},
     setTimeout() { return 0; }, clearTimeout() {}, console, FormData: class { append() {} },
     URL: { revokeObjectURL() {}, createObjectURL: () => 'blob:x' },
     fetch: async (url) => {

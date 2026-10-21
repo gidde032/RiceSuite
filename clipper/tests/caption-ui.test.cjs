@@ -10,8 +10,8 @@ function harness(saved = {}) {
   const storage = new Map(Object.entries(saved));
   const store = { getItem: (k) => (storage.has(k) ? storage.get(k) : null), setItem: (k, v) => storage.set(k, v), removeItem: (k) => storage.delete(k) };
   const element = () => ({ textContent: '', disabled: false, classList: { toggle() {}, add() {}, remove() {} }, addEventListener() {}, setAttribute() {} });
-  const context = vm.createContext({ document: { getElementById: element }, localStorage: store,
-    sessionStorage: store, window: { sessionStorage: store }, setInterval() {}, setTimeout() { return 0; },
+  const context = vm.createContext({ document: { addEventListener() {}, getElementById: element }, localStorage: store,
+    sessionStorage: store, window: { addEventListener() {}, sessionStorage: store }, setInterval() {}, setTimeout() { return 0; },
     clearTimeout() {}, console, fetch: async () => ({ ok: true, json: async () => ({}) }) });
   vm.runInContext(source, context);
   return { run: (code) => vm.runInContext(code, context), storage, context };
