@@ -5,8 +5,8 @@ const TABS = ["home", "search", "clip", "post"];
 const REFRESH_MS = 5000;
 
 // Every pillar page loads once, up front, and stays alive: batches move from
-// Search into Clip automatically only while the Clip page is open (ADR-001
-// Q12); Clip sends to Post's inbox and Post pulls only on a click; Post keeps
+// Search into Clip automatically while the suite browser tab is open (ADR-001
+// Q12); Clip sends and Post pulls only on a click; Post keeps
 // its inbox count current; and switching tabs must never reload a page
 // mid-task (e.g. Post during a run).
 function loadPillarPages() {
@@ -150,7 +150,31 @@ function updateHome(data) {
   setSchedule(scheduled);
 }
 
+// Same-origin iframe access keeps this ephemeral status tied to the actual
+// page-driven intake check, separately from Home's read-only counts refresh.
+function refreshIntakeStatus() {
+  const freshness = document.querySelector("[data-intake-freshness]");
+  try {
+    const clip = document.querySelector('[data-view="clip"] iframe').contentWindow;
+    freshness.textContent = clip.automaticIntakeStatus();
+  } catch {
+    freshness.textContent = "Automatic intake: not checked yet · unavailable";
+  }
+}
+
+async function suitePageReturned() {
+  if (document.visibilityState !== "visible") return;
+  try {
+    const clip = document.querySelector('[data-view="clip"] iframe').contentWindow;
+    await clip.requestAutomaticIntakeCheck();
+  } catch {
+    // A loading/reloading frame will start its own poll when ready.
+  }
+  refreshIntakeStatus();
+}
+
 async function refreshHome() {
+  refreshIntakeStatus();
   const freshness = document.querySelector("[data-freshness]");
   try {
     const response = await fetch("api/suite/home");
@@ -186,11 +210,17 @@ async function refreshStatus() {
   }
 }
 
+document.addEventListener("visibilitychange", suitePageReturned);
+document.addEventListener("resume", suitePageReturned);
+window.addEventListener("focus", suitePageReturned);
+window.addEventListener("pageshow", suitePageReturned);
 window.addEventListener("hashchange", () => showTab(location.hash.slice(1)));
 loadPillarPages();
 showTab(location.hash.slice(1));
 refreshStatus();
+refreshIntakeStatus();
 setInterval(() => {
+  refreshIntakeStatus();
   refreshStatus();
   if (document.querySelector('[data-view="home"]').classList.contains("active")) refreshHome();
 }, REFRESH_MS);

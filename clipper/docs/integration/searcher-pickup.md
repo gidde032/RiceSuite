@@ -59,7 +59,21 @@ carried for future use.
 
 ## Automatic pull, manual send (RiceSuite, ADR-001 Q12 as amended)
 
-The review page polls `GET /api/searcher-inbox` (read-only, no job lock).
+The review page polls `GET /api/searcher-inbox` every five seconds (read-only,
+no job lock), including while Search, Post or Home is selected in RiceSuite.
+Returning to the RiceSuite browser tab, or an observable wake/resume, checks
+immediately even when Clip is hidden. Overlapping triggers share one check.
+This supports one RiceSuite browser tab. Browser throttling and laptop sleep
+can delay intake; complete handoffs wait durably until the page can check again.
+There is no server-side intake service.
+
+Clip and Home show the last **successful automatic intake check**, separately
+from Home's counts refresh time. Before the first success they say "not checked
+yet". Failed HTTP, JSON or network requests retain the last success and mark
+intake unavailable; an old success is marked delayed. A successful inbox read
+while an unsent batch is held counts as a check and never changes that batch.
+A failed automatic pull keeps its own visible error and retry backoff.
+
 When a complete batch is waiting and nothing unsent would be displaced (the
 workspace is empty, or it holds a batch that was fully rendered and sent), the
 page performs the same pull as the button and starts transcribing. "Nothing
@@ -82,10 +96,10 @@ work root until it is sent or discarded. `GET /api/workspace` returns an open
 batch in the pull's shape (`?batch_id=` names one; else the oldest), and
 `DELETE /api/workspace?batch_id=…` discards one (Start over, or removing every
 clip). A pull takes a `pull_key`: a retry with the key of a pull whose reply
-was lost gets the same batch back with `replayed: true`. Each tab keeps its
-own pulled batch in `sessionStorage` and restores it after a reload; an open
-batch the tab does not hold is named on the page and opens there only on a
-**Pull** click.
+was lost gets the same batch back with `replayed: true`. The page keeps its
+pulled batch in `sessionStorage` and restores it after a reload; an open
+batch the page does not hold (for example after a prior page was closed) is
+named on the page and opens there only on a **Pull** click.
 
 For the RiceSuite home view, `GET /api/workspace-batches` returns a read-only
 `{"batches": [{"batch_id": "…", "clip_count": 1}]}` summary of **all** open

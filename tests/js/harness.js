@@ -82,6 +82,7 @@ function context(fetch, extra = {}) {
   };
   const ctx = {
     document,
+    addEventListener() {},
     window: {},
     fetch,
     console,

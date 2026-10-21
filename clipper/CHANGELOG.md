@@ -26,6 +26,12 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Automatic intake freshness** (RiceSuite #16): returning to the suite
+  browser tab checks Searcher immediately, including when Clip is hidden.
+  Overlapping triggers share one check. Clip and Home show the last successful
+  automatic check with unavailable/delayed state, separately from Home's counts
+  refresh. Unsent work, pull backoff and all human action gates are preserved.
+
 - **Choose the header prompt style per clip** (RiceSuite
   [#92](https://github.com/gidde032/RiceSuite/issues/92)). A dropdown under
   **✨ Generate** lists every style in `prompts/*.json`, and Generate uses the
