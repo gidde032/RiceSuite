@@ -41,6 +41,8 @@ function boot({ inbox, slots = {}, pullResult = true }) {
     throw new Error(`${name} must never run from the automatic path`);
   };
   const ctx = vm.createContext({
+    allowCurrentReplacement: () => true,
+    saveCurrentDrafts() {},
     Date,
     state: { accounts: [{ slot: "A" }, { slot: "B" }], slots },
     fetchWithTimeout: fetch,
@@ -166,6 +168,8 @@ function bootPull({ slots, confirmAnswer = true, onPull }) {
     "POST api/pull-from-clipper/batch_1/ack": { status: "applied" },
   });
   const ctx = vm.createContext({
+    allowCurrentReplacement: () => true,
+    saveCurrentDrafts() {},
     Date, FormData: class { append() {} }, console,
     state: { accounts: [{ slot: "A" }], slots, defaultCaptionStyle: "generic" },
     fetchWithTimeout: fetch,
@@ -223,6 +227,8 @@ test("a Pull that finds nothing saves nothing", async () => {
   const { fetch } = scriptedFetch({ "POST api/pull-from-clipper": { pulled: false, reason: "No handoff batches to pull." } });
   const saves = [];
   const ctx = vm.createContext({
+    allowCurrentReplacement: () => true,
+    saveCurrentDrafts() {},
     Date, console, state: { accounts: [{ slot: "A" }], slots },
     fetchWithTimeout: fetch, handleFetchError: async () => {},
     elOpt: () => element(), setPullStatus() {}, confirm: () => true, pollClipperInbox() {},
@@ -250,6 +256,8 @@ test("a caption typed while generation runs is never overwritten", async () => {
     },
   });
   const ctx = vm.createContext({
+    allowCurrentReplacement: () => true,
+    saveCurrentDrafts() {},
     FormData: class { append() {} }, console,
     state: { slots, defaultCaptionStyle: "generic", accountState: {} },
     fetchWithTimeout: fetch, handleFetchError: async () => {},
@@ -293,7 +301,7 @@ test("a Pull clicked while Restore runs says why nothing happened", async () => 
 });
 
 // The real save path: Pull -> captureDrafts -> saveLastBatch -> media-stat -> storage.
-function bootRealPull({ slots, pullReply, disk = {} }) {
+function bootRealPull({ slots, pullReply, disk = {}, actualApply = false }) {
   const data = {};
   const { fetch, calls } = scriptedFetch({
     "POST api/pull-from-clipper": pullReply,
@@ -304,8 +312,10 @@ function bootRealPull({ slots, pullReply, disk = {} }) {
     },
   });
   const ctx = vm.createContext({
+    allowCurrentReplacement: () => true,
+    saveCurrentDrafts() {},
     Date, URL, console, Promise, JSON, Set, Object, setImmediate,
-    state: { accounts: [{ slot: "A" }], slots, defaultCaptionStyle: "generic", accountState: {} },
+    state: { accounts: Object.keys(slots).map(slot => ({ slot })), slots, defaultCaptionStyle: "generic", captionStyles: ["generic", "hype", "calm"].map(name => ({ name })), accountState: { caption_defaults: { A: "calm", B: "calm" } } },
     localStorage: { getItem: (k) => data[k] ?? null, setItem: (k, v) => { data[k] = v; } },
     fetchWithTimeout: fetch,
     handleFetchError: async (resp) => { if (!resp.ok) throw new Error(`HTTP ${resp.status}`); },
@@ -317,7 +327,13 @@ function bootRealPull({ slots, pullReply, disk = {} }) {
     CAPTION_TIMEOUT_MS: 1000,
   });
   vm.runInContext(PULL_SOURCE + "\n" + slice("// --- Restore last batch", "// Capture a frame from a staged"), ctx);
-  vm.runInContext("generateAll = async () => { state.slots.A.caption = 'generated'; }", ctx);
+  if (actualApply) {
+    ctx.slotElOpt = () => element();
+    ctx.clearSlotPreview = () => {};
+    ctx.renderSlotPreview = () => {};
+    vm.runInContext(slice("function assertPulledTargets", "// --- Restore last batch"), ctx);
+    vm.runInContext("syncCaptionStyle = () => {}; generateAll = async () => { for (const s of Object.values(state.slots)) if (!s.caption) s.caption = 'generated'; };", ctx);
+  } else vm.runInContext("generateAll = async () => { state.slots.A.caption = 'generated'; }", ctx);
   const saved = () => (data["riceposter.lastBatch.v1"] ? JSON.parse(data["riceposter.lastBatch.v1"]) : null);
   return { js: (e) => vm.runInContext(e, ctx), calls, saved };
 }
@@ -345,4 +361,36 @@ test("retrying a Pull that replays the batch already in Review keeps the saved b
   assert.equal(await js("pullFromClipper()"), true);
   await js("lastBatchSave");
   assert.equal(saved(), null, "the retry did not replace what Restore would bring back");
+});
+
+test("Retry keeps captions and manual topics for unchanged clips when clip order reassigns accounts", async () => {
+  const slots = {
+    A: { file: null, filename: "second.mp4", caption: "second text", topic: "edited second", style: "hype", reviewStyleChanged: true },
+    B: { file: null, filename: "first.mp4", caption: "first text", topic: "edited first", style: "hype", reviewStyleChanged: true },
+  };
+  const b = bootRealPull({ slots, actualApply: true, pullReply: {
+    pulled: true, batch_id: "batch_1", replayed: true, assignment_token: "latest",
+    slots: [{ slot: "A", filename: "first.mp4", topic: "source one" }, { slot: "B", filename: "second.mp4", topic: "source two" }],
+  } });
+  assert.equal(await b.js("pullFromClipper()"), true);
+  assert.equal(slots.A.caption, "first text");
+  assert.equal(slots.A.topic, "edited first");
+  assert.equal(slots.A.style, "calm");
+  assert.equal(slots.A.reviewStyleChanged, false);
+  assert.equal(slots.B.caption, "second text");
+  const ack = b.calls.find(c => c.path.endsWith("/ack"));
+  assert.deepEqual(JSON.parse(ack.body), { assignment_token: "latest" });
+  assert.equal(b.saved(), null);
+});
+
+test("Retry on the same account keeps an explicit style and already written caption", async () => {
+  const slots = { A: { file: null, filename: "one.mp4", caption: "hand written", topic: "edited", style: "hype", reviewStyleChanged: true } };
+  const b = bootRealPull({ slots, actualApply: true, pullReply: {
+    pulled: true, batch_id: "batch_1", replayed: true, assignment_token: "same",
+    slots: [{ slot: "A", filename: "one.mp4", topic: "source" }],
+  } });
+  assert.equal(await b.js("pullFromClipper()"), true);
+  assert.equal(slots.A.caption, "hand written");
+  assert.equal(slots.A.style, "hype");
+  assert.equal(slots.A.reviewStyleChanged, true);
 });

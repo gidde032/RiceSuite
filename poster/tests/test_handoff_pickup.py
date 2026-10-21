@@ -161,7 +161,7 @@ def test_half_written_batch_without_manifest_is_ignored(tmp_handoff_paths):
         handoff_pickup.ingest_oldest(["A", "B", "C"])
 
 
-def test_unacknowledged_pull_replays_frozen_targets_and_restores_media(tmp_handoff_paths):
+def test_unacknowledged_pull_replays_targets_and_restores_media(tmp_handoff_paths):
     """Incident repair (CRITICAL): response/DOM failure must be safely retryable."""
     handoff, media = tmp_handoff_paths["handoff"], tmp_handoff_paths["media"]
     _write_batch(
@@ -176,7 +176,7 @@ def test_unacknowledged_pull_replays_frozen_targets_and_restores_media(tmp_hando
     replay = handoff_pickup.ingest_oldest(["creator-one", "creator-two"])
 
     assert replay["batch_id"] == first["batch_id"]
-    assert replay["slots"] == first["slots"]
+    assert [{k: v for k, v in slot.items() if k != "media_identity"} for slot in replay["slots"]] == [{k: v for k, v in slot.items() if k != "media_identity"} for slot in first["slots"]]
     assert replay["replayed"] is True
     assert missing.read_bytes() == b"clip_1.mp4 bytes"
 
@@ -225,14 +225,14 @@ def test_replay_keeps_an_existing_style(tmp_handoff_paths, monkeypatch):
     assert replay["slots"][0]["style"] == first["slots"][0]["style"] == "generic"
 
 
-def test_unacknowledged_pull_fails_closed_when_roster_would_retarget(tmp_handoff_paths):
-    """Incident repair (CRITICAL): a roster change must never retarget staged work."""
+def test_ack_fails_closed_when_roster_would_retarget_without_retry(tmp_handoff_paths):
+    """Changing the roster alone must never acknowledge different assignments."""
     handoff = tmp_handoff_paths["handoff"]
     _write_batch(handoff, "batch_20260826_120000_aaaa", [(1, "clip_1.mp4", "hello")])
     handoff_pickup.ingest_oldest(["creator-one"])
 
     with pytest.raises(handoff_pickup.HandoffPickupError, match="creator-one"):
-        handoff_pickup.ingest_oldest(["secondary-one"])
+        handoff_pickup.acknowledge("batch_20260826_120000_aaaa", ["secondary-one"])
 
     archive = handoff / handoff_pickup.ARCHIVE_DIRNAME / "batch_20260826_120000_aaaa"
     assert archive.is_dir()
@@ -638,9 +638,9 @@ def test_pull_ack_endpoint_marks_receipt_but_retains_archive(client, tmp_handoff
     handoff = tmp_handoff_paths["handoff"]
     batch_id = "batch_20260826_120000_aaaa"
     _write_batch(handoff, batch_id, [(1, "clip_1.mp4", "hello")])
-    assert client.post("/api/pull-from-clipper").status_code == 200
+    pulled = client.post("/api/pull-from-clipper").json()
 
-    response = client.post(f"/api/pull-from-clipper/{batch_id}/ack")
+    response = client.post(f"/api/pull-from-clipper/{batch_id}/ack", json={"assignment_token": pulled["assignment_token"]})
 
     assert response.status_code == 200
     assert response.json()["status"] == "applied"
@@ -655,8 +655,8 @@ def test_clear_consumed_endpoint_reports_removed_batches_and_bytes(
     handoff = tmp_handoff_paths["handoff"]
     batch_id = "batch_20260826_120000_aaaa"
     _write_batch(handoff, batch_id, [(1, "clip_1.mp4", "hello")])
-    assert client.post("/api/pull-from-clipper").status_code == 200
-    assert client.post(f"/api/pull-from-clipper/{batch_id}/ack").status_code == 200
+    pulled = client.post("/api/pull-from-clipper").json()
+    assert client.post(f"/api/pull-from-clipper/{batch_id}/ack", json={"assignment_token": pulled["assignment_token"]}).status_code == 200
 
     response = client.post("/api/handoff/consumed/clear")
 
@@ -703,7 +703,7 @@ def test_pull_frontend_preflights_before_mutation_and_acknowledges_after_apply()
     """Incident repair (CRITICAL): missing DOM cannot strand a consumed batch."""
     html = (PROJECT_ROOT / "frontend" / "index.html").read_text()
     pull = html[html.index("async function pullFromClipper(") : html.index("function assertPulledTargets")]
-    assert pull.index("assertPulledTargets(data);") < pull.index("applyPulledSlot(entry)")
+    assert pull.index("assertPulledTargets(data);") < pull.index("applyPulledSlot(entry,")
     assert pull.index("await generateAll();") < pull.index("/ack`")
     assert "Source remains archived" in pull
     assert "unacknowledged batches are archived and replayed" in pull
@@ -823,3 +823,134 @@ def test_a_page_from_before_manual_pull_is_refused(client, tmp_handoff_paths, qu
     assert r.status_code == 409
     assert "reload" in r.json()["detail"].lower()
     assert (_tree(handoff), _tree(media)) == before
+
+
+def test_retry_reassigns_by_clip_order_and_rejects_stale_ack(tmp_handoff_paths):
+    handoff = tmp_handoff_paths["handoff"]
+    batch_id = "batch_retry"
+    _write_batch(
+        handoff, batch_id, [(1, "clip_1.mp4", "one"), (2, "clip_2.mp4", "two")]
+    )
+    first = handoff_pickup.ingest_oldest(["A", "B"])
+    replay = handoff_pickup.ingest_oldest(["B", "C", "D"])
+    assert [s["slot"] for s in replay["slots"]] == ["B", "C"]
+    assert [s["filename"] for s in replay["slots"]] == [
+        s["filename"] for s in first["slots"]
+    ]
+    assert (
+        handoff_pickup.ingest_oldest(["B", "C"])["assignment_token"]
+        == replay["assignment_token"]
+    )
+    with pytest.raises(handoff_pickup.HandoffPickupError, match="assignment"):
+        handoff_pickup.acknowledge(batch_id, ["B", "C"], first["assignment_token"])
+    assert (
+        handoff_pickup.acknowledge(batch_id, ["B", "C"], replay["assignment_token"])[
+            "status"
+        ]
+        == "applied"
+    )
+
+
+def test_retry_insufficient_roster_preserves_receipt_and_media(tmp_handoff_paths):
+    handoff = tmp_handoff_paths["handoff"]
+    batch_id = "batch_short"
+    _write_batch(
+        handoff, batch_id, [(1, "clip_1.mp4", "one"), (2, "clip_2.mp4", "two")]
+    )
+    handoff_pickup.ingest_oldest(["A", "B"])
+    receipt = (
+        handoff
+        / handoff_pickup.ARCHIVE_DIRNAME
+        / batch_id
+        / handoff_pickup.RECEIPT_FILENAME
+    )
+    before = receipt.read_bytes()
+    with pytest.raises(handoff_pickup.HandoffPickupError, match="only"):
+        handoff_pickup.ingest_oldest(["C"])
+    assert receipt.read_bytes() == before
+
+
+def test_retry_failed_atomic_write_preserves_previous_assignment(
+    tmp_handoff_paths, monkeypatch
+):
+    handoff = tmp_handoff_paths["handoff"]
+    _write_batch(handoff, "batch_atomic", [(1, "clip_1.mp4", "one")])
+    first = handoff_pickup.ingest_oldest(["A"])
+    receipt = (
+        handoff
+        / handoff_pickup.ARCHIVE_DIRNAME
+        / "batch_atomic"
+        / handoff_pickup.RECEIPT_FILENAME
+    )
+    before = receipt.read_bytes()
+
+    def fail(*args):
+        raise OSError("disk full")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(handoff_pickup, "_atomic_json", fail)
+        with pytest.raises(OSError, match="disk full"):
+            handoff_pickup.ingest_oldest(["B"])
+    assert receipt.read_bytes() == before
+    assert handoff_pickup.HANDOFF_DIR == handoff
+    assert handoff_pickup.MEDIA_DIR == tmp_handoff_paths["media"]
+    assert (
+        handoff_pickup.ingest_oldest(["A"])["assignment_token"]
+        == first["assignment_token"]
+    )
+
+
+def test_retry_verifies_media_before_reassignment(tmp_handoff_paths):
+    handoff = tmp_handoff_paths["handoff"]
+    _write_batch(handoff, "batch_changed", [(1, "clip_1.mp4", "one")])
+    first = handoff_pickup.ingest_oldest(["A"])
+    receipt = (
+        handoff
+        / handoff_pickup.ARCHIVE_DIRNAME
+        / "batch_changed"
+        / handoff_pickup.RECEIPT_FILENAME
+    )
+    before = receipt.read_bytes()
+    (tmp_handoff_paths["media"] / first["slots"][0]["filename"]).write_bytes(b"changed")
+    with pytest.raises(handoff_pickup.HandoffPickupError, match="changed"):
+        handoff_pickup.ingest_oldest(["B"])
+    assert receipt.read_bytes() == before
+
+
+def test_ack_rejects_stale_token_after_roster_returns_to_initial_targets(
+    tmp_handoff_paths,
+):
+    handoff = tmp_handoff_paths["handoff"]
+    _write_batch(handoff, "batch_aba", [(1, "clip_1.mp4", "one")])
+    first = handoff_pickup.ingest_oldest(["A"])
+    handoff_pickup.ingest_oldest(["B"])
+    newest = handoff_pickup.ingest_oldest(["A"])
+    with pytest.raises(handoff_pickup.HandoffPickupError, match="assignment"):
+        handoff_pickup.acknowledge("batch_aba", ["A"], first["assignment_token"])
+    assert (
+        handoff_pickup.acknowledge("batch_aba", ["A"], newest["assignment_token"])[
+            "status"
+        ]
+        == "applied"
+    )
+
+
+def test_ack_endpoint_requires_the_returned_assignment_token(client, tmp_handoff_paths):
+    _write_batch(
+        tmp_handoff_paths["handoff"], "batch_token", [(1, "clip_1.mp4", "one")]
+    )
+    pulled = client.post("/api/pull-from-clipper").json()
+    assert client.post("/api/pull-from-clipper/batch_token/ack").status_code == 409
+    assert (
+        client.post(
+            "/api/pull-from-clipper/batch_token/ack", json={"assignment_token": "stale"}
+        ).status_code
+        == 400
+    )
+    assert (
+        client.post(
+            "/api/pull-from-clipper/batch_token/ack",
+            json={"assignment_token": pulled["assignment_token"]},
+        ).status_code
+        == 200
+    )

@@ -219,10 +219,16 @@ each clip plus its transcript (the same caption path a manual upload uses).
 A style explicitly selected in Review wins; otherwise Pull uses the saved
 account default, then `CLIPPER_INGEST_STYLE` as a fallback. The Review dropdown
 updates to show the style actually used. Before the ready batch leaves the producer queue,
-RicePoster writes a receipt with its frozen targets and file hashes, then moves
+RicePoster writes a receipt with its current targets and file hashes, then moves
 the complete source batch into `HANDOFF_DIR/.riceposter-consumed/`. A browser
-failure or lost response replays that same unacknowledged receipt; changing to
-a roster that would retarget it is rejected. Browser acknowledgement marks the
+failure or lost response can be retried with another explicit Pull. That retry
+reassigns the oldest unacknowledged batch, in clip order, to the first N active
+accounts. Fewer active accounts than clips refuses the retry and keeps the
+receipt intact. Media is verified and recovered before the assignments change
+atomically. Filenames can retain the original account prefix. Captions and
+manual topics for unchanged clips are kept; a different receiving account uses
+its default style for later regeneration. A receipt assignment token prevents
+an older browser acknowledgement from accepting newer assignments. Browser acknowledgement marks the
 receipt applied only after every pulled slot has a generated caption, but does
 not delete the archive. A caption-generation failure leaves the receipt staged
 for a safe retry. You land at step 5 (review captions → Post All). Pull never
@@ -254,11 +260,28 @@ Restore asks before a partial restore or before overwriting or clearing
 unposted drafts. The drafts it replaces become the new last batch, so pressing
 it again undoes it; retrying a Pull that replays the batch already in Review
 keeps the saved batch. Restore only fills drafts; it never posts, schedules,
-or acknowledges a pull. The saved batch is per browser origin, so every open
-Post tab shares one (the last New Run, Pull or Restore in any of them wins),
-and Poster opened directly on its own port keeps a separate one. Drafts lost
-to a reload are not saved
-([RiceSuite #35](https://github.com/gidde032/RiceSuite/issues/35)).
+or acknowledges a pull. The saved batch is per browser origin; Poster opened
+directly on its own port keeps a separate one. Use a single RiceSuite tab.
+
+**Resume current drafts.** Review continuously saves its active drafts in a
+separate browser local-storage record: media filename and type, topic, caption,
+style and explicit style choice, roster position/account, and checked media
+size and modification time. It stores no file blobs, previews, frames, or
+posting/scheduling intent. Reloading, closing the tab, or restarting the browser
+offers **Resume saved drafts** and **Discard saved drafts** inline. Nothing
+restores automatically, and there is no age expiry. Starting new work asks
+before replacing an offered recovery copy; Cancel keeps it intact.
+
+Resume checks media just like Restore last batch and maps by current roster
+position. A different account keeps the caption and takes its own default
+style. Missing, replaced, unchecked, and beyond-roster drafts are named; partial
+resume and overwriting current drafts require confirmation. Resume never pulls,
+acknowledges, posts or schedules. New Run and Clear media clear current recovery,
+while New Run keeps Restore last batch. Post All and Schedule keep Review and
+its recovery copy. Interrupted uploads and unavailable browser storage are
+reported as unsaved; only unsaved work triggers the browser's leave warning.
+Browser storage is local to this browser and origin, so clearing browser data
+removes these copies. (RiceSuite [#35](https://github.com/gidde032/RiceSuite/issues/35))
 
 **Interrupted runs.** A manual Post All run writes a small in-flight marker in
 the data root before touching any platform and removes it once the run's

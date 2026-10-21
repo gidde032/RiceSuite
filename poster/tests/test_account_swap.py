@@ -51,6 +51,8 @@ function renderSlots() {}
 function renderSessionStrip() {}
 function renderAccounts() {}
 function updateButtons() {}
+// This fixture exercises roster transfers with no saved recovery offer.
+function allowCurrentReplacement() { return true; }
 function setTransferStatus(message) { log.status.push(message); }
 function resetSlotMenus() {}
 const names = { A: 'Alpha', B: 'Beta', C: 'Gamma', D: 'Delta', E: 'Echo', F: 'Foxtrot' };

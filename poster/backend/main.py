@@ -412,6 +412,7 @@ async def upload_media(slot: str, file: UploadFile = File(...)):
         "filename": filename,
         "media_type": media_type,
         "size": dest.stat().st_size,
+        "media_identity": {"size": dest.stat().st_size, "mtime_ns": dest.stat().st_mtime_ns},
     }
 
 
@@ -582,7 +583,7 @@ async def pull_from_clipper(request: Request):
 
 
 @app.post("/api/pull-from-clipper/{batch_id}/ack")
-async def acknowledge_clipper_pull(batch_id: str):
+async def acknowledge_clipper_pull(batch_id: str, request: Request):
     """Acknowledge browser application while retaining the archived source."""
     _discovered, account_state, state_error, _store = _account_context()
     if state_error:
@@ -591,7 +592,20 @@ async def acknowledge_clipper_pull(batch_id: str):
             detail=f"Local account state is invalid; receipt remains staged: {state_error}",
         )
     try:
-        return handoff_pickup.acknowledge(batch_id, account_state.active_account_ids)
+        body = await request.json()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409, detail="Reload Poster and retry Pull before acknowledging."
+        ) from exc
+    token = body.get("assignment_token") if isinstance(body, dict) else None
+    if not isinstance(token, str) or not token:
+        raise HTTPException(
+            status_code=409, detail="Receipt assignment token required; retry Pull."
+        )
+    try:
+        return handoff_pickup.acknowledge(
+            batch_id, account_state.active_account_ids, token
+        )
     except handoff_pickup.HandoffPickupError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
