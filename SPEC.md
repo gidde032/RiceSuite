@@ -201,9 +201,16 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
   (`POST api/pull-from-clipper`), which replays an unacknowledged batch before
   taking the next one. The shell loads all three pages up front and keeps them
   alive, so Clipper's transport runs whenever RiceSuite is open (Q18: v1 runs
-  while open). Limits of page-driven transport (background-tab throttling, a
-  sleeping laptop, a second open tab) are tracked in #16; handoff folders are
-  durable, so a delay loses nothing.
+  while open). Returning to the RiceSuite browser tab triggers an immediate
+  intake check even when Search, Home or Post is selected (#16, ratified
+  2026-10-20). Overlapping focus and visibility events do not start duplicate
+  work; workspace guards, backoff and keyed recovery still apply. Clip and
+  Home report the last successful automatic intake/inbox check separately
+  from Home's counts refresh. Failed checks do not advance that timestamp
+  and are shown as unavailable or stale. Intake remains page driven: background
+  throttling and a sleeping laptop may delay it, but durable handoffs protect
+  waiting batches. This contract assumes one RiceSuite browser tab; no
+  cross-tab coordination or intake with every browser tab closed is provided.
 - **FR-15 Never auto-post.** No transport step posts, schedules, or discards a
   draft. Post All and Schedule remain explicit human actions in Poster.
 
