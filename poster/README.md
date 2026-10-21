@@ -227,12 +227,15 @@ accounts. Fewer active accounts than clips refuses the retry and keeps the
 receipt intact. Media is verified and recovered before the assignments change
 atomically. Filenames can retain the original account prefix. Captions and
 manual topics for unchanged clips are kept; a different receiving account uses
-its default style for later regeneration. A receipt assignment token prevents
+its default style for later regeneration. Reassignment moves an unchanged clip
+out of an old extra slot, keeping unrelated neighboring drafts. A receipt assignment token prevents
 an older browser acknowledgement from accepting newer assignments. Browser acknowledgement marks the
 receipt applied only after every pulled slot has a generated caption, but does
 not delete the archive. A caption-generation failure leaves the receipt staged
 for a safe retry. You land at step 5 (review captions → Post All). Pull never
-posts or schedules on its own.
+posts or schedules on its own. If Review changes while Pull waits for its
+response, the newer edits are kept and the batch stays staged for another
+explicit Pull.
 
 **Clipper inbox (RiceSuite).** Pulling is manual only: nothing pulls a batch
 without your **Pull from Clipper** click, even when Review is empty (RiceSuite
@@ -259,7 +262,8 @@ replaced, or that fall beyond the active roster, are named and left out, and
 Restore asks before a partial restore or before overwriting or clearing
 unposted drafts. The drafts it replaces become the new last batch, so pressing
 it again undoes it; retrying a Pull that replays the batch already in Review
-keeps the saved batch. Restore only fills drafts; it never posts, schedules,
+keeps the saved batch. A New Run containing only topic or style choices also
+keeps the previous last batch; those choices belong to current recovery. Restore only fills drafts; it never posts, schedules,
 or acknowledges a pull. The saved batch is per browser origin; Poster opened
 directly on its own port keeps a separate one. Use a single RiceSuite tab.
 

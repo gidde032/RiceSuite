@@ -160,8 +160,8 @@ function bootPull({ slots, confirmAnswer = true, onPull }) {
   const statuses = [];
   const asked = [];
   const { fetch, calls } = scriptedFetch({
-    "POST api/pull-from-clipper": () => {
-      if (onPull) onPull();
+    "POST api/pull-from-clipper": async () => {
+      if (onPull) await onPull();
       return [200, { pulled: true, batch_id: "batch_1", replayed: false,
                      slots: [{ slot: "A", filename: "A_batch_1_clip_1.mp4" }] }];
     },
@@ -184,7 +184,10 @@ function bootPull({ slots, confirmAnswer = true, onPull }) {
     CAPTION_TIMEOUT_MS: 1000,
     pollClipperInbox() {},
     // Restore last batch (#30): Pull saves the drafts it replaces.
-    captureDrafts: () => Object.entries(slots).map(([slot, s]) => ({ slot, caption: s.caption, filename: s.filename })),
+    captureDrafts: () => Object.entries(slots).map(([slot, s]) => ({ slot, caption: s.caption, filename: s.filename,
+      ...(s.topic !== undefined ? { topic: s.topic } : {}),
+      ...(s.style !== undefined ? { style: s.style } : {}),
+    })),
     saveLastBatch: (drafts, reason) => { saves.push({ drafts, reason, appliedSoFar: applied.length }); },
   });
   vm.runInContext(PULL_SOURCE, ctx);
@@ -301,10 +304,10 @@ test("a Pull clicked while Restore runs says why nothing happened", async () => 
 });
 
 // The real save path: Pull -> captureDrafts -> saveLastBatch -> media-stat -> storage.
-function bootRealPull({ slots, pullReply, disk = {}, actualApply = false }) {
-  const data = {};
+function bootRealPull({ slots, pullReply, disk = {}, actualApply = false, lastBatch, confirmAnswer = true, onPull }) {
+  const data = lastBatch ? { "riceposter.lastBatch.v1": JSON.stringify(lastBatch) } : {};
   const { fetch, calls } = scriptedFetch({
-    "POST api/pull-from-clipper": pullReply,
+    "POST api/pull-from-clipper": async () => { if (onPull) await onPull(); return [200, pullReply]; },
     "POST api/pull-from-clipper/batch_1/ack": { status: "applied" },
     "GET api/media-stat": (call) => {
       const names = new URL(`http://x/${call.url}`).searchParams.getAll("name");
@@ -314,13 +317,13 @@ function bootRealPull({ slots, pullReply, disk = {}, actualApply = false }) {
   const ctx = vm.createContext({
     allowCurrentReplacement: () => true,
     saveCurrentDrafts() {},
-    Date, URL, console, Promise, JSON, Set, Object, setImmediate,
+    Date, URL, console, Promise, JSON, Set, Object, setImmediate, esc: String,
     state: { accounts: Object.keys(slots).map(slot => ({ slot })), slots, defaultCaptionStyle: "generic", captionStyles: ["generic", "hype", "calm"].map(name => ({ name })), accountState: { caption_defaults: { A: "calm", B: "calm" } } },
-    localStorage: { getItem: (k) => data[k] ?? null, setItem: (k, v) => { data[k] = v; } },
+    localStorage: { getItem: (k) => data[k] ?? null, setItem: (k, v) => { data[k] = v; }, removeItem: k => { delete data[k]; } },
     fetchWithTimeout: fetch,
     handleFetchError: async (resp) => { if (!resp.ok) throw new Error(`HTTP ${resp.status}`); },
     elOpt: () => element(), el: () => element(), slotEl: () => element(),
-    setPullStatus() {}, confirm: () => true, assertPulledTargets() {},
+    setPullStatus() {}, confirm: () => confirmAnswer, assertPulledTargets() {},
     applyPulledSlot: (entry) => { slots[entry.slot].filename = entry.filename; slots[entry.slot].caption = ""; return "api/media/x"; },
     updateButtons() {}, updateThumbChip() {}, setCaptionError() {}, autoGrow() {}, updateCharCount() {},
     captureThumbnailFromUrl: async () => "", pollClipperInbox() {},
@@ -331,11 +334,12 @@ function bootRealPull({ slots, pullReply, disk = {}, actualApply = false }) {
     ctx.slotElOpt = () => element();
     ctx.clearSlotPreview = () => {};
     ctx.renderSlotPreview = () => {};
+    ctx.hydrateSlotCard = () => {};
     vm.runInContext(slice("function assertPulledTargets", "// --- Restore last batch"), ctx);
-    vm.runInContext("syncCaptionStyle = () => {}; generateAll = async () => { for (const s of Object.values(state.slots)) if (!s.caption) s.caption = 'generated'; };", ctx);
+    vm.runInContext("syncCaptionStyle = () => {}; generateAll = async () => { for (const s of Object.values(state.slots)) if (s.filename && !s.caption) s.caption = 'generated'; };", ctx);
   } else vm.runInContext("generateAll = async () => { state.slots.A.caption = 'generated'; }", ctx);
   const saved = () => (data["riceposter.lastBatch.v1"] ? JSON.parse(data["riceposter.lastBatch.v1"]) : null);
-  return { js: (e) => vm.runInContext(e, ctx), calls, saved };
+  return { js: (e) => vm.runInContext(e, ctx), calls, saved, current: () => data["riceposter.currentDrafts.v1"] ? JSON.parse(data["riceposter.currentDrafts.v1"]) : null };
 }
 
 test("a real Pull saves the drafts it replaces, with their media identity", async () => {
@@ -394,3 +398,109 @@ test("Retry on the same account keeps an explicit style and already written capt
   assert.equal(slots.A.style, "hype");
   assert.equal(slots.A.reviewStyleChanged, true);
 });
+
+for (const field of ["caption", "topic", "style"]) {
+  test(`Pull retains a newer ${field} edit made while its response is pending`, async () => {
+    let release;
+    let entered;
+    const waiting = new Promise(resolve => { entered = resolve; });
+    const delayed = new Promise(resolve => { release = resolve; });
+    const slots = { A: { file: null, filename: "old.mp4", caption: "old caption", topic: "old topic", style: "generic" } };
+    const b = bootPull({ slots, onPull: async () => { entered(); await delayed; } });
+    const pending = b.js("pullFromClipper()");
+    await waiting;
+    slots.A[field] = "newer edit";
+    release();
+    assert.equal(await pending, false);
+    assert.equal(slots.A[field], "newer edit");
+    assert.equal(slots.A.filename, "old.mp4");
+    assert.equal(b.applied.length, 0);
+    assert.equal(b.saves.length, 0);
+    assert.equal(b.calls.some(c => c.path.endsWith("/ack")), false);
+    assert.match(b.statuses.at(-1), /Review changed|newer edit/);
+  });
+}
+
+test("Retry with a topic-only neighboring slot preserves the previous last batch", async () => {
+  const slots = {
+    A: { file: null, filename: "one.mp4", caption: "written", topic: "edited", style: "generic" },
+    B: { file: null, filename: "", caption: "", topic: "topic only", style: "hype", reviewStyleChanged: true },
+  };
+  const lastBatch = { version: 1, saved_at: "2026-10-20T00:00:00Z", reason: "new-run", drafts: [
+    { position: 0, account: "A", filename: "previous.mp4", caption: "previous caption", media: { size: 1, mtime_ns: 2 } },
+  ] };
+  const b = bootRealPull({ slots, actualApply: true, lastBatch, pullReply: {
+    pulled: true, batch_id: "batch_1", replayed: true, assignment_token: "same",
+    slots: [{ slot: "A", filename: "one.mp4", topic: "source" }],
+  } });
+  assert.equal(await b.js("pullFromClipper()"), true);
+  await b.js("lastBatchSave");
+  assert.deepEqual(b.saved(), lastBatch);
+  assert.equal(slots.B.topic, "topic only");
+});
+
+test("Pull retains current drafts if other draft work starts while its response is pending", async () => {
+  let release;
+  let entered;
+  const waiting = new Promise(resolve => { entered = resolve; });
+  const delayed = new Promise(resolve => { release = resolve; });
+  const slots = { A: { file: null, filename: "old.mp4", caption: "old" } };
+  const b = bootPull({ slots, onPull: async () => { entered(); await delayed; } });
+  const pending = b.js("pullFromClipper()");
+  await waiting;
+  b.js("draftWork = 1");
+  release();
+  assert.equal(await pending, false);
+  assert.equal(slots.A.filename, "old.mp4");
+  assert.equal(b.applied.length, 0);
+});
+
+test("Retry moves a clip from an extra old slot and preserves unrelated neighboring media", async () => {
+  const identity = { size: 12, mtime_ns: 1000 };
+  const slots = {
+    A: { filename: "", caption: "", topic: "", style: "generic" },
+    B: { filename: "one.mp4", caption: "manual caption", topic: "edited topic", style: "hype", mediaType: "video" },
+    C: { filename: "other.mp4", caption: "unrelated", topic: "other topic", style: "generic", mediaType: "video" },
+  };
+  const b = bootRealPull({ slots, actualApply: true, disk: { "one.mp4": identity, "other.mp4": identity }, pullReply: {
+    pulled: true, batch_id: "batch_1", replayed: true, assignment_token: "moved",
+    slots: [{ slot: "A", filename: "one.mp4", media_identity: identity }],
+  } });
+  b.js("initCurrentDrafts(); updateButtons = () => { saveCurrentDrafts(); };");
+  assert.equal(await b.js("pullFromClipper()"), true);
+  await b.js("saveCurrentDrafts()");
+  assert.equal(slots.A.caption, "manual caption");
+  assert.equal(slots.A.topic, "edited topic");
+  assert.equal(slots.A.style, "calm");
+  assert.equal(slots.B.filename, "");
+  assert.equal(slots.B.caption, "");
+  assert.equal(slots.C.filename, "other.mp4");
+  assert.equal(slots.C.caption, "unrelated");
+  assert.deepEqual(b.current().drafts.map(d => d.filename), ["one.mp4", "other.mp4"]);
+});
+
+for (const mode of ["cancel", "newer edit"]) {
+  test(`Retry does not clear an old clip source on ${mode}`, async () => {
+    let release;
+    let entered;
+    const waiting = new Promise(resolve => { entered = resolve; });
+    const delayed = new Promise(resolve => { release = resolve; });
+    const slots = {
+      A: { filename: "", caption: "", style: "generic" },
+      B: { filename: "one.mp4", caption: "manual caption", topic: "edited topic", style: "hype" },
+    };
+    const b = bootRealPull({ slots, actualApply: true, confirmAnswer: mode !== "cancel",
+      onPull: async () => { entered(); await delayed; }, pullReply: {
+        pulled: true, batch_id: "batch_1", replayed: true,
+        slots: [{ slot: "A", filename: "one.mp4" }],
+      },
+    });
+    const pending = b.js("pullFromClipper()");
+    if (mode !== "cancel") { await waiting; slots.B.caption = "newer edit"; release(); }
+    assert.equal(await pending, false);
+    assert.equal(slots.A.filename, "");
+    assert.equal(slots.B.filename, "one.mp4");
+    assert.equal(slots.B.caption, mode === "cancel" ? "manual caption" : "newer edit");
+    assert.equal(b.calls.some(c => c.path.endsWith("/ack")), false);
+  });
+}

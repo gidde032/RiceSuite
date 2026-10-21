@@ -11,7 +11,8 @@ published as a tagged release or GitHub Release.
   retried after swapping accounts. Clips are reassigned in order, with atomic
   receipt updates, verified media, and acknowledgement tokens that reject stale
   assignments. Too few accounts leaves the receipt intact. Captions and manual
-  topics already written for unchanged clips survive retry. (RiceSuite #26)
+  topics already written for unchanged clips survive retry. Newer Review edits
+  made while Pull waits are kept for the next retry. (RiceSuite #26)
 
 - **Standalone Poster reads the same Clipper handoff as standalone Clipper.**
   When `HANDOFF_DIR` is unset or blank, Poster now uses the Clipper→Poster

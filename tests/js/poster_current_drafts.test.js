@@ -28,6 +28,7 @@ const SOURCE = [
   slice("function draftsAtRisk()", "// Returns true when a batch was pulled"),
   slice("// --- Restore last batch", "// Capture a frame from a staged"),
   slice("function newRun()", "async function refreshMediaInfo()"),
+  slice("async function setCaptionDefault(", "async function saveRoster("),
 ].join("\n");
 
 const KEY = "riceposter.lastBatch.v1";
@@ -86,6 +87,7 @@ function boot({
     confirm: (m) => { asked.push(m); return confirmAnswer; },
     clearSlotPreview() {}, setCaptionError() {}, updateThumbChip() {},
     renderSlots() {}, renderSummary() {}, updateButtons() {},
+    persistAccountState: async () => {}, renderAccounts() {},
     captureThumbnailFromUrl: thumb,
     postAll: forbidden("postAll"), scheduleAll: forbidden("scheduleAll"),
     pullFromClipper: forbidden("pullFromClipper"),
@@ -231,11 +233,27 @@ test("an explicit style-only draft survives reload and Resume", async () => {
   assert.equal(reloaded.ctx.state.slots.A.reviewStyleChanged, true);
 });
 
-test("New Run clears current recovery while retaining the picker choice and last batch", async () => {
-  const b = boot({ slots: { A: draft({ style: "hype", reviewStyleChanged: true }), B: draft() } });
+for (const fields of [{ style: "hype", reviewStyleChanged: true }, { topic: "topic only" }]) {
+  test(`New Run clears ${fields.topic ? "topic-only" : "style-only"} current recovery and preserves the last media batch`, async () => {
+    const b = boot({ slots: { A: draft(fields), B: draft() } });
+    const prior = savedBatch([savedDraft(0, "A", "previous.mp4")]);
+    b.storage.setItem(KEY, prior);
+    b.js("initCurrentDrafts()"); await b.js("saveCurrentDrafts()");
+    assert.ok(b.saved(), "text-only current recovery was saved");
+    b.js("newRun()"); await b.js("lastBatchSave");
+    assert.equal(b.saved(), null);
+    assert.equal(b.ctx.state.slots.A.style, fields.style || "");
+    assert.equal(b.storage.data[KEY], prior);
+  });
+}
+
+test("changing the account default saves the active topic-only Review style", async () => {
+  const b = boot({ slots: { A: draft({ topic: "topic only", style: "generic" }), B: draft() } });
   b.js("initCurrentDrafts()"); await b.js("saveCurrentDrafts()");
-  b.js("newRun()"); await b.js("lastBatchSave");
-  assert.equal(b.saved(), null);
+  await b.js("setCaptionDefault('A', 'hype')");
   assert.equal(b.ctx.state.slots.A.style, "hype");
-  assert.equal(JSON.parse(b.storage.data[KEY]).drafts[0].style, "hype");
+  assert.equal(b.saved().drafts[0].style, "hype");
+  const reloaded = boot({ stored: JSON.stringify(b.saved()) });
+  reloaded.js("initCurrentDrafts()"); await reloaded.js("resumeCurrentDrafts()");
+  assert.equal(reloaded.ctx.state.slots.A.style, "hype");
 });

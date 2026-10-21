@@ -1696,6 +1696,7 @@ async function pullFromClipper() {
   ) {
     return false;
   }
+  const before = JSON.stringify(captureDrafts(true));
   let stagedBatchId = '';
   let reviewApplied = false;
   pullInFlight = true;
@@ -1711,6 +1712,9 @@ async function pullFromClipper() {
     }
     stagedBatchId = data.batch_id;
     assertPulledTargets(data);
+    if (draftWork > 0 || before !== JSON.stringify(captureDrafts(true))) {
+      throw new Error('Review changed while Pull was waiting. Newer edits are kept; retry Pull when ready.');
+    }
 
     // The drafts this batch replaces become the last batch for Restore, unless
     // this is a retry that replays the batch Review already holds.
@@ -1726,6 +1730,19 @@ async function pullFromClipper() {
       if (mediaUrl && state.slots[entry.slot]) pulled.push({ slot: entry.slot, mediaUrl });
     }
     reviewApplied = pulled.length === data.slots.length;
+    if (data.replayed && reviewApplied) {
+      const targets = new Set(data.slots.map(entry => entry.slot));
+      for (const { slot } of state.accounts) {
+        if (targets.has(slot) || !incoming.has(state.slots[slot]?.filename)) continue;
+        // Reassignment moves a matching clip out of its previous extra slot.
+        clearRestoredSlot(slot);
+        hydrateSlotCard(slot);
+        for (const kind of ['mediaTypeBadge', 'btnUndo']) {
+          const node = slotElOpt(kind, slot);
+          if (node) node.style.display = 'none';
+        }
+      }
+    }
     updateButtons();
     setPullStatus(`Pulled batch ${data.batch_id} into ${data.slots.length} slot(s). Capturing frames and writing captions…`);
 
@@ -1907,11 +1924,13 @@ const LAST_BATCH_KEY = 'riceposter.lastBatch.v1';
 let lastBatchSave = Promise.resolve();
 
 // The active roster's drafts, in roster order, as plain values. A draft whose
-// upload has not finished and that has no caption holds nothing to restore.
-function captureDrafts() {
+// upload has not finished and that has no caption holds nothing for last-batch
+// Restore. Current recovery also captures topic-only and explicit style-only edits.
+function captureDrafts(includeTextOnly = false) {
   return state.accounts.map((account, position) => {
     const s = state.slots[account.slot];
-    if (!s || !(s.filename || s.topic || (s.caption && s.caption.trim()) || (s.reviewStyleChanged && !s.styleOnlyCleared))) return null;
+    if (!s || !(s.filename || (s.caption && s.caption.trim())
+      || (includeTextOnly && (s.topic || (s.reviewStyleChanged && !s.styleOnlyCleared))))) return null;
     return {
       position,
       account: account.slot,
@@ -2053,7 +2072,7 @@ async function restoreLastBatch() {
   const btn = elOpt('btnRestore');
   if (btn) btn.disabled = true;
   let restored = [];
-  const before = JSON.stringify(captureDrafts());
+  const before = JSON.stringify(captureDrafts(true));
   try {
     await lastBatchSave;
     const batch = loadLastBatch();
@@ -2070,7 +2089,7 @@ async function restoreLastBatch() {
     }
     // An upload or caption request started while the media was checked would
     // write into a draft this is about to replace.
-    if (busy() || before !== JSON.stringify(captureDrafts())) {
+    if (busy() || before !== JSON.stringify(captureDrafts(true))) {
       setPullStatus(busyMessage, true);
       return false;
     }
@@ -2240,7 +2259,7 @@ function currentDraftsUnsaved() {
 function saveCurrentDrafts() {
   if (!currentDraftReady || currentRecoveryOffer) return Promise.resolve();
   const seq = ++currentSaveSeq;
-  const drafts = captureDrafts();
+  const drafts = captureDrafts(true);
   const missing = [];
   currentUnsaved = [];
   for (const [position, account] of state.accounts.entries()) {
@@ -2300,12 +2319,12 @@ async function resumeCurrentDrafts() {
   restoreInFlight = true;
   const saved = currentRecoveryOffer;
   const restored = [];
-  const before = JSON.stringify(captureDrafts());
+  const before = JSON.stringify(captureDrafts(true));
   const roster = state.accounts.map(a => a.slot).join('\n');
   try {
     const plan = await planRestore(saved);
     if (draftWork > 0 || pullInFlight || accountChangeInFlight
-        || before !== JSON.stringify(captureDrafts()) || roster !== state.accounts.map(a => a.slot).join('\n')) {
+        || before !== JSON.stringify(captureDrafts(true)) || roster !== state.accounts.map(a => a.slot).join('\n')) {
       setPullStatus('Review changed while saved media was checked. Try Resume again.', true);
       return false;
     }
@@ -3164,6 +3183,7 @@ async function setCaptionDefault(accountId, style) {
       && !state.slots[accountId].filename && !state.slots[accountId].caption) {
       state.slots[accountId].style = style;
       if (state.accounts.some(a => a.slot === accountId)) renderSlots();
+      saveCurrentDrafts();
     }
   } catch (error) {
     if (previous) state.accountState.caption_defaults[accountId] = previous;
