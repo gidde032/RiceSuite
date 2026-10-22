@@ -17,8 +17,8 @@ the transcript alone. Each slot carries `topic` (the transcript) and a default
 Config (`HANDOFF_DIR`, `MEDIA_DIR`, `CLIPPER_INGEST_STYLE`) is imported as
 module-level names and read at call time, so tests redirect them by patching
 this module's attributes (see conftest `tmp_handoff_paths`). Account targets
-are supplied explicitly from the current saved roster and frozen in a durable
-receipt; legacy A/B/C slot constants never choose a handoff destination.
+are supplied explicitly from the current saved roster and stored in a durable
+receipt that explicit retries may reassign; legacy A/B/C slot constants never choose a handoff destination.
 """
 
 from __future__ import annotations
@@ -269,6 +269,8 @@ def _current_style(style, known: set[str]) -> str:
 def _result_slot(slot: dict, known: set[str]) -> dict:
     result = {k: v for k, v in slot.items() if k not in ("source_file", "sha256")}
     result["style"] = _current_style(slot.get("style"), known)
+    st = (MEDIA_DIR / slot["filename"]).stat()
+    result["media_identity"] = {"size": st.st_size, "mtime_ns": st.st_mtime_ns}
     return result
 
 
@@ -280,6 +282,7 @@ def _receipt_result(receipt: dict, *, replayed: bool) -> dict:
         "receipt_status": receipt.get("status", "staged"),
         "replayed": replayed,
         "source_archived": True,
+        "assignment_token": _assignment_token(receipt),
     }
 
 
@@ -323,6 +326,41 @@ def _oldest_unacknowledged() -> tuple[Path, dict] | None:
     return None
 
 
+def _assignment_token(receipt: dict) -> str:
+    """Bind ACK to the assignments actually returned, including an ABA retry."""
+    value = [
+        receipt["batch_id"],
+        receipt["target_account_ids"],
+        [s["filename"] for s in receipt["slots"]],
+        receipt.get("assignment_revision", 0),
+    ]
+    return hashlib.sha256(json.dumps(value).encode()).hexdigest()
+
+
+def _reassign_receipt(batch_dir: Path, receipt: dict, target_ids: list[str]) -> dict:
+    count = len(receipt["slots"])
+    if len(target_ids) < count:
+        raise HandoffPickupError(
+            f"batch {receipt['batch_id']} has {count} clips but the active roster has only "
+            f"{len(target_ids)} account(s)"
+        )
+    # Verify/recover the complete media before changing the durable assignment.
+    _restore_staged_media(batch_dir, receipt)
+    targets = target_ids[:count]
+    if targets != receipt["target_account_ids"]:
+        receipt = {
+            **receipt,
+            "target_account_ids": targets,
+            "assignment_revision": receipt.get("assignment_revision", 0) + 1,
+            "slots": [
+                {**slot, "slot": account}
+                for slot, account in zip(receipt["slots"], targets)
+            ],
+        }
+        _atomic_json(batch_dir / RECEIPT_FILENAME, receipt)
+    return receipt
+
+
 def _require_same_targets(receipt: dict, target_ids: list[str]) -> None:
     frozen = receipt.get("target_account_ids")
     if not isinstance(frozen, list) or frozen != target_ids[: len(frozen)]:
@@ -364,7 +402,7 @@ def ingest_oldest(target_ids: list[str]) -> dict:
     Copies each clip into `MEDIA_DIR` as `{account_id}_{batch}_{file}` and,
     only after every clip and the receipt are durable, atomically moves the
     source batch under `.riceposter-consumed/`. Until the browser acknowledges
-    application, the same frozen assignments are replayed and missing staged
+    application, the clips are reassigned in order to the current active roster and missing staged
     files are restored from that archive. The archive is retained after ACK.
     Captioning is left to the browser step.
 
@@ -376,8 +414,7 @@ def ingest_oldest(target_ids: list[str]) -> dict:
     pending = _oldest_unacknowledged()
     if pending is not None:
         archive_dir, receipt = pending
-        _require_same_targets(receipt, target_ids)
-        _restore_staged_media(archive_dir, receipt)
+        receipt = _reassign_receipt(archive_dir, receipt, target_ids)
         return _receipt_result(receipt, replayed=True)
 
     batches = _ready_batches(HANDOFF_DIR)
@@ -399,7 +436,7 @@ def ingest_oldest(target_ids: list[str]) -> dict:
     if receipt_path.is_file():
         receipt = _load_receipt(receipt_path)
         _validate_receipt(receipt, batch_dir)
-        _require_same_targets(receipt, target_ids)
+        receipt = _reassign_receipt(batch_dir, receipt, target_ids)
         archive_root = _checked_archive_root(create=True)
         archive_dir = archive_root / batch_dir.name
         if archive_dir.exists() or archive_dir.is_symlink():
@@ -463,20 +500,30 @@ def ingest_oldest(target_ids: list[str]) -> dict:
     return _receipt_result(receipt, replayed=False)
 
 
-def acknowledge(batch_id: str, target_ids: list[str]) -> dict:
+def acknowledge(
+    batch_id: str, target_ids: list[str], assignment_token: str | None = None
+) -> dict:
     """Mark a staged receipt applied; archived source media remains recoverable."""
     if not isinstance(batch_id, str) or not _BATCH_ID_RE.fullmatch(batch_id):
         raise HandoffPickupError("invalid handoff batch id")
     target_ids = _validate_targets(target_ids)
     archive_dir = _checked_archive_root() / batch_id
     if archive_dir.is_symlink() or not archive_dir.is_dir():
-        raise HandoffPickupError(f"no safe archived RicePoster receipt for batch {batch_id}")
+        raise HandoffPickupError(
+            f"no safe archived RicePoster receipt for batch {batch_id}"
+        )
     receipt_path = archive_dir / RECEIPT_FILENAME
     if not receipt_path.is_file():
         raise HandoffPickupError(f"no archived RicePoster receipt for batch {batch_id}")
     receipt = _load_receipt(receipt_path)
     _validate_receipt(receipt, archive_dir)
     _require_same_targets(receipt, target_ids)
+    if (
+        assignment_token is not None or receipt.get("assignment_revision", 0)
+    ) and assignment_token != _assignment_token(receipt):
+        raise HandoffPickupError(
+            "receipt assignment changed; retry Pull before acknowledging"
+        )
     if receipt.get("status") != "applied":
         receipt["status"] = "applied"
         receipt["applied_at"] = _now()

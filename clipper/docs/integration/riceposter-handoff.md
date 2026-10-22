@@ -140,7 +140,15 @@ of the user-started Pull flow; it does not start on page load or inbox polling.
 
 The browser acknowledges the receipt after Review is prepared and caption
 generation completes. If that flow is interrupted, another explicit Pull
-replays the unacknowledged receipt and restores missing staged media. Poster
+recovers the oldest unacknowledged receipt before any new batch. It verifies
+and restores staged media, then atomically reassigns clips by position to the
+first N currently active Poster accounts. Too few accounts refuses without
+changing the receipt. Staged filenames may keep their original account prefix.
+A returned assignment token must be echoed in the acknowledgement JSON body;
+an older token or a mismatched current roster cannot acknowledge newer
+assignments. Repeating the same retry is idempotent. Existing captions and
+manual topics for unchanged clips survive retry; a different receiving account
+uses its default style for later regeneration. Poster
 keeps acknowledged source archives until the user runs **Clear consumed
 batches** in Local Media; that action removes only validated, acknowledged
 archives. Clipper never deletes handoff batches.

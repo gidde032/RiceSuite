@@ -19,7 +19,7 @@ def run_page(driver):
     functions = []
     for name in ('emptySlot', 'knownStyle', 'styleOptions', 'syncCaptionStyle',
                  'applyPulledSlot', 'generateAll', 'regenerateCaption',
-                 'captureDrafts', 'applyRestoredDraft', 'setCaptionDefault', 'resetRun'):
+                 'captureDrafts', 'applyRestoredDraft', 'setCaptionDefault', 'resetRun', 'editDraft'):
         head = re.search(rf'(?:async )?function {name}\([^)]*\)\s*', script)
         if head:
             functions.append(head.group() + _function_body(name))
@@ -39,7 +39,8 @@ const clearSlotPreview=()=>{},updateCharCount=()=>{},setCaptionError=()=>{};
 const renderSlotPreview=()=>{},autoGrow=()=>{},updateButtons=()=>{};
 const renderSlots=()=>{},renderAccounts=()=>{},renderSummary=()=>{},persistAccountState=async()=>{};
 const handleFetchError=async()=>{};
-let accountChangeInFlight=false,draftWork=0;
+let accountChangeInFlight=false,draftWork=0,currentRecoveryOffer=null,currentSaveSeq=0;
+const saveCurrentDrafts=()=>{},allowCurrentReplacement=()=>true;
 const CAPTION_TIMEOUT_MS=65000,requests=[];
 const fetchWithTimeout=async(url,options)=>{
  requests.push(Object.fromEntries(options.body.entries()));

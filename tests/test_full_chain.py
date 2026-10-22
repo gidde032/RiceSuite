@@ -149,7 +149,10 @@ with TestClient(main.app, base_url="http://127.0.0.1:8793") as client:
     assert len(inbox["batches"]) == 1, inbox                     # waiting in the inbox
     pulled = client.post("/api/pull-from-clipper").json()        # the Pull click
     assert pulled["pulled"], pulled
-    ack = client.post(f"/api/pull-from-clipper/{pulled['batch_id']}/ack")
+    ack = client.post(
+        f"/api/pull-from-clipper/{pulled['batch_id']}/ack",
+        json={"assignment_token": pulled["assignment_token"]},
+    )
     assert ack.status_code == 200, ack.text
     queue = client.get("/api/queue").json()
     history = client.get("/api/history").json()

@@ -167,6 +167,29 @@ last, FIFO by `created_at`, dedupe by stable `batch_id`, producers only write.
   overwriting unposted drafts (preserves Poster's confirm-before-discard), and
   recovers an unacknowledged batch before taking a new one. Captions generate
   on ingest as today.
+  An explicit retry reassigns an unacknowledged batch in clip order to the
+  current active account roster (#26, ratified 2026-10-20). If there are fewer
+  active accounts than clips, the whole retry is refused without losing the
+  batch. Existing captions and edits associated with the same clips survive;
+  a draft moved to another account takes that account's default style for
+  future generation. Receipt reassignment is durable, and acknowledgement
+  still validates the assignments applied to Review.
+  Poster continuously saves current Review drafts in browser local storage,
+  separately from **Restore last batch** (#35, ratified 2026-10-20). After a
+  reload or reopening, an inline **Resume saved drafts** action offers them
+  back; **Discard saved drafts** removes that saved copy on request. Starting
+  fresh work asks before replacing a pending saved copy. Resume validates
+  staged media by size and modification time, maps drafts by roster position,
+  and uses a different receiving account's default style while keeping caption
+  text. It names unavailable media and drafts beyond the active roster, and
+  confirms before a partial recovery or overwriting current drafts. There is
+  no automatic expiration. Post All and Schedule leave Review populated, so
+  those drafts remain recoverable too. New Run and Clear media explicitly
+  update current recovery; the separate last-batch snapshot keeps its existing
+  rules. Leaving warns only for unsaved work or a failed save. Resume never
+  posts, schedules, or acknowledges a handoff. This recovery contract assumes
+  one RiceSuite browser tab; multiple workspaces and tab synchronization are
+  outside its scope.
 - **How FR-12 – FR-14 are driven.** Clipper's batch and Poster's drafts live
   in their pages (transcript edits, headers and captions are browser state),
   so each consumer's page drives its own transport: Clipper polls a read-only

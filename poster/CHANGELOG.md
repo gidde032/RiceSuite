@@ -7,6 +7,13 @@ published as a tagged release or GitHub Release.
 
 ### Fixed
 
+- **Retry Pull follows the active roster.** An unfinished Clipper pull can be
+  retried after swapping accounts. Clips are reassigned in order, with atomic
+  receipt updates, verified media, and acknowledgement tokens that reject stale
+  assignments. Too few accounts leaves the receipt intact. Captions and manual
+  topics already written for unchanged clips survive retry. Newer Review edits
+  made while Pull waits are kept for the next retry. (RiceSuite #26)
+
 - **Standalone Poster reads the same Clipper handoff as standalone Clipper.**
   When `HANDOFF_DIR` is unset or blank, Poster now uses the Clipper→Poster
   stage `rice data location` reports, as `rice start` passes it, instead of
@@ -41,6 +48,14 @@ published as a tagged release or GitHub Release.
   of 2026-09-29)
 
 ### Added
+
+- **Resume saved current drafts.** Review continuously saves active drafts in
+  this browser separately from Restore last batch. Reloading offers Resume and
+  Discard. Resume validates media size and modification time, asks before partial
+  recovery or overwriting drafts, and uses destination account styles when the
+  roster changes. Interrupted uploads and save failures are reported as unsaved;
+  only unsaved work warns before leaving. Recovery never pulls, acknowledges,
+  posts or schedules. (RiceSuite #35)
 
 - **Restore last batch.** A new Review action brings back the drafts that the
   last New Run, Pull from Clipper, or Restore replaced: media, caption,
