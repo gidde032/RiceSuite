@@ -12,6 +12,8 @@ import argparse
 import json
 import mimetypes
 import tempfile
+from email.parser import BytesParser
+from email.policy import default
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -30,6 +32,47 @@ VIEWPORTS = [
     (1440, 900),
     (1920, 1080),
 ]
+# Required scenario inventory: no missing or duplicate scenario may pass CI.
+REQUIRED_SCENARIOS = {
+    "native-playback-seek",
+    "empty-library",
+    "reload-observe-only",
+    "frozen-run-profile",
+    "active-run",
+    "coarse-targets",
+    "source-filter-refresh-preserves-choice",
+    "invalid-manual-interval",
+    "review-landing-defaults",
+    "add-and-score-settings",
+    "batch-details-focus-preserved",
+    "completion-preserves-interval-playhead-focus",
+    "unbroken-filename-overflow",
+    "interval-preview",
+    "source-read-error-back",
+    "file-drop-admission",
+    "stop-wiring",
+    "computed-slate-roles-and-all-source-targets",
+    "all-kind-order",
+    "clear-files-then-path-intake",
+    "combined-filters",
+    "missing-media",
+    "unsupported-media",
+    "keyboard-focus",
+    "duplicate-error",
+    "playhead-marks",
+    "on-demand-duplicates",
+    "hidden-selected",
+    "selected-source-score",
+    "intake-add-only",
+    "file-picker-admission",
+    "manual-save-reveal",
+    "explicit-scoring-retry",
+    "spacing-injection",
+    "failed-scoring",
+    "narrow-back",
+    "response-loss-observe-only",
+}
+
 PROFILES = [
     {"id": "fixture", "name": "Fixture profile", "version": "1", "selected": 2},
     {"id": "other", "name": "Other", "version": "1", "selected": 0},
@@ -86,7 +129,7 @@ SLICES = [
 ]
 
 
-def attach(page, scenario="normal"):
+def attach(page, scenario="normal", run_state=None, receipts=None):
     errors, mutations = [], []
     page.on("pageerror", lambda error: errors.append(str(error)))
     page.on(
@@ -96,7 +139,8 @@ def attach(page, scenario="normal"):
         ),
     )
     saved = []
-    run_state = {"run": None}
+    if run_state is None:
+        run_state = {"run": None}
 
     def route(request):
         url = urlsplit(request.request.url)
@@ -104,7 +148,14 @@ def attach(page, scenario="normal"):
         query = parse_qs(url.query)
         if "/api/" in path:
             if request.request.method != "GET":
-                mutations.append((path, request.request.post_data))
+                mutations.append(
+                    (
+                        path,
+                        (request.request.post_data_buffer or b"").decode(
+                            errors="replace"
+                        ),
+                    )
+                )
             if path.endswith("/profiles"):
                 request.fulfill(json=PROFILES)
             elif path.endswith("/settings"):
@@ -117,11 +168,51 @@ def attach(page, scenario="normal"):
                 )
             elif path.endswith("/runs/current"):
                 request.fulfill(json=run_state)
-            elif path.endswith("/runs") and request.request.method == "POST":
-                data = json.loads(request.request.post_data)
+            elif (
+                path.endswith(("/runs", "/runs/files"))
+                and request.request.method == "POST"
+            ):
+                filenames = []
+                if path.endswith("/files"):
+                    message = BytesParser(policy=default).parsebytes(
+                        (
+                            "Content-Type: "
+                            + request.request.headers["content-type"]
+                            + "\r\nMIME-Version: 1.0\r\n\r\n"
+                        ).encode()
+                        + request.request.post_data_buffer
+                    )
+                    parts = list(message.iter_parts())
+                    fields = {
+                        part.get_param(
+                            "name", header="content-disposition"
+                        ): part.get_payload(decode=True).decode()
+                        for part in parts
+                        if not part.get_filename()
+                    }
+                    filenames = [
+                        part.get_filename() for part in parts if part.get_filename()
+                    ]
+                    data = {
+                        **json.loads(fields["settings_json"]),
+                        "attempt_key": fields["attempt_key"],
+                    }
+                else:
+                    data = json.loads(request.request.post_data)
+                if receipts is not None:
+                    receipts.append({"path": path, "data": data, "files": filenames})
+                if scenario == "reject":
+                    request.fulfill(
+                        status=409,
+                        json={
+                            "detail": "Scoring credentials are missing; choose offline scoring"
+                        },
+                    )
+                    return
                 run_state["run"] = {
                     "id": data["attempt_key"],
                     "profile": data["profile"],
+                    "options": data,
                     "status": "active",
                     "stage": "scoring",
                     "stop_requested": False,
@@ -144,6 +235,16 @@ def attach(page, scenario="normal"):
             elif "/runs/" in path and run_state["run"]:
                 if path.endswith("/stop"):
                     run_state["run"]["stop_requested"] = True
+                if path.endswith("/retry"):
+                    data = json.loads(request.request.post_data)
+                    if receipts is not None:
+                        receipts.append({"path": path, "data": data, "files": []})
+                    run_state["run"] = {
+                        **run_state["run"],
+                        "id": data["attempt_key"],
+                        "status": "active",
+                        "stage": "scoring",
+                    }
                 request.fulfill(json=run_state["run"])
             elif path.endswith("/manual"):
                 manual = {
@@ -225,6 +326,198 @@ def assert_no_overflow(page):
     )
 
 
+STYLE_CHECK = "() => {\n const resolve = token => {\n   const e=document.createElement('span'); e.style.color=`var(${token})`;\n   document.body.append(e); const result=getComputedStyle(e).color; e.remove(); return result;\n };\n const checks = [\n   ['body','backgroundColor','--midground'], ['body','color','--text'],\n   ['.topbar','backgroundColor','--backdrop'],\n   ['.media-row','backgroundColor','--interior'], ['.media-row','borderTopColor','--hairline'],\n   ['#sourceRequests','backgroundColor','--interior'], ['#sourceRequests','color','--text'],\n   ['#sourceRequests','borderTopColor','--control-line'],\n   ['#manualStart','backgroundColor','--interior'], ['#manualStart','color','--text'],\n   ['#manualStart','borderTopColor','--control-line'],\n   ['.source-transcript','backgroundColor','--interior'], ['.source-transcript','color','--muted'],\n   ['.source-transcript','borderTopColor','--hairline'],\n   ['.source-player','backgroundColor','--backdrop'], ['.source-inspector .title','color','--rice']\n ];\n const mismatches=[];\n for (const [selector,property,token] of checks) {\n   const value=getComputedStyle(document.querySelector(selector))[property], wanted=resolve(token);\n   if(value!==wanted) mismatches.push({selector,property,token,value,wanted});\n }\n const target=matchMedia('(pointer: coarse)').matches?44:36;\n const elements=[...document.querySelectorAll('button,select,input,textarea,summary,.nav-link')];\n const small=[];\n for (const element of elements) {\n   let e=element.type==='checkbox'?element.closest('label'):element;\n   if(!e || !e.getClientRects().length || !e.checkVisibility()) continue;\n   const r=e.getBoundingClientRect();\n   if(r.height<target-.1 || r.width<target-.1) small.push({tag:e.tagName,id:e.id,text:e.textContent.slice(0,60),width:r.width,height:r.height,target});\n }\n return {mismatches,small,checks:checks.length,target,controls:elements.length};\n}"
+
+
+def assert_source_styles(page):
+    styles = page.evaluate(STYLE_CHECK)
+    assert not styles["mismatches"], styles
+    assert not styles["small"], styles
+    return styles
+
+
+def check_review_repairs(browser, result):
+    # Contracts/MEDIUM: exercise a real unbroken filename, not just spaced prose.
+    title = SOURCES[0]["title"]
+    try:
+        SOURCES[0]["title"] = "local_filename_without_spaces_" + "x" * 190
+        for width in (390, 900):
+            page = browser.new_page(viewport={"width": width, "height": 844})
+            errors, _ = attach(page)
+            page.goto("http://127.0.0.1:8966/sources")
+            page.get_by_role("button", name="Open source").first.wait_for()
+            assert_no_overflow(page)
+            page.get_by_role("button", name="Open source").first.click()
+            page.locator("#manualStart").wait_for()
+            assert_no_overflow(page)
+            assert not errors, errors
+            page.close()
+    finally:
+        SOURCES[0]["title"] = title
+    # Contracts + skeptic/MEDIUM: completion must preserve the actual editor node.
+    page = browser.new_page()
+    errors, _ = attach(page)
+    page.goto("http://127.0.0.1:8966/sources")
+    page.get_by_role("button", name="Open source").first.click()
+    page.locator("#manualStart").fill("2.75")
+    page.locator("#manualEnd").fill("7.25")
+    page.wait_for_function("document.querySelector('video').readyState >= 2")
+    page.evaluate(
+        "window.originalInspectionVideo = document.querySelector('video'); originalInspectionVideo.currentTime=6"
+    )
+    page.locator("#manualStart").focus()
+    page.evaluate("wsBatchFinished()")
+    assert page.evaluate(
+        "document.querySelector('video') === window.originalInspectionVideo"
+    )
+    assert page.locator("#manualStart").input_value() == "2.75"
+    assert page.locator("#manualEnd").input_value() == "7.25"
+    assert page.locator("video").evaluate("v => v.currentTime") == 6
+    assert page.locator("#manualStart").evaluate("e => e === document.activeElement")
+    assert not errors, errors
+    page.close()
+    # Skeptic/MEDIUM: initial source-filter options may predate the import.
+    sources = list(SOURCES)
+    SOURCES.clear()
+    page = browser.new_page()
+    try:
+        errors, _ = attach(page)
+        page.goto("http://127.0.0.1:8966/")
+        page.locator(".card").first.wait_for()
+        assert page.locator("#sourceFilter option").count() == 1
+        SOURCES.extend(sources)
+        page.evaluate("wsBatchFinished()")
+        assert page.locator("#sourceFilter option").count() == 3
+        page.locator("#sourceFilter").select_option("source")
+        page.evaluate("wsBatchFinished()")
+        assert page.locator("#sourceFilter").input_value() == "source"
+        assert not errors, errors
+    finally:
+        if not SOURCES:
+            SOURCES.extend(sources)
+        page.close()
+    result["scenarios"].extend(
+        [
+            "unbroken-filename-overflow",
+            "completion-preserves-interval-playhead-focus",
+            "source-filter-refresh-preserves-choice",
+        ]
+    )
+
+
+def check_primary_actions(browser, result):
+    for mode in ("picker", "drop", "add-score", "score-sources", "duplicates"):
+        state, receipts = {"run": None}, []
+        page = browser.new_page(viewport={"width": 1024, "height": 768})
+        page.set_default_timeout(5000)
+        errors, _ = attach(page, run_state=state, receipts=receipts)
+        page.goto("http://127.0.0.1:8966/sources")
+        page.locator("#workspaceProfile option").first.wait_for(state="attached")
+        page.locator("#intake > summary").click()
+        page.get_by_text("Advanced settings", exact=True).click()
+        page.locator("#transcriptionModel").fill("tiny")
+        page.locator("#duplicateThreshold").fill("0.72")
+        page.locator("#offlineScore").check()
+        if mode == "picker":
+            page.locator("#sourceFiles").set_input_files(
+                ROOT / "tests/fixtures/workspace/source.mp4"
+            )
+            page.locator("#addOnly").click()
+        elif mode == "drop":
+            page.evaluate(
+                """() => {const transfer = new DataTransfer(); transfer.items.add(new File(['synthetic'], 'dropped.mp4', {type:'video/mp4'})); document.querySelector('#fileDrop').dispatchEvent(new DragEvent('drop', {dataTransfer:transfer,bubbles:true,cancelable:true}));}"""
+            )
+            page.locator("#addScore").click()
+        elif mode == "add-score":
+            page.locator("#sourceRequests").fill(
+                "https://www.youtube.com/watch?v=fixture\n/fixture/local.mp4"
+            )
+            page.locator("#addScore").click()
+        elif mode == "score-sources":
+            page.locator("#sourceLibrary input[type=checkbox]").first.check()
+            page.locator("#scoreSources").click()
+        else:
+            page.locator("#scoringModel").fill("irrelevant-for-duplicates")
+            page.locator("#checkDuplicates").click()
+        page.locator("#batchStrip strong").wait_for()
+        assert len(receipts) == 1, (mode, receipts)
+        receipt, data = receipts[0], receipts[0]["data"]
+        assert (
+            data["profile"] == "fixture"
+            and data["transcription_model"] == "tiny"
+            and data["threshold"] == 0.72
+            and data["offline"]
+        )
+        assert data["score"] == (mode in {"drop", "add-score", "score-sources"})
+        assert data["duplicates_only"] == (mode == "duplicates")
+        if mode in {"picker", "drop"}:
+            assert receipt["path"] == "/api/runs/files"
+            assert receipt["files"] == (
+                ["source.mp4"] if mode == "picker" else ["dropped.mp4"]
+            )
+        if mode == "add-score":
+            assert data["requests"] == [
+                "https://www.youtube.com/watch?v=fixture",
+                "/fixture/local.mp4",
+            ]
+        if mode == "score-sources":
+            assert data["source_ids"] == ["source"]
+        # Skeptic/MEDIUM: expanded details and focused summary survive real polling.
+        page.locator("#batchStrip summary").click()
+        page.wait_for_timeout(950)
+        assert page.locator("#batchStrip details").evaluate("e => e.open")
+        assert page.locator("#batchStrip summary").evaluate(
+            "e => e === document.activeElement"
+        )
+        if mode == "score-sources":
+            state["run"] = {
+                **state["run"],
+                "status": "complete",
+                "stage": "complete",
+                "items": [
+                    {
+                        "source_id": "source",
+                        "request": "Synthetic source",
+                        "state": "failed",
+                        "stage": "scoring",
+                        "error": "Synthetic score failure",
+                    }
+                ],
+            }
+            page.get_by_role("button", name="Retry failed work").wait_for()
+            page.locator("#workspaceProfile").select_option("other")
+            page.get_by_role("button", name="Retry failed work").click()
+            page.wait_for_function("workspaceRun.status === 'active'")
+            assert len(receipts) == 2 and receipts[-1]["path"].endswith("/retry")
+            assert set(receipts[-1]["data"]) == {"attempt_key"}
+            assert "fixture" in page.locator("#batchStrip strong").inner_text()
+        if mode == "picker":
+            state["run"]["status"] = "complete"
+            page.wait_for_function("workspaceRun.status === 'complete'")
+            page.locator("#sourceRequests").fill("/fixture/next.mp4")
+            page.locator("#clearSourceFiles").click()
+            assert page.locator("#sourceRequests").input_value() == "/fixture/next.mp4"
+            assert page.locator("#sourceFiles").evaluate("e => e.files.length") == 0
+            page.locator("#addOnly").click()
+            page.wait_for_function("workspaceRun.status === 'active'")
+            assert len(receipts) == 2 and receipts[-1]["path"] == "/api/runs"
+            assert receipts[-1]["data"]["requests"] == ["/fixture/next.mp4"]
+        assert not errors, (mode, errors)
+        page.close()
+    result["scenarios"].extend(
+        [
+            "file-picker-admission",
+            "file-drop-admission",
+            "add-and-score-settings",
+            "selected-source-score",
+            "on-demand-duplicates",
+            "explicit-scoring-retry",
+            "batch-details-focus-preserved",
+            "clear-files-then-path-intake",
+        ]
+    )
+
+
 def check(output: Path, channel: str | None = None):
     output.mkdir(parents=True, exist_ok=True)
     result = {"viewports": [], "scenarios": [], "screenshots": []}
@@ -276,6 +569,11 @@ def check(output: Path, channel: str | None = None):
                     "document.documentElement.style.removeProperty('--searcher-space')"
                 )
                 if width in {390, 1366}:
+                    page.locator("#intake > summary").click()
+                    page.get_by_text("Advanced settings", exact=True).click()
+                    result.setdefault("styles", []).append(assert_source_styles(page))
+                    page.get_by_text("Advanced settings", exact=True).click()
+                    page.locator("#intake > summary").click()
                     file = output / f"sources-{width}.png"
                     page.screenshot(path=str(file), full_page=True)
                     result["screenshots"].append(str(file))
@@ -476,6 +774,22 @@ def check(output: Path, channel: str | None = None):
                     "invalid-manual-interval",
                 ]
             )
+            check_review_repairs(browser, result)
+            check_primary_actions(browser, result)
+            page = browser.new_page(
+                viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True
+            )
+            errors, _ = attach(page)
+            page.goto("http://127.0.0.1:8966/sources")
+            page.get_by_role("button", name="Open source").first.click()
+            page.locator("#manualStart").wait_for()
+            page.locator("#intake > summary").click()
+            page.get_by_text("Advanced settings", exact=True).click()
+            result.setdefault("styles", []).append(assert_source_styles(page))
+            assert_no_overflow(page)
+            assert not errors, errors
+            page.close()
+            result["scenarios"].append("computed-slate-roles-and-all-source-targets")
             result["scenarios"].extend(
                 [
                     "review-landing-defaults",
@@ -491,6 +805,8 @@ def check(output: Path, channel: str | None = None):
             )
         finally:
             browser.close()
+    assert set(result["scenarios"]) == REQUIRED_SCENARIOS, result["scenarios"]
+    assert len(result["scenarios"]) == len(REQUIRED_SCENARIOS)
     (output / "results.json").write_text(json.dumps(result, indent=2))
     print(
         json.dumps(

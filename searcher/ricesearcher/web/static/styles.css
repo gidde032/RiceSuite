@@ -219,3 +219,5 @@ a { color: var(--rice); }
 
 .filters #sourceFilter { width: 260px; max-width: 100%; }
 .card[data-revealed="true"] { outline: 2px solid var(--rice); outline-offset: 2px; }
+
+.media-title { overflow-wrap: anywhere; }

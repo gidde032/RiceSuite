@@ -85,6 +85,14 @@ class RunManager:
         self.inputs: dict[str, tuple[list[Item], BeatProfile, Options]] = {}
         self.active: str | None = None
         self.latest: str | None = None
+        # Intake is transient, not a restart-resumable queue. The single app
+        # discards abandoned process-owned staging under normal cache custody.
+        with MediaCache(config.cache_dir).custody():
+            staging = config.cache_dir / "intake"
+            if staging.is_symlink():
+                staging.unlink()
+            else:
+                shutil.rmtree(staging, ignore_errors=True)
 
     def snapshot(self, key: str | None = None) -> dict | None:
         with self.lock:
@@ -121,13 +129,12 @@ class RunManager:
                 raise ValueError("another processing batch is active")
             # Completed observations are bounded. Expired keys are never replayed by
             # the UI; an unavailable record requires a new explicit user action.
+            expired_uploads: list[Item] = []
             while len(self.runs) >= 32:
                 oldest = next(iter(self.runs))
                 self.runs.pop(oldest)
                 expired, _, _ = self.inputs.pop(oldest)
-                for item in expired:
-                    if item.upload_digest:
-                        shutil.rmtree(Path(item.request).parent, ignore_errors=True)
+                expired_uploads.extend(expired)
             run = {
                 "id": key,
                 "signature": signature,
@@ -153,6 +160,7 @@ class RunManager:
             }
             self.runs[key] = run
             self.inputs[key] = (copy.deepcopy(items), copy.deepcopy(profile), options)
+            self._cleanup_uploads(expired_uploads)
             self.active = self.latest = key
             threading.Thread(target=self._work, args=(key,), daemon=True).start()
             return copy.deepcopy(run)
@@ -188,6 +196,31 @@ class RunManager:
             if not failed:
                 raise ValueError("no failed items to retry")
             return self.submit(key, failed, profile, options)
+
+    def _cleanup_uploads(self, candidates: list[Item]) -> None:
+        """Discard only staging no retained failed acquisition still needs.
+
+        Call with self.lock held. Retried items may share their original file;
+        source checkpoints replace that need only after acquisition succeeds.
+        Cleanup cannot change work results or strand the admission lock.
+        """
+        needed = {
+            item.request
+            for key, (items, _, _) in self.inputs.items()
+            for n, item in enumerate(items)
+            if item.upload_digest
+            and not self.runs[key]["items"][n]["source_id"]
+            and self.runs[key]["items"][n]["state"] != "unstarted"
+        }
+        for item in candidates:
+            if not item.upload_digest or item.request in needed:
+                continue
+            path = Path(item.request)
+            try:
+                path.unlink(missing_ok=True)
+                path.parent.rmdir()  # only this empty app-owned staging directory
+            except OSError:
+                pass
 
     def _acquire(self, item: Item, library: Library, cache: MediaCache) -> Source:
         acquirer = next(
@@ -300,7 +333,7 @@ class RunManager:
             # checkpoint survives; unsuccessful acquisition can explicitly retry
             # the staged file while its observation is retained.
             with self.lock:
-                for n, item in enumerate(items):
-                    if item.upload_digest and self.runs[key]["items"][n]["source_id"]:
-                        Path(item.request).unlink(missing_ok=True)
-                self.active = None
+                try:
+                    self._cleanup_uploads(items)
+                finally:
+                    self.active = None

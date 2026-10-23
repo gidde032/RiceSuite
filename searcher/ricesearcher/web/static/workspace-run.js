@@ -17,19 +17,23 @@ function wsRenderRun(message = "") {
   if (!strip) return;
   const run = workspaceRun;
   strip.hidden = !run && !message;
+  const wasOpen = strip.querySelector("details")?.open || false;
+  const focused = strip.contains(document.activeElement) ? document.activeElement?.getAttribute("data-run-control") : null;
   strip.replaceChildren();
   if (message) strip.append(wsNode("p", message, {class: "operational"}));
   if (!run) return;
   const done = run.items.filter((i) => i.state === "complete").length;
   strip.append(wsNode("strong", "Processing · " + run.profile + " · " + done + " / " + run.items.length + " · " + run.stage));
   const details = wsNode("details");
-  details.append(wsNode("summary", "Batch details · " + run.status));
+  details.open = wasOpen;
+  details.append(wsNode("summary", "Batch details · " + run.status, {"data-run-control": "details"}));
   for (const item of run.items) details.append(wsNode("p", item.request + " · " + item.state + " · " + item.stage + (item.error ? ": " + item.error : ""), {class: "operational"}));
   if (run.detail) details.append(wsNode("p", run.detail, {class: "error"}));
   if (run.duplicate_error) details.append(wsNode("p", "Duplicate check failed: " + run.duplicate_error, {class: "error"}));
   strip.append(details);
   if (run.status === "active") {
     const stop = wsNode("button", run.stop_requested ? "Stopping after current source" : "Stop after current source");
+    stop.setAttribute("data-run-control", "stop");
     stop.disabled = run.stop_requested;
     stop.addEventListener("click", async () => {
       stop.disabled = true;
@@ -38,10 +42,11 @@ function wsRenderRun(message = "") {
     });
     strip.append(stop);
   } else if (run.items.some((i) => i.state === "failed") || run.duplicate_error) {
-    const retry = wsNode("button", "Retry failed work");
+    const retry = wsNode("button", "Retry failed work", {"data-run-control": "retry"});
     retry.addEventListener("click", () => wsSubmit("api/runs/" + run.id + "/retry", {}));
     strip.append(retry);
   }
+  if (focused) strip.querySelector(`[data-run-control="${focused}"]`)?.focus({preventScroll: true});
 }
 async function wsRequest(url, init) {
   const res = await fetch(url, init);
@@ -101,13 +106,20 @@ async function wsObserve(key, generation = ++workspaceGeneration) {
   } catch (err) { wsRenderRun("Connection lost. Last known progress retained; observing only. " + err.message); }
   if (generation === workspaceGeneration) workspaceTimer = setTimeout(() => wsObserve(key, generation), 700);
 }
-async function wsDiscover() {
+async function wsDiscover(generation = ++workspaceGeneration) {
+  clearTimeout(workspaceTimer);
   let remembered;
   try { remembered = localStorage.getItem(WORKSPACE_ATTEMPT); } catch (_) { /* unavailable */ }
   try {
     const data = await wsRequest("api/runs/current");
-    if (data.run) { workspaceRun = data.run; wsRenderRun(); if (data.run.status === "active") await wsObserve(data.run.id); }
-    else if (remembered) await wsObserve(remembered);
-  } catch (err) { wsRenderRun("Processing progress unavailable: " + err.message); }
+    if (generation !== workspaceGeneration) return;
+    if (data.run) { workspaceRun = data.run; wsRenderRun(); if (data.run.status === "active") await wsObserve(data.run.id, generation); }
+    else if (remembered) await wsObserve(remembered, generation);
+  } catch (err) {
+    if (generation !== workspaceGeneration) return;
+    wsRenderRun("Processing progress unavailable: " + err.message);
+    if (remembered) await wsObserve(remembered, generation);
+    else workspaceTimer = setTimeout(() => wsDiscover(generation), 700);
+  }
 }
 wsDiscover();

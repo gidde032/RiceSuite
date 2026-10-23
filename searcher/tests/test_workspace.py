@@ -378,6 +378,7 @@ def test_workspace_routes_manual_filters_and_profile_separation(setup, monkeypat
                 json={
                     **payload,
                     "attempt_key": "bad-model",
+                    "score": True,
                     "offline": True,
                     "model": "override",
                 },
@@ -414,7 +415,7 @@ def test_browser_intake_safe_names_idempotence_and_cleanup_guards(setup):
         assert fake.entered.wait(2)
         assert client.post("/api/runs/files", data=data, files=files).status_code == 200
         original = app.state.runs.inputs["upload"][0][0]
-        assert Path(original.request).parent.parent == cfg.data_dir / "intake"
+        assert Path(original.request).parent.parent == cfg.cache_dir / "intake"
         assert Path(original.request).name != "Original clip.mp4"
         assert original.filename == "../../Original clip.mp4"
         assert client.post("/api/cache/clear").status_code == 409

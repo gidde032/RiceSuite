@@ -65,7 +65,7 @@ def register_workspace(app: FastAPI, cfg: Config, manager: RunManager) -> None:
     def admit(key: str, items: list[Item], settings: Settings) -> dict:
         if not items and not settings.duplicates_only:
             raise HTTPException(422, "choose sources or enter URLs/local paths")
-        if settings.model and settings.offline:
+        if settings.score and settings.model and settings.offline:
             raise HTTPException(422, "choose offline scoring or a model override")
         try:
             profile = load_profile(settings.profile, profiles_dir=cfg.profiles_dir)
@@ -118,7 +118,7 @@ def register_workspace(app: FastAPI, cfg: Config, manager: RunManager) -> None:
             raise HTTPException(422, "invalid intake settings") from exc
         if not 1 <= len(files) <= 100:
             raise HTTPException(422, "choose 1–100 files")
-        staging_root = cfg.data_dir / "intake"
+        staging_root = cfg.cache_dir / "intake"
         staging_root.mkdir(exist_ok=True)
         staging = Path(tempfile.mkdtemp(prefix="intake-", dir=staging_root))
         items = []

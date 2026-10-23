@@ -22,8 +22,8 @@ The five-phase ladder from `SPEC.md §9`. Each phase ends in a usable increment.
 ## Current delivery
 
 - **Expanded Searcher workspace** ([RiceSuite #96](https://github.com/gidde032/RiceSuite/issues/96))
-  — implemented on the focused draft-PR branch; independent review and maintainer
-  acceptance remain delivery gates. Scope and exclusions are in `SPEC.md §13`.
+  — implemented and independently reviewed on [draft PR #97](https://github.com/gidde032/RiceSuite/pull/97);
+  parent validation and maintainer acceptance remain delivery gates. Scope and exclusions are in `SPEC.md §13`.
 
 ## Maintenance backlog
 

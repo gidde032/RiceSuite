@@ -242,7 +242,8 @@ change the brief. `profiles` skips a malformed file with a warning.
 
 `ricesearcher review` serves the local workspace at http://127.0.0.1:8765.
 Review opens with Candidates and Kind All. Sources offers inline URL/path intake
-or a local file picker/drop area. **Add only** acquires and transcribes;
+or a local file picker/drop area. **Clear file selection** removes those pending
+files without changing typed URLs or paths. **Add only** acquires and transcribes;
 **Add & score** also scores under the chosen profile. Advanced settings retain
 the CLI's transcription model (`small`), scoring override/offline choice, and
 duplicate threshold (`0.65`). Source media and transcripts are shared; segments
@@ -260,12 +261,17 @@ the entire selected profile, including items hidden by filters, in that same ord
 One processing batch runs serially while the Searcher process stays running.
 Navigation, refresh, and browser closure do not stop it. The strip names the
 original profile and actual stages. **Stop after current source** finishes the
-current item and leaves the rest unstarted. **Retry failed work** is explicit and
+current item and leaves the rest unstarted; reselect unstarted browser files
+to add them later. **Retry failed work** is explicit and
 reuses retained acquisition/transcription; a duplicate-check failure does not
 remove successful scores. A lost response only observes the attempt. Restarting
 the process forgets run observations and never resumes work: inspect retained
 sources, then explicitly score or add unfinished sources again. At most 32
 process-local observations are retained; this is not a durable queue or history.
+Browser intake staging lives inside the local cache. A retained failed acquisition
+keeps its input for explicit retry; successful acquisition uses its durable source
+checkpoint. Unstarted uploads are discarded after Stop, orphaned intake is removed
+on process startup, and Clear entire cache includes intake bytes.
 
 The Sources page retains confirmed source deletion and whole-cache cleanup.
 Cleanup is held while a processing batch is active; stop and wait before purging.

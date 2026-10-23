@@ -14,6 +14,7 @@ const kindEl = document.getElementById("kindFilter");
 const sourceEl = document.getElementById("sourceFilter");
 let visibleSlices = [];
 let revealSliceId = "";
+let sourceRequest = 0;
 const progressEl = document.getElementById("progress");
 
 // Which profile the review UI is scoped to. Persisted so a reload keeps it.
@@ -543,10 +544,7 @@ async function init() {
   await loadProfiles();
   if (sourceEl) {
     try {
-      const res = await fetch("api/sources");
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      const sources = await res.json();
-      sourceEl.replaceChildren(el("option", { value: "" }, "All sources"), ...sources.map((s) => el("option", { value: s.id }, s.title || s.id)));
+      await loadSourceOptions();
       const query = new URLSearchParams(location.search);
       if (query.has("profile") && profiles.some((p) => p.id === query.get("profile"))) {
         profileEl.value = query.get("profile"); localStorage.setItem(PROFILE_KEY, profileEl.value);
@@ -572,6 +570,21 @@ async function init() {
   } catch (_err) { /* absent or invalid temporary observation */ }
 }
 
-async function wsBatchFinished() { await loadProfiles(); await load(true); }
+async function loadSourceOptions() {
+  if (!sourceEl) return;
+  const request = ++sourceRequest;
+  const res = await fetch("api/sources");
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const sources = await res.json();
+  if (request !== sourceRequest) return;
+  const selected = sourceEl.value;
+  sourceEl.replaceChildren(el("option", {value: ""}, "All sources"), ...sources.map((s) => el("option", {value: s.id}, s.title || s.id)));
+  sourceEl.value = sources.some((s) => s.id === selected) ? selected : "";
+}
+async function wsBatchFinished() {
+  await loadProfiles();
+  try { await loadSourceOptions(); } catch (err) { setStatusMsg("Source filters unavailable: " + err.message, true); }
+  await load(true);
+}
 
 init();

@@ -187,7 +187,11 @@ rows backfill as scored; identifiable legacy edited windows retain protection.
 Sources add `transcription_state`: legacy and successful-empty transcripts are
 `complete`, newly retained acquisition is `pending` until ASR commits successfully.
 The web worker retains that checkpoint on failure; legacy CLI pull keeps its
-original cleanup and error contract. No run is persisted or automatically resumed.
+original cleanup and error contract. No run is persisted or automatically resumed. App-owned browser intake lives
+inside the media cache, with reference-aware cleanup across retained retries.
+Stop discards unstarted upload staging, startup removes orphaned staging, and
+whole-cache cleanup includes those files; completed source checkpoints remain
+until the user deliberately purges them.
 
 The v4 rebuild is transactional and preserves existing IDs, profile/status/window
 values, duplicate links, and indexes. Manual IDs use a separate `manual:<uuid>`

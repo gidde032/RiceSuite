@@ -81,3 +81,23 @@ test("known admission rejection keeps its reason without pretending a run expire
   assert.equal(calls[0].options.method, "POST");
   assert.match(vm.runInContext('messages.at(-1)', h.context), /Batch not started: ANTHROPIC_API_KEY is missing/);
 });
+
+test("cold correctness MEDIUM: initial discovery failure reconnects to remembered work read-only", async () => {
+  const calls = [];
+  const h = boot(async (url, options) => { calls.push({url, options}); if (url.endsWith("current")) throw new Error("transient discovery"); return response(run()); });
+  h.storage.set("ricesearcher.processing.attempt", "attempt");
+  await vm.runInContext('wsDiscover()', h.context);
+  assert.deepEqual(calls.map((c) => c.url), ["api/runs/current", "api/runs/attempt"]);
+  assert.equal(vm.runInContext('workspaceRun.id', h.context), "attempt");
+  assert.ok(calls.every((c) => !c.options));
+});
+
+test("cold correctness MEDIUM: discovery without a remembered key retries observation", async () => {
+  let fail = true;
+  const h = boot(async (url) => { if (fail) throw new Error("transient discovery"); return response(url.endsWith("current") ? {run: run()} : run()); });
+  await vm.runInContext('wsDiscover()', h.context);
+  assert.equal(h.timers.length, 1);
+  fail = false;
+  await h.timers.shift()();
+  assert.equal(vm.runInContext('workspaceRun.id', h.context), "attempt");
+});

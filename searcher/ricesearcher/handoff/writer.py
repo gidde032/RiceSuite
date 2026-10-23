@@ -16,7 +16,7 @@ import re
 import shutil
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -326,7 +326,7 @@ def hand_off_selected(
     if not selected:
         return {"batch_id": None, "clip_count": 0}
 
-    # Position by score (best first); stable tie-break for determinism.
+    # Manual creation order first, then scored descending; stable tie-breaks.
     ordered = sorted(selected, key=slice_order)
     titles = library.source_titles()
     notify(
@@ -408,7 +408,19 @@ def hand_off_selected(
                     profile_id=profile_id, status=SliceStatus.SELECTED
                 )
             }
-            snapshot_unchanged = all(still_selected.get(sl.id) == sl for sl in ordered)
+            # Advisory annotations may change during extraction. Every other
+            # snapshot field, including human edit markers, stays protected.
+            snapshot_unchanged = all(
+                (latest := still_selected.get(sl.id)) is not None
+                and replace(
+                    latest,
+                    dup_of=sl.dup_of,
+                    dup_score=sl.dup_score,
+                    dup_kind=sl.dup_kind,
+                )
+                == sl
+                for sl in ordered
+            )
             if snapshot_unchanged:
                 # Manifest-last publication remains the consumer's completeness
                 # signal. Publishing under the short DB write lock ensures a

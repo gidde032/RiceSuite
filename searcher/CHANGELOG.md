@@ -14,7 +14,12 @@ All notable changes to RiceSearcher are documented here. This project adheres to
   saved human window edits remain protected after Reset.
 - Transactional schema v4 preserves legacy rows, identities, annotations and indexes,
   adds source transcription checkpoints, nullable scores, origin and edit markers.
-- Production browser geometry/style/playback checks are required in Searcher CI.
+- Production browser geometry/style/playback and primary-action checks are required
+  in Searcher CI, with a checked scenario inventory and computed palette/target checks.
+- Background completion preserves active inspection and source filters; observation
+  preserves expanded details/focus and reconnects after initial read failure.
+- Upload staging cleanup respects retained retries and full-cache/startup cleanup;
+  advisory duplicate changes cannot cancel a selected handoff.
 
 
 ### Fixed

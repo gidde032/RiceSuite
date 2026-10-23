@@ -93,12 +93,8 @@ async function wsOpen(source) {
     });
     form.append(preview, save);
     const transcript = wsNode("div", detail.transcript || "No transcript text. Manual segments are still available.", {class: "source-transcript"});
-    const summary = wsNode("div", null, {class: "source-segments"});
-    summary.append(wsNode("h3", "Segments · " + profile));
-    for (const slice of slices) summary.append(wsNode("p", (slice.origin === "manual" ? "Manual / unscored" : "Score " + slice.score.toFixed(2)) + " · " + slice.target_in + "–" + slice.target_out + "s · " + slice.status, {class: "operational"}));
-    if (!slices.length) summary.append(wsNode("p", "No segments under this profile.", {class: "operational"}));
-    summary.append(wsNode("a", "Review this source", {href: "./?source=" + encodeURIComponent(source.id) + "&status="}));
-    wsInspector.replaceChildren(back, title, player, error, form, msg, wsNode("h3", "Full transcript · " + detail.transcription_state), transcript, summary);
+    const summary = wsSegmentSummary(slices, profile, source);
+    wsInspector.replaceChildren(back, title, player, error, form, msg, wsNode("h3", "Full transcript · " + detail.transcription_state, {id: "sourceTranscriptHeading"}), transcript, summary);
   } catch (err) {
     if (generation === wsDetailGeneration) {
       const back = wsNode("button", "← Back to sources", {class: "source-back"});
@@ -107,12 +103,37 @@ async function wsOpen(source) {
     }
   }
 }
-async function wsBatchFinished() { await load(); if (wsOpened) await wsOpen(wsOpened); }
+function wsSegmentSummary(slices, profile, source) {
+  const summary = wsNode("div", null, {class: "source-segments"});
+  summary.append(wsNode("h3", "Segments · " + profile));
+  for (const slice of slices) summary.append(wsNode("p", (slice.origin === "manual" ? "Manual / unscored" : "Score " + slice.score.toFixed(2)) + " · " + slice.target_in + "–" + slice.target_out + "s · " + slice.status, {class: "operational"}));
+  if (!slices.length) summary.append(wsNode("p", "No segments under this profile.", {class: "operational"}));
+  summary.append(wsNode("a", "Review this source", {href: "./?source=" + encodeURIComponent(source.id) + "&status="}));
+  return summary;
+}
+async function wsBatchFinished() {
+  await load();
+  if (!wsOpened) return;
+  const generation = wsDetailGeneration, profile = wsProfile.value, id = wsOpened.id;
+  try {
+    const [detail, slices] = await Promise.all([
+      wsRequest("api/sources/" + encodeURIComponent(id)),
+      wsRequest("api/slices?profile=" + encodeURIComponent(profile) + "&source=" + encodeURIComponent(id)),
+    ]);
+    if (generation !== wsDetailGeneration || profile !== wsProfile.value || wsOpened?.id !== id) return;
+    const transcript = wsInspector.querySelector(".source-transcript");
+    if (transcript) transcript.textContent = detail.transcript || "No transcript text. Manual segments are still available.";
+    const heading = document.getElementById("sourceTranscriptHeading");
+    if (heading) heading.textContent = "Full transcript · " + detail.transcription_state;
+    wsInspector.querySelector(".source-segments")?.replaceWith(wsSegmentSummary(slices, profile, wsOpened));
+  } catch (err) { wsRenderRun("Source results could not refresh: " + err.message); }
+}
 wsProfile.addEventListener("change", () => { localStorage.setItem("ricesearcher.profile", wsProfile.value); if (wsOpened) wsOpen(wsOpened); });
 document.getElementById("addOnly").addEventListener("click", () => wsImport(false));
 document.getElementById("addScore").addEventListener("click", () => wsImport(true));
 document.getElementById("scoreSources").addEventListener("click", () => wsSubmit("api/runs", {...wsSettings(true), source_ids: [...wsSelected]}));
 document.getElementById("checkDuplicates").addEventListener("click", () => wsSubmit("api/runs", wsSettings(false, true)));
+document.getElementById("clearSourceFiles").addEventListener("click", () => { wsFiles = []; document.getElementById("sourceFiles").value = ""; });
 document.getElementById("sourceFiles").addEventListener("change", (event) => { wsFiles = [...event.target.files]; });
 const drop = document.getElementById("fileDrop");
 drop.addEventListener("dragover", (event) => event.preventDefault());

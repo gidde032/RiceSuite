@@ -11,9 +11,10 @@ Endpoints:
 - ``POST /api/cache/clear``       full-purge every source + wipe the media cache.
 - ``/static`` and ``/cache``      UI assets and range-served local media.
 
-The app only reads/annotates/deletes the local library and serves local files —
-no posting, publishing, or upload path exists anywhere in it. The delete/clear
-controls remove *local* data only.
+The app imports browser files only into local cache staging, processes explicit
+batches, serves source inspection, and preserves the human select/handoff gate.
+No external posting, publishing, or content-upload surface exists. Delete/clear
+controls remove local data only.
 """
 
 from __future__ import annotations
