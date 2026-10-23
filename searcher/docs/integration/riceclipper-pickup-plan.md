@@ -125,3 +125,12 @@ writer to `RICECLIPPER_HANDOFF_DIR` (`~/riceclipper-handoff`, for RicePoster) is
   before RicePoster is unchanged.
 - RiceClipper's roadmap edit retiring Path 1 / Path 2 extraction into
   RiceSearcher (Issue #9) is a separate doc change against that repo.
+
+## Manual segments (RiceSuite #96)
+
+Schema 1 also permits `score: null` with `origin: "manual"` and an empty
+`scorer_model`. No model or heuristic result is fabricated. Clipper validates the
+file and position, preserves manifest metadata, and independently transcribes the
+exported bytes. Scored entries retain their numeric scores and existing meaning.
+Handoff positions cover the profile's whole selected set: manual creation order
+first, then scored descending, regardless of the UI's browsing filters.

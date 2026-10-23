@@ -10,6 +10,11 @@ const statusEl = document.getElementById("status");
 const filterEl = document.getElementById("statusFilter");
 const profileEl = document.getElementById("profileSelect");
 const handoffBtn = document.getElementById("handoffBtn");
+const kindEl = document.getElementById("kindFilter");
+const sourceEl = document.getElementById("sourceFilter");
+let visibleSlices = [];
+let revealSliceId = "";
+let sourceRequest = 0;
 const progressEl = document.getElementById("progress");
 
 // Which profile the review UI is scoped to. Persisted so a reload keeps it.
@@ -142,6 +147,8 @@ profileEl.addEventListener("change", () => {
   load();
 });
 filterEl.addEventListener("change", () => load());
+if (kindEl) kindEl.addEventListener("change", () => load());
+if (sourceEl) sourceEl.addEventListener("change", () => load());
 document.getElementById("handoffBtn").addEventListener("click", handoff);
 
 // Fill the profile select from /api/profiles and restore the saved choice.
@@ -178,7 +185,9 @@ function updateHandoffLabel() {
   const p = profiles.find((x) => x.id === profileEl.value);
   const n = p ? p.selected : 0;
   const id = profileEl.value || "—";
+  const hidden = n - visibleSlices.filter((s) => s.status === "selected" && s.profile_id === profileEl.value).length;
   btn.textContent = "Send " + n + " selected (" + id + ") → RiceClipper";
+  if (hidden > 0) btn.textContent += " · " + hidden + " hidden by filters";
   refreshInteractionState();
 }
 
@@ -257,42 +266,58 @@ async function load(preserveStatus = false) {
     return;
   }
   const status = filterEl.value;
+  const kind = kindEl ? kindEl.value : "";
+  const source = sourceEl ? sourceEl.value : "";
   cardProgress.clear();
   listEl.replaceChildren(el("div", { class: "empty" }, "Loading slices…"));
   countEl.textContent = "";
   let url = "api/slices?profile=" + encodeURIComponent(profile);
   if (status) url += "&status=" + encodeURIComponent(status);
+  if (kind) url += "&kind=" + encodeURIComponent(kind);
+  if (source) url += "&source=" + encodeURIComponent(source);
   let slices;
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error("HTTP " + res.status);
     slices = await res.json();
   } catch (err) {
-    if (!isCurrentLoad(request, profile, status)) return;
+    if (!isCurrentLoad(request, profile, status, kind, source)) return;
     listEl.replaceChildren(el("div", { class: "empty" }, "Failed to load slices: " + err.message));
     countEl.textContent = "";
     return;
   }
-  if (!isCurrentLoad(request, profile, status)) return;
-  slices.sort((a, b) => b.score - a.score);
+  if (!isCurrentLoad(request, profile, status, kind, source)) return;
+  slices.sort((a, b) => (a.origin === "manual" ? 0 : 1) - (b.origin === "manual" ? 0 : 1) ||
+    (a.origin === "manual" ? 0 : (b.score || 0) - (a.score || 0)) ||
+    (a.created_at || "").localeCompare(b.created_at || "") || a.id.localeCompare(b.id));
+  visibleSlices = slices;
+  updateHandoffLabel();
   countEl.textContent = slices.length + (slices.length === 1 ? " slice" : " slices");
   if (!preserveStatus) setStatusMsg("");
   if (!slices.length) {
     listEl.replaceChildren(
       el("div", { class: "empty" }, [
         el("p", {}, "No slices to review here."),
-        el("p", {}, [document.createTextNode("Pull and "), el("code", {}, "ricesearcher score <id>"), document.createTextNode(" first, then refresh.")]),
+        el("p", {}, "Open Sources to add media, score sources, or save a manual segment."),
       ])
     );
     return;
   }
   cardProgress.clear();
   listEl.replaceChildren(...slices.map(card));
+  if (revealSliceId) {
+    const target = [...listEl.children].find((node) => node.getAttribute("data-slice-id") === revealSliceId);
+    if (target) {
+      target.setAttribute("tabindex", "-1"); target.setAttribute("data-revealed", "true");
+      target.focus({preventScroll: true}); target.scrollIntoView({block: "center"});
+      revealSliceId = "";
+    }
+  }
   renderOperation();
 }
 
-function isCurrentLoad(request, profile, status) {
-  return request === sliceRequest && profile === profileEl.value && status === filterEl.value;
+function isCurrentLoad(request, profile, status, kind = "", source = "") {
+  return request === sliceRequest && profile === profileEl.value && status === filterEl.value && (!kindEl || kind === kindEl.value) && (!sourceEl || source === sourceEl.value);
 }
 
 function card(s) {
@@ -319,7 +344,7 @@ function card(s) {
   // Offline slices were ranked by the heuristic prefilter only, never by the LLM.
   const offline = s.scorer_model === "heuristic-offline";
   meta.append(el("div", { class: "meta-top" }, [
-    el("span", { class: "score", title: offline ? "offline heuristic score (not LLM-scored)" : "LLM clippability score" }, s.score.toFixed(2)),
+    el("span", { class: "score", title: offline ? "offline heuristic score (not LLM-scored)" : "LLM clippability score" }, s.origin === "manual" ? "Manual" : s.score.toFixed(2)),
     el("span", { class: "title" }, s.source_title),
   ]));
 
@@ -327,7 +352,7 @@ function card(s) {
   const renderBadges = () => {
     const kids = [
       el("span", { class: "badge" }, "rights: " + s.rights_risk),
-      el("span", { class: "badge" }, "heur " + s.heuristic_score.toFixed(2)),
+      el("span", { class: "badge" }, s.origin === "manual" ? "manual / unscored" : "heur " + s.heuristic_score.toFixed(2)),
     ];
     if (offline) {
       kids.push(el("span", { class: "badge offline", title: "scored offline by the heuristic prefilter; not LLM-scored" },
@@ -337,7 +362,7 @@ function card(s) {
     if (s.status === "rejected") kids.push(el("span", { class: "badge status-rejected" }, "rejected"));
     if (s.status === "reviewed") kids.push(el("span", { class: "badge" }, "reviewed"));
     if (s.status === "handed_off") kids.push(el("span", { class: "badge" }, "handed off"));
-    if (s.stale) kids.push(el("span",
+    if (s.stale && s.origin !== "manual") kids.push(el("span",
       { class: "badge stale", title: "scored with version " + s.beat_profile_version }, "stale"));
     if (s.dup_of) {
       kids.push(el("span", { class: "badge dup", title: "advisory only — nothing is filtered" },
@@ -517,6 +542,19 @@ function el(tag, attrs, children) {
 
 async function init() {
   await loadProfiles();
+  if (sourceEl) {
+    try {
+      await loadSourceOptions();
+      const query = new URLSearchParams(location.search);
+      if (query.has("profile") && profiles.some((p) => p.id === query.get("profile"))) {
+        profileEl.value = query.get("profile"); localStorage.setItem(PROFILE_KEY, profileEl.value);
+      }
+      revealSliceId = query.get("slice") || "";
+      if (query.has("source")) sourceEl.value = query.get("source");
+      if (query.has("kind") && kindEl) kindEl.value = query.get("kind");
+      if (query.has("status")) filterEl.value = query.get("status");
+    } catch (err) { setStatusMsg("Source filters unavailable: " + err.message, true); }
+  }
   await load();
   try {
     const saved = JSON.parse(sessionStorage.getItem(OPERATION_KEY));
@@ -530,6 +568,23 @@ async function init() {
       }
     }
   } catch (_err) { /* absent or invalid temporary observation */ }
+}
+
+async function loadSourceOptions() {
+  if (!sourceEl) return;
+  const request = ++sourceRequest;
+  const res = await fetch("api/sources");
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const sources = await res.json();
+  if (request !== sourceRequest) return;
+  const selected = sourceEl.value;
+  sourceEl.replaceChildren(el("option", {value: ""}, "All sources"), ...sources.map((s) => el("option", {value: s.id}, s.title || s.id)));
+  sourceEl.value = sources.some((s) => s.id === selected) ? selected : "";
+}
+async function wsBatchFinished() {
+  await loadProfiles();
+  try { await loadSourceOptions(); } catch (err) { setStatusMsg("Source filters unavailable: " + err.message, true); }
+  await load(true);
 }
 
 init();

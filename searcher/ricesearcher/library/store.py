@@ -23,7 +23,7 @@ from ricesearcher.models import (
     TranscriptWord,
 )
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # The profile id every pre-v3 slice belongs to (ADR-002). The v3 migration
 # stamps it on every row and folds it into the slice id.
@@ -105,6 +105,48 @@ MIGRATIONS[3] = f"""
     CREATE INDEX IF NOT EXISTS idx_slices_profile_status
         ON candidate_slices(profile_id, status);
     """
+
+
+# v4: preserve every legacy row/id/link while making unscored values truly NULL.
+# The replacement and version stamp execute in the existing migration transaction.
+MIGRATIONS[4] = """
+    ALTER TABLE sources ADD COLUMN transcription_state TEXT NOT NULL DEFAULT 'complete';
+    CREATE TABLE slices_v4 (
+        id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+        pad_in REAL NOT NULL, pad_out REAL NOT NULL,
+        target_in REAL NOT NULL, target_out REAL NOT NULL,
+        transcript_span TEXT NOT NULL DEFAULT '', score REAL,
+        rationale TEXT NOT NULL DEFAULT '', heuristic_score REAL,
+        heuristic_features TEXT NOT NULL DEFAULT '{}',
+        beat_profile_version TEXT NOT NULL DEFAULT '',
+        scorer_model TEXT NOT NULL DEFAULT '', dup_of TEXT,
+        dup_score REAL NOT NULL DEFAULT 0, dup_kind TEXT NOT NULL DEFAULT '',
+        rights_risk TEXT NOT NULL DEFAULT 'med',
+        status TEXT NOT NULL DEFAULT 'candidate', created_at TEXT NOT NULL DEFAULT '',
+        profile_id TEXT NOT NULL DEFAULT '',
+        origin TEXT NOT NULL DEFAULT 'scored' CHECK(origin IN ('scored', 'manual')),
+        window_edited INTEGER NOT NULL DEFAULT 0
+    );
+    INSERT INTO slices_v4 SELECT *, 'scored', 0 FROM candidate_slices;
+    UPDATE slices_v4 SET window_edited = 1
+    WHERE id LIKE source_id || ':' || profile_id || ':%-%'
+      AND (
+        abs(target_in * 1000 - CAST(substr(
+            id, length(source_id) + length(profile_id) + 3,
+            instr(substr(id, length(source_id) + length(profile_id) + 3), '-') - 1
+        ) AS REAL)) > 0.51
+        OR abs(target_out * 1000 - CAST(substr(
+            substr(id, length(source_id) + length(profile_id) + 3),
+            instr(substr(id, length(source_id) + length(profile_id) + 3), '-') + 1
+        ) AS REAL)) > 0.51
+      );
+    DROP TABLE candidate_slices;
+    ALTER TABLE slices_v4 RENAME TO candidate_slices;
+    CREATE INDEX idx_slices_source ON candidate_slices(source_id);
+    CREATE INDEX idx_slices_score ON candidate_slices(score DESC);
+    CREATE INDEX idx_slices_profile_status ON candidate_slices(profile_id, status);
+"""
 
 
 class Library:
@@ -190,8 +232,8 @@ class Library:
             self._conn.execute(
                 """INSERT INTO sources
                    (id, kind, ref, media_path, title, channel,
-                    published_at, acquired_at, duration_s)
-                   VALUES (?,?,?,?,?,?,?,?,?)
+                    published_at, acquired_at, duration_s, transcription_state)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(id) DO UPDATE SET
                        kind = excluded.kind,
                        ref = excluded.ref,
@@ -200,7 +242,8 @@ class Library:
                        channel = excluded.channel,
                        published_at = excluded.published_at,
                        acquired_at = excluded.acquired_at,
-                       duration_s = excluded.duration_s""",
+                       duration_s = excluded.duration_s,
+                       transcription_state = excluded.transcription_state""",
                 (
                     source.id,
                     source.kind.value,
@@ -211,6 +254,7 @@ class Library:
                     source.published_at,
                     source.acquired_at,
                     source.duration_s,
+                    source.transcription_state,
                 ),
             )
             self._conn.execute(
@@ -365,8 +409,8 @@ class Library:
                 transcript_span, score, rationale, heuristic_score,
                 heuristic_features, beat_profile_version, profile_id,
                 scorer_model, dup_of, dup_score, dup_kind, rights_risk,
-                status, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                status, created_at, origin, window_edited)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             [
                 (
                     s.id,
@@ -389,6 +433,8 @@ class Library:
                     s.rights_risk,
                     s.status.value,
                     s.created_at,
+                    s.origin,
+                    s.window_edited,
                 )
                 for s in slices
             ],
@@ -414,17 +460,22 @@ class Library:
         required: the delete is scoped to that source **and** profile, so rows of
         other profiles are never touched (ADR-002 partition).
         """
-        with self._conn:
+        with self.immediate_transaction():
+            if self.get_source(source_id) is None:
+                raise ValueError("source was removed while scoring")
             self._conn.execute(
                 "DELETE FROM candidate_slices "
-                "WHERE source_id = ? AND status = 'candidate' AND profile_id = ?",
+                "WHERE source_id = ? AND status = 'candidate' AND profile_id = ? "
+                "AND origin = 'scored' AND window_edited = 0",
                 (source_id, profile_id),
             )
             protected_ids = {
                 row["id"]
                 for row in self._conn.execute(
                     "SELECT id FROM candidate_slices "
-                    "WHERE source_id = ? AND profile_id = ? AND status != 'candidate'",
+                    "WHERE source_id = ? AND profile_id = ? "
+                    "AND (status != 'candidate' OR origin = 'manual' "
+                    "OR window_edited = 1)",
                     (source_id, profile_id),
                 )
             }
@@ -449,6 +500,7 @@ class Library:
         profile_id: str | None = None,
         source_id: str | None = None,
         status: SliceStatus | None = None,
+        kind: str | None = None,
     ) -> list[CandidateSlice]:
         clauses = []
         params: list[str] = []
@@ -461,9 +513,14 @@ class Library:
         if status is not None:
             clauses.append("status = ?")
             params.append(status.value)
+        if kind is not None:
+            clauses.append("origin = ?")
+            params.append(kind)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         rows = self._conn.execute(
-            f"SELECT * FROM candidate_slices {where} ORDER BY score DESC, id",
+            f"SELECT * FROM candidate_slices {where} "
+            "ORDER BY (origin != 'manual'), "
+            "CASE WHEN origin = 'scored' THEN score END DESC, created_at, id",
             params,
         ).fetchall()
         return [_row_to_slice(r) for r in rows]
@@ -489,7 +546,8 @@ class Library:
         with self._conn:
             self._conn.execute(
                 "DELETE FROM candidate_slices "
-                "WHERE source_id = ? AND status = 'candidate'",
+                "WHERE source_id = ? AND status = 'candidate' "
+                "AND origin = 'scored' AND window_edited = 0",
                 (source_id,),
             )
 
@@ -541,7 +599,8 @@ class Library:
         """Set only a slice's intended in/out (targeted UPDATE). False if absent."""
         with self._conn:
             cur = self._conn.execute(
-                "UPDATE candidate_slices SET target_in = ?, target_out = ? "
+                "UPDATE candidate_slices SET target_in = ?, target_out = ?, "
+                "window_edited = 1 "
                 "WHERE id = ? AND status != 'handed_off'",
                 (target_in, target_out, slice_id),
             )
@@ -569,6 +628,7 @@ def _row_to_source(row: sqlite3.Row, words: list[TranscriptWord]) -> Source:
         acquired_at=row["acquired_at"],
         duration_s=row["duration_s"],
         words=words,
+        transcription_state=row["transcription_state"],
     )
 
 
@@ -603,4 +663,6 @@ def _row_to_slice(row: sqlite3.Row) -> CandidateSlice:
         rights_risk=row["rights_risk"],
         status=_coerce_status(row["status"]),
         created_at=row["created_at"],
+        origin=row["origin"],
+        window_edited=bool(row["window_edited"]),
     )

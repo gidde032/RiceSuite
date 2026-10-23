@@ -49,6 +49,7 @@ class Source:
     # Word-level transcript (empty until transcribed). Not stored inline in
     # SQLite as words; persisted as a child table / JSON by the store.
     words: list[TranscriptWord] = field(default_factory=list)
+    transcription_state: str = "complete"
 
     @property
     def transcript_text(self) -> str:
@@ -89,9 +90,9 @@ class CandidateSlice:
     target_in: float
     target_out: float
     transcript_span: str
-    score: float = 0.0
+    score: float | None = 0.0
     rationale: str = ""
-    heuristic_score: float = 0.0
+    heuristic_score: float | None = 0.0
     heuristic_features: dict[str, float] = field(default_factory=dict)
     beat_profile_version: str = ""
     profile_id: str = ""
@@ -102,3 +103,15 @@ class CandidateSlice:
     rights_risk: str = "med"
     status: SliceStatus = SliceStatus.CANDIDATE
     created_at: str = ""
+    origin: str = "scored"
+    window_edited: bool = False
+
+
+def slice_order(s: CandidateSlice) -> tuple[int, float, str, str]:
+    """Shared review/handoff order; advisory duplicate flags never affect it."""
+    return (
+        0 if s.origin == "manual" else 1,
+        -(s.score or 0) if s.origin != "manual" else 0,
+        s.created_at,
+        s.id,
+    )

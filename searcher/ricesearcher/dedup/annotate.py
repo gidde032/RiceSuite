@@ -69,7 +69,12 @@ def annotate_duplicates(
     # tie-break. The first slice of a duplicate group in this order is canonical.
     order = sorted(
         slices,
-        key=lambda s: (_STATUS_PRIORITY.get(s.status, 2), -s.score, s.created_at, s.id),
+        key=lambda s: (
+            _STATUS_PRIORITY.get(s.status, 2),
+            -(s.score or 0),
+            s.created_at,
+            s.id,
+        ),
     )
     cleared = {
         s.id: replace(s, dup_of=None, dup_score=0.0, dup_kind="") for s in slices

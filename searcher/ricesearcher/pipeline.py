@@ -259,6 +259,8 @@ def extract_and_score(
         s.id
         for s in library.list_slices(profile_id=profile.id, source_id=source.id)
         if s.status is not SliceStatus.CANDIDATE
+        or s.origin == "manual"
+        or s.window_edited
     }
     fresh = [s for s in slices if s.id not in protected]
     library.replace_candidate_slices(source.id, fresh, profile_id=profile.id)

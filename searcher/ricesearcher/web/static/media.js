@@ -31,6 +31,7 @@ async function load() {
     countEl.textContent = "";
     return;
   }
+  if (typeof wsSourcesLoaded === "function") wsSourcesLoaded(sources);
   countEl.textContent = sources.length + (sources.length === 1 ? " source" : " sources");
   if (!sources.length) {
     listEl.replaceChildren(
@@ -48,6 +49,7 @@ function row(s) {
   const r = el("article", { class: "media-row", "data-id": s.id });
 
   const main = el("div", { class: "media-main" });
+  if (typeof wsSourceControls === "function") main.append(wsSourceControls(s));
   main.append(el("div", { class: "media-title" }, s.title || "(untitled)"));
   main.append(el("div", { class: "media-ref" }, s.ref));  // text, never a link
   const facts = [
