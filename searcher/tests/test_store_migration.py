@@ -34,7 +34,7 @@ def test_migration_upgrades_to_v3(tmp_path: Path) -> None:
         version = conn.execute(
             "SELECT value FROM meta WHERE key = 'schema_version'"
         ).fetchone()["value"]
-        assert version == "3"
+        assert version == "4"
         rows = conn.execute("SELECT * FROM candidate_slices ORDER BY id").fetchall()
     finally:
         conn.close()
@@ -103,7 +103,7 @@ def test_failed_migration_rolls_back_and_can_retry(
 
     monkeypatch.setitem(MIGRATIONS, 3, original)
     with Library(db) as lib:
-        assert lib._stored_version() == 3
+        assert lib._stored_version() == 4
 
 
 def test_concurrent_openers_serialize_migration(tmp_path: Path) -> None:
@@ -128,4 +128,4 @@ def test_concurrent_openers_serialize_migration(tmp_path: Path) -> None:
 
     assert errors == []
     with Library(db) as lib:
-        assert lib._stored_version() == 3
+        assert lib._stored_version() == 4

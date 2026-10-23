@@ -82,6 +82,11 @@ jobs:
           done
       - name: JS behavior tests (review UI)
         run: node --test tests/js/*.test.js
+      - name: Install browser for Searcher workspace contracts
+        run: python -m playwright install --with-deps chromium
+      - name: Production Searcher workspace browser contracts
+        working-directory: .
+        run: python scripts/check_searcher_workspace_browser.py
       - name: Tests + coverage floor (90%, from searcher/pyproject.toml addopts)
         run: pytest
 

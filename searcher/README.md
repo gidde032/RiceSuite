@@ -240,16 +240,40 @@ change the brief. `profiles` skips a malformed file with a warning.
 
 ### The review UI
 
-`ricesearcher review` serves the local review UI at http://127.0.0.1:8765 (Ctrl-C
-to stop). Pick a profile to browse its scored moments. You can set any valid in/out
-interval within the source, preview that exact selection, and Select / Reject.
-**Send selected → RiceClipper** runs the same handoff as the CLI. The **Profiles**
-page shows each profile's counts. The **Media** page deletes one source (with its
-cached media and slices) or clears the whole cache, and asks you to confirm twice.
-The UI reads and annotates the local library only. It never posts, publishes, or
-uploads. Keep it on `127.0.0.1`. It answers only requests addressed to
-`127.0.0.1` or `localhost` on its own port, and refuses changes sent from another
-site's page (RiceSuite SPEC FR-3).
+`ricesearcher review` serves the local workspace at http://127.0.0.1:8765.
+Review opens with Candidates and Kind All. Sources offers inline URL/path intake
+or a local file picker/drop area. **Add only** acquires and transcribes;
+**Add & score** also scores under the chosen profile. Advanced settings retain
+the CLI's transcription model (`small`), scoring override/offline choice, and
+duplicate threshold (`0.65`). Source media and transcripts are shared; segments
+and every review, scoring, duplicate, and handoff operation belong to a profile.
+
+Open a source for native full-source playback and its full transcript. Mark start
+and end from the playhead or type seconds, preview the interval, then **Save manual
+segment**. It is reviewed and unselected, with no model score. **View in Review**
+reveals it; Select and Send selected remain deliberate actions. Manual segments
+and saved human window edits survive re-scoring, even after Reset. Browsing combines
+status, source, and All/Manual/Scored filters. Manual segments appear first by
+creation time; scored segments follow by descending score. **Send selected** sends
+the entire selected profile, including items hidden by filters, in that same order.
+
+One processing batch runs serially while the Searcher process stays running.
+Navigation, refresh, and browser closure do not stop it. The strip names the
+original profile and actual stages. **Stop after current source** finishes the
+current item and leaves the rest unstarted. **Retry failed work** is explicit and
+reuses retained acquisition/transcription; a duplicate-check failure does not
+remove successful scores. A lost response only observes the attempt. Restarting
+the process forgets run observations and never resumes work: inspect retained
+sources, then explicitly score or add unfinished sources again. At most 32
+process-local observations are retained; this is not a durable queue or history.
+
+The Sources page retains confirmed source deletion and whole-cache cleanup.
+Cleanup is held while a processing batch is active; stop and wait before purging.
+Missing or unsupported browser media receives a playback error; automatic format
+conversion is excluded. Profiles lists and switches profiles without editing them.
+The workspace only transfers browser files to this local application. It never
+posts or publishes. Keep it on `127.0.0.1`; foreign hosts and cross-origin changes
+are refused (RiceSuite SPEC FR-3).
 
 ## Output: the RiceClipper handoff
 
@@ -267,7 +291,8 @@ Each handoff writes one batch under `RICESEARCHER_HANDOFF_DIR`:
 with its source reference and title, the source window it was cut from, its
 duration, the transcript text inside the window, and the score, rationale,
 scorer model (`heuristic-offline` for offline slices), `rights_risk`, and
-profile id and version. RiceSearcher only ever writes new
+profile id and version. Manual clips carry `"origin": "manual"`, `"score": null`,
+and an empty scorer name; existing scored manifests keep their meaning. RiceSearcher only ever writes new
 batch directories. A batch is complete only once `manifest.json` exists, so a
 reader never sees a half-written batch.
 
@@ -308,6 +333,9 @@ ruff format --check . && ruff check . && mypy && pytest
 for f in ricesearcher/web/static/*.js; do node --check "$f"; done
 node --test tests/js/*.test.js
 pytest -m smoke --no-cov  # fast five-test feedback tier
+# From the suite root, with requirements-dev.txt installed:
+python -m playwright install --with-deps chromium
+python scripts/check_searcher_workspace_browser.py
 ```
 
 Gates: Ruff (format + lint), mypy for the production package targeting Python

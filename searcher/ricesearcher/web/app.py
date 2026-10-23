@@ -44,6 +44,8 @@ from ricesearcher.handoff.writer import HandoffError, hand_off_selected
 from ricesearcher.library.cache import MediaCache
 from ricesearcher.library.store import Library
 from ricesearcher.models import CandidateSlice, SliceStatus
+from ricesearcher.web.workspace import register_workspace
+from ricesearcher.workspace import Adapters, RunManager
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -121,7 +123,10 @@ def _slice_dto(
         "scorer_model": s.scorer_model,
         "beat_profile_version": s.beat_profile_version,
         "profile_id": s.profile_id,
-        "stale": stale,
+        "stale": stale if s.origin != "manual" else False,
+        "origin": s.origin,
+        "window_edited": s.window_edited,
+        "created_at": s.created_at,
     }
 
 
@@ -138,7 +143,9 @@ def _require_profile(profile: str | None) -> str:
     return profile
 
 
-def create_app(config: Config | None = None) -> FastAPI:
+def create_app(
+    config: Config | None = None, *, adapters: Adapters | None = None
+) -> FastAPI:
     cfg = config or load_config()
     cfg.ensure_dirs()
     # Seed the legacy profile file on first use so migrated rows (all
@@ -146,6 +153,9 @@ def create_app(config: Config | None = None) -> FastAPI:
     ensure_seed(cfg.profiles_dir)
     app = FastAPI(title="RiceSearcher Review")
     progress_store = ProgressStore()
+    runs = RunManager(cfg, adapters)
+    app.state.runs = runs
+    register_workspace(app, cfg, runs)
     # A browser page can reach this port without passing the RiceSuite gateway,
     # so the app refuses foreign Hosts and cross-origin state changes itself
     # (suite SPEC FR-3, suite #14), on whatever port it is bound to. It also
@@ -177,6 +187,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     def index() -> str:
         return (_STATIC_DIR / "index.html").read_text(encoding="utf-8")
 
+    @app.get("/sources", response_class=HTMLResponse)
     @app.get("/media", response_class=HTMLResponse)
     def media_page() -> str:
         return (_STATIC_DIR / "media.html").read_text(encoding="utf-8")
@@ -212,9 +223,14 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     @app.get("/api/slices")
     def list_slices(
-        profile: str | None = None, status: str | None = None
+        profile: str | None = None,
+        status: str | None = None,
+        source: str | None = None,
+        kind: str | None = None,
     ) -> list[dict]:
         profile = _require_profile(profile)
+        if kind and kind not in {"manual", "scored"}:
+            raise HTTPException(422, "invalid segment kind")
         st = None
         if status:
             try:
@@ -230,7 +246,9 @@ def create_app(config: Config | None = None) -> FastAPI:
         except (ValueError, OSError):
             file_version = None
         with Library(cfg.db_path) as lib:
-            slices = lib.list_slices(profile_id=profile, status=st)
+            slices = lib.list_slices(
+                profile_id=profile, status=st, source_id=source, kind=kind or None
+            )
             titles = lib.source_titles()
             media_urls = {
                 src.id: _media_url(src.media_path) for src in lib.list_sources()
@@ -431,6 +449,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                     "duration_s": s.duration_s,
                     "acquired_at": s.acquired_at,
                     "slice_count": counts.get(s.id, 0),
+                    "transcription_state": s.transcription_state,
                 }
             )
         return out
@@ -445,7 +464,12 @@ def create_app(config: Config | None = None) -> FastAPI:
         cache = MediaCache(cfg.cache_dir)
         # Custody spans the reference check and the unlink, so a same-content
         # pull cannot commit its row in between (RiceSuite #17).
-        with cache.custody():
+        with runs.lock, cache.custody():
+            if runs.active:
+                raise HTTPException(
+                    409,
+                    "processing batch active; stop after current source before cleanup",
+                )
             with Library(cfg.db_path) as lib:
                 media_path = lib.delete_source(source_id)
                 if media_path is None:
@@ -468,7 +492,12 @@ def create_app(config: Config | None = None) -> FastAPI:
         """Full-purge the whole library: every source, slice, and cached file."""
         cache = MediaCache(cfg.cache_dir)
         # No pull may commit between the purge and the wipe (RiceSuite #17).
-        with cache.custody():
+        with runs.lock, cache.custody():
+            if runs.active:
+                raise HTTPException(
+                    409,
+                    "processing batch active; stop after current source before cleanup",
+                )
             with Library(cfg.db_path) as lib:
                 sources_deleted = lib.delete_all_sources()
             files_removed = cache.clear()

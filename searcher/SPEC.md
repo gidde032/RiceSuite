@@ -181,6 +181,20 @@ files only.
 
 ## 6. Library — candidate-slice schema (D5, SQLite)
 
+Schema v4 adds durable `origin` (`scored`/`manual`), nullable `score` and
+`heuristic_score`, and `window_edited` independent of lifecycle status. Existing
+rows backfill as scored; identifiable legacy edited windows retain protection.
+Sources add `transcription_state`: legacy and successful-empty transcripts are
+`complete`, newly retained acquisition is `pending` until ASR commits successfully.
+The web worker retains that checkpoint on failure; legacy CLI pull keeps its
+original cleanup and error contract. No run is persisted or automatically resumed.
+
+The v4 rebuild is transactional and preserves existing IDs, profile/status/window
+values, duplicate links, and indexes. Manual IDs use a separate `manual:<uuid>`
+namespace. Review and handoff order manual creation time/id first, then scored
+score descending/creation time/id; duplicate annotations never influence order.
+
+
 One row per candidate slice (finalized at Phase 2). **Provenance is normalized:**
 the slice row stores only `source_id` (a foreign key into `sources`); the full
 provenance (`kind`, `ref`, `title`, `channel`, `published_at`, `acquired_at`,

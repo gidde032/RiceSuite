@@ -5,6 +5,18 @@ All notable changes to RiceSearcher are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Added — RiceSuite #96
+
+- Sources intake, serial process-lifetime batches with explicit stage retries and
+  stop after current, full-source inspection, and reviewed/unselected manual segments.
+- Combined status/source/kind browsing and profile-wide handoff counts, including
+  selected items hidden by filters. Manual origin and absent scores survive re-score;
+  saved human window edits remain protected after Reset.
+- Transactional schema v4 preserves legacy rows, identities, annotations and indexes,
+  adds source transcription checkpoints, nullable scores, origin and edit markers.
+- Production browser geometry/style/playback checks are required in Searcher CI.
+
+
 ### Fixed
 
 - The standalone CLI (`ricesearcher score`, `profiles`, `handoff`, ...) now
