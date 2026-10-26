@@ -34,7 +34,13 @@ function wsSettings(score = false, duplicates = false) {
 async function wsImport(score) {
   const requests = document.getElementById("sourceRequests").value.split("\n").map((s) => s.trim()).filter(Boolean);
   if (wsFiles.length && requests.length) { wsRenderRun("Add files and URL/path entries as separate batches."); return; }
-  await wsSubmit(wsFiles.length ? "api/runs/files" : "api/runs", wsFiles.length ? wsSettings(score) : {...wsSettings(score), requests}, wsFiles.length ? wsFiles : null);
+  const files = wsFiles.length ? wsFiles : null;
+  // An accepted batch owns its input; a refused one keeps it for correction.
+  const accepted = () => {
+    if (files) { wsFiles = []; document.getElementById("sourceFiles").value = ""; }
+    else document.getElementById("sourceRequests").value = "";
+  };
+  await wsSubmit(files ? "api/runs/files" : "api/runs", files ? wsSettings(score) : {...wsSettings(score), requests}, files, accepted);
 }
 function wsBack() {
   wsOpened = null; ++wsDetailGeneration;
@@ -65,12 +71,13 @@ async function wsOpen(source) {
     const form = wsNode("div", null, {class: "segment-form"});
     const start = wsNode("input", null, {id: "manualStart", type: "number", min: "0", step: "any", value: "0", "aria-label": "Manual start seconds"});
     const end = wsNode("input", null, {id: "manualEnd", type: "number", min: "0", step: "any", value: String(source.duration_s || 0), "aria-label": "Manual end seconds"});
-    for (const [name, input] of [["Start (seconds)", start], ["End (seconds)", end]]) {
-      const label = wsNode("label", name); label.append(input); form.append(label);
+    for (const [name, input, mark] of [["Start (seconds)", start, "Mark start"], ["End (seconds)", end, "Mark end"]]) {
+      const label = wsNode("label", name); label.append(input);
+      const b = wsNode("button", mark); b.addEventListener("click", () => { input.value = String(video.currentTime); });
+      const field = wsNode("div", null, {class: "segment-field"}); field.append(label, b); form.append(field);
     }
-    for (const [name, input] of [["Mark start", start], ["Mark end", end]]) {
-      const b = wsNode("button", name); b.addEventListener("click", () => { input.value = String(video.currentTime); }); form.append(b);
-    }
+    // Stored durations can be rounded metadata; an untouched End follows the media.
+    video.addEventListener("loadedmetadata", () => { if (end.value === String(source.duration_s || 0) && Number.isFinite(video.duration)) end.value = String(video.duration); });
     let intervalEnd = null;
     video.addEventListener("timeupdate", () => { if (intervalEnd !== null && video.currentTime >= intervalEnd) { video.pause(); intervalEnd = null; } });
     const msg = wsNode("p", "", {class: "operational", role: "status"});
@@ -89,6 +96,10 @@ async function wsOpen(source) {
         const result = await wsRequest("api/sources/" + encodeURIComponent(source.id) + "/manual", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({profile, target_in, target_out})});
         if (generation !== wsDetailGeneration) return;
         msg.replaceChildren(document.createTextNode("Saved manual segment · reviewed, unselected. "), wsNode("a", "View in Review", {href: "./?source=" + encodeURIComponent(result.source_id) + "&kind=manual&status=reviewed&profile=" + encodeURIComponent(profile) + "&slice=" + encodeURIComponent(result.id)}));
+        try {
+          const fresh = await wsRequest("api/slices?profile=" + encodeURIComponent(profile) + "&source=" + encodeURIComponent(source.id));
+          if (generation === wsDetailGeneration) wsInspector.querySelector(".source-segments")?.replaceWith(wsSegmentSummary(fresh, profile, source));
+        } catch (err) { msg.append(document.createTextNode(" Segment list could not refresh: " + err.message)); }
       } catch (err) { msg.textContent = err.message; } finally { save.disabled = false; }
     });
     form.append(preview, save);

@@ -71,6 +71,15 @@ REQUIRED_SCENARIOS = {
     "failed-scoring",
     "narrow-back",
     "response-loss-observe-only",
+    "review-header-rows",
+    "manual-default-end-media-duration",
+    "accepted-intake-clears-inputs",
+    "manual-save-refreshes-segments",
+    "laptop-form-above-fold",
+    "workspace-control-heights",
+    "segment-mark-grouping",
+    "narrow-detail-hides-tools",
+    "profiles-inset-alignment",
 }
 
 PROFILES = [
@@ -336,6 +345,28 @@ def assert_source_styles(page):
     return styles
 
 
+TARGET_CHECK = "() => { const target=matchMedia('(pointer: coarse)').matches?44:36; return [...document.querySelectorAll('button,select,input,textarea,summary,.nav-link')].map(e => e.type==='checkbox'?e.closest('label'):e).filter(e => e && e.getClientRects().length && e.checkVisibility()).map(e => e.getBoundingClientRect().toJSON()).filter(r => r.height<target-.1 || r.width<target-.1); }"
+INTAKE_OPEN = "open => document.querySelectorAll('#intake, #intake details').forEach(d => { d.open = open; })"
+
+
+def assert_intake_and_detail_styles(page):
+    """Check Slate roles and targets with the detail and expanded intake.
+
+    Below 900 px an open detail hides intake, so intake targets are checked
+    again from the library view and the source is then reopened.
+    """
+    page.evaluate(INTAKE_OPEN, True)
+    styles = assert_source_styles(page)
+    if not page.locator("#sourceRequests").is_visible():
+        page.get_by_role("button", name="Back to sources").click()
+        assert page.locator("#sourceRequests").is_visible()
+        assert page.evaluate(TARGET_CHECK) == [], page.evaluate(TARGET_CHECK)
+        page.get_by_role("button", name="Open source").first.click()
+        page.locator("#manualStart").wait_for()
+    page.evaluate(INTAKE_OPEN, False)
+    return styles
+
+
 def check_review_repairs(browser, result):
     # Contracts/MEDIUM: exercise a real unbroken filename, not just spaced prose.
     title = SOURCES[0]["title"]
@@ -518,6 +549,195 @@ def check_primary_actions(browser, result):
     )
 
 
+ROW_SPAN = "sel => { const r=[...document.querySelectorAll(sel)].filter(e => e.getClientRects().length).map(e => e.getBoundingClientRect()); return Math.max(...r.map(b => b.bottom)) - Math.min(...r.map(b => b.top)); }"
+
+
+def _open_source(browser, width, height, scenario="normal", receipts=None):
+    page = browser.new_page(viewport={"width": width, "height": height})
+    page.set_default_timeout(5000)
+    errors, mutations = attach(page, scenario, receipts=receipts)
+    page.goto("http://127.0.0.1:8966/sources")
+    page.get_by_role("button", name="Open source").first.click()
+    page.locator("#manualStart").wait_for()
+    return page, errors, mutations
+
+
+def _audit_review_header(browser):
+    for width, height in [(1366, 768), (1920, 1080)]:
+        page = browser.new_page(viewport={"width": width, "height": height})
+        attach(page)
+        page.goto("http://127.0.0.1:8966/")
+        page.locator(".card").first.wait_for()
+        # Kind/Source filters must not push Send selected onto its own row.
+        assert page.evaluate(ROW_SPAN, ".filters > *") < 50, (width, "filters wrap")
+        assert page.locator("#handoffBtn").bounding_box()["x"] > width / 2
+        page.close()
+    for path in ("", "sources", "profiles.html"):
+        page = browser.new_page(viewport={"width": 390, "height": 844})
+        attach(page)
+        page.goto("http://127.0.0.1:8966/" + path)
+        position = page.locator(".topbar").evaluate("e => getComputedStyle(e).position")
+        assert position == "static", (path, position)
+        page.close()
+
+
+def _audit_default_end(browser):
+    # URL metadata durations are rounded; the player owns the real media length.
+    duration = SOURCES[0]["duration_s"]
+    try:
+        SOURCES[0]["duration_s"] = 12.4
+        page, errors, mutations = _open_source(browser, 1024, 768)
+        page.wait_for_function("document.querySelector('video').readyState >= 1")
+        page.locator("#manualStart").fill("10")
+        page.get_by_role("button", name="Save manual segment").click()
+        page.get_by_role("link", name="View in Review").wait_for(timeout=2000)
+        body = json.loads([m for m in mutations if m[0].endswith("/manual")][0][1])
+        assert body["target_out"] == 12, body
+        assert not errors, errors
+        page.close()
+    finally:
+        SOURCES[0]["duration_s"] = duration
+
+
+def _audit_intake_clears(browser):
+    for scenario in ("normal", "reject"):
+        state, receipts = {"run": None}, []
+        page = browser.new_page(viewport={"width": 1024, "height": 768})
+        page.set_default_timeout(5000)
+        attach(page, scenario, run_state=state, receipts=receipts)
+        page.goto("http://127.0.0.1:8966/sources")
+        page.locator("#workspaceProfile option").first.wait_for(state="attached")
+        page.locator("#intake > summary").click()
+        page.locator("#sourceFiles").set_input_files(
+            ROOT / "tests/fixtures/workspace/source.mp4"
+        )
+        page.locator("#addOnly").click()
+        page.locator("#batchStrip p, #batchStrip strong").first.wait_for()
+        page.wait_for_function("!workspaceBusy")
+        kept = page.locator("#sourceFiles").evaluate("e => e.files.length")
+        if scenario == "reject":
+            # A refused batch keeps its input so the user can correct and resend.
+            assert kept == 1 and page.evaluate("wsFiles.length") == 1
+            page.close()
+            continue
+        assert kept == 0 and page.evaluate("wsFiles.length") == 0, "files kept"
+        state["run"]["status"] = "complete"
+        page.wait_for_function("workspaceRun.status === 'complete'")
+        page.locator("#sourceRequests").fill("/fixture/next.mp4")
+        page.locator("#addOnly").click()
+        page.wait_for_function("workspaceRun.status === 'active'")
+        assert receipts[-1]["path"] == "/api/runs", receipts[-1]
+        assert page.locator("#sourceRequests").input_value() == "", "requests kept"
+        page.close()
+
+
+def _audit_segments_refresh(browser):
+    page, errors, _ = _open_source(browser, 1024, 768)
+    summary = page.locator(".source-segments")
+    before = summary.inner_text().count("Manual / unscored")
+    page.locator("#manualStart").fill("1")
+    page.locator("#manualEnd").fill("2")
+    page.get_by_role("button", name="Save manual segment").click()
+    page.get_by_role("link", name="View in Review").wait_for()
+    page.wait_for_function(
+        "n => document.querySelector('.source-segments').innerText.split('Manual / unscored').length - 1 === n",
+        arg=before + 1,
+        timeout=2000,
+    )
+    assert not errors, errors
+    page.close()
+
+
+def _audit_laptop_fold(browser):
+    page, errors, _ = _open_source(browser, 1366, 768)
+    bottom = page.locator(".segment-form").bounding_box()
+    assert bottom["y"] + bottom["height"] <= 768, bottom
+    page.locator("#intake > summary").click()
+    assert page.locator("#sourceRequests").is_visible()
+    assert_no_overflow(page)
+    page.close()
+
+
+def _audit_control_heights(browser):
+    for width in (390, 1366):
+        page, _, _ = _open_source(browser, width, 844)
+        heights = page.evaluate(
+            "[...document.querySelectorAll('.segment-form input, .segment-form button')].map(e => e.getBoundingClientRect().height)"
+        )
+        assert max(heights) - min(heights) < 0.5, (width, heights)
+        if width < 900:
+            page.get_by_role("button", name="Back to sources").click()
+        page.locator("#intake > summary").click()
+        page.get_by_text("Advanced settings", exact=True).click()
+        pair = [
+            page.locator(s).bounding_box()["height"]
+            for s in ("#duplicateThreshold", "#transcriptionModel")
+        ]
+        assert abs(pair[0] - pair[1]) < 0.5, (width, pair)
+        page.close()
+
+
+def _audit_mark_grouping(browser):
+    page, _, _ = _open_source(browser, 390, 844)
+    for field, mark in (("#manualStart", "Mark start"), ("#manualEnd", "Mark end")):
+        button = page.get_by_role("button", name=mark, exact=True)
+        assert page.locator(field).evaluate(
+            "(e, b) => e.closest('.segment-field')?.contains(b) || false",
+            button.element_handle(),
+        ), mark
+        a, b = page.locator(field).bounding_box(), button.bounding_box()
+        assert abs((a["y"] + a["height"]) - (b["y"] + b["height"])) < 1, (mark, a, b)
+    page.close()
+
+
+def _audit_narrow_tools(browser):
+    for width in (390, 900):
+        page, _, _ = _open_source(browser, width, 844)
+        tools = page.locator(".workspace-tools")
+        assert tools.is_visible() == (width >= 900), (width, "tools")
+        if width < 900:
+            page.get_by_role("button", name="Back to sources").click()
+            assert tools.is_visible()
+        page.close()
+
+
+def _audit_profiles_inset(browser):
+    for width in (390, 1024):
+        page = browser.new_page(viewport={"width": width, "height": 800})
+        attach(page)
+        page.goto("http://127.0.0.1:8966/profiles.html")
+        insets = page.evaluate(
+            "['.topbar', '.profile-list'].map(s => parseFloat(getComputedStyle(document.querySelector(s)).paddingLeft))"
+        )
+        assert insets[0] == insets[1] == (16 if width >= 900 else 8), (width, insets)
+        page.close()
+
+
+AUDIT_REPAIRS = {
+    "review-header-rows": _audit_review_header,
+    "manual-default-end-media-duration": _audit_default_end,
+    "accepted-intake-clears-inputs": _audit_intake_clears,
+    "manual-save-refreshes-segments": _audit_segments_refresh,
+    "laptop-form-above-fold": _audit_laptop_fold,
+    "workspace-control-heights": _audit_control_heights,
+    "segment-mark-grouping": _audit_mark_grouping,
+    "narrow-detail-hides-tools": _audit_narrow_tools,
+    "profiles-inset-alignment": _audit_profiles_inset,
+}
+
+
+def check_audit_repairs(browser, result):
+    # PR #97 audit repairs. Each scenario reports independently.
+    failures = {}
+    for name, audit in AUDIT_REPAIRS.items():
+        try:
+            audit(browser)
+        except Exception as exc:  # noqa: BLE001 - report every failed repair
+            failures[name] = f"{type(exc).__name__}: {exc}"[:300]
+    assert not failures, json.dumps(failures, indent=2)
+    result["scenarios"].extend(AUDIT_REPAIRS)
+
+
 def check(output: Path, channel: str | None = None):
     output.mkdir(parents=True, exist_ok=True)
     result = {"viewports": [], "scenarios": [], "screenshots": []}
@@ -569,11 +789,9 @@ def check(output: Path, channel: str | None = None):
                     "document.documentElement.style.removeProperty('--searcher-space')"
                 )
                 if width in {390, 1366}:
-                    page.locator("#intake > summary").click()
-                    page.get_by_text("Advanced settings", exact=True).click()
-                    result.setdefault("styles", []).append(assert_source_styles(page))
-                    page.get_by_text("Advanced settings", exact=True).click()
-                    page.locator("#intake > summary").click()
+                    result.setdefault("styles", []).append(
+                        assert_intake_and_detail_styles(page)
+                    )
                     file = output / f"sources-{width}.png"
                     page.screenshot(path=str(file), full_page=True)
                     result["screenshots"].append(str(file))
@@ -783,13 +1001,14 @@ def check(output: Path, channel: str | None = None):
             page.goto("http://127.0.0.1:8966/sources")
             page.get_by_role("button", name="Open source").first.click()
             page.locator("#manualStart").wait_for()
-            page.locator("#intake > summary").click()
-            page.get_by_text("Advanced settings", exact=True).click()
-            result.setdefault("styles", []).append(assert_source_styles(page))
+            result.setdefault("styles", []).append(
+                assert_intake_and_detail_styles(page)
+            )
             assert_no_overflow(page)
             assert not errors, errors
             page.close()
             result["scenarios"].append("computed-slate-roles-and-all-source-targets")
+            check_audit_repairs(browser, result)
             result["scenarios"].extend(
                 [
                     "review-landing-defaults",

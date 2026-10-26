@@ -55,7 +55,7 @@ async function wsRequest(url, init) {
   return data;
 }
 function wsAttempt() { return crypto.randomUUID(); }
-async function wsSubmit(url, data, files = null) {
+async function wsSubmit(url, data, files = null, onAccepted = null) {
   if (workspaceBusy || (workspaceRun && workspaceRun.status === "active")) return;
   workspaceBusy = true;
   const key = wsAttempt();
@@ -71,6 +71,7 @@ async function wsSubmit(url, data, files = null) {
   wsRenderRun("Starting batch…");
   try {
     workspaceRun = await wsRequest(url, init);
+    if (onAccepted) onAccepted();
     wsRenderRun();
     await wsObserve(key);
   } catch (err) {
