@@ -563,13 +563,21 @@ def _open_source(browser, width, height, scenario="normal", receipts=None):
 
 
 def _audit_review_header(browser):
-    for width, height in [(1366, 768), (1920, 1080)]:
+    # Wide Verdana stands in for wider platform fonts, such as CI's Linux fonts.
+    for (width, height), font in [
+        (size, font) for size in [(1366, 768), (1920, 1080)] for font in ("", "Verdana")
+    ]:
         page = browser.new_page(viewport={"width": width, "height": height})
         attach(page)
         page.goto("http://127.0.0.1:8966/")
         page.locator(".card").first.wait_for()
+        if font:
+            page.add_style_tag(
+                content=f"body, button, select {{ font-family: {font} !important; }}"
+            )
         # Kind/Source filters must not push Send selected onto its own row.
-        assert page.evaluate(ROW_SPAN, ".filters > *") < 50, (width, "filters wrap")
+        span = page.evaluate(ROW_SPAN, ".filters > *")
+        assert span < 50, (width, font, "filters wrap", span)
         assert page.locator("#handoffBtn").bounding_box()["x"] > width / 2
         page.close()
     for path in ("", "sources", "profiles.html"):

@@ -18,7 +18,7 @@
       <a class="nav-link" href="profiles">Profiles</a>
     </nav>
     <div class="filters" role="group" aria-label="Filter candidate slices by status">
-      <label>Profile
+      <label class="flex-filter">Profile
         <select id="profileSelect"></select>
       </label>
       <label>Show
@@ -31,7 +31,7 @@
         </select>
       </label>
       <label>Kind <select id="kindFilter"><option value="">All</option><option value="manual">Manual</option><option value="scored">Scored</option></select></label>
-      <label>Source <select id="sourceFilter"><option value="">All sources</option></select></label>
+      <label class="flex-filter">Source <select id="sourceFilter"><option value="">All sources</option></select></label>
       <span id="count" class="count" aria-live="polite"></span>
       <button id="handoffBtn" class="primary" type="button">Send selected → RiceClipper</button>
     </div>

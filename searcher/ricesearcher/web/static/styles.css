@@ -224,7 +224,9 @@ a { color: var(--rice); }
 }
 
 .filters { flex: 1 1 auto; justify-content: flex-end; }
-.filters #sourceFilter { width: 200px; max-width: 100%; }
+/* Long profile/source names shrink before Send selected wraps to its own row. */
+.filters .flex-filter { display: inline-flex; align-items: center; gap: calc(var(--searcher-space) * .5); flex: 1 1 120px; max-width: 300px; }
+.filters .flex-filter select { flex: 1 1 auto; width: 0; min-width: 0; }
 .card[data-revealed="true"] { outline: 2px solid var(--rice); outline-offset: 2px; }
 
 .media-title { overflow-wrap: anywhere; }
