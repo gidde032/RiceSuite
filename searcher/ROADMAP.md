@@ -19,6 +19,12 @@ The five-phase ladder from `SPEC.md §9`. Each phase ends in a usable increment.
 - ✅ **Profiles UI P5** ([#23](https://github.com/gidde032/RiceSearcher/issues/23), merged PR #26; hardening PR #27) — profile select, `/profiles` page, stale badge, scoped handoff.
 - Routed forward inside ADR-002: per-profile prefilter weights, profile edit in the UI, cross-profile advisory dedup. Issues open when the need appears.
 
+## Current delivery
+
+- **Expanded Searcher workspace** ([RiceSuite #96](https://github.com/gidde032/RiceSuite/issues/96))
+  — implemented and independently reviewed on [draft PR #97](https://github.com/gidde032/RiceSuite/pull/97);
+  parent validation and maintainer acceptance remain delivery gates. Scope and exclusions are in `SPEC.md §13`.
+
 ## Maintenance backlog
 
 - **Shared-media path matching** ([#19](https://github.com/gidde032/RiceSearcher/issues/19)) — protect shared files when persisted paths use different lexical spellings.

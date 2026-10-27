@@ -1,6 +1,10 @@
 # RiceSearcher — v1 Specification
 
-> **Status: RATIFIED 2026-09-02; Q4 handoff contract amended 2026-09-20.** Boundary
+> **Status: RATIFIED 2026-09-02; Q4 handoff contract amended 2026-09-20.**
+> The expanded web-workspace behavior in §13 was ratified 2026-10-22;
+> its Split workspace reference and implementation plan were settled through
+> the final Q10–Q12 answers on 2026-10-22.
+> Boundary
 > contract is `ADR-001.md` (ratified and reconciled against live sibling code).
 > This document is the
 > implementation contract for the downstream decisions (D1–D9) the ADRs routed
@@ -46,7 +50,7 @@ files only.
 | D4 | Scoring | **Hybrid**: heuristic prefilter shortlists windows → LLM scores + explains the shortlist. An explicit `score --offline` mode ranks by the heuristic score alone, with no network call, and records `scorer_model = "heuristic-offline"` ([#2](https://github.com/gidde032/RiceSearcher/issues/2)) |
 | D5 | Library store | **SQLite** slice index + **content-addressed disk cache** for source/clips |
 | D6 | Moment dedup | Hybrid (intra-source time-overlap + cross-source transcript embedding), **advisory-only — never filters, discards, or blocks** |
-| D7 | Interface | **CLI pipeline first**, then a minimal **Slate-styled** local review UI for the select gate |
+| D7 | Interface | **CLI + Slate web workspace** for intake, scoring, source inspection, manual segments, review, and handoff; expanded behavior ratified 2026-10-22 in §13 |
 | D8 | Handoff | RiceSearcher **writes** the reviewed interval (clamped to the source extent) through a mirrored filesystem handoff (manifest-last) with a **schema-1 superset manifest** |
 | D9 | Saved profiles | Profiles are JSON files in `<data_dir>/profiles/`; id = file stem; library, dedup, review, and handoff **partition by `profile_id`**; sources shared; every scoring run names its profile; legacy rows adopt `example-beat` (ratified 2026-09-14, [ADR-002](ADR-002.md), [design spec](docs/design/profiles-spec.md)) |
 
@@ -176,6 +180,24 @@ files only.
   or losing concurrent batch, and a failed write leaves no pickup-visible artifact.
 
 ## 6. Library — candidate-slice schema (D5, SQLite)
+
+Schema v4 adds durable `origin` (`scored`/`manual`), nullable `score` and
+`heuristic_score`, and `window_edited` independent of lifecycle status. Existing
+rows backfill as scored; identifiable legacy edited windows retain protection.
+Sources add `transcription_state`: legacy and successful-empty transcripts are
+`complete`, newly retained acquisition is `pending` until ASR commits successfully.
+The web worker retains that checkpoint on failure; legacy CLI pull keeps its
+original cleanup and error contract. No run is persisted or automatically resumed. App-owned browser intake lives
+inside the media cache, with reference-aware cleanup across retained retries.
+Stop discards unstarted upload staging, startup removes orphaned staging, and
+whole-cache cleanup includes those files; completed source checkpoints remain
+until the user deliberately purges them.
+
+The v4 rebuild is transactional and preserves existing IDs, profile/status/window
+values, duplicate links, and indexes. Manual IDs use a separate `manual:<uuid>`
+namespace. Review and handoff order manual creation time/id first, then scored
+score descending/creation time/id; duplicate annotations never influence order.
+
 
 One row per candidate slice (finalized at Phase 2). **Provenance is normalized:**
 the slice row stores only `source_id` (a foreign key into `sources`); the full
@@ -354,3 +376,151 @@ the Slate review UI surfaces them for select-and-approve with source-bounded in/
 selected slices are written as a valid, atomic handoff batch with transcript +
 provenance; format/lint/type/tests-with-coverage-floor gates are green; and no
 code path can post, publish, or upload content. Not hardened for external users.
+
+## 13. Expanded web workspace (ratified 2026-10-22)
+
+**Behavior, Split workspace reference, and implementation plan: RATIFIED by Finn,
+including final Q10–Q12 answers. Existing-style reuse and automated style/layout
+regression coverage are REQUIRED.** Delivery is owned by RiceSuite
+[#96](https://github.com/gidde032/RiceSuite/issues/96). This section expands D7
+and the minimal review-only interface in FR-7/FR-8; earlier behavior remains in
+force except where explicitly extended below. Ratification records the product
+contract, not a claim that these capabilities are implemented.
+
+### 13.1 Navigation and source intake
+
+- Searcher's navigation is **Sources / Review / Profiles**, inside the existing
+  suite Search tab. Sources replaces Media and retains its source-deletion and
+  whole-cache controls with their existing confirmations and custody guarantees.
+- **Review remains the landing page** (Q10B). Preserve its existing default
+  candidate-status filter; the new segment-kind filter defaults to All.
+- Sources supports batches of supported source URLs, browser file-picker/drop
+  imports, and local file paths. File-picker/drop transfers are confined to the
+  local application; no external content-upload surface is introduced.
+- Intake offers explicit **Add only** (acquire and transcribe) and **Add & score**
+  under one chosen profile. Adding a source never selects or hands off a segment.
+  Transcription remains part of import, including for manual-segment workflows.
+- Stored sources may be selected for a separate scoring/re-scoring batch.
+  Current CLI defaults and options remain available: transcription model,
+  scoring-model override or offline scoring, explicit scoring profile, and
+  duplicate-similarity threshold. Offline scoring remains visibly identified.
+- Sources and transcripts remain shared; slices, manual segments, scoring,
+  duplicate annotations, review, and handoff remain profile-scoped (D9).
+
+### 13.2 Source inspection and manual segments
+
+- A source can be opened for full-source native video playback, full-transcript
+  inspection, and browsing its candidate segments within the chosen profile.
+- Playback uses cached source media. No artificial source-duration cap is
+  introduced. Browser-compatible source encodings are supported; unsupported or
+  missing media receives an actionable playback error. Automatic preview-format
+  conversion is excluded from this release.
+- The user can mark start/end from the playhead, edit start/end timestamps,
+  preview that interval, and **Save manual segment** into the chosen profile.
+  Timestamp controls are sufficient; a graphical trim timeline is not required.
+- A manual segment can be created without running a scorer and without useful
+  transcript text. Its human origin is retained, it is clearly shown as
+  **manual/unscored**, and no numeric model score is fabricated for it.
+- Re-scoring preserves manual segments as well as existing human-reviewed
+  segments. Manual identity/protection must not depend on pretending that a model
+  scored it or on a numeric score used for ordering.
+- Manual segments use the existing source-bounded validation and human
+  review/select/handoff workflow. Saving an interval does not auto-select it;
+  Searcher's Select and Send selected gates remain explicit. Handed-off segments
+  remain terminal. Rights, source provenance, and profile identity are retained.
+- The Review page retains current review controls and gains source-specific
+  browsing and a segment-kind filter **All / Manual / Scored**, combined with
+  source and status filters (Q12). All shows manual segments first in creation
+  order, then scored segments in descending score order with stable tie-breaks.
+  Filtering by kind shows that kind using its same within-group order.
+- Saving a manual segment records human review without selecting it. Its
+  View in Review action reveals that saved item with appropriate kind/source/status
+  filters. It does not silently change the default landing-page status filter.
+- Handoff follows the same manual-first / scored order for all selected segments
+  of the profile. Browsing filters do not narrow the selected handoff batch;
+  report selected counts and any selected items hidden by current filters.
+
+### 13.3 Duplicate checks
+
+- Run one profile-scoped advisory duplicate check after a scoring batch, and
+  expose an on-demand **Check duplicates** action with the existing threshold
+  option. Duplicate-check failure does not discard successful scoring results.
+- Duplicate flags never hide, remove, block, or lower the ranking of a segment.
+  This expansion does not introduce a score cutoff or automatic selection.
+
+### 13.4 Processing batches and recovery
+
+- One processing batch runs at a time, processing its sources sequentially.
+  Browsing, playback, and review remain usable while processing continues.
+- Work continues across page navigation, browser refresh, and browser closure
+  while RiceSuite is running. The UI reconnects to the current run and reports
+  actual source/stage progress and individual results; observing a run does not
+  repeat the operation that started it.
+- One failed source does not stop the remaining batch. Keep successful work and
+  identify each failed item and stage. Retrying failed work is an explicit user
+  action and reuses completed acquisition/transcription rather than repeating
+  successful stages. In particular, a failed score leaves its imported source
+  available for a scoring-only retry.
+- **Stop after current source** finishes the source in progress and starts no
+  further source. Completed work remains; unstarted items are identified.
+  Interrupting an active download/transcription/score is excluded.
+- A RiceSuite or Searcher-process restart interrupts unfinished work. Completed
+  sources and saved results remain. Nothing silently resumes or automatically
+  retries; the user explicitly starts unfinished work again. No restart-resumable
+  queue or durable batch-history feature is promised.
+
+### 13.5 Preserved boundaries, exclusions, and design gate
+
+- Preserve Slate, the suite shell, profile listing/switching (read-only), existing
+  review/media/handoff behavior, the three human judgement gates, and every
+  existing quality gate and coverage floor.
+- Excluded: keyword discovery, scheduled sourcing, profile editing, waveforms or
+  graphical timelines, automatic playback-format conversion, restart-resumable
+  queues, interruption of an active source, and transcription-skipping imports.
+  These exclusions are not commitments to future delivery.
+- Finn selected **Split workspace**: a persistent source library beside the
+  source inspector on wide screens, with intake expanding inline. The comparison
+  is `docs/design/workspace/mockups/searcher-layouts.html`; only its Split
+  workspace layout is selected. Existing production styles own appearance;
+  the mockup's standalone CSS and preview width cap are not production authority.
+  `docs/design/workspace/reference-contract.md` records the exact selected
+  artifact, authoritative amendments, style/geometry contract, and required
+  intake/playback/manual/review/progress/error/narrow states.
+- At widths below 900 px, Sources first shows its library. Opening a source
+  replaces that list with its player/controls and **Back to sources** (Q11A).
+  At 900 px and above, keep the source library and inspector side by side.
+- Production implementation follows the ratified reference contract and
+  `docs/design/workspace/implementation-plan.md`, using a gpt-6.1-sol xhigh
+  implementation agent, three cold reviewers (correctness, contracts, skeptic),
+  repair with regressions, and parent validation before a checked-out green-CI
+  draft PR is presented for maintainer review. Ready/merge/release remain
+  maintainer-only.
+
+Decision evidence: twelve numbered questions over five rounds, one bounded
+manual-segment expansion discussion, and a final consolidated ratification.
+The material assumptions resolved were UI parity versus new CLI capabilities,
+batch scope, human-created segments without model scores, source playback
+versus format conversion, and process-lifetime versus restart-resumable work.
+No unresolved research prerequisite blocks visual discovery.
+
+### 13.6 Existing UI conventions and enforceable visual contracts
+
+Required by Finn when selecting Split workspace:
+
+- Implementation follows the existing shared stylesheet, spacing constants,
+  component patterns, and UI quality of the other RiceSuite interfaces. Load the
+  canonical `ricesuite/shell/slate.css` before Searcher's page stylesheet and
+  reuse its tokens; retain current Searcher controls, focus/error treatments,
+  typography conventions, native video controls, and reviewed-card behavior.
+- Derive page spacing and new layout gaps from named constants, following the
+  existing spacing-unit pattern. Do not copy the prototype's independent palette,
+  spacing literals, control dimensions, or preview-only maximum width.
+- Automated tests must pin stylesheet loading/reuse, spacing derivation, computed
+  styles, and layout across the supported viewports and breakpoint boundaries.
+  Tests must exercise rendered production HTML/CSS/JS with disposable fixtures;
+  a mockup screenshot or a class-name substring assertion alone is insufficient.
+- Verify overflow, responsive placement, full-frame media, reachable controls,
+  keyboard focus, and established interaction target sizes in normal, empty,
+  busy, error, and long-content states. Screenshots supplement computed geometry
+  and style assertions. The implementation plan must wire these checks into CI
+  without weakening existing gates or any pillar's coverage floor.

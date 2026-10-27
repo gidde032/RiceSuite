@@ -35,7 +35,12 @@ from ricesearcher.pipeline import (
 from ricesearcher.score.anthropic_scorer import AnthropicScorer
 from ricesearcher.score.base import Scorer
 from ricesearcher.score.heuristic_scorer import OFFLINE_MODEL_NAME, HeuristicScorer
+from ricesearcher.transcribe.base import DEFAULT_TRANSCRIPTION_MODEL
 from ricesearcher.transcribe.whisper import WhisperTranscriber
+
+
+def _score_label(score: float | None) -> str:
+    return "manual" if score is None else f"{score:.2f}"
 
 
 def _default_acquirers() -> list:
@@ -148,9 +153,12 @@ def _cmd_score(args: argparse.Namespace) -> int:
         f"scored {len(slices)} slices for {source.title!r} "
         f"(beat {profile.version}, model {scorer.model_name})"
     )
-    for s in sorted(slices, key=lambda s: -s.score)[:10]:
+    for s in sorted(slices, key=lambda s: -(s.score or 0))[:10]:
         span = s.transcript_span[:60].replace("\n", " ")
-        print(f"  {s.score:.2f}  {s.target_in:6.0f}-{s.target_out:<6.0f}s  {span!r}")
+        print(
+            f"  {_score_label(s.score)}  "
+            f"{s.target_in:6.0f}-{s.target_out:<6.0f}s  {span!r}"
+        )
     return 0
 
 
@@ -174,7 +182,8 @@ def _cmd_slices(args: argparse.Namespace) -> int:
         dup = f"~{s.dup_kind}" if s.dup_of else ""  # advisory duplicate flag
         offl = "offl" if s.scorer_model == OFFLINE_MODEL_NAME else ""
         print(
-            f"{s.score:.2f}  {offl:4}  {dup:6}  {s.rights_risk:4}  {title:22}  "
+            f"{_score_label(s.score)}  {offl:4}  {dup:6}  "
+            f"{s.rights_risk:4}  {title:22}  "
             f"{s.target_in:6.0f}-{s.target_out:<6.0f}s  {span!r}"
         )
     return 0
@@ -281,7 +290,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_pull = sub.add_parser("pull", help="acquire + transcribe a source")
     p_pull.add_argument("request", help="a YouTube URL or a local media file path")
-    p_pull.add_argument("--model", default="small", help="faster-whisper model size")
+    p_pull.add_argument(
+        "--model", default=DEFAULT_TRANSCRIPTION_MODEL, help="faster-whisper model size"
+    )
     p_pull.set_defaults(func=_cmd_pull)
 
     p_list = sub.add_parser("list", help="list library sources")

@@ -131,6 +131,8 @@ Each requirement is written so a test can check it. "The launcher" means the
   existing page under its own prefix. A pillar page's API calls reach only its
   own pillar. Each pillar frontend gets only the minimal base-path change
   needed for that (Q11: no rebuilt UI).
+  The later Searcher workspace expansion (RiceSuite #96) is governed by
+  `searcher/SPEC.md §13`; it preserves this shell and the other pillars' pages.
   The common Slate palette and base surface rules live in one packaged suite
   stylesheet; each document loads it before its own layout and state rules.
 - **FR-11** The home view shows, per stage, the batches waiting: Searcher

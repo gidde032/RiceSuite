@@ -14,3 +14,6 @@ class Transcriber(Protocol):
     def transcribe(self, media_path: Path) -> list[TranscriptWord]:
         """Return word-level tokens with timings in seconds."""
         ...
+
+
+DEFAULT_TRANSCRIPTION_MODEL = "small"

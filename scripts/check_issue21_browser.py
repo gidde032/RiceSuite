@@ -137,7 +137,7 @@ def attach(page, pillar, baseline=False):
             elif name in (
                 ("app.js", "style.css", "slate-logo.png")
                 if pillar == "clip"
-                else ("app.js", "styles.css", "mark.png")
+                else ("app.js", "workspace-run.js", "styles.css", "mark.png")
             ):
                 file = (
                     "clipper/web/"

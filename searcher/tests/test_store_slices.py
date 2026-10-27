@@ -51,7 +51,7 @@ def _slice(sid: str, source_id: str = "src1", score: float = 0.5) -> CandidateSl
 
 def test_fresh_db_is_at_current_version(tmp_path: Path) -> None:
     with Library(tmp_path / "lib.sqlite3") as lib:
-        assert lib._stored_version() == SCHEMA_VERSION == 3
+        assert lib._stored_version() == SCHEMA_VERSION == 4
 
 
 def test_slice_roundtrip_and_features_json(tmp_path: Path) -> None:

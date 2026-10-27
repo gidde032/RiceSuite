@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>RiceSearcher — Media</title>
+  <title>RiceSearcher — Sources</title>
   <link rel="icon" href="static/mark.png">
   <link rel="stylesheet" href="static/slate.css">
   <link rel="stylesheet" href="static/styles.css">
@@ -11,18 +11,44 @@
 <body>
   <header class="topbar">
     <span class="mark"><img src="static/mark.png" alt="" width="26" height="26"></span>
-    <h1 class="app-title">RiceSearcher <span>· Media</span></h1>
+    <h1 class="app-title">RiceSearcher <span>· Sources</span></h1>
     <nav class="nav" aria-label="Primary">
+      <a class="nav-link" href="sources" aria-current="page">Sources</a>
       <a class="nav-link" href="./">Review</a>
       <a class="nav-link" href="profiles">Profiles</a>
     </nav>
     <div class="filters">
+      <label>Profile <select id="workspaceProfile"></select></label>
       <span id="count" class="count" aria-live="polite"></span>
       <button id="clearAllBtn" class="danger" type="button">Clear entire cache…</button>
     </div>
   </header>
   <p id="status" class="status" role="status" aria-live="polite"></p>
-  <main id="list" class="media-list"></main>
+  <section class="workspace-tools">
+    <details id="intake"><summary>Add sources</summary>
+      <div class="intake-fields">
+        <label>Source URLs or local paths, one per line<textarea id="sourceRequests" rows="3"></textarea></label>
+        <label id="fileDrop">Choose or drop media files<input id="sourceFiles" type="file" accept="video/*,audio/*,.mkv" multiple></label>
+        <div><button id="clearSourceFiles" type="button">Clear file selection</button></div>
+        <details><summary>Advanced settings</summary><div class="settings-fields">
+          <label>Transcription model <input id="transcriptionModel" value="small"></label>
+          <label>Scoring model override <input id="scoringModel" placeholder="Configured default"></label>
+          <label class="check-label"><input id="offlineScore" type="checkbox"> Offline scoring (heuristic)</label>
+          <label>Duplicate similarity <input id="duplicateThreshold" type="number" min="0" max="1" step="0.01" value="0.65"></label>
+        </div></details>
+        <p id="credentialsNote" class="operational"></p>
+        <div class="actions"><button id="addOnly">Add only</button><button id="addScore" class="primary">Add &amp; score</button></div>
+      </div>
+    </details>
+    <div class="actions"><button id="scoreSources">Score selected sources</button><button id="checkDuplicates">Check duplicates</button></div>
+  </section>
+  <section id="batchStrip" class="progress" aria-live="polite" hidden></section>
+  <main id="sourceWorkspace" class="source-workspace">
+    <section id="sourceLibrary" aria-label="Source library"><div id="list" class="media-list"></div></section>
+    <section id="sourceInspector" class="source-inspector" aria-label="Source inspector"><p class="empty">Open a source to inspect its media and transcript.</p></section>
+  </main>
+  <script src="static/workspace-run.js"></script>
+  <script src="static/sources.js"></script>
   <script src="static/media.js"></script>
 </body>
 </html>

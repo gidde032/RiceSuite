@@ -16,7 +16,7 @@ import re
 import shutil
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -26,7 +26,13 @@ from ricesearcher.acquire.watchfolder import ffprobe_duration
 from ricesearcher.config import Config, load_config
 from ricesearcher.handoff.extract import ClipExtractor, FfmpegClipExtractor
 from ricesearcher.library.store import Library
-from ricesearcher.models import CandidateSlice, SliceStatus, Source, TranscriptWord
+from ricesearcher.models import (
+    CandidateSlice,
+    SliceStatus,
+    Source,
+    TranscriptWord,
+    slice_order,
+)
 
 SCHEMA_VERSION = 1
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
@@ -46,12 +52,13 @@ class HandoffEntry:
     target_in: float
     target_out: float
     transcript_words: list[TranscriptWord]
-    score: float
+    score: float | None
     rationale: str
     rights_risk: str
     beat_profile_version: str
     profile_id: str
     scorer_model: str = ""
+    origin: str = "scored"
     item_id: str = ""
 
     @property
@@ -245,6 +252,7 @@ def _manifest_clip(
         },
         "transcript": _transcript_through(entry, delivered_out),
         "score": entry.score,
+        **({"origin": "manual"} if entry.origin == "manual" else {}),
         "rationale": entry.rationale,
         "rights_risk": entry.rights_risk,
         "beat_profile_version": entry.beat_profile_version,
@@ -284,6 +292,7 @@ def _entry_for(
         beat_profile_version=slice_.beat_profile_version,
         profile_id=slice_.profile_id,
         scorer_model=slice_.scorer_model,
+        origin=slice_.origin,
         item_id=slice_.id,
     )
 
@@ -317,8 +326,8 @@ def hand_off_selected(
     if not selected:
         return {"batch_id": None, "clip_count": 0}
 
-    # Position by score (best first); stable tie-break for determinism.
-    ordered = sorted(selected, key=lambda s: (-s.score, s.created_at, s.id))
+    # Manual creation order first, then scored descending; stable tie-breaks.
+    ordered = sorted(selected, key=slice_order)
     titles = library.source_titles()
     notify(
         progress,
@@ -399,7 +408,19 @@ def hand_off_selected(
                     profile_id=profile_id, status=SliceStatus.SELECTED
                 )
             }
-            snapshot_unchanged = all(still_selected.get(sl.id) == sl for sl in ordered)
+            # Advisory annotations may change during extraction. Every other
+            # snapshot field, including human edit markers, stays protected.
+            snapshot_unchanged = all(
+                (latest := still_selected.get(sl.id)) is not None
+                and replace(
+                    latest,
+                    dup_of=sl.dup_of,
+                    dup_score=sl.dup_score,
+                    dup_kind=sl.dup_kind,
+                )
+                == sl
+                for sl in ordered
+            )
             if snapshot_unchanged:
                 # Manifest-last publication remains the consumer's completeness
                 # signal. Publishing under the short DB write lock ensures a

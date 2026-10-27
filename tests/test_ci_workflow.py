@@ -121,3 +121,11 @@ def test_clipper_ruleset_matches_the_check_its_readme_documents():
     ruleset = (rulesets / "main.json").read_text(encoding="utf-8")
     contexts = re.findall(r'"context":\s*"([^"]+)"', ruleset)
     assert contexts == [documented]
+
+
+def test_searcher_workspace_browser_contract_is_required_and_installed():
+    block = _jobs()["searcher-gates"]
+    assert "python -m playwright install --with-deps chromium" in block
+    assert "python scripts/check_searcher_workspace_browser.py" in block
+    assert "working-directory: ." in block
+    assert "continue-on-error" not in block

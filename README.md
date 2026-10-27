@@ -98,6 +98,18 @@ python -m pytest -q                                          # suite (ricesuite/
 (cd poster && python -m pytest tests/ -q --cov=backend --cov-fail-under=43)
 ```
 
+Searcher also enforces production browser style, responsive geometry and native
+playback contracts using only disposable intercepted fixtures. Install the pinned
+developer requirements, then from the suite root run:
+
+```bash
+python -m playwright install --with-deps chromium
+python scripts/check_searcher_workspace_browser.py
+```
+
+The checker fails when the browser is unavailable. `--browser-channel chrome`
+may use a locally installed Chrome with a throwaway profile; CI installs Chromium.
+
 ## Slate styling
 
 The common Slate palette and base rules are in `ricesuite/shell/slate.css`.
