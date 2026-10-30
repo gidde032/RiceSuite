@@ -15,7 +15,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   zoom that fills the frame height. The slider shows whenever the clip
   resolves to blur-pad, from Blur-pad, Auto, or Crop with no plan. The preview
   mock and the face-near-header and face-near-captions warnings follow the
-  zoom. At 100% the render is unchanged.
+  zoom. At 100% the render is unchanged. The render request carries it as
+  `blur_pad_zoom` (100–1000), and the render clamps it to the clip's maximum.
 
 ### Preview controls
 

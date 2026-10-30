@@ -79,12 +79,17 @@ the fallback and as an explicit per-clip choice.
 - `crop` with a plan whose `decision` is `blur_pad` still crops. The user
   overrides on purpose. An analysis-failed landscape plan carries a centered
   crop sample for that override. `crop` with no plan (vertical input) is a 400.
+- `RenderRequest.blur_pad_zoom: int = 100` (100–1000, RiceSuite #98). It
+  applies only when a landscape video resolves to `blur_pad`. The render
+  clamps it to the zoom at which the clip fills the frame height.
 - `HandoffClip` and the RicePoster manifest are unchanged.
 
 ### Pipeline placement (`pipeline.py` step 3)
 
 - Vertical input: unchanged pass-through.
-- Landscape and resolved `blur_pad`: unchanged `blur_pad_statements`.
+- Landscape and resolved `blur_pad`: `blur_pad_statements`, unchanged at zoom
+  100. A zoom above 100 scales the foreground up and crops its sides to
+  1080 px about the centre (RiceSuite #98).
 - Every path first normalizes the autorotated frame to probed display dimensions
   and square pixels: `[0:v]scale=W:H,setsar=1[src]`.
 - Resolved `crop`: write `crop.cmd` to the job dir. Statements: `[src]sendcmd=f=crop.cmd,crop=W:H:0:0,scale=1080:1920,setsar=1[base]`. Blur-pad likewise sets square pixels after its final overlay. Then `[base]subtitles=captions.ass...` as today. Header overlay unchanged.

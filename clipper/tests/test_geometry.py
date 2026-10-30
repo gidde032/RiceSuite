@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
+from itertools import pairwise
+
 import pytest
 
 from app.models import CropPlan, CropSample
@@ -383,3 +387,51 @@ def test_render_request_bounds_the_blur_pad_zoom():
         for bad in (99, 1001, 150.5):
             with pytest.raises(ValidationError):
                 model(blur_pad_zoom=bad)
+
+
+def _row_detail(path, row: int) -> int:
+    """Sum of neighbouring-pixel differences along one grey row of a frame."""
+    raw = subprocess.run(
+        [
+            *("ffmpeg", "-v", "error", "-ss", "0.5", "-i", str(path)),
+            *("-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "gray", "-"),
+        ],
+        capture_output=True,
+        check=True,
+    ).stdout
+    assert len(raw) == 1080 * 1920
+    line = raw[row * 1080 : (row + 1) * 1080]
+    return sum(abs(a - b) for a, b in pairwise(line))
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is unavailable")
+def test_a_real_zoomed_blur_pad_render_is_sharp_where_the_fitted_one_blurs(tmp_path):
+    """Rows of blurred fill at 100% show the zoomed picture (RiceSuite #98)."""
+    from app.models import RenderRequest
+
+    source = tmp_path / "source.mp4"
+    subprocess.run(
+        [
+            *("ffmpeg", "-v", "error", "-f", "lavfi", "-i"),
+            "color=c=gray:size=1920x1080:rate=30:duration=1,noise=alls=80:allf=t",
+            *("-pix_fmt", "yuv420p"),
+            str(source),
+        ],
+        check=True,
+    )
+    info = MediaInfo(width=1920, height=1080, duration=1.0, has_audio=False)
+    detail = {}
+    for zoom in (100, 200, 1000):
+        job_dir = tmp_path / f"z{zoom}"
+        job_dir.mkdir()
+        out = render(
+            job_dir,
+            source,
+            info,
+            RenderRequest(geometry="blur_pad", blur_pad_zoom=zoom, captions_on=False),
+        )
+        detail[zoom] = _row_detail(out, 400)
+
+    # Row 400 is blurred fill at 100%, and sharp noise once the picture covers it.
+    assert detail[200] > 4 * detail[100]
+    assert detail[1000] > 4 * detail[100]
