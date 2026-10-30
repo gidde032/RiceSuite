@@ -1020,3 +1020,68 @@ def test_preview_caption_warning_uses_fitted_geometry(isolated_jobs):
         "crop_plan": None,
         "music_plan": "caption_zone",
     }
+
+
+@pytest.mark.parametrize(
+    ("zoom", "header_top", "expected"),
+    [
+        (100, 867, "header_zone"),
+        (100, 790, None),
+        (200, 790, "header_zone"),
+        (200, 700, None),
+        (317, 700, "header_zone"),
+        (1000, 700, "header_zone"),
+    ],
+)
+def test_preview_warning_projects_faces_with_the_blur_pad_zoom(
+    isolated_jobs, monkeypatch, zoom, header_top, expected
+):
+    """A zoomed blur-pad moves the face toward the header (RiceSuite #98)."""
+    from types import SimpleNamespace
+
+    job = _ready_job(MediaInfo(width=1920, height=1080, duration=2.0, has_audio=False))
+    face = TrackSample(t=0.0, cx=960, cy=410, w=100, h=40)
+    track = [face, None, None, None, None]
+    times = [i * 0.2 for i in range(len(track))]
+    job.crop_plan = framing.plan_crop(track, [], 1920, 1080, sample_times=times)
+    job.music_plan = None
+    monkeypatch.setattr(
+        main,
+        "header_png_bytes",
+        lambda *_args, **_kwargs: (
+            b"png",
+            SimpleNamespace(
+                left=100, top=header_top, right=500, bottom=header_top + 28
+            ),
+        ),
+    )
+
+    body = {"header": "Hook", "geometry": "blur_pad", "blur_pad_zoom": zoom}
+    response = _preview(job.id, body)
+
+    assert response.status_code == 200
+    assert response.json()["warnings"]["crop_plan"] == expected
+
+
+def test_preview_crop_geometry_ignores_the_blur_pad_zoom(isolated_jobs, monkeypatch):
+    from types import SimpleNamespace
+
+    job = _ready_job(MediaInfo(width=1920, height=1080, duration=2.0, has_audio=False))
+    face = TrackSample(t=0.0, cx=960, cy=410, w=100, h=40)
+    track = [face, None, None, None, None]
+    times = [i * 0.2 for i in range(len(track))]
+    job.crop_plan = framing.plan_crop(track, [], 1920, 1080, sample_times=times)
+    job.music_plan = None
+    monkeypatch.setattr(
+        main,
+        "header_png_bytes",
+        lambda *_args, **_kwargs: (
+            b"png",
+            SimpleNamespace(left=100, top=712, right=500, bottom=740),
+        ),
+    )
+
+    for zoom in (100, 300):
+        body = {"header": "Hook", "geometry": "crop", "blur_pad_zoom": zoom}
+        response = _preview(job.id, body)
+        assert response.json()["warnings"]["crop_plan"] == "header_zone"

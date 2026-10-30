@@ -313,6 +313,29 @@ CHECKS = r"""
   check(css(warning).backgroundColor !== "rgb(216, 65, 59)", "caption warning keeps its existing treatment");
   const headerPlan = { ...captionPlan, warning: "header_zone" };
   applyGeometry(clip, { width: 1920, height: 1080, crop_plan: headerPlan, music_plan: headerPlan });
+  // Blur-pad zoom (RiceSuite #98): under the Geometry cards, above Header
+  // style. Drive it through the page's own change and input events.
+  const zoom = clip.blurPadZoomEl;
+  clip.geoState = { width: 1920, height: 1080, crop_plan: headerPlan, music_plan: headerPlan };
+  applyGeometry(clip, clip.geoState);
+  check(zoom.hidden && !zoom.getClientRects().length, "zoom slider hidden while Auto crops");
+  clip.geometryEl.querySelector('input[value="blur_pad"]').click();
+  const zoomBox = rect(zoom);
+  const geometryCards = rect(clip.geometryEl.querySelector(".geometry-choice-grid"));
+  const headerStyle = rect(clip.el.querySelector(".header-style"));
+  check(!zoom.hidden && zoomBox.height >= 36, "zoom slider shows for blur-pad");
+  check(zoomBox.y >= geometryCards.bottom && zoomBox.bottom <= headerStyle.y, "zoom slider sits between the Geometry cards and Header style");
+  check(near(zoomBox.x, geometryCards.x, 1) && zoomBox.right <= geometryCards.right + 1, "zoom slider aligns with the Geometry cards");
+  check(clip.blurPadZoomInputEl.max === "317" && clip.blurPadZoomOutEl.textContent === "100%", "zoom slider range fills the frame height");
+  clip.blurPadZoomInputEl.value = "200";
+  clip.blurPadZoomInputEl.dispatchEvent(new Event("input", { bubbles: true }));
+  check(clip.blurPadZoomOutEl.textContent === "200%", "zoom slider input updates its label");
+  check(headerPreviewPayload(clip).blur_pad_zoom === 200 && renderSettings(clip).blur_pad_zoom === 200, "zoom slider value reaches the preview and render requests");
+  clip.geometryEl.querySelector('input[value="crop"]').click();
+  check(zoom.hidden && renderSettings(clip).blur_pad_zoom === 100, "zoom slider hides and sends 100 when the clip crops");
+  clip.geometryEl.querySelector('input[value="auto"]').click();
+  check(zoom.hidden, "zoom slider hidden again for Auto crop");
+  clip.blurPadZoomInputEl.value = "100"; // the fixture card is reused per viewport
   for (const selector of [".clip-remove", ".choice-card", ".header-generate", ".header-prompt", ".lyrics-align", ".lyrics-restore", ".switch-label", ".vol"]) {
     const el = clip.el.querySelector(selector);
     if (el && el.getClientRects().length) check(rect(el).height >= (matchMedia("(pointer: coarse)").matches ? 44 : 36), "target size " + selector);

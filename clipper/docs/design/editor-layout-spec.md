@@ -33,7 +33,10 @@ At viewport widths of **881 px and above**, the editor has two rows:
    notes directly below it. Preserve the full video frame rather than cropping
    it; portrait clips can retain side letterboxing. Condense Content,
    Geometry, Header style, Burn captions, Caption style, and optional Music
-   controls into short, consistently spaced rows. Keep Header and Generate in
+   controls into short, consistently spaced rows. A landscape video that
+   resolves to blur-pad shows a **Zoom** slider under the Geometry cards
+   (RiceSuite #98). It runs from 100% to the zoom that fills the frame height.
+   It is hidden for photos, portrait and 9:16 clips, and clips that crop. Keep Header and Generate in
    the settings area, with the header prompt style dropdown under Generate and
    the header hint to its right (RiceSuite #92). The Music row ends in a **Start at** slider and a **Play
    segment** button (Issue #55). A **photo card** (Issue #54) shows a still
@@ -83,8 +86,8 @@ corners, padding, alignment, spacing, and Reset header. Every control meets the
 36 px target (44 px with a coarse pointer). The live header preview is the
 server's header PNG drawn over the source preview, in the output frame as
 the render will frame the clip: the whole picture of a 9:16 source; for a
-blur-pad clip, a mock of the blur-pad output fitted in the source box, drawn
-from the current frame or photo; for a subject-crop clip, the centred 9:16
+blur-pad clip, a mock of the blur-pad output, fitted or zoomed, in the source
+box, drawn from the current frame or photo; for a subject-crop clip, the centred 9:16
 window with a dashed outline, as an approximation of the moving crop. The rendered-clip
 column and the layout above are unchanged.
 

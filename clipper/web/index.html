@@ -132,6 +132,7 @@
 
           <fieldset class="field choice-field geometry" hidden>
             <legend>Geometry</legend>
+            <div class="geometry-body">
             <div class="choice-grid geometry-choice-grid">
               <label class="choice-card">
                 <input type="radio" name="geometry" value="auto" checked />
@@ -150,6 +151,11 @@
                 <span class="choice-check" aria-hidden="true">✓</span>
                 <span class="choice-label">Crop</span>
               </label>
+            </div>
+            <!-- Blur-pad zoom (RiceSuite #98): shown while the clip resolves
+                 to blur-pad. 100% fits the whole picture; the maximum fills
+                 the frame height. -->
+            <label class="vol blur-pad-zoom" hidden><span>Zoom</span><input class="blur-pad-zoom-input" type="range" min="100" max="100" step="1" value="100" /><output class="vol-label blur-pad-zoom-out">100%</output></label>
             </div>
           </fieldset>
 
