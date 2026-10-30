@@ -313,6 +313,21 @@ CHECKS = r"""
   check(css(warning).backgroundColor !== "rgb(216, 65, 59)", "caption warning keeps its existing treatment");
   const headerPlan = { ...captionPlan, warning: "header_zone" };
   applyGeometry(clip, { width: 1920, height: 1080, crop_plan: headerPlan, music_plan: headerPlan });
+  // Blur-pad zoom (RiceSuite #98): under the Geometry cards, above Header style.
+  const zoom = clip.blurPadZoomEl;
+  check(zoom.hidden && !zoom.getClientRects().length, "zoom slider hidden while the clip crops");
+  clip.geoState = { width: 1920, height: 1080, crop_plan: headerPlan, music_plan: headerPlan };
+  clip.geometryEl.querySelector('input[value="blur_pad"]').checked = true;
+  syncBlurPadZoom(clip);
+  const zoomBox = rect(zoom);
+  const geometryCards = rect(clip.geometryEl.querySelector(".geometry-choice-grid"));
+  const headerStyle = rect(clip.el.querySelector(".header-style"));
+  check(!zoom.hidden && zoomBox.height >= 36, "zoom slider shows for blur-pad");
+  check(zoomBox.y >= geometryCards.bottom && zoomBox.bottom <= headerStyle.y, "zoom slider sits between the Geometry cards and Header style");
+  check(near(zoomBox.x, geometryCards.x, 1) && zoomBox.right <= geometryCards.right + 1, "zoom slider aligns with the Geometry cards");
+  check(clip.blurPadZoomInputEl.max === "317" && clip.blurPadZoomOutEl.textContent === "100%", "zoom slider range fills the frame height");
+  clip.geometryEl.querySelector('input[value="auto"]').checked = true;
+  syncBlurPadZoom(clip);
   for (const selector of [".clip-remove", ".choice-card", ".header-generate", ".header-prompt", ".lyrics-align", ".lyrics-restore", ".switch-label", ".vol"]) {
     const el = clip.el.querySelector(selector);
     if (el && el.getClientRects().length) check(rect(el).height >= (matchMedia("(pointer: coarse)").matches ? 44 : 36), "target size " + selector);

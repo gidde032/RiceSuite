@@ -7,6 +7,16 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Geometry
+
+- A landscape video that blur-pads has a **Zoom** slider under the Geometry
+  cards (RiceSuite #98). 100% fits the whole picture, as before. A higher
+  value enlarges the picture about its centre and crops its sides, up to the
+  zoom that fills the frame height. The slider shows whenever the clip
+  resolves to blur-pad, from Blur-pad, Auto, or Crop with no plan. The preview
+  mock and the face-near-header and face-near-captions warnings follow the
+  zoom. At 100% the render is unchanged.
+
 ### Preview controls
 
 - Calibrate the TikTok overlay to the supplied feed screenshot; replace drawn

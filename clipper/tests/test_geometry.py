@@ -252,3 +252,134 @@ def test_render_without_plan_is_unchanged_blur_pad(monkeypatch, tmp_path):
     fc = _filter_complex(captured["cmd"])
     assert "boxblur" in fc
     assert "sendcmd" not in fc
+
+
+# --- blur-pad zoom (RiceSuite #98) -----------------------------------------
+
+_FITTED_BLUR_PAD = [
+    "[src]split=2[bg][fg]",
+    (
+        "[bg]scale=1080:1920:force_original_aspect_ratio=increase,"
+        "crop=1080:1920,boxblur=20:2[bgb]"
+    ),
+    "[fg]scale=1080:1920:force_original_aspect_ratio=decrease[fgs]",
+    "[bgb][fgs]overlay=(W-w)/2:(H-h)/2,setsar=1[base]",
+]
+
+
+@pytest.mark.parametrize(
+    ("width", "height", "expected"),
+    [
+        (1920, 1080, 317),
+        (1440, 1080, 238),
+        (1081, 1080, 178),
+        (1080, 1920, 100),
+        (1080, 1350, 100),
+        (1080, 1080, 100),
+        (0, 0, 100),
+    ],
+)
+def test_blur_pad_zoom_max_is_the_fill_height_zoom_of_a_landscape_clip(
+    width, height, expected
+):
+    assert geometry.blur_pad_zoom_max(width, height) == expected
+
+
+def test_blur_pad_zoom_clamps_to_the_clip_range():
+    assert geometry.blur_pad_zoom(100, 1920, 1080) == 100
+    assert geometry.blur_pad_zoom(250, 1920, 1080) == 250
+    assert geometry.blur_pad_zoom(1000, 1920, 1080) == 317
+    # Only a landscape clip zooms.
+    assert geometry.blur_pad_zoom(250, 1080, 1350) == 100
+
+
+def test_blur_pad_scale_reaches_exactly_the_fill_height_scale():
+    assert geometry.blur_pad_scale(1920, 1080) == pytest.approx(1080 / 1920)
+    assert geometry.blur_pad_scale(1920, 1080, 200) == pytest.approx(1080 / 1920 * 2)
+    assert geometry.blur_pad_scale(1920, 1080, 317) == pytest.approx(1920 / 1080)
+    assert geometry.blur_pad_scale(1080, 1350, 300) == pytest.approx(1080 / 1080)
+
+
+def test_blur_pad_statements_at_100_are_the_fitted_statements():
+    assert geometry.blur_pad_statements("[src]", "[base]") == _FITTED_BLUR_PAD
+    assert (
+        geometry.blur_pad_statements(
+            "[src]", "[base]", width=1920, height=1080, zoom=100
+        )
+        == _FITTED_BLUR_PAD
+    )
+
+
+def test_blur_pad_statements_zoom_scales_and_centre_crops_the_foreground():
+    stmts = geometry.blur_pad_statements(
+        "[src]", "[base]", width=1920, height=1080, zoom=200
+    )
+    assert stmts[2] == "[fg]scale=2160:1216,crop=1080:1216[fgs]"
+    assert [stmts[0], stmts[1], stmts[3]] == [
+        _FITTED_BLUR_PAD[0],
+        _FITTED_BLUR_PAD[1],
+        _FITTED_BLUR_PAD[3],
+    ]
+
+
+def test_blur_pad_statements_zoom_above_the_maximum_fills_the_frame_height():
+    stmts = geometry.blur_pad_statements(
+        "[src]", "[base]", width=1920, height=1080, zoom=1000
+    )
+    assert stmts[2] == "[fg]scale=3414:1920,crop=1080:1920[fgs]"
+
+
+def test_blur_pad_statements_ignore_zoom_on_a_portrait_clip():
+    stmts = geometry.blur_pad_statements(
+        "[src]", "[base]", width=1080, height=1350, zoom=300
+    )
+    assert stmts == _FITTED_BLUR_PAD
+
+
+def test_render_blur_pad_uses_the_requested_zoom(monkeypatch, tmp_path):
+    from app.models import RenderRequest
+
+    captured = _capture_render(monkeypatch)
+
+    render(
+        tmp_path,
+        tmp_path / "source.mp4",
+        MediaInfo(width=1920, height=1080, duration=15.0, has_audio=False),
+        RenderRequest(geometry="blur_pad", blur_pad_zoom=200),
+    )
+
+    fc = _filter_complex(captured["cmd"])
+    assert "[fg]scale=2160:1216,crop=1080:1216[fgs]" in fc
+    assert "force_original_aspect_ratio=decrease" not in fc
+
+
+def test_render_crop_ignores_the_blur_pad_zoom(monkeypatch, tmp_path):
+    from app.models import RenderRequest
+
+    captured = _capture_render(monkeypatch)
+
+    render(
+        tmp_path,
+        tmp_path / "source.mp4",
+        MediaInfo(width=1920, height=1080, duration=15.0, has_audio=False),
+        RenderRequest(blur_pad_zoom=200),
+        plan=_crop_plan([(0.0, 0)]),
+    )
+
+    fc = _filter_complex(captured["cmd"])
+    assert "boxblur" not in fc
+    assert "2160" not in fc
+
+
+def test_render_request_bounds_the_blur_pad_zoom():
+    from pydantic import ValidationError
+
+    from app.models import HeaderPreviewRequest, RenderRequest
+
+    assert RenderRequest().blur_pad_zoom == 100
+    assert HeaderPreviewRequest().blur_pad_zoom == 100
+    assert RenderRequest(blur_pad_zoom=1000).blur_pad_zoom == 1000
+    for model in (RenderRequest, HeaderPreviewRequest):
+        for bad in (99, 1001, 150.5):
+            with pytest.raises(ValidationError):
+                model(blur_pad_zoom=bad)

@@ -17,6 +17,7 @@ from typing import Literal
 
 from app.models import Content, CropPlan, CropReason, CropSample, TrackSample
 from render.ass import CAPTION_ZONE_PX, StyleConfig
+from render.geometry import blur_pad_scale
 
 # Sampling and motion policy (source_w-relative unless noted).
 SAMPLE_FPS = 5
@@ -42,7 +43,6 @@ DEFAULT_HEADER_SPAN = (StyleConfig().header_margin_v, HEADER_ZONE_PX)
 WARN_FRACTION = 0.20
 
 # Output height the header/caption zones are defined against.
-_OUTPUT_W = 1080
 _OUTPUT_H = 1920
 # Central-window margin on each side, from SAFE_FRACTION.
 _SAFE_MARGIN = (1.0 - SAFE_FRACTION) / 2.0
@@ -337,6 +337,7 @@ def header_warning(
     source_h: int | None = None,
     resolved_geometry: Literal["pass", "blur_pad", "crop"] | None = None,
     caption_zone: int = CAPTION_ZONE_PX,
+    blur_pad_zoom: int = 100,
 ) -> str | None:
     """The plan's warning, re-checked against the clip's drawn header.
 
@@ -344,6 +345,7 @@ def header_warning(
     stands. When the preview supplies the source dimensions and resolved render
     geometry, face spans are projected onto the output canvas first. Without
     them, retain the original full-height crop mapping for existing callers.
+    A blur-pad projection uses ``blur_pad_zoom`` (RiceSuite #98).
     """
     if plan is None:
         return None
@@ -363,10 +365,10 @@ def header_warning(
         scale = _OUTPUT_H / source_h
         offset_y = 0.0
     else:
-        # blur_pad keeps the whole foreground and fits it inside the output;
-        # the background fills the rest. Mirror scale=decrease and the centred
-        # overlay used by render.geometry.blur_pad_statements.
-        scale = min(_OUTPUT_W / source_w, _OUTPUT_H / source_h)
+        # blur_pad fits the foreground inside the output, or zooms it up to
+        # the frame height; the background fills the rest. Mirror the scale and
+        # the centred overlay used by render.geometry.blur_pad_statements.
+        scale = blur_pad_scale(source_w, source_h, blur_pad_zoom)
         offset_y = (_OUTPUT_H - source_h * scale) / 2.0
 
     output_spans = [
