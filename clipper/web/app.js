@@ -391,6 +391,7 @@ function headerPreviewPayload(clip) {
     header_style: radioValue(clip.headerStyleEl),
     header_look: clip.headerLook,
     geometry: clip.geometryEl ? radioValue(clip.geometryEl) : "auto",
+    blur_pad_zoom: blurPadZoom(clip),
     emoji_rows: emojiRowsShown(clip),
   };
 }
@@ -494,9 +495,41 @@ function previewGeometry(clip) {
   return plan && plan.decision === "crop" ? "crop" : "blur_pad";
 }
 
+// The blur-pad zoom, in percent, at which a landscape clip fills the frame
+// height, as render.geometry.blur_pad_zoom_max (RiceSuite #98). Other clips
+// do not zoom.
+function blurPadZoomMax(width, height) {
+  if (!(width > 0 && height > 0) || width <= height) return 100;
+  const fit = Math.min(1080 / width, 1920 / height);
+  const fill = Math.max(1080 / width, 1920 / height);
+  return Math.max(100, Math.ceil(Number(((fill / fit) * 100).toFixed(6))));
+}
+
+// The zoom slider shows while a landscape video resolves to blur-pad.
+function blurPadZoomShown(clip) {
+  const state = clip.geoState || {};
+  return clip.isPhoto !== true && state.width > state.height && previewGeometry(clip) === "blur_pad";
+}
+
+// The zoom the render uses: the slider's value while it shows, else 100.
+function blurPadZoom(clip) {
+  if (!clip.blurPadZoomInputEl || !blurPadZoomShown(clip)) return 100;
+  const max = blurPadZoomMax(clip.geoState.width, clip.geoState.height);
+  return Math.max(100, Math.min(Math.round(Number(clip.blurPadZoomInputEl.value)) || 100, max));
+}
+
+function syncBlurPadZoom(clip) {
+  if (!clip.blurPadZoomEl) return;
+  const state = clip.geoState || {};
+  clip.blurPadZoomInputEl.max = String(blurPadZoomMax(state.width, state.height));
+  clip.blurPadZoomEl.hidden = !blurPadZoomShown(clip);
+  clip.blurPadZoomOutEl.textContent = `${blurPadZoom(clip)}%`;
+}
+
 // The blur-pad output as the render builds it (render.geometry): the frame
-// blurred to cover 9:16, with the whole picture fitted and centred on top.
-function drawBlurPadMock(canvas, media, width, height) {
+// blurred to cover 9:16, with the picture fitted and centred on top, or
+// zoomed toward the frame height (RiceSuite #98).
+function drawBlurPadMock(canvas, media, width, height, zoom = 100) {
   const w = media.videoWidth || media.naturalWidth;
   const h = media.videoHeight || media.naturalHeight;
   canvas.width = Math.max(1, Math.round(width));
@@ -510,7 +543,8 @@ function drawBlurPadMock(canvas, media, width, height) {
   c2d.drawImage(media, (width - w * cover) / 2, (height - h * cover) / 2, w * cover, h * cover);
   c2d.restore();
   const fit = Math.min(width / w, height / h);
-  c2d.drawImage(media, (width - w * fit) / 2, (height - h * fit) / 2, w * fit, h * fit);
+  const scale = Math.min((fit * zoom) / 100, Math.max(width / w, height / h));
+  c2d.drawImage(media, (width - w * scale) / 2, (height - h * scale) / 2, w * scale, h * scale);
 }
 
 // The output frame over the source as shown. A blur-pad clip shows the whole
@@ -553,7 +587,7 @@ function placeHeaderPreview(clip) {
   const base = clip.headerPreviewBaseEl;
   if (base) {
     base.hidden = mode !== "blur_pad";
-    if (mode === "blur_pad") drawBlurPadMock(base, media, box.width, box.height);
+    if (mode === "blur_pad") drawBlurPadMock(base, media, box.width, box.height, blurPadZoom(clip));
   }
   win.style.visibility = "";
   win.style.left = `${box.left}px`;
@@ -830,6 +864,7 @@ function renderSettings(clip, { music = cardMusic(clip), photoDuration = clip.is
     header_style: radioValue(clip.headerStyleEl),
     header_look: clip.headerLook,
     geometry: radioValue(clip.geometryEl),
+    blur_pad_zoom: blurPadZoom(clip),
     content: radioValue(clip.contentEl),
     music: {
       mode: music.file ? music.mode : "none",
@@ -885,6 +920,7 @@ function setRadioDisabled(group, disabled) {
 }
 
 function handleGeometryChange(clip) {
+  syncBlurPadZoom(clip);
   scheduleHeaderPreview(clip);
   placeHeaderPreview(clip);
 }
@@ -964,6 +1000,9 @@ function buildCard(clip) {
   for (const [key, cls] of HEADER_CONTROLS) clip.hcEls[key] = node.querySelector(`.${cls}`);
   clip.contentEl = node.querySelector(".content");
   clip.geometryEl = node.querySelector(".geometry");
+  clip.blurPadZoomEl = node.querySelector(".blur-pad-zoom");
+  clip.blurPadZoomInputEl = node.querySelector(".blur-pad-zoom-input");
+  clip.blurPadZoomOutEl = node.querySelector(".blur-pad-zoom-out");
   clip.captionsToggleEl = node.querySelector(".captions-toggle");
   clip.captionStyleEl = node.querySelector(".caption-style");
   clip.motionToggleEl = node.querySelector(".motion-toggle");
@@ -1109,6 +1148,11 @@ function buildCard(clip) {
     clip.sourceVideoEl.addEventListener(event, () => placeHeaderPreview(clip));
   }
   clip.geometryEl.addEventListener("change", () => handleGeometryChange(clip));
+  clip.blurPadZoomInputEl.addEventListener("input", () => {
+    clip.blurPadZoomOutEl.textContent = `${blurPadZoom(clip)}%`;
+    scheduleHeaderPreview(clip);
+    placeHeaderPreview(clip);
+  });
   clip.sourcePhotoEl.addEventListener("load", () => placeHeaderPreview(clip));
   // The source box resizes with the window and with the settings column (it
   // grows when Adjust header opens), so the preview follows its size.
@@ -1354,6 +1398,7 @@ function applyGeometry(clip, state) {
   if (!clip.geometryEl) return;
   const landscape = state.width > state.height;
   clip.geometryEl.hidden = !landscape;
+  syncBlurPadZoom(clip);
   if (!landscape) return;
 
   const content = clip.contentEl ? radioValue(clip.contentEl) : "speech";

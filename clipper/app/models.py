@@ -61,6 +61,9 @@ HEADER_Y_MAX = 1380
 # Per-clip framing choice (ADR-001). "auto" follows the plan decision; "crop"
 # and "blur_pad" override it.
 Geometry = Literal["auto", "blur_pad", "crop"]
+# Upper bound of a requested blur-pad zoom, in percent (RiceSuite #98). The
+# render clamps a valid value to the clip's own fill-height zoom.
+BLUR_PAD_ZOOM_MAX = 1000
 JobKind = Literal["video", "photo"]
 # A photo clip's length bounds, in whole seconds (Issue #54, SPEC.md D17).
 PHOTO_MIN_SECONDS = 3
@@ -193,6 +196,8 @@ class HeaderPreviewRequest(HeaderFields):
     # Header warnings depend on the geometry the render will use, including
     # whether auto resolves to the crop plan's crop or blur-pad decision.
     geometry: Geometry = "auto"
+    # A blur-pad clip's zoom; it moves the projected face spans (RiceSuite #98).
+    blur_pad_zoom: int = Field(default=100, ge=100, le=BLUR_PAD_ZOOM_MAX)
     # The clip shows caption emoji rows (RiceSuite #66): the header keeps
     # above the wider caption band, and the face check uses it.
     emoji_rows: bool = False
@@ -212,6 +217,10 @@ class RenderRequest(HeaderFields):
     emoji_on: bool = False
     emoji: list[EmojiPick] = Field(default_factory=list, max_length=EMOJI_PICKS_MAX)
     geometry: Geometry = "auto"
+    # Blur-pad zoom in percent (RiceSuite #98). 100 fits the whole picture; a
+    # landscape video zooms up to its fill-height zoom, and the render clamps
+    # a larger value there. Other clips and other geometries ignore it.
+    blur_pad_zoom: int = Field(default=100, ge=100, le=BLUR_PAD_ZOOM_MAX)
     content: Content = "speech"
     music: MusicSettings = Field(default_factory=MusicSettings)
     # Clip length for a photo job. A video job ignores it.

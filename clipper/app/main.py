@@ -485,6 +485,7 @@ def render_job(job_id: str, req: RenderRequest) -> JobState:
                     "words": [],
                     "captions_on": False,
                     "geometry": "blur_pad",
+                    "blur_pad_zoom": 100,
                     "content": "speech",
                 }
             )
@@ -617,6 +618,7 @@ def header_preview(job_id: str, req: HeaderPreviewRequest) -> dict:
             source_h=job.info.height,
             resolved_geometry=resolved,
             caption_zone=style.caption_zone,
+            blur_pad_zoom=req.blur_pad_zoom,
         )
 
     return {

@@ -758,6 +758,24 @@ def test_render_crop_on_landscape_passes_crop_plan_to_render(
     assert captured["plan"].decision == "crop"
 
 
+def test_render_passes_the_blur_pad_zoom_to_render(monkeypatch, isolated_jobs):
+    job = _landscape_ready_job()
+    job.crop_plan = _landscape_plan()
+    captured: dict = {}
+
+    def fake_render(*args, **kwargs):
+        captured["req"] = args[3]
+        captured["plan"] = kwargs.get("plan")
+        return job.dir / "output.mp4"
+
+    monkeypatch.setattr(main, "render", fake_render)
+
+    main.render_job(job.id, RenderRequest(geometry="blur_pad", blur_pad_zoom=180))
+
+    assert captured["req"].blur_pad_zoom == 180
+    assert captured["plan"] is None
+
+
 def test_render_default_payload_geometry_is_auto():
     assert RenderRequest().geometry == "auto"
 

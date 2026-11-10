@@ -7,6 +7,7 @@ subject-crop plan or **blur-pad** to 1080x1920; other input blur-pads.
 
 from __future__ import annotations
 
+import math
 from itertools import pairwise
 from typing import Literal
 
@@ -56,17 +57,71 @@ def resolve_geometry(
     return plan.decision if plan is not None else "blur_pad"
 
 
+def blur_pad_zoom_max(width: int, height: int) -> int:
+    """The blur-pad zoom, in percent, at which the clip fills the frame height.
+
+    Only a landscape clip zooms (RiceSuite #98); any other clip returns 100.
+    """
+    if width <= 0 or height <= 0 or width <= height:
+        return 100
+    fit = min(TARGET_W / width, TARGET_H / height)
+    fill = max(TARGET_W / width, TARGET_H / height)
+    # Round the ratio first, so float noise cannot push an exact fit up by 1.
+    return max(100, math.ceil(round(fill / fit * 100, 6)))
+
+
+def blur_pad_zoom(zoom: int, width: int, height: int) -> int:
+    """The zoom a blur-pad render uses: 100 to the clip's fill-height zoom."""
+    return max(100, min(zoom, blur_pad_zoom_max(width, height)))
+
+
+def blur_pad_scale(width: int, height: int, zoom: int = 100) -> float:
+    """Source-to-output scale of the blur-pad foreground at ``zoom`` percent.
+
+    100 fits the whole picture inside 1080x1920. A landscape clip zooms from
+    there up to the scale that fills the frame height (RiceSuite #98).
+    """
+    fit = min(TARGET_W / width, TARGET_H / height)
+    fill = max(TARGET_W / width, TARGET_H / height)
+    return min(fit * blur_pad_zoom(zoom, width, height) / 100, fill)
+
+
+def _even(value: float) -> int:
+    return 2 * round(value / 2)
+
+
 def blur_pad_statements(
-    input_label: str = "[0:v]", out_label: str = "[base]"
+    input_label: str = "[0:v]",
+    out_label: str = "[base]",
+    *,
+    width: int = 0,
+    height: int = 0,
+    zoom: int = 100,
 ) -> list[str]:
-    """filter_complex statements that blur-pad ``input_label`` to 1080x1920."""
+    """filter_complex statements that blur-pad ``input_label`` to 1080x1920.
+
+    ``width`` and ``height`` are the source size. A landscape source with a
+    ``zoom`` above 100 scales the foreground up, crops its sides to the frame
+    width about the centre, and overlays it centred (RiceSuite #98). Zoom 100
+    keeps the fitted statements unchanged.
+    """
+    zoom = blur_pad_zoom(zoom, width, height)
+    if zoom == 100:
+        foreground = (
+            f"[fg]scale={TARGET_W}:{TARGET_H}:force_original_aspect_ratio=decrease[fgs]"
+        )
+    else:
+        scale = blur_pad_scale(width, height, zoom)
+        fg_w = max(TARGET_W, _even(width * scale))
+        fg_h = min(TARGET_H, _even(height * scale))
+        foreground = f"[fg]scale={fg_w}:{fg_h},crop={TARGET_W}:{fg_h}[fgs]"
     return [
         f"{input_label}split=2[bg][fg]",
         (
             f"[bg]scale={TARGET_W}:{TARGET_H}:force_original_aspect_ratio=increase,"
             f"crop={TARGET_W}:{TARGET_H},boxblur=20:2[bgb]"
         ),
-        f"[fg]scale={TARGET_W}:{TARGET_H}:force_original_aspect_ratio=decrease[fgs]",
+        foreground,
         f"[bgb][fgs]overlay=(W-w)/2:(H-h)/2,setsar=1{out_label}",
     ]
 

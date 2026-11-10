@@ -265,6 +265,7 @@ def test_photo_render_uses_the_chosen_length_and_drops_captions(
         words=[Word(text="hi", start=0.0, end=0.5)],
         captions_on=True,
         geometry="crop",
+        blur_pad_zoom=250,
         content="music",
         photo_duration=12,
         header="Hook",
@@ -278,6 +279,9 @@ def test_photo_render_uses_the_chosen_length_and_drops_captions(
     assert seen["req"].words == []
     assert seen["req"].captions_on is False
     assert seen["req"].header == "Hook"
+    assert seen["req"].geometry == "blur_pad"
+    # Photos do not zoom (RiceSuite #98).
+    assert seen["req"].blur_pad_zoom == 100
     assert seen["plan"] is None
 
 

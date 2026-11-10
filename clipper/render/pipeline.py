@@ -409,7 +409,15 @@ def render(
         video_stmts.extend(geometry.crop_statements(plan, "[src]", "[base]"))
         video_stmts.append(f"[base]{subtitles}{sub_out}")
     else:
-        video_stmts.extend(geometry.blur_pad_statements("[src]", "[base]"))
+        video_stmts.extend(
+            geometry.blur_pad_statements(
+                "[src]",
+                "[base]",
+                width=info.width,
+                height=info.height,
+                zoom=req.blur_pad_zoom,
+            )
+        )
         video_stmts.append(f"[base]{subtitles}{sub_out}")
 
     next_input = 1 + (1 if has_music else 0)

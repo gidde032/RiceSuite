@@ -126,3 +126,70 @@ test('empty and busy rendered previews cannot enter fullscreen, but can exit if 
     h.ctx.document.fullscreenElement = null;
   }
 });
+
+// --- blur-pad zoom (RiceSuite #98) -------------------------------------------
+function radios(value) { const group = element(); group.querySelector = () => ({ value }); return group; }
+function zoomClip({ geometry = 'blur_pad', content = 'speech', plan = null, width = 1920, height = 1080, photo = false, value = '150' } = {}) {
+  const clip = { geometryEl: radios(geometry), contentEl: radios(content), isPhoto: photo,
+    geoState: { width, height, crop_plan: plan, music_plan: null },
+    blurPadZoomEl: element(), blurPadZoomInputEl: element(), blurPadZoomOutEl: element() };
+  clip.blurPadZoomInputEl.value = value;
+  return clip;
+}
+test('the zoom maximum is the fill-height zoom of a landscape clip, as render.geometry computes it', () => {
+  const h = harness();
+  for (const [w, hgt, max] of [[1920, 1080, 317], [1440, 1080, 238], [1081, 1080, 178], [1080, 1920, 100], [1080, 1350, 100], [0, 0, 100]]) {
+    assert.equal(h.evaluate(`blurPadZoomMax(${w}, ${hgt})`), max);
+  }
+});
+test('the zoom slider shows, and its value is sent, only while a landscape video resolves to blur-pad', () => {
+  const h = harness();
+  const crop = { decision: 'crop' }; const blur = { decision: 'blur_pad' };
+  for (const [opts, shown] of [
+    [{ geometry: 'blur_pad' }, true],
+    [{ geometry: 'auto', plan: blur }, true],
+    [{ geometry: 'auto', plan: crop }, false],
+    [{ geometry: 'auto', plan: null }, true],
+    [{ geometry: 'crop', plan: crop }, false],
+    [{ geometry: 'crop', plan: null }, true],
+    [{ geometry: 'blur_pad', photo: true }, false],
+    [{ geometry: 'blur_pad', width: 1080, height: 1350 }, false],
+    [{ geometry: 'blur_pad', width: 1080, height: 1920 }, false],
+  ]) {
+    const clip = zoomClip(opts); h.ctx.clip = clip;
+    h.evaluate('syncBlurPadZoom(clip)');
+    assert.equal(clip.blurPadZoomEl.hidden, !shown, JSON.stringify(opts));
+    assert.equal(h.evaluate('blurPadZoom(clip)'), shown ? 150 : 100, JSON.stringify(opts));
+    assert.equal(clip.blurPadZoomOutEl.textContent, shown ? '150%' : '100%');
+  }
+});
+test('the zoom slider range follows the clip and a stale value is clamped to it', () => {
+  const h = harness();
+  const clip = zoomClip({ value: '900' }); h.ctx.clip = clip;
+  h.evaluate('syncBlurPadZoom(clip)');
+  assert.equal(clip.blurPadZoomInputEl.max, '317');
+  assert.equal(h.evaluate('blurPadZoom(clip)'), 317);
+  clip.blurPadZoomInputEl.value = 'junk';
+  assert.equal(h.evaluate('blurPadZoom(clip)'), 100);
+});
+test('the header preview request carries the zoom the render will use', () => {
+  const h = harness();
+  const clip = zoomClip({ value: '220' });
+  Object.assign(clip, { headerEl: element(), headerStyleEl: radios('plain'), headerLook: null, emojiToggleEl: null });
+  h.ctx.clip = clip;
+  assert.equal(h.evaluate('headerPreviewPayload(clip)').blur_pad_zoom, 220);
+  clip.geometryEl = radios('crop'); clip.geoState.crop_plan = { decision: 'crop' };
+  assert.equal(h.evaluate('headerPreviewPayload(clip)').blur_pad_zoom, 100);
+});
+test('the blur-pad mock zooms the centred foreground up to the frame height', () => {
+  const h = harness();
+  const draws = [];
+  const canvas = { getContext: () => ({ save() {}, restore() {}, set filter(_v) {}, drawImage: (...args) => draws.push(args.slice(1)) }) };
+  h.ctx.canvas = canvas; h.ctx.media = { videoWidth: 1920, videoHeight: 1080 };
+  for (const [zoom, fg] of [[100, [0, 54.6875, 90, 50.625]], [200, [-45, 29.375, 180, 101.25]], [1000, [-97.2222, 0, 284.4444, 160]]]) {
+    draws.length = 0;
+    h.evaluate(`drawBlurPadMock(canvas, media, 90, 160, ${zoom})`);
+    assert.equal(draws.length, 2);
+    draws[1].forEach((v, i) => assert.ok(Math.abs(v - fg[i]) < 1e-3, `${zoom}: ${draws[1]}`));
+  }
+});

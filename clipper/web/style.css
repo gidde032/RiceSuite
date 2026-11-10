@@ -74,6 +74,8 @@ input[type="file"]::file-selector-button { margin-right: 10px; border: 1px solid
 .content-choice-grid .choice-card { min-height: 36px; }
 .geometry-choice-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .geometry-choice-grid .choice-card { min-height: 44px; }
+.blur-pad-zoom { margin-top: var(--editor-space); grid-template-columns: 58px minmax(0, 1fr) 58px; }
+.blur-pad-zoom[hidden] { display: none; }
 .geometry-summary, .lyrics-badge { color: var(--muted); font-family: Arial, sans-serif; font-size: 11px; line-height: 1.3; }
 .geometry-warning { padding: calc(var(--editor-space) * 0.5); border: 1px solid var(--danger); border-radius: 4px; color: var(--danger); font-family: Arial, sans-serif; font-size: 10px; }
 .geometry-warning.header-warning { border-color: var(--destructive); background: var(--destructive); color: #fff; }
