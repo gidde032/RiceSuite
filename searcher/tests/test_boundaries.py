@@ -578,3 +578,11 @@ def test_proposals_over_the_cap_are_reported():
     _, report = build(ws, ScriptedClient(discovery=lambda _p: many))
     assert report.sections[0]["attempts"][0]["rejected"] == {"over_cap": 3}
     assert "3 proposals over the request cap" in report.describe()
+
+
+def test_a_large_word_start_regression_still_raises():
+    """Re-review LOW: only a small ASR regression is clamped."""
+    ws = words(40)
+    ws[10] = TranscriptWord(ws[10].text, ws[9].start - 1.5, ws[10].end)
+    with pytest.raises(ValueError, match="transcript word timings"):
+        build(ws, ScriptedClient())

@@ -62,6 +62,7 @@ FALLBACK_PER_SECTION = 4
 SNAP_TOLERANCE_S = 1.0  # a time farther than this from a word edge is invented
 LEAD_PAD_S = 0.5
 TAIL_PAD_S = 1.0
+CLAMP_S = 1.0  # largest word-start regression clamped instead of refused
 
 # Refinement.
 CONTEXT_S = 45.0
@@ -288,9 +289,15 @@ class _Words:
                     "non-negative; transcribe the source again"
                 )
         # ASR can emit a start slightly before the previous one. Keep the text
-        # order and clamp the start forward, as the offline prefilter tolerates.
+        # order and clamp the start forward, as the offline prefilter tolerates;
+        # a regression over ``CLAMP_S`` is a malformed transcript.
         previous = 0.0
         for k, w in enumerate(self.words):
+            if previous - w.start > CLAMP_S:
+                raise ValueError(
+                    "transcript word timings must be finite, ordered and "
+                    "non-negative; transcribe the source again"
+                )
             if w.start < previous:
                 self.words[k] = TranscriptWord(w.text, previous, max(w.end, previous))
             previous = self.words[k].start
