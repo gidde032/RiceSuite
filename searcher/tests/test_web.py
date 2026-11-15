@@ -326,6 +326,34 @@ def test_window_accepts_any_interval_within_source(client: TestClient) -> None:
     )
 
 
+def test_visual_review_original_bounds_survive_two_edits_and_reload(
+    client: TestClient,
+) -> None:
+    """Maintainer visual review (P2): restore server originals, not page-load bounds."""
+    client.post("/api/slices/sl1/status", json={"status": "selected"})
+    for start, end in ((12, 45), (15, 55)):
+        result = client.patch(
+            "/api/slices/sl1/window", json={"target_in": start, "target_out": end}
+        )
+        assert result.status_code == 200
+    saved = {row["id"]: row for row in client.get(SLICES).json()}["sl1"]
+    assert saved["original_window"] == [10, 40]
+    # Restoring uses the normal source-validated save and preserves review status,
+    # score, provenance and human-touched re-score protection.
+    result = client.patch(
+        "/api/slices/sl1/window",
+        json=dict(
+            zip(("target_in", "target_out"), saved["original_window"], strict=True)
+        ),
+    )
+    assert result.status_code == 200
+    restored = {row["id"]: row for row in client.get(SLICES).json()}["sl1"]
+    assert (restored["target_in"], restored["target_out"]) == (10, 40)
+    assert restored["status"] == "selected" and restored["window_edited"]
+    assert restored["score"] == saved["score"]
+    assert restored["extraction"] == saved["extraction"]
+
+
 def test_no_posting_surface(tmp_path: Path) -> None:
     # The app exposes only review + local-media endpoints — no post/publish/upload.
     cfg = Config(data_dir=tmp_path / "d", handoff_dir=tmp_path / "h")

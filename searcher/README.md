@@ -262,7 +262,12 @@ Open a source for native full-source playback and its full transcript. Mark star
 and end from the playhead or type seconds, preview the interval, then **Save manual
 segment**. It is reviewed and unselected, with no model score. **View in Review**
 reveals it; Select and Send selected remain deliberate actions. Manual segments
-and saved human window edits survive re-scoring, even after Reset. Browsing combines
+and saved human window edits survive re-scoring, even after **Reset status**.
+**Reset bounds** restores the original suggested/created interval without
+changing review status, reloading media or clearing re-score protection. Originals
+survive edits and reloads; this action is unavailable for older edited segments
+whose originals cannot be recovered. **Preview ±10s context** uses the current
+visible in/out fields, including valid edits after a failed save. Browsing combines
 status, source, and All/Manual/Scored filters. Manual segments appear first by
 creation time; scored segments follow by descending score. **Send selected** sends
 the entire selected profile, including items hidden by filters, in that same order.

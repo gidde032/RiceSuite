@@ -605,11 +605,20 @@ class Library:
     ) -> bool:
         """Set only a slice's intended in/out (targeted UPDATE). False if absent."""
         with self._conn:
+            current = self.get_slice(slice_id)
+            if current is None or current.status is SliceStatus.HANDED_OFF:
+                return False
+            extraction = dict(current.extraction)
+            original = current.original_window
+            if original is not None:
+                # Snapshot once, before the first edit; never replace it with
+                # an already edited interval on a later save or page reload.
+                extraction["original_window"] = list(original)
             cur = self._conn.execute(
                 "UPDATE candidate_slices SET target_in = ?, target_out = ?, "
-                "window_edited = 1 "
+                "window_edited = 1, extraction = ? "
                 "WHERE id = ? AND status != 'handed_off'",
-                (target_in, target_out, slice_id),
+                (target_in, target_out, json.dumps(extraction), slice_id),
             )
         return cur.rowcount > 0
 

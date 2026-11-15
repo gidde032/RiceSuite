@@ -87,6 +87,8 @@ REQUIRED_SCENARIOS = {
     "review-boundary-pending-terminal",
     "review-boundary-keyboard-geometry",
     "review-method-labels",
+    "review-context-follows-visible-edits",
+    "review-reset-original-bounds",
 }
 
 PROFILES = [
@@ -162,6 +164,7 @@ BOUNDARY_SLICES = [
         "id": "ctx-start",
         "target_in": 1,
         "target_out": 1.5,
+        "original_window": [1, 1.5],
         "created_at": "2026-11-15T00:00:01Z",
         "extraction": _REFINED,
     },
@@ -562,6 +565,54 @@ def check_review_boundary_controls(browser, result):
 
     assert not errors, errors
     page.close()
+
+    # Visual-review regressions: visible fields can differ after a failed save.
+    page, errors, mutations = _boundary_page(browser)
+    card = _card(page, "ctx-start")
+    video = card.locator("video")
+    video.evaluate(
+        "v => { window.editedContextVideo = v; v.muted = true; v.playbackRate = 4; }"
+    )
+    card.locator("input").nth(1).fill("2")
+    card.locator("input").nth(1).press("Enter")
+    page.wait_for_function(
+        "document.querySelector('[data-slice-id=ctx-start] .win').textContent === 'selected 1–2s'"
+    )
+    writes_before_preview = len(_windows(mutations))
+    card.evaluate(
+        "c => { const inputs = c.querySelectorAll('input'); inputs[0].value = '0.5'; inputs[1].value = '1'; }"
+    )
+    card.get_by_role("button", name="Preview ±10s context").click()
+    page.wait_for_function(
+        "document.querySelector('[data-slice-id=ctx-start] .card-msg').textContent.includes('previewing context 0–11s')"
+    )
+    assert "previewing context 0–11s" in card.locator(".card-msg").inner_text()
+    page.wait_for_function("window.editedContextVideo.paused", timeout=10000)
+    t = video.evaluate("v => v.currentTime")
+    assert 11 <= t < 11.4, t  # the initial interval would stop at 11.5
+    assert len(_windows(mutations)) == writes_before_preview
+    result["scenarios"].append("review-context-follows-visible-edits")
+
+    before = video.evaluate(
+        "v => ({t: v.currentTime, src: v.currentSrc, paused: v.paused})"
+    )
+    status = card.get_attribute("data-status")
+    card.get_by_role("button", name="Reset bounds", exact=True).click()
+    page.wait_for_function(
+        "document.querySelector('[data-slice-id=ctx-start] .card-msg').textContent === 'window saved'"
+    )
+    assert _windows(mutations)[-1] == {"target_in": 1, "target_out": 1.5}
+    assert card.locator("input").nth(0).input_value() == "1"
+    assert card.locator("input").nth(1).input_value() == "1.5"
+    assert card.get_attribute("data-status") == status
+    assert card.get_by_role("button", name="Reset status", exact=True).count() == 1
+    assert (
+        video.evaluate("v => ({t: v.currentTime, src: v.currentSrc, paused: v.paused})")
+        == before
+    )
+    assert not errors, errors
+    page.close()
+    result["scenarios"].append("review-reset-original-bounds")
 
     # Marks save immediately; the same element keeps its playhead and play state.
     page, errors, mutations = _boundary_page(browser)

@@ -396,10 +396,15 @@ function card(s) {
   const contextBtn = el("button", { type: "button", class: "context-preview",
     title: "Play from " + CONTEXT_S + "s before the start to " + CONTEXT_S + "s after the end; saved bounds stay unchanged" },
   "Preview ±" + CONTEXT_S + "s context");
+  const original = Array.isArray(s.original_window) ? s.original_window :
+    (!s.window_edited ? [s.target_in, s.target_out] : null);
+  const resetBoundsBtn = el("button", { type: "button", class: "reset-bounds",
+    title: original ? "Restore the original clip bounds; review status stays unchanged" :
+      "Original bounds are unavailable for this previously edited segment" }, "Reset bounds");
   const winEdit = el("div", { class: "window-edit" }, [
     el("div", { class: "window-field" }, [el("label", {}, [document.createTextNode("in"), inIn]), markIn]),
     el("div", { class: "window-field" }, [el("label", {}, [document.createTextNode("out"), outIn]), markOut]),
-    contextBtn,
+    contextBtn, resetBoundsBtn,
   ]);
   let windowPending = false;
   let statusPending = false;
@@ -415,6 +420,7 @@ function card(s) {
     markIn.disabled = disabled || mediaBroken;
     markOut.disabled = disabled || mediaBroken;
     contextBtn.disabled = mediaBroken;
+    resetBoundsBtn.disabled = disabled || !original;
     if (selectBtn) selectBtn.disabled = disabled;
     if (rejectBtn) rejectBtn.disabled = disabled;
     if (resetBtn) resetBtn.disabled = disabled;
@@ -473,6 +479,17 @@ function card(s) {
   };
   inIn.addEventListener("change", applyWin);
   outIn.addEventListener("change", applyWin);
+  resetBoundsBtn.addEventListener("click", () => {
+    if (resetBoundsBtn.disabled || handoffPending) return;
+    inIn.value = fmt(original[0]); outIn.value = fmt(original[1]);
+    if (s.target_in === original[0] && s.target_out === original[1]) {
+      // Clearing a refused/unsaved edit is local; an untouched candidate must
+      // not acquire human-edit provenance or re-score protection from a no-op.
+      cardMsg(msg, "original bounds restored", false);
+      return;
+    }
+    return applyWin();
+  });
   const markAt = (input) => {
     if (markIn.disabled || windowPending || statusPending || terminal || handoffPending) return;
     if (!video || video.readyState < 1 || !Number.isFinite(video.currentTime)) {
@@ -525,8 +542,23 @@ function card(s) {
       cardMsg(msg, "media is not ready; play or seek the video first", true);
       return;
     }
-    const from = Math.max(0, s.target_in - CONTEXT_S);
-    const end = Math.min(video.duration, s.target_out + CONTEXT_S);
+    // Preview the interval the reviewer can see, including edits whose save
+    // failed. Preview never turns those edits into a successful saved window.
+    const ti = Number(inIn.value), to = Number(outIn.value);
+    if (!inIn.value.trim() || !outIn.value.trim() || !Number.isFinite(ti) || !Number.isFinite(to)) {
+      cardMsg(msg, "in/out must be numbers", true);
+      return;
+    }
+    if (ti < 0 || to <= ti) {
+      cardMsg(msg, "in must be at least 0 and out must exceed in", true);
+      return;
+    }
+    if (ti >= video.duration) {
+      cardMsg(msg, "in must be before source duration (" + fmt(video.duration) + "s)", true);
+      return;
+    }
+    const from = Math.max(0, ti - CONTEXT_S);
+    const end = Math.min(video.duration, to + CONTEXT_S);
     stop = null;
     video.currentTime = from;
     stop = { kind: "context", from, end };
@@ -571,7 +603,7 @@ function card(s) {
   };
   selectBtn = el("button", { class: "primary" }, "Select");
   rejectBtn = el("button", { class: "danger" }, "Reject");
-  resetBtn = el("button", {}, "Reset");
+  resetBtn = el("button", { title: "Return to candidate; clip bounds stay unchanged" }, "Reset status");
   refreshCardControls();
   if (terminal) {
     cardMsg(msg, "handed off — this slice is terminal", false);

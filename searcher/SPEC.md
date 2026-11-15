@@ -634,6 +634,8 @@ interval.
   ten seconds before the chosen start through ten seconds after the chosen end,
   clamped to the media extent, and stops at the contextual end. This does not
   change saved boundaries, scores or selection. It is not a pair of seek buttons.
+  The chosen interval is the current visible in/out pair, including valid edits
+  after a failed save; invalid visible bounds show an error without playing.
 - Add **Mark start** and **Mark end** using the current source-video playhead,
   like the Sources inspector. Each valid mark saves immediately, as typed time
   changes do. Do not introduce a staged Save/Cancel workflow.
@@ -641,6 +643,14 @@ interval.
   precise error; persisted boundaries change only on success. A successful mark
   must preserve the playhead and playback state rather than reload/jump the
   source. Normal interval preview must continue to reflect saved boundaries.
+- **Reset bounds** restores the original suggested/created interval through the
+  same validated save, preserving review status and playback. The original pair
+  is snapshotted in extraction metadata before the first edit, so later edits
+  and reloads cannot replace it. Previously edited scored rows can recover their
+  millisecond original from canonical IDs; unknown older manual/noncanonical
+  originals disable this action rather than inventing bounds. Restoring bounds
+  retains human-edit protection from automatic re-scoring. **Reset status** is
+  the separate existing return-to-candidate action and preserves current bounds.
 - Preserve native video controls, the existing Slate styles and responsive card
   geometry, keyboard accessibility, visible method/review-status labels and
   pending-mutation/terminal-item protections. Use actual method names rather

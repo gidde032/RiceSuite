@@ -371,6 +371,104 @@ test("context preview stops 10s after the end and the saved interval stops at it
   assert.equal(video.paused, false);
 });
 
+test("visual review P2: context uses the visible edited interval after a refused save", async () => {
+  const harness = await boot([slice("a", "alpha", { media_url: "/media/a.mp4", target_in: 45, target_out: 55 })]);
+  const video = playableVideo(harness, { duration: 100 });
+  cardInput(harness, "in").value = "50";
+  cardInput(harness, "out").value = "65";
+  const saving = cardInput(harness, "out").listeners.change({});
+  const request = await nextRequest(harness);
+  request.resolve(response({ detail: "source duration could not be verified" }, false, 422));
+  await saving;
+  await button(harness, "Preview ±10s context").listeners.click({});
+  assert.equal(video.currentTime, 40);
+  video.currentTime = 65;
+  video.listeners.timeupdate({});
+  assert.equal(video.paused, false);
+  video.currentTime = 75;
+  video.listeners.timeupdate({});
+  assert.equal(video.paused, true);
+  assert.equal(harness.requests.length, 0); // preview is not a save
+});
+
+test("visual review P2: context rejects invalid visible bounds without playing", async () => {
+  const harness = await boot([slice("a", "alpha", { media_url: "/media/a.mp4" })]);
+  const video = playableVideo(harness, { duration: 100, currentTime: 7 });
+  cardInput(harness, "in").value = "50";
+  cardInput(harness, "out").value = "40";
+  await button(harness, "Preview ±10s context").listeners.click({});
+  assert.equal(video.currentTime, 7);
+  assert.equal(video.plays, 0);
+  assert.match(textOf(cardMessage(harness)), /out must exceed in/);
+  cardInput(harness, "in").value = "101";
+  cardInput(harness, "out").value = "120";
+  await button(harness, "Preview ±10s context").listeners.click({});
+  assert.equal(video.plays, 0);
+  assert.match(textOf(cardMessage(harness)), /source duration/);
+});
+
+test("focused review P2: context clamps an ASR end beyond the container duration", async () => {
+  const harness = await boot([slice("a", "alpha", { media_url: "/media/a.mp4", target_in: 90, target_out: 100.4 })]);
+  const video = playableVideo(harness, { duration: 100 });
+  await button(harness, "Preview ±10s context").listeners.click({});
+  assert.equal(video.currentTime, 80);
+  assert.equal(video.paused, false);
+  video.currentTime = 100;
+  video.listeners.timeupdate({});
+  assert.equal(video.paused, true);
+  assert.equal(harness.requests.length, 0);
+});
+
+test("focused review P2: Reset bounds on the original interval makes no write or false edit", async () => {
+  const row = slice("a", "alpha", { window_edited: false, original_window: [2, 8] });
+  const harness = await boot([row]);
+  cardInput(harness, "in").value = "3"; // failed or unsaved visible edit
+  button(harness, "Reset bounds").listeners.click({});
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(harness.requests.length, 0);
+  assert.equal(cardInput(harness, "in").value, "2");
+  assert.equal(row.window_edited, false);
+});
+
+test("visual review P2: Reset bounds restores the server original after reload without resetting status or playback", async () => {
+  const harness = await boot([slice("a", "alpha", { media_url: "/media/a.mp4", target_in: 50, target_out: 65,
+    original_window: [45, 55], window_edited: true, status: "selected" })]);
+  const video = playableVideo(harness, { currentTime: 70, paused: false });
+  const src = video.src;
+  const reset = button(harness, "Reset bounds");
+  assert.ok(reset);
+  reset.listeners.click({});
+  const request = await nextRequest(harness);
+  assert.equal(request.options.method, "PATCH");
+  assert.match(request.url, /\/window$/);
+  assert.deepEqual(JSON.parse(request.options.body), { target_in: 45, target_out: 55 });
+  await reset.listeners.click({});
+  assert.equal(harness.requests.length, 0);
+  request.resolve(response({ target_in: 45, target_out: 55 }));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(cardInput(harness, "in").value, "45");
+  assert.equal(cardInput(harness, "out").value, "55");
+  assert.equal(harness.nodes.list.children[0].attributes["data-status"], "selected");
+  assert.equal(video.currentTime, 70);
+  assert.equal(video.paused, false);
+  assert.equal(video.src, src);
+  assert.ok(button(harness, "Reset status"));
+});
+
+test("visual review P2: Reset bounds is unavailable for terminal or unknown originals", async () => {
+  const harness = await boot([
+    slice("a", "alpha", { window_edited: true, original_window: null }),
+    slice("b", "alpha", { status: "handed_off", original_window: [2, 8] }),
+  ]);
+  for (const card of harness.nodes.list.children) {
+    const reset = findNode(card, (node) => node.tag === "button" && textOf(node) === "Reset bounds");
+    assert.ok(reset);
+    assert.equal(reset.disabled, true);
+    await reset.listeners.click({});
+  }
+  assert.equal(harness.requests.length, 0);
+});
+
 test("a native seek outside the context preview releases its stop", async () => {
   const harness = await boot([slice("a", "alpha", { media_url: "/media/a.mp4", target_in: 20, target_out: 30 })]);
   const video = playableVideo(harness, { duration: 100 });

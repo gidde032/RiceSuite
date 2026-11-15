@@ -65,6 +65,37 @@ def test_slice_roundtrip_and_features_json(tmp_path: Path) -> None:
     assert got.status is SliceStatus.CANDIDATE
 
 
+def test_original_window_survives_repeated_edits_and_reopen(tmp_path: Path) -> None:
+    """Maintainer visual review (P2): reset must survive edits and reloads."""
+    db = tmp_path / "lib.sqlite3"
+    with Library(db) as lib:
+        lib.upsert_source(_source())
+        row = _slice("sl1")
+        row.status = SliceStatus.SELECTED
+        row.extraction = {"methods": ["model-full"]}
+        lib.upsert_slices([row])
+        assert lib.update_slice_window("sl1", 15, 45)
+        assert lib.update_slice_window("sl1", 20, 50)
+    with Library(db) as lib:
+        got = lib.get_slice("sl1")
+        assert got is not None
+        assert got.original_window == (10, 40)
+        assert got.status is SliceStatus.SELECTED
+        assert got.extraction["methods"] == ["model-full"]
+
+
+def test_legacy_original_window_uses_only_valid_canonical_ids() -> None:
+    """Maintainer visual review (P2): never invent old manual originals."""
+    row = _slice("src1:beat:10000-40000")
+    row.profile_id = "beat"
+    row.window_edited = True
+    row.target_in, row.target_out = 20, 50
+    assert row.original_window == (10, 40)
+    for sid in ("src1:beat:manual-deadbeef", "other:beat:10000-40000", "src1:beat:4-2"):
+        row.id = sid
+        assert row.original_window is None
+
+
 def test_list_slices_filters_and_orders(tmp_path: Path) -> None:
     with Library(tmp_path / "lib.sqlite3") as lib:
         lib.upsert_source(_source("src1"))

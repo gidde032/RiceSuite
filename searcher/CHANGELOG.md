@@ -26,6 +26,10 @@ All notable changes to RiceSearcher are documented here. This project adheres to
   use the original intersecting source words. Collected scoring usage now marks
   application retry attempts and reports them separately from SDK transport
   retries.
+- Visual-review repairs: context preview follows the visible edited interval,
+  including after a refused save. **Reset bounds** restores the persisted
+  original without changing status/playback or removing human-edit protection;
+  **Reset status** names the existing return-to-candidate action explicitly.
 
 ### Added — RiceSuite #96
 
