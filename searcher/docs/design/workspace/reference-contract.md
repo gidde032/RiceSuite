@@ -4,6 +4,11 @@ Ratified by Finn, 2026-10-22, including Q10B, Q11A, and the Q12 kind filter.
 Behavior authority: `searcher/SPEC.md §13`.
 Delivery: [RiceSuite #96](https://github.com/gidde032/RiceSuite/issues/96).
 
+The later Review playback, mark and reset controls are governed by `SPEC.md §14`
+and [RiceSuite #23](https://github.com/gidde032/RiceSuite/issues/23). The frozen
+comparison artifact below remains historical layout evidence, not the current
+inventory of Review controls.
+
 ## Selected artifact and authority
 
 Use **Split workspace** in `mockups/searcher-layouts.html`. Source detail and

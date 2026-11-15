@@ -85,8 +85,9 @@ class CandidateSlice:
     ``target_in``/``target_out`` are the exact export interval (ADR Q4
     amendment). ``extraction`` records how an automatic interval was found
     (RiceSuite #23): discovery methods, refinement outcomes, the review flag and
-    each coalesced proposal's model claims. It is ``{}`` on rows scored before
-    that provenance existed, so legacy rows never claim the new method. Dedup
+    each coalesced proposal's model claims. Human edits snapshot the initial
+    bounds as ``original_window``. Older rows have no discovery methods even if
+    a later edit adds that snapshot, so legacy rows never claim the new method. Dedup
     fields stay null until Phase 3; ``rights_risk`` defaults from the source kind.
     """
 

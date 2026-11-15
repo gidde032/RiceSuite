@@ -5,9 +5,10 @@
 > its Split workspace reference and implementation plan were settled through
 > the final Q10–Q12 answers on 2026-10-22.
 > The automatic-boundary and Review-control amendment in §14 was ratified
-> 2026-11-15 for RiceSuite #23. Its implementation is under review on the #23
-> branch; maintainer visual acceptance of new clips is still pending, so its
-> presence is not a claim that the new behavior has shipped.
+> 2026-11-15 for RiceSuite #23. The implementation was independently reviewed
+> and the maintainer accepted the new clips and Review controls on 2026-11-15.
+> Delivery and merge status are tracked in
+> [RiceSuite PR #100](https://github.com/gidde032/RiceSuite/pull/100).
 > Boundary
 > contract is `ADR-001.md` (ratified and reconciled against live sibling code).
 > This document is the
@@ -235,7 +236,10 @@ at write time.
   `heuristic-prefilter`), the refinement outcomes (`refined`,
   `needs_more_context`, `refinement_failed`), `needs_review`, the discovery and
   refinement `model`, and one record per coalesced proposal with its model
-  claims. Rows scored before v5 hold `{}`: their method was not recorded.
+  claims. Human window edits also snapshot the initial bounds as
+  `original_window`, without changing discovery provenance. Rows scored before
+  v5 have no recorded discovery method; they start with `{}` and may later hold
+  only this original-window snapshot after an edit.
 - **Content:** `transcript_span` (text), `transcript_words` (word timings ref).
 - **Score (D4):** `score` (0–1), `rationale`, `heuristic_features`,
   `beat_profile_version`, `scorer_model`.
@@ -553,9 +557,10 @@ Required by Finn when selecting Split workspace:
 
 ## 14. Automatic boundaries and Review controls (ratified 2026-11-15)
 
-**Approved contract; implemented on the #23 branch, pending review and maintainer
-visual acceptance.** Delivery is owned by RiceSuite
-[#23](https://github.com/gidde032/RiceSuite/issues/23). This amendment supersedes
+**Ratified contract; implementation independently reviewed and visually accepted
+by the maintainer on 2026-11-15.** Delivery is owned by RiceSuite
+[#23](https://github.com/gidde032/RiceSuite/issues/23), with merge status in
+[PR #100](https://github.com/gidde032/RiceSuite/pull/100). This amendment supersedes
 the heuristic-only online discovery description in D4, FR-3 and §5, and the
 player-reload requirement in FR-8; those passages carry amendment notes.
 

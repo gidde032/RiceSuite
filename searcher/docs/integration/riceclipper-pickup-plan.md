@@ -71,13 +71,15 @@ RiceClipper→RicePoster *mechanism* (not its directory):
 ## RiceClipper behavior (mirrors RicePoster's consumer)
 
 RiceClipper's delivered "Pull from Searcher" consumer mirrors RicePoster's pickup
-discipline. Its input directory is `RICECLIPPER_SEARCHER_INBOX` (default
-`~/ricesearcher-handoff`), which
+discipline. Its input directory is `RICECLIPPER_SEARCHER_INBOX`, which
 must equal RiceSearcher's `RICESEARCHER_HANDOFF_DIR`. RiceClipper's **existing**
-writer to `RICECLIPPER_HANDOFF_DIR` (`~/riceclipper-handoff`, for RicePoster) is
+writer to `RICECLIPPER_HANDOFF_DIR` (for RicePoster) is
 **unchanged** — this only adds a read side, making RiceClipper the intermediary.
+Unset roots resolve through `rice data location`: unified installs use
+`<root>/handoff/searcher-to-clipper` and `<root>/handoff/clipper-to-poster`;
+legacy installs use `~/ricesearcher-handoff` and `~/riceclipper-handoff`.
 
-1. **Scan** the searcher-inbox (`~/ricesearcher-handoff`) for batch dirs
+1. **Scan** the configured searcher-inbox for batch dirs
    containing `manifest.json` (ignore manifest-less dirs — they're mid-write).
    **FIFO** by `created_at`, one batch per pull.
    RiceSearcher may prepare multiple concurrent manifest-less directories, but it
@@ -90,10 +92,12 @@ writer to `RICECLIPPER_HANDOFF_DIR` (`~/riceclipper-handoff`, for RicePoster) is
 3. **Dedupe by `batch_id`** with a durable consumed-ID registry so a batch is
    never ingested twice, including across restarts (RicePoster H-04). **Also be
    robust to the same source content arriving under two different `batch_id`s:**
-   RiceSearcher's writer has an accepted residual two-phase gap (batch written to
-   disk, then slices marked `handed_off` in a separate DB transaction — a crash
-   between them lets a retry re-deliver the same clips as a new batch; see
-   SPEC §7). So prefer a content-level idempotency signal (e.g. `source_ref` +
+   RiceSearcher's writer publishes the manifest and marks slices `handed_off`
+   under one short SQLite write lock after verifying the selected snapshot.
+   SQLite cannot atomically commit the filesystem rename: a process crash
+   between publication and DB commit can still require manual recovery and let
+   a retry re-deliver the clips under a new batch ID (SPEC §7). So prefer a
+   content-level idempotency signal (e.g. `source_ref` +
    `source_window`) in addition to `batch_id`, or surface likely-duplicate
    review cards rather than silently ingesting both.
 4. **Durable custody before purge** (RicePoster H-02): copy each clip into
