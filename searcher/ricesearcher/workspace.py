@@ -24,6 +24,7 @@ from ricesearcher.config import Config
 from ricesearcher.dedup.annotate import SIM_THRESHOLD
 from ricesearcher.dedup.base import Embedder
 from ricesearcher.dedup.embed import SentenceTransformerEmbedder
+from ricesearcher.extract.boundaries import BoundaryReport, ModelClient
 from ricesearcher.library.cache import MediaCache
 from ricesearcher.library.store import Library
 from ricesearcher.models import Source
@@ -33,7 +34,7 @@ from ricesearcher.pipeline import (
     annotate_library_duplicates,
     extract_and_score,
 )
-from ricesearcher.score.anthropic_scorer import AnthropicScorer
+from ricesearcher.score.anthropic_scorer import AnthropicModelClient, AnthropicScorer
 from ricesearcher.score.base import Scorer
 from ricesearcher.score.heuristic_scorer import HeuristicScorer
 from ricesearcher.transcribe.base import DEFAULT_TRANSCRIPTION_MODEL, Transcriber
@@ -69,6 +70,11 @@ class Adapters:
     )
     scorer: Callable[[Options], Scorer] = lambda opts: (
         HeuristicScorer() if opts.offline else AnthropicScorer(model=opts.model)
+    )
+    # Online scoring discovers and refines boundaries with a model first; the
+    # explicit offline mode keeps the heuristic prefilter (SPEC §14.1).
+    model_client: Callable[[Options], ModelClient | None] = lambda opts: (
+        None if opts.offline else AnthropicModelClient(model=opts.model)
     )
     embedder: Callable[[], Embedder] = SentenceTransformerEmbedder
 
@@ -304,13 +310,30 @@ class RunManager:
                             stage = "scoring"
                             self._set(key, stage=stage)
                             self._item(key, n, stage=stage)
+                            client = self.adapters.model_client(options)
+                            report = BoundaryReport()
+                            # Keep the production workspace's Anthropic usage
+                            # records in the same report as discovery/refinement
+                            # so application retries are visible. Injected
+                            # scorers retain their original one-argument seam.
+                            scorer = (
+                                AnthropicScorer(
+                                    model=options.model, usage_log=report.usage
+                                )
+                                if self.default_adapters and not options.offline
+                                else self.adapters.scorer(options)
+                            )
                             slices = extract_and_score(
                                 source,
                                 profile=profile,
-                                scorer=self.adapters.scorer(options),
+                                scorer=scorer,
                                 library=library,
+                                model_client=client,
+                                report=report,
                             )
                             self._item(key, n, slices=len(slices))
+                            if client is not None:
+                                self._item(key, n, boundaries=report.describe())
                         self._item(key, n, state="complete", stage="complete")
                     except Exception as exc:
                         self._item(key, n, state="failed", stage=stage, error=str(exc))

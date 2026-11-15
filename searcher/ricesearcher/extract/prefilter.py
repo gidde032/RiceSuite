@@ -3,8 +3,9 @@
 Pure, side-effect-free, and dependency-light so it is unit-testable without the
 web stack or an LLM. It segments a word-level transcript into utterances, merges
 them into clip-length windows, scores each window on cheap signals drawn from the
-beat profile, and returns the top-K shortlist. The LLM (Phase 2 scorer) only ever
-sees this shortlist, which bounds scoring cost (SPEC §5).
+beat profile, and returns the top-K shortlist. It is the explicit offline path and
+the identified fallback for a failed online discovery section (SPEC §14); online
+scoring finds intervals with ``extract/boundaries.py`` instead.
 """
 
 from __future__ import annotations

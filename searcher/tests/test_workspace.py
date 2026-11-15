@@ -28,6 +28,7 @@ from ricesearcher.score.base import ScoredResult
 from ricesearcher.transcribe.base import DEFAULT_TRANSCRIPTION_MODEL
 from ricesearcher.web.app import create_app
 from ricesearcher.workspace import Adapters, Item, Options, RunManager
+from tests.boundary_fakes import ScriptedClient
 
 
 class FakeAdapters:
@@ -41,6 +42,7 @@ class FakeAdapters:
         self.entered = threading.Event()
         self.release = threading.Event()
         self.release.set()
+        self.client = ScriptedClient()
 
     def can_handle(self, request):
         return request != "unsupported"
@@ -84,6 +86,7 @@ class FakeAdapters:
             acquirers=lambda: [self],
             transcriber=lambda _: self,
             scorer=lambda _: self,
+            model_client=lambda opts: None if opts.offline else self.client,
             embedder=lambda: self,
         )
 
@@ -154,7 +157,7 @@ def test_v4_migration_preserves_all_rows_links_indexes_and_identifiable_edits(tm
                 ),
             )
     with Library(db) as lib:
-        assert lib._stored_version() == 4
+        assert lib._stored_version() == 5
         rows = lib.list_slices()
         assert {s.id for s in rows} == {
             "src:example-beat:0-20000",
@@ -471,3 +474,26 @@ def test_credential_policy_and_admission(setup, monkeypatch):
             client.post("/api/runs", json=body).json()["options"]["model"]
             == "fixture-model"
         )
+
+
+def test_online_scoring_uses_model_boundaries_and_reports_them(setup):
+    """SPEC §14.1: workspace scoring runs discovery and refinement first."""
+    cfg, profile, fake = setup
+    manager = RunManager(cfg, fake.injected())
+    run = manager.submit("online", [Item(request="clip")], profile, Options(score=True))
+    done = finished(manager, run["id"])
+    [item] = done["items"]
+    assert item["state"] == "complete"
+    assert item["boundaries"].startswith("full-transcript discovery; 1 proposals")
+    assert [stage for stage, _ in fake.client.calls] == ["discovery", "refinement"]
+
+
+def test_offline_workspace_scoring_makes_no_model_request(setup):
+    cfg, profile, fake = setup
+    manager = RunManager(cfg, fake.injected())
+    run = manager.submit(
+        "offline", [Item(request="clip")], profile, Options(score=True, offline=True)
+    )
+    [item] = finished(manager, run["id"])["items"]
+    assert item["state"] == "complete" and "boundaries" not in item
+    assert fake.client.calls == []

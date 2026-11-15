@@ -20,8 +20,10 @@ uploads content; local-first.** See [SPEC.md](SPEC.md) (decisions D1–D9) and
 
 ```
 pull ──► score ──► dedup ──► review ──► handoff ──► RiceClipper
-(fetch +   (prefilter +  (advisory   (you select   (clip files +
- transcribe) LLM score)   flags)      and trim)     manifest.json)
+(fetch +   (online: discovery + (advisory   (you select   (clip files +
+ transcribe) boundary refine +  flags)      and trim)     manifest.json)
+             exact score;
+             --offline: heuristic)
 ```
 
 1. **Acquire and transcribe (`pull`).** A YouTube URL is downloaded with `yt-dlp`.
@@ -30,23 +32,30 @@ pull ──► score ──► dedup ──► review ──► handoff ──�
    locally with word-level timestamps by `faster-whisper`, and stored as a
    *source* in a local SQLite library. The source id is the media's content hash,
    so pulling the same bytes again refreshes the same row.
-2. **Extract and score (`score`).** A cheap heuristic prefilter splits the
-   transcript into utterances (a silence over 1.2 s ends one) and merges them into
-   windows of 12–45 s (a leftover shorter window is kept). Each window is ranked by the profile's keywords, questions,
-   laughter, exclamations, and length fit, and only the top 12 go to the LLM. The
-   Anthropic API scores each one from 0 to 1 against the chosen **beat profile**
-   and gives a one-sentence rationale. With `--offline`, the LLM step is skipped:
-   the heuristic score becomes the slice score, no network call is made, and the
-   slice is recorded as scored by `heuristic-offline`. Each result is stored as a
-   *candidate slice* with 2 s of padding for review context. Re-scoring replaces a source's
+2. **Extract and score (`score`).** A model reads the whole transcript as short
+   timestamped references and proposes complete moments for the chosen **beat
+   profile** (a transcript over the 60,000-byte request budget, or a failed full
+   request, uses overlapping 480 s sections). A second request per moment checks
+   its opening, setup, payoff, and ending and returns exact word boundaries. If
+   that check fails or needs more context, the original interval stays and the
+   card shows "needs review". The Anthropic API then scores each exact final
+   interval from 0 to 1 and gives a one-sentence rationale. Clips can be short;
+   about 90 s is a soft target and 180 s is the automatic ceiling. With `--offline`, no
+   model is used: a heuristic prefilter splits the transcript into utterances (a
+   silence over 1.2 s ends one), merges them into windows of 12–45 s, ranks them
+   by the profile's keywords, questions, laughter, exclamations, and length fit,
+   and the heuristic score becomes the slice score, recorded as scored by
+   `heuristic-offline`. Each result is stored as a *candidate slice* with 2 s of
+   padding metadata for review context; handoff never exports the padding. Re-scoring replaces a source's
    untouched candidates and never overwrites a slice you have already reviewed.
 3. **Advisory dedup (`dedup`).** Flags slices that overlap by at least half in the
    same source, or whose transcripts embed similarly across sources (cosine
    similarity ≥ 0.65 by default, using a local `sentence-transformers` model). The
    flag is **advisory only**. It never hides, removes, or reorders a slice.
 4. **Review (`review`).** A local web UI is the human select-and-approve gate. You
-   browse the scored moments, set the exact in/out anywhere within the source,
-   preview it, and Select or Reject. Nothing is selected automatically.
+   browse the scored moments, set the exact in/out anywhere within the source
+   (type it, or **Mark start / Mark end** at the playhead), preview it with or
+   without ±10 s of context, and Select or Reject. Nothing is selected automatically.
 5. **Hand off (`handoff`, or *Send selected → RiceClipper* in the UI).** Cuts
    exactly the reviewed interval from each selected slice with `ffmpeg` and writes
    one batch directory for RiceClipper to pick up. See
@@ -253,7 +262,14 @@ Open a source for native full-source playback and its full transcript. Mark star
 and end from the playhead or type seconds, preview the interval, then **Save manual
 segment**. It is reviewed and unselected, with no model score. **View in Review**
 reveals it; Select and Send selected remain deliberate actions. Manual segments
-and saved human window edits survive re-scoring, even after Reset. Browsing combines
+and saved human window edits survive re-scoring, even after **Reset status**.
+**Reset bounds** restores the original suggested/created interval without
+changing review status, reloading media or clearing re-score protection. Originals
+survive edits and reloads; this action is unavailable for older edited segments
+whose originals cannot be recovered. **Preview ±10s** uses the current
+visible in/out fields, including valid edits after a failed save. **Preview window**
+sits between Reset bounds and Preview ±10s and plays just that visible interval
+from start to end without saving or reloading the player. Browsing combines
 status, source, and All/Manual/Scored filters. Manual segments appear first by
 creation time; scored segments follow by descending score. **Send selected** sends
 the entire selected profile, including items hidden by filters, in that same order.

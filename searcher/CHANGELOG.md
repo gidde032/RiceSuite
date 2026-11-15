@@ -5,13 +5,42 @@ All notable changes to RiceSearcher are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Changed — RiceSuite #23 (automatic boundaries and Review controls)
+
+- Online scoring (CLI and workspace) now finds moments with full-transcript model
+  discovery and a separate bounded boundary-refinement request per moment, then
+  scores each exact final interval. Oversized or failed full requests use
+  overlapping 480 s sections; a section that still fails after one retry uses an
+  identified heuristic fallback. Missing credentials stop the run before any request.
+- An unresolved refinement keeps the original discovered interval with a visible
+  "needs review" flag. Clips under 12 s are allowed; 180 s is the automatic ceiling.
+  Identical final intervals become one candidate that keeps every proposal.
+- Schema v5 adds per-slice boundary provenance; existing rows keep their ids and
+  scores and show no method. Offline scoring is unchanged.
+- Review cards add **Preview ±10s** and **Mark start / Mark end**. Saves no
+  longer reload the player, so the playhead and play state survive. A hand-edited
+  interval shows "edited by hand" beside its original provenance.
+- The packaged example profile and the scorer prompt no longer favor a clip length.
+- Boundary-reference start clamping is planning-only: source words remain
+  unchanged, and scoring, persisted transcript spans, and handoff transcripts
+  use the original intersecting source words. Collected scoring usage now marks
+  application retry attempts and reports them separately from SDK transport
+  retries.
+- Visual-review repairs: context preview follows the visible edited interval,
+  including after a refused save. **Reset bounds** restores the persisted
+  original without changing status/playback or removing human-edit protection;
+  **Reset status** names the existing return-to-candidate action explicitly.
+- **Preview window** seeks and plays the visible selected interval, then stops,
+  without saving. It sits between Reset bounds and the shortened **Preview ±10s**
+  label; both previews use the existing native player.
+
 ### Added — RiceSuite #96
 
 - Sources intake, serial process-lifetime batches with explicit stage retries and
   stop after current, full-source inspection, and reviewed/unselected manual segments.
 - Combined status/source/kind browsing and profile-wide handoff counts, including
   selected items hidden by filters. Manual origin and absent scores survive re-score;
-  saved human window edits remain protected after Reset.
+  saved human window edits remain protected after a status reset.
 - Transactional schema v4 preserves legacy rows, identities, annotations and indexes,
   adds source transcription checkpoints, nullable scores, origin and edit markers.
 - Production browser geometry/style/playback and primary-action checks are required

@@ -65,7 +65,7 @@ profile at a time. Sources and transcripts are shared.
 - The handoff button label names the profile: `Send 3 selected (example-beat) → RiceClipper`.
 - New page `/profiles`, nav link `Profiles`. One row per profile: name, id, version, sources, candidates, selected. Click a row: set the active profile and go to `/`.
 - A stale slice shows a `stale` badge with the stored version in its title.
-- Slate tokens only. Match `../RiceClipper/docs/design/slate-ui-spec.md`.
+- Slate tokens only. Match `../../../clipper/docs/design/slate-ui-spec.md`.
 
 ### Handoff manifest
 

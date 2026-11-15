@@ -7,8 +7,11 @@ the SQLite schema in ``library/store.py`` maps one-to-one.
 
 from __future__ import annotations
 
+import math
+import re
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Any
 
 
 class SourceKind(StrEnum):
@@ -77,10 +80,15 @@ class CandidateWindow:
 class CandidateSlice:
     """A scored candidate slice in the library (SPEC §6, FR-4/FR-5).
 
-    ``pad_in``/``pad_out`` retain the scorer's original context. The reviewable
-    ``target_in``/``target_out`` become the exact export interval (ADR Q4
-    amendment). Dedup fields stay null until Phase 3; ``rights_risk`` defaults
-    from the source kind.
+    ``pad_in``/``pad_out`` are review metadata a fixed margin around the
+    initial interval; the scorer never sees them. The reviewable
+    ``target_in``/``target_out`` are the exact export interval (ADR Q4
+    amendment). ``extraction`` records how an automatic interval was found
+    (RiceSuite #23): discovery methods, refinement outcomes, the review flag and
+    each coalesced proposal's model claims. Human edits snapshot the initial
+    bounds as ``original_window``. Older rows have no discovery methods even if
+    a later edit adds that snapshot, so legacy rows never claim the new method. Dedup
+    fields stay null until Phase 3; ``rights_risk`` defaults from the source kind.
     """
 
     id: str
@@ -105,6 +113,32 @@ class CandidateSlice:
     created_at: str = ""
     origin: str = "scored"
     window_edited: bool = False
+    extraction: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def original_window(self) -> tuple[float, float] | None:
+        """Initial bounds, independent of edits/reloads; unknown stays unknown.
+
+        New edits snapshot the exact original in extraction metadata. Older
+        edited scored rows can recover millisecond bounds from their canonical
+        identity, the same convention used by the v4 edit-protection migration.
+        Old edited manual/noncanonical rows have no recoverable original.
+        """
+        saved = self.extraction.get("original_window")
+        if isinstance(saved, list) and len(saved) == 2:
+            if all(type(v) in (int, float) and math.isfinite(v) for v in saved):
+                if 0 <= saved[0] < saved[1]:
+                    return float(saved[0]), float(saved[1])
+        if not self.window_edited:
+            return self.target_in, self.target_out
+        prefix = f"{self.source_id}:{self.profile_id}:"
+        if self.origin == "scored" and self.id.startswith(prefix):
+            match = re.fullmatch(r"(\d+)-(\d+)", self.id[len(prefix) :])
+            if match:
+                start, end = (int(v) / 1000 for v in match.groups())
+                if start < end:
+                    return start, end
+        return None
 
 
 def slice_order(s: CandidateSlice) -> tuple[int, float, str, str]:

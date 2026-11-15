@@ -127,7 +127,9 @@ def _slice_dto(
         "stale": stale if s.origin != "manual" else False,
         "origin": s.origin,
         "window_edited": s.window_edited,
+        "original_window": s.original_window,
         "created_at": s.created_at,
+        "extraction": s.extraction,
     }
 
 

@@ -1,5 +1,6 @@
-"""Extraction (FR-3): a cheap heuristic prefilter turns a transcript into a
-shortlist of candidate windows so the LLM scorer never sees the whole transcript."""
+"""Extraction (FR-3, SPEC §14): online model discovery and boundary refinement
+(``boundaries``), and the heuristic prefilter for offline scoring and failed
+discovery sections."""
 
 from ricesearcher.extract.prefilter import prefilter
 

@@ -23,7 +23,7 @@ from ricesearcher.models import (
     TranscriptWord,
 )
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 # The profile id every pre-v3 slice belongs to (ADR-002). The v3 migration
 # stamps it on every row and folds it into the slice id.
@@ -146,6 +146,12 @@ MIGRATIONS[4] = """
     CREATE INDEX idx_slices_source ON candidate_slices(source_id);
     CREATE INDEX idx_slices_score ON candidate_slices(score DESC);
     CREATE INDEX idx_slices_profile_status ON candidate_slices(profile_id, status);
+"""
+
+# v5 (RiceSuite #23): automatic-boundary provenance. Every existing row keeps its
+# id, score and meaning; '{}' marks provenance that was never recorded.
+MIGRATIONS[5] = """
+    ALTER TABLE candidate_slices ADD COLUMN extraction TEXT NOT NULL DEFAULT '{}';
 """
 
 
@@ -409,8 +415,8 @@ class Library:
                 transcript_span, score, rationale, heuristic_score,
                 heuristic_features, beat_profile_version, profile_id,
                 scorer_model, dup_of, dup_score, dup_kind, rights_risk,
-                status, created_at, origin, window_edited)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                status, created_at, origin, window_edited, extraction)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             [
                 (
                     s.id,
@@ -435,6 +441,7 @@ class Library:
                     s.created_at,
                     s.origin,
                     s.window_edited,
+                    json.dumps(s.extraction),
                 )
                 for s in slices
             ],
@@ -598,11 +605,20 @@ class Library:
     ) -> bool:
         """Set only a slice's intended in/out (targeted UPDATE). False if absent."""
         with self._conn:
+            current = self.get_slice(slice_id)
+            if current is None or current.status is SliceStatus.HANDED_OFF:
+                return False
+            extraction = dict(current.extraction)
+            original = current.original_window
+            if original is not None:
+                # Snapshot once, before the first edit; never replace it with
+                # an already edited interval on a later save or page reload.
+                extraction["original_window"] = list(original)
             cur = self._conn.execute(
                 "UPDATE candidate_slices SET target_in = ?, target_out = ?, "
-                "window_edited = 1 "
+                "window_edited = 1, extraction = ? "
                 "WHERE id = ? AND status != 'handed_off'",
-                (target_in, target_out, slice_id),
+                (target_in, target_out, json.dumps(extraction), slice_id),
             )
         return cur.rowcount > 0
 
@@ -665,4 +681,14 @@ def _row_to_slice(row: sqlite3.Row) -> CandidateSlice:
         created_at=row["created_at"],
         origin=row["origin"],
         window_edited=bool(row["window_edited"]),
+        extraction=_extraction(row["extraction"]),
     )
+
+
+def _extraction(value: str) -> dict:
+    """Tolerate unreadable provenance as "not recorded" rather than failing a list."""
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}

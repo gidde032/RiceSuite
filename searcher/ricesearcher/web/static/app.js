@@ -324,12 +324,14 @@ function card(s) {
   const c = el("article", { class: "card", "data-status": s.status, "data-slice-id": s.id });
   const content = el("div", { class: "card-content" });
 
-  // Left: video preview of the exact saved export window.
+  // Left: the source video, opened at the saved start. Playback from inside the
+  // saved interval stops at its end, as the export does; native seeking stays
+  // free. The source is loaded once, so saves never reload or jump it.
   const preview = el("div", { class: "preview" });
   let video;
   if (s.media_url) {
     video = el("video", { controls: "", preload: "metadata" });
-    video.src = s.media_url + "#t=" + fmt(s.target_in) + "," + fmt(s.target_out);
+    video.src = s.media_url + "#t=" + fmt(s.target_in);
     preview.append(video);
   } else {
     preview.append(el("div", { class: "empty" }, "media unavailable"));
@@ -353,7 +355,14 @@ function card(s) {
     const kids = [
       el("span", { class: "badge" }, "rights: " + s.rights_risk),
       el("span", { class: "badge" }, s.origin === "manual" ? "manual / unscored" : "heur " + s.heuristic_score.toFixed(2)),
+      ...extractionBadges(s.extraction),
     ];
+    // Provenance, flag, score and transcript describe the original interval.
+    if (s.window_edited && s.origin !== "manual") {
+      kids.push(el("span", { class: "badge edited",
+        title: "A person changed this interval; the method, review flag, score and transcript describe the original interval." },
+      "edited by hand"));
+    }
     if (offline) {
       kids.push(el("span", { class: "badge offline", title: "scored offline by the heuristic prefilter; not LLM-scored" },
         "offline score"));
@@ -379,15 +388,31 @@ function card(s) {
   const msg = el("div", { class: "card-msg", role: "status", "aria-live": "polite" });
 
   // Set the exact export interval; the server validates it against the source.
+  // Typed values and playhead marks save immediately; there is no staged save.
   const inIn = numInput("in", s.target_in);
   const outIn = numInput("out", s.target_out);
+  const markIn = el("button", { type: "button", class: "mark-start" }, "Mark start");
+  const markOut = el("button", { type: "button", class: "mark-end" }, "Mark end");
+  const contextBtn = el("button", { type: "button", class: "context-preview",
+    title: "Play from " + CONTEXT_S + "s before the start to " + CONTEXT_S + "s after the end; saved bounds stay unchanged" },
+  "Preview ±" + CONTEXT_S + "s");
+  const previewBtn = el("button", { type: "button", class: "window-preview",
+    title: "Play the current in/out window from its start to its end; saved bounds stay unchanged" },
+  "Preview window");
+  const original = Array.isArray(s.original_window) ? s.original_window :
+    (!s.window_edited ? [s.target_in, s.target_out] : null);
+  const resetBoundsBtn = el("button", { type: "button", class: "reset-bounds",
+    title: original ? "Restore the original clip bounds; review status stays unchanged" :
+      "Original bounds are unavailable for this previously edited segment" }, "Reset bounds");
   const winEdit = el("div", { class: "window-edit" }, [
-    el("label", {}, [document.createTextNode("in"), inIn]),
-    el("label", {}, [document.createTextNode("out"), outIn]),
+    el("div", { class: "window-field" }, [el("label", {}, [document.createTextNode("in"), inIn]), markIn]),
+    el("div", { class: "window-field" }, [el("label", {}, [document.createTextNode("out"), outIn]), markOut]),
+    resetBoundsBtn, previewBtn, contextBtn,
   ]);
   let windowPending = false;
   let statusPending = false;
   let terminal = s.status === "handed_off";
+  let mediaBroken = !video;
   let selectBtn;
   let rejectBtn;
   let resetBtn;
@@ -395,6 +420,11 @@ function card(s) {
     const disabled = terminal || windowPending || statusPending;
     inIn.disabled = disabled;
     outIn.disabled = disabled;
+    markIn.disabled = disabled || mediaBroken;
+    markOut.disabled = disabled || mediaBroken;
+    contextBtn.disabled = mediaBroken;
+    previewBtn.disabled = mediaBroken;
+    resetBoundsBtn.disabled = disabled || !original;
     if (selectBtn) selectBtn.disabled = disabled;
     if (rejectBtn) rejectBtn.disabled = disabled;
     if (resetBtn) resetBtn.disabled = disabled;
@@ -406,6 +436,8 @@ function card(s) {
       cardMsg(msg, "in/out must be numbers", true);
       return;
     }
+    // Disabling the pending control drops its focus; give it back afterwards.
+    const focused = document.activeElement;
     windowPending = true;
     beginMutation();
     refreshCardControls();
@@ -426,9 +458,14 @@ function card(s) {
         return;
       }
       const d = await res.json();
+      // Keep the player untouched: its playhead and play/pause state survive.
+      // A new end at or before the playhead (Mark end while playing) releases
+      // the interval stop instead of pausing on the next frame.
       s.target_in = d.target_in; s.target_out = d.target_out;
+      s.window_edited = true;
+      if (stop && stop.kind === "interval" && video.currentTime >= s.target_out - 0.05) stop = null;
+      renderBadges();
       inIn.value = fmt(d.target_in); outIn.value = fmt(d.target_out);
-      if (video) video.src = s.media_url + "#t=" + fmt(d.target_in) + "," + fmt(d.target_out);
       windowLabel.replaceChildren(document.createTextNode(
         "selected " + fmt(d.target_in) + "–" + fmt(d.target_out) + "s"));
       cardMsg(msg, "window saved", false);
@@ -438,10 +475,112 @@ function card(s) {
       windowPending = false;
       endMutation();
       refreshCardControls();
+      if (focused && focused.isConnected && !focused.disabled &&
+        (!document.activeElement || document.activeElement === document.body)) {
+        focused.focus({ preventScroll: true });
+      }
     }
   };
   inIn.addEventListener("change", applyWin);
   outIn.addEventListener("change", applyWin);
+  resetBoundsBtn.addEventListener("click", () => {
+    if (resetBoundsBtn.disabled || handoffPending) return;
+    inIn.value = fmt(original[0]); outIn.value = fmt(original[1]);
+    if (s.target_in === original[0] && s.target_out === original[1]) {
+      // Clearing a refused/unsaved edit is local; an untouched candidate must
+      // not acquire human-edit provenance or re-score protection from a no-op.
+      cardMsg(msg, "original bounds restored", false);
+      return;
+    }
+    return applyWin();
+  });
+  const markAt = (input) => {
+    if (markIn.disabled || windowPending || statusPending || terminal || handoffPending) return;
+    if (!video || video.readyState < 1 || !Number.isFinite(video.currentTime)) {
+      cardMsg(msg, "media is not ready; play or seek the video first", true);
+      return;
+    }
+    input.value = fmt(video.currentTime);
+    applyWin();
+  };
+  markIn.addEventListener("click", () => markAt(inIn));
+  markOut.addEventListener("click", () => markAt(outIn));
+
+  // One active stop boundary: the saved interval (it follows saves) or the
+  // explicit window/context preview. A native seek outside it releases it.
+  let stop = null;
+  const stopFrom = () => (stop.kind === "interval" ? s.target_in : stop.from);
+  const stopEnd = () => (stop.kind === "interval" ? s.target_out : stop.end);
+  const checkStop = () => {
+    if (!stop || video.paused || video.currentTime < stopEnd()) return;
+    const ended = stop;
+    stop = null;
+    video.pause();
+    if (ended.kind === "context") cardMsg(msg, "context preview ended; saved bounds unchanged", false);
+    if (ended.kind === "window") cardMsg(msg, "window preview ended; saved bounds unchanged", false);
+  };
+  const watchStop = () => {
+    checkStop();
+    if (stop && !video.paused) requestAnimationFrame(watchStop);
+  };
+  if (video) {
+    video.addEventListener("play", () => {
+      if (!stop && video.currentTime >= s.target_in - 0.05 && video.currentTime < s.target_out) {
+        stop = { kind: "interval" };
+      }
+      requestAnimationFrame(watchStop);
+    });
+    video.addEventListener("timeupdate", checkStop);
+    video.addEventListener("seeking", () => {
+      if (stop && (video.currentTime < stopFrom() - 0.05 || video.currentTime > stopEnd())) stop = null;
+    });
+    video.addEventListener("error", () => {
+      mediaBroken = true;
+      stop = null;
+      refreshCardControls();
+      cardMsg(msg, "This source cannot play in this browser; marks and previews are unavailable.", true);
+    });
+  }
+  const previewWindow = async (padding) => {
+    if (mediaBroken) return;
+    if (!Number.isFinite(video.duration) || video.readyState < 1) {
+      cardMsg(msg, "media is not ready; play or seek the video first", true);
+      return;
+    }
+    // Preview the interval the reviewer can see, including edits whose save
+    // failed. Preview never turns those edits into a successful saved window.
+    const ti = Number(inIn.value), to = Number(outIn.value);
+    if (!inIn.value.trim() || !outIn.value.trim() || !Number.isFinite(ti) || !Number.isFinite(to)) {
+      cardMsg(msg, "in/out must be numbers", true);
+      return;
+    }
+    if (ti < 0 || to <= ti) {
+      cardMsg(msg, "in must be at least 0 and out must exceed in", true);
+      return;
+    }
+    if (ti >= video.duration) {
+      cardMsg(msg, "in must be before source duration (" + fmt(video.duration) + "s)", true);
+      return;
+    }
+    const from = Math.max(0, ti - padding);
+    const end = Math.min(video.duration, to + padding);
+    const kind = padding ? "context" : "window";
+    stop = null;
+    video.currentTime = from;
+    const active = { kind, from, end };
+    stop = active;
+    try {
+      await video.play();
+      if (stop === active) cardMsg(msg, "previewing " + kind + " " + fmt(from) + "–" + fmt(end) + "s; saved bounds unchanged", false);
+    } catch (err) {
+      if (stop === active) {
+        stop = null;
+        cardMsg(msg, "couldn't play the " + kind + " preview: " + err.message, true);
+      }
+    }
+  };
+  previewBtn.addEventListener("click", () => previewWindow(0));
+  contextBtn.addEventListener("click", () => previewWindow(CONTEXT_S));
   meta.append(winEdit);
 
   // The select-and-approve gate. Update the card in place (no full re-render) so
@@ -475,7 +614,7 @@ function card(s) {
   };
   selectBtn = el("button", { class: "primary" }, "Select");
   rejectBtn = el("button", { class: "danger" }, "Reject");
-  resetBtn = el("button", {}, "Reset");
+  resetBtn = el("button", { title: "Return to candidate; clip bounds stay unchanged" }, "Reset status");
   refreshCardControls();
   if (terminal) {
     cardMsg(msg, "handed off — this slice is terminal", false);
@@ -493,6 +632,37 @@ function card(s) {
   content.append(meta);
   c.append(content);
   return c;
+}
+
+// Seconds of context before and after the saved interval (SPEC §14.3).
+const CONTEXT_S = 10;
+
+// Actual method names, never anonymous labels. Legacy rows ({}) show nothing:
+// their method was not recorded, so they must not claim the new one.
+const METHOD_LABELS = {
+  "model-full": "full-transcript discovery",
+  "model-chunk": "chunked discovery",
+  "heuristic-fallback": "heuristic fallback",
+  "heuristic-prefilter": "heuristic prefilter",
+};
+const UNRESOLVED_LABELS = {
+  needs_more_context: "refiner needed more context",
+  refinement_failed: "refinement failed",
+};
+
+function extractionBadges(x) {
+  if (!x || !Array.isArray(x.methods) || !x.methods.length) return [];
+  const refinement = Array.isArray(x.refinement) ? x.refinement : [];
+  let text = x.methods.map((m) => METHOD_LABELS[m] || m).join(" + ");
+  if (refinement.includes("refined")) text += " + boundary refinement";
+  const kids = [el("span", { class: "badge method", title: x.model ? "model " + x.model : "deterministic" }, text)];
+  if (x.needs_review) {
+    const why = refinement.filter((r) => UNRESOLVED_LABELS[r]).map((r) => UNRESOLVED_LABELS[r]).join("; ");
+    kids.push(el("span", { class: "badge needs-review",
+      title: "Automatic refinement did not resolve this interval; it is the original discovered interval." },
+    "unrefined · needs review" + (why ? " (" + why + ")" : "")));
+  }
+  return kids;
 }
 
 function cardMsg(node, text, isError) {

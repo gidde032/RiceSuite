@@ -27,7 +27,7 @@ function wsRenderRun(message = "") {
   const details = wsNode("details");
   details.open = wasOpen;
   details.append(wsNode("summary", "Batch details · " + run.status, {"data-run-control": "details"}));
-  for (const item of run.items) details.append(wsNode("p", item.request + " · " + item.state + " · " + item.stage + (item.error ? ": " + item.error : ""), {class: "operational"}));
+  for (const item of run.items) details.append(wsNode("p", item.request + " · " + item.state + " · " + item.stage + (item.error ? ": " + item.error : "") + (item.boundaries ? " · " + item.boundaries : ""), {class: "operational"}));
   if (run.detail) details.append(wsNode("p", run.detail, {class: "error"}));
   if (run.duplicate_error) details.append(wsNode("p", "Duplicate check failed: " + run.duplicate_error, {class: "error"}));
   strip.append(details);

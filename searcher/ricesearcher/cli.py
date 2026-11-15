@@ -23,6 +23,7 @@ from ricesearcher.beat.profile import (
 from ricesearcher.config import load_config, load_env_files
 from ricesearcher.dedup.annotate import SIM_THRESHOLD
 from ricesearcher.dedup.embed import SentenceTransformerEmbedder
+from ricesearcher.extract.boundaries import BoundaryReport, ModelClient
 from ricesearcher.handoff.writer import hand_off_selected
 from ricesearcher.library.cache import MediaCache
 from ricesearcher.library.store import Library
@@ -32,7 +33,12 @@ from ricesearcher.pipeline import (
     extract_and_score,
     pull,
 )
-from ricesearcher.score.anthropic_scorer import AnthropicScorer
+from ricesearcher.score.anthropic_scorer import (
+    AnthropicModelClient,
+    AnthropicScorer,
+    MissingCredentialsError,
+    require_credentials,
+)
 from ricesearcher.score.base import Scorer
 from ricesearcher.score.heuristic_scorer import OFFLINE_MODEL_NAME, HeuristicScorer
 from ricesearcher.transcribe.base import DEFAULT_TRANSCRIPTION_MODEL
@@ -139,12 +145,29 @@ def _cmd_score(args: argparse.Namespace) -> int:
         if source is None:  # defensive: a resolved id should always exist
             print(f"error: no source {args.source_id!r}", file=sys.stderr)
             return 2
-        scorer: Scorer = (
-            HeuristicScorer() if args.offline else AnthropicScorer(model=args.model)
-        )
+        report = BoundaryReport()
+        scorer: Scorer
+        client: ModelClient | None = None
+        if args.offline:
+            scorer = HeuristicScorer()
+        else:
+            # Online discovery, refinement and scoring all need the credential;
+            # say so before any work instead of after a partial run.
+            try:
+                require_credentials()
+            except MissingCredentialsError as exc:
+                print(f"error: scoring failed: {exc}", file=sys.stderr)
+                return 2
+            scorer = AnthropicScorer(model=args.model, usage_log=report.usage)
+            client = AnthropicModelClient(model=args.model)
         try:
             slices = extract_and_score(
-                source, profile=profile, scorer=scorer, library=lib
+                source,
+                profile=profile,
+                scorer=scorer,
+                library=lib,
+                model_client=client,
+                report=report,
             )
         except Exception as exc:  # noqa: BLE001 - CLI boundary: clean message
             print(f"error: scoring failed: {exc}", file=sys.stderr)
@@ -153,6 +176,8 @@ def _cmd_score(args: argparse.Namespace) -> int:
         f"scored {len(slices)} slices for {source.title!r} "
         f"(beat {profile.version}, model {scorer.model_name})"
     )
+    if client is not None:
+        print(f"boundaries: {report.describe()}")
     for s in sorted(slices, key=lambda s: -(s.score or 0))[:10]:
         span = s.transcript_span[:60].replace("\n", " ")
         print(
@@ -314,7 +339,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     scorer_choice = p_score.add_mutually_exclusive_group()
     scorer_choice.add_argument(
-        "--model", default=None, help="Anthropic scorer model (else env/default)"
+        "--model",
+        default=None,
+        help="Anthropic model for discovery, refinement and scoring (else env/default)",
     )
     scorer_choice.add_argument(
         "--offline",
