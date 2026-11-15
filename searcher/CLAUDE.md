@@ -3,7 +3,7 @@
 Content-sourcing pillar of the Rice harness. Discovery (on-demand pull) +
 extraction (transcript-driven *time*/trim) → scored candidate slices in a
 moment-deduplicated local library → exact reviewed-window handoff to RiceClipper.
-Siblings: `../RiceClipper` (render), `../RicePoster` (posting).
+Siblings: `../clipper` (render), `../poster` (posting).
 
 ## Hard rules (non-negotiable)
 
@@ -11,7 +11,8 @@ Siblings: `../RiceClipper` (render), `../RicePoster` (posting).
    posting/publishing/upload surface. Outbound network is limited to source
    acquisition (yt-dlp fetch) and the scoring LLM API — neither touches an
    account, platform, or posting endpoint.
-2. **Local-first.** SQLite + local disk only; no cloud storage. Private repo.
+2. **Local-first.** SQLite + local disk only; no cloud storage. RiceSuite is
+   public; keep source material off public surfaces.
 3. **Dedup is advisory only.** A "possible duplicate" annotation never filters,
    discards, blocks, or deprioritizes a slice. The maintainer reposts similar and
    re-edited content deliberately.
@@ -42,11 +43,13 @@ and holds only the current session's execution steps.
   and Poster caption generation; Searcher still owns only acquisition and extraction.
 - Handoff mechanism to mirror: filesystem pickup, one dir per batch, `manifest.json`
   written **last** = atomicity, FIFO by `created_at`, dedupe by stable `batch_id`,
-  producer-only-writes. Reference `../RiceClipper/docs/integration/riceposter-handoff.md`
-  and the lessons in `../RiceClipper/internal/riceposter-integration-review.md`.
-- Reuse RiceClipper's faster-whisper pattern (`../RiceClipper/transcribe/`).
+  producer-only-writes. Reference the verified suite contracts:
+  `../clipper/docs/integration/riceposter-handoff.md`,
+  `../clipper/docs/integration/searcher-pickup.md`, and
+  `docs/integration/riceclipper-pickup-plan.md`.
+- Reuse RiceClipper's faster-whisper pattern (`../clipper/transcribe/`).
 - Review UI must match the **Slate** design system:
-  `../RiceClipper/docs/design/slate-ui-spec.md`.
+  `../clipper/docs/design/slate-ui-spec.md`.
 
 ## Stack & gates
 

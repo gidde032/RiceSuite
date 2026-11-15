@@ -20,8 +20,10 @@ uploads content; local-first.** See [SPEC.md](SPEC.md) (decisions D1–D9) and
 
 ```
 pull ──► score ──► dedup ──► review ──► handoff ──► RiceClipper
-(fetch +   (prefilter +  (advisory   (you select   (clip files +
- transcribe) LLM score)   flags)      and trim)     manifest.json)
+(fetch +   (online: discovery + (advisory   (you select   (clip files +
+ transcribe) boundary refine +  flags)      and trim)     manifest.json)
+             exact score;
+             --offline: heuristic)
 ```
 
 1. **Acquire and transcribe (`pull`).** A YouTube URL is downloaded with `yt-dlp`.

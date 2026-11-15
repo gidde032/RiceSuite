@@ -312,10 +312,21 @@ class RunManager:
                             self._item(key, n, stage=stage)
                             client = self.adapters.model_client(options)
                             report = BoundaryReport()
+                            # Keep the production workspace's Anthropic usage
+                            # records in the same report as discovery/refinement
+                            # so application retries are visible. Injected
+                            # scorers retain their original one-argument seam.
+                            scorer = (
+                                AnthropicScorer(
+                                    model=options.model, usage_log=report.usage
+                                )
+                                if self.default_adapters and not options.offline
+                                else self.adapters.scorer(options)
+                            )
                             slices = extract_and_score(
                                 source,
                                 profile=profile,
-                                scorer=self.adapters.scorer(options),
+                                scorer=scorer,
                                 library=library,
                                 model_client=client,
                                 report=report,

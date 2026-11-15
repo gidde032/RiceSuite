@@ -67,13 +67,13 @@ files only.
 - **FR-2 — Transcribe (D3).** Each acquired source is transcribed locally with
   faster-whisper to word-level timestamps pinned to the source timeline in
   seconds. Source captions may seed a fast pass but are never required.
-- **FR-3 — Shortlist (D4).** A heuristic prefilter scans the transcript and emits
-  candidate windows (entity mentions, turn/laughter/sentiment/quotable signals)
-  with cheap feature scores. The LLM never sees the whole transcript.
-  **Amended 2026-11-15 (§14):** this remains the explicit offline path and the
-  identified fallback for a failed discovery section. Online scoring sends the
-  whole transcript to model discovery when it fits the request budget, and
-  overlapping sections otherwise.
+- **FR-3 — Shortlist (D4).** The explicit offline path and the identified fallback
+  for a failed online discovery section use a heuristic prefilter that scans the
+  transcript and emits candidate windows (entity mentions,
+  turn/laughter/sentiment/quotable signals) with cheap feature scores. Online
+  scoring instead sends the whole transcript to model discovery when it fits the
+  request budget, and overlapping sections otherwise (**amended 2026-11-15,
+  §14**).
 - **FR-4 — Score (D4, D2).** An LLM scores + explains each shortlisted window
   against the versioned beat-profile, producing a clippability score (0–1) and a
   short rationale. The `profile_id`, beat-profile version, and model id are
@@ -179,11 +179,11 @@ files only.
   The Phase-1 walking skeleton measured 98.2%, and the floor was calibrated below
   that result to leave headroom for later phases. (Siblings: RicePoster 43%,
   RiceClipper 85%.)
-- **Scoring cost:** LLM sees only shortlisted windows; target **≤ N tokens per
-  30-min episode** — N fixed after the Phase-2 skeleton measures real shortlist size.
-  **Amended 2026-11-15 (§14):** online discovery may see the whole transcript.
-  One discovery prompt is at most 60,000 UTF-8 bytes, a practical request budget
-  rather than a token estimate or provider limit; no N is fixed yet.
+- **Scoring cost:** The offline heuristic path and its fallback send only
+  shortlisted windows to the scorer. Online discovery may see the whole
+  transcript (**amended 2026-11-15, §14**). One discovery prompt is at most
+  60,000 UTF-8 bytes, a practical request budget rather than a token estimate or
+  provider limit; no N is fixed yet.
 - **Pull latency:** on-demand pull of one ~30-min source completes transcription +
   scoring within a target measured at Phase 2 (dominated by faster-whisper on CPU).
 - **Local-first:** no cloud storage; SQLite + local disk only. Media cache is
@@ -251,7 +251,7 @@ cache dir keyed by hash, referenced by the row — never inlined in SQLite.
 ## 7. Handoff — Searcher→Clipper contract (D8, seeds from Phase 1)
 
 Mirrors the RiceClipper→RicePoster **mechanism** (see
-`RiceClipper/docs/integration/riceposter-handoff.md`) — **not its directory**.
+`../clipper/docs/integration/riceposter-handoff.md`) — **not its directory**.
 RiceSearcher writes to its **own** handoff root, `RICESEARCHER_HANDOFF_DIR`
 (default: the path `rice data location` reports, `~/ricesearcher-handoff` on a
 legacy install), which RiceClipper reads from; RiceClipper's
@@ -325,10 +325,12 @@ only an unchanged selected snapshot receives the final `manifest.json` and moves
 to the consumer, and filesystem cleanup happens after the transaction releases its
 write lock.
 
-**Integration-ledger lessons applied up front** (from
-`RiceClipper/internal/riceposter-integration-review.md`): stable idempotent batch
-identity (a render/selection revision creates the id once; retries reuse it);
-durable custody before any purge; manifest-last atomicity; strict `batch_id` /
+**Integration-ledger lessons applied up front** (from the verified suite
+contracts `../clipper/docs/integration/riceposter-handoff.md`,
+`../clipper/docs/integration/searcher-pickup.md`, and this pillar's
+`docs/integration/riceclipper-pickup-plan.md`): stable idempotent batch identity
+(a render/selection revision creates the id once; retries reuse it); durable
+custody before any purge; manifest-last atomicity; strict `batch_id` /
 filename safe-format + resolved path containment (symlinks unsupported);
 whole-batch default with explicit, named partial; a paired-ref compatibility
 gate when the consumer is built.
@@ -339,7 +341,8 @@ gate when the consumer is built.
 - `transcribe/` — Searcher's faster-whisper adapter over RiceSuite's shared
   model construction and word-level inference; Searcher retains its own output
   and error contract (ADR-001 post-burn-in amendment, RiceSuite #5).
-- `extract/` — heuristic prefilter → candidate windows.
+- `extract/` — online discovery/refinement plus the offline heuristic prefilter
+  → candidate windows.
 - `score/` — beat-profile loader + LLM scorer.
 - `library/` — SQLite store + content-addressed media cache + dedup.
 - `handoff/` — batch writer (manifest-last, superset schema, containment).
@@ -353,9 +356,11 @@ gate when the consumer is built.
 - **Phase 1 — Acquire + transcribe skeleton.** `pull <url|file>` → cached source +
   word-level transcript in the SQLite library. *Usable:* pull a source and read
   its transcript. (Walking skeleton — measure budgets here.)
-- **Phase 2 — Extract + score.** Heuristic prefilter → LLM scoring against the
-  beat-profile → scored candidate slices with padded + intended in/out. *Usable:*
-  a pull yields scored, inspectable moments via CLI.
+- **Phase 2 — Extract + score.** Original delivery: heuristic prefilter → LLM
+  scoring against the beat-profile → scored candidate slices with padded +
+  intended in/out. *Usable:* a pull yields scored, inspectable moments via CLI.
+  **Amended 2026-11-15 (§14):** online scoring now uses model discovery and
+  refinement; explicit offline scoring retains the heuristic prefilter.
 - **Phase 3 — Dedup signal.** Advisory possible-duplicate annotation (intra-source
   + cross-source embedding). *Usable:* the library flags near-dupes without ever
   filtering them.
@@ -588,6 +593,11 @@ interval.
   do not silently lose an entire source section. A chunk that still fails uses
   an explicitly identified deterministic fallback for that chunk. Missing
   credentials surface as an error, never a successful model/fallback run.
+- The monotonic word-start clamp is a planning-only normalization for model
+  references and word-index lookup. It never retimes `Source.words`; scoring
+  text, persisted `transcript_span`, and handoff transcript text use the
+  original source words whose raw timings strictly intersect the final interval
+  (a word ending at the start or starting at the end is excluded).
 - If refinement fails after its retry, or reports necessary setup/payoff beyond
   its bounded context, keep the **original discovered interval**, score that
   interval, and show a visible unrefined/needs-review flag. Preserve other

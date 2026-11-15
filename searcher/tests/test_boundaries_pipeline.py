@@ -11,11 +11,23 @@ import pytest
 
 from ricesearcher.beat.profile import BeatProfile
 from ricesearcher.extract.boundaries import BoundaryReport
+from ricesearcher.handoff.writer import _entry_for
 from ricesearcher.library.store import MIGRATIONS, Library
-from ricesearcher.models import CandidateSlice, SliceStatus, Source, SourceKind
+from ricesearcher.models import (
+    CandidateSlice,
+    SliceStatus,
+    Source,
+    SourceKind,
+    TranscriptWord,
+)
 from ricesearcher.pipeline import SCORE_BATCH, extract_and_score
-from ricesearcher.score.anthropic_scorer import MissingCredentialsError
+from ricesearcher.score.anthropic_scorer import (
+    AnthropicScorer,
+    MissingCredentialsError,
+    ModelReply,
+)
 from ricesearcher.score.base import ScoredResult
+from ricesearcher.score.usage import CallUsage
 from tests.boundary_fakes import ScriptedClient, Sequenced, moment, refined, words
 
 PROFILE = BeatProfile(version="v1", name="beat", brief="b", id="p")
@@ -95,6 +107,104 @@ def test_online_scoring_scores_the_exact_refined_text(tmp_path: Path) -> None:
         [stored] = lib.list_slices(profile_id="p")
     assert stored.extraction == s.extraction
     assert stored.extraction["proposals"][0]["refinement"]["status"] == "refined"
+
+
+def test_unordered_source_word_text_matches_scoring_and_handoff(tmp_path: Path) -> None:
+    """Boundary planning may normalize starts, but source text stays canonical."""
+    source = Source(
+        id="src",
+        kind=SourceKind.LOCAL,
+        ref="fixture",
+        media_path="/m.mp4",
+        duration_s=1.5,
+        words=[
+            # The final word starts before the preceding word in raw ASR output.
+            # It still intersects the discovered [0.0, 0.95] interval.
+            TranscriptWord("setup", 0.0, 0.9),
+            TranscriptWord("next", 1.0, 1.5),
+            TranscriptWord("overlap", 0.8, 1.4),
+        ],
+    )
+    ws = source.words
+    client = ScriptedClient(
+        discovery=lambda _p: json.dumps([moment(0.0, 0.9)]),
+        refinement=lambda _p: refined(0, 0),
+    )
+    scorer = RecordingScorer()
+    with Library(tmp_path / "lib.sqlite3") as lib:
+        lib.upsert_source(source)
+        [scored] = extract_and_score(
+            source,
+            profile=PROFILE,
+            scorer=scorer,
+            library=lib,
+            model_client=client,
+            report=BoundaryReport(),
+        )
+    with Library(tmp_path / "lib.sqlite3") as lib:
+        [stored] = lib.list_slices(profile_id=PROFILE.id)
+        stored_source = lib.get_source(source.id)
+        assert stored_source is not None
+        handoff = _entry_for(stored, stored_source, 1)
+
+    expected = "setup overlap"
+    assert scorer.batches == [[expected]]
+    assert scored.transcript_span == expected
+    assert stored.transcript_span == expected
+    assert handoff.transcript == expected
+    assert [word.start for word in stored_source.words] == [0.0, 1.0, 0.8]
+    assert ws[2].start == 0.8
+
+
+def test_scoring_retry_marks_anthropic_usage_attempts_and_summary(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Application retries are counted separately from SDK transport retries."""
+    source = _source()
+    ws = source.words
+    client = ScriptedClient(
+        discovery=lambda _p: json.dumps([moment(ws[0].start, ws[39].end)])
+    )
+    report = BoundaryReport()
+    calls: list[CallUsage] = []
+
+    def request(
+        model: str,
+        prompt: str,
+        *,
+        stage: str,
+        usage_log: list[CallUsage] | None = None,
+    ) -> ModelReply:
+        record = CallUsage(stage=stage, model=model)
+        calls.append(record)
+        assert usage_log is not None
+        usage_log.append(record)
+        if len(calls) == 1:
+            record.error = "RuntimeError"
+            raise RuntimeError("transient scoring failure")
+        return ModelReply(
+            text='[{"index": 0, "score": 0.5, "rationale": "fixture"}]',
+            usage=record,
+        )
+
+    monkeypatch.setattr("ricesearcher.score.anthropic_scorer.request", request)
+    scorer = AnthropicScorer(model="fixture", usage_log=report.usage)
+    with Library(tmp_path / "lib.sqlite3") as lib:
+        lib.upsert_source(source)
+        extract_and_score(
+            source,
+            profile=PROFILE,
+            scorer=scorer,
+            library=lib,
+            model_client=client,
+            report=report,
+        )
+
+    assert [(call.error, call.attempt) for call in calls] == [
+        ("RuntimeError", 1),
+        ("", 2),
+    ]
+    assert report.summary()["usage"]["scoring"]["retries"] == 1
 
 
 def test_coalesced_duplicates_are_scored_once_with_both_proposals(tmp_path) -> None:

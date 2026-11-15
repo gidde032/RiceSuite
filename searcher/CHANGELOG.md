@@ -21,6 +21,11 @@ All notable changes to RiceSearcher are documented here. This project adheres to
   longer reload the player, so the playhead and play state survive. A hand-edited
   interval shows "edited by hand" beside its original provenance.
 - The packaged example profile and the scorer prompt no longer favor a clip length.
+- Boundary-reference start clamping is planning-only: source words remain
+  unchanged, and scoring, persisted transcript spans, and handoff transcripts
+  use the original intersecting source words. Collected scoring usage now marks
+  application retry attempts and reports them separately from SDK transport
+  retries.
 
 ### Added — RiceSuite #96
 

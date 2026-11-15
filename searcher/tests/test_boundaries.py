@@ -571,6 +571,22 @@ def test_slightly_unordered_word_starts_are_clamped_not_rejected():
     assert m.window.text == " ".join(w.text for w in ws)
 
 
+def test_window_uses_original_word_edges_after_boundary_start_normalization():
+    """A clamped planning start must not omit an intersecting source word."""
+    ws = [
+        TranscriptWord("before", 0.0, 0.2),
+        TranscriptWord("next", 0.4, 0.5),
+        TranscriptWord("overlap", 0.35, 0.45),
+    ]
+    resolved = b._Words(ws, PROFILE, source_id="s", source_end=0.5)
+
+    # ``overlap`` is normalized to start at 0.4 for references/index planning,
+    # but its original [0.35, 0.45] span intersects this interval. Strict edges
+    # exclude ``before`` at target_in and ``next`` at target_out.
+    assert resolved.words[2].start == 0.4
+    assert resolved.window(0.2, 0.4).text == "overlap"
+
+
 def test_proposals_over_the_cap_are_reported():
     """Skeptic LOW: over-cap drops must not be silent."""
     ws = words(200)

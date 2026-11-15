@@ -35,6 +35,7 @@ from ricesearcher.models import (
 )
 from ricesearcher.score.anthropic_scorer import MissingCredentialsError
 from ricesearcher.score.base import Scorer
+from ricesearcher.score.usage import CallUsage
 from ricesearcher.transcribe.base import Transcriber
 
 DEFAULT_PAD_S = 2.0
@@ -208,18 +209,25 @@ def _slice_id(
 
 
 def _score_batches(
-    scorer: Scorer, windows: list[CandidateWindow], profile: BeatProfile
+    scorer: Scorer,
+    windows: list[CandidateWindow],
+    profile: BeatProfile,
+    *,
+    usage: list[CallUsage] | None = None,
 ) -> list:
     """Score every window, at most ``SCORE_BATCH`` per request, in order.
 
     Each request gets one application retry (SPEC §14.1). A request that still
     fails raises, so the caller keeps the previous candidates. A missing
-    credential is never retried.
+    credential is never retried. When ``usage`` is provided, records appended by
+    each scorer call are tagged with that application attempt; the scorer itself
+    remains unaware of the retry loop.
     """
     results = []
     for i in range(0, len(windows), SCORE_BATCH):
         batch = windows[i : i + SCORE_BATCH]
         for attempt in (1, 2):
+            usage_start = len(usage) if usage is not None else 0
             try:
                 scored = scorer.score(batch, profile)
                 if len(scored) != len(batch):
@@ -232,6 +240,13 @@ def _score_batches(
             except Exception:
                 if attempt == 2:
                     raise
+            finally:
+                # AnthropicScorer appends each request's record to the explicit
+                # usage collection, including failed requests. Generic/offline
+                # scorers do not need to know about retries and remain unchanged.
+                if usage is not None:
+                    for record in usage[usage_start:]:
+                        record.attempt = attempt
         results.extend(scored)
     return results
 
@@ -276,7 +291,12 @@ def extract_and_score(
         )
         windows = [m.window for m in moments]
         extractions = [m.extraction for m in moments]
-    results = _score_batches(scorer, windows, profile)
+    results = _score_batches(
+        scorer,
+        windows,
+        profile,
+        usage=report.usage if report is not None else None,
+    )
     created = _now_iso()
     rights = _RIGHTS_BY_KIND.get(source.kind, "med")
     # Bound padding by the later of the reported duration and the last word's

@@ -271,7 +271,13 @@ class _Words:
         source_id: str,
         source_end: float,
     ) -> None:
-        self.words = list(words)
+        # Keep the stored source transcript untouched. ``self.words`` is a
+        # planning view: its starts may be clamped just enough for references,
+        # nearest-word lookup and index ranges to remain monotonic. Scoring text
+        # and features must use the original source timings, or a clamped start
+        # can omit a word that still intersects the final interval.
+        self.source_words = list(words)
+        self.words = list(self.source_words)
         self.profile = profile
         self.source_id = source_id
         last_end = max((w.end for w in self.words), default=0.0)
@@ -327,7 +333,9 @@ class _Words:
 
     def window(self, target_in: float, target_out: float) -> CandidateWindow:
         """Every word that intersects the interval, with measured features."""
-        inside = [w for w in self.words if w.end > target_in and w.start < target_out]
+        inside = [
+            w for w in self.source_words if w.end > target_in and w.start < target_out
+        ]
         features, score = _score_window(inside, self.profile) if inside else ({}, 0.0)
         return CandidateWindow(
             source_id=self.source_id,
