@@ -89,6 +89,7 @@ REQUIRED_SCENARIOS = {
     "review-method-labels",
     "review-context-follows-visible-edits",
     "review-reset-original-bounds",
+    "review-window-preview-seek-stop",
 }
 
 PROFILES = [
@@ -540,7 +541,7 @@ def check_review_boundary_controls(browser, result):
     card = _card(page, "ctx-start")
     video = card.locator("video")
     video.evaluate("v => { window.ctxVideo = v; v.muted = true; v.playbackRate = 4; }")
-    card.get_by_role("button", name="Preview ±10s context").click()
+    card.get_by_role("button", name="Preview ±10s").click()
     assert video.evaluate("v => !v.paused && v.currentTime < 1"), video.evaluate(
         "v => v.currentTime"
     )
@@ -554,7 +555,7 @@ def check_review_boundary_controls(browser, result):
     end_video.evaluate(
         "v => { window.endVideo = v; v.muted = true; v.playbackRate = 4; }"
     )
-    end_card.get_by_role("button", name="Preview ±10s context").click()
+    end_card.get_by_role("button", name="Preview ±10s").click()
     assert end_video.evaluate("v => v.currentTime < 1")
     page.wait_for_function("window.endVideo.paused", timeout=10000)
     assert end_video.evaluate("v => v.currentTime") >= 11.9
@@ -579,10 +580,30 @@ def check_review_boundary_controls(browser, result):
         "document.querySelector('[data-slice-id=ctx-start] .win').textContent === 'selected 1–2s'"
     )
     writes_before_preview = len(_windows(mutations))
+    # Explicit interval playback seeks the existing player back to the visible
+    # start and stops at its visible end, without a PATCH or media reload.
+    video.evaluate("v => { v.currentTime = 5; v.playbackRate = 1; }")
+    page.wait_for_function(
+        "window.editedContextVideo.currentTime === 5 && !window.editedContextVideo.seeking"
+    )
+    src = video.evaluate("v => v.currentSrc")
+    card.get_by_role("button", name="Preview window", exact=True).click()
+    page.wait_for_function(
+        "document.querySelector('[data-slice-id=ctx-start] .card-msg').textContent.includes('previewing window 1–2s')"
+    )
+    assert video.evaluate("v => !v.paused && v.currentTime >= 1 && v.currentTime < 1.6")
+    page.wait_for_function("window.editedContextVideo.paused", timeout=5000)
+    assert 2 <= video.evaluate("v => v.currentTime") < 2.3
+    assert video.evaluate("v => v.currentSrc") == src
+    assert len(_windows(mutations)) == writes_before_preview
+    labels = card.locator(".window-edit > button").all_text_contents()
+    assert labels == ["Reset bounds", "Preview window", "Preview ±10s"], labels
+    result["scenarios"].append("review-window-preview-seek-stop")
+    video.evaluate("v => { v.playbackRate = 4; }")
     card.evaluate(
         "c => { const inputs = c.querySelectorAll('input'); inputs[0].value = '0.5'; inputs[1].value = '1'; }"
     )
-    card.get_by_role("button", name="Preview ±10s context").click()
+    card.get_by_role("button", name="Preview ±10s").click()
     page.wait_for_function(
         "document.querySelector('[data-slice-id=ctx-start] .card-msg').textContent.includes('previewing context 0–11s')"
     )
@@ -735,13 +756,11 @@ def check_review_boundary_controls(browser, result):
         assert other.get_by_role("button", name="Mark end").is_disabled()
     assert (
         not _card(page, "terminal")
-        .get_by_role("button", name="Preview ±10s context")
+        .get_by_role("button", name="Preview ±10s")
         .is_disabled()
     )
     assert (
-        _card(page, "no-media")
-        .get_by_role("button", name="Preview ±10s context")
-        .is_disabled()
+        _card(page, "no-media").get_by_role("button", name="Preview ±10s").is_disabled()
     )
     assert not errors, errors
     page.close()
@@ -755,9 +774,9 @@ def check_review_boundary_controls(browser, result):
         boxes = card.evaluate("""c => {
           const r = e => e.getBoundingClientRect().toJSON();
           const [i, o] = c.querySelectorAll('.window-edit input');
-          return {card: r(c), in: r(i), out: r(o), start: r(c.querySelector('.mark-start')), end: r(c.querySelector('.mark-end')), ctx: r(c.querySelector('.context-preview')), video: r(c.querySelector('video')), controls: c.querySelector('video').controls};
+          return {card: r(c), in: r(i), out: r(o), start: r(c.querySelector('.mark-start')), end: r(c.querySelector('.mark-end')), reset: r(c.querySelector('.reset-bounds')), preview: r(c.querySelector('.window-preview')), ctx: r(c.querySelector('.context-preview')), video: r(c.querySelector('video')), controls: c.querySelector('video').controls};
         }""")
-        for name in ("start", "end", "ctx"):
+        for name in ("start", "end", "reset", "preview", "ctx"):
             box = boxes[name]
             assert (
                 box["height"] >= 36

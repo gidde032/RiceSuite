@@ -395,7 +395,10 @@ function card(s) {
   const markOut = el("button", { type: "button", class: "mark-end" }, "Mark end");
   const contextBtn = el("button", { type: "button", class: "context-preview",
     title: "Play from " + CONTEXT_S + "s before the start to " + CONTEXT_S + "s after the end; saved bounds stay unchanged" },
-  "Preview ±" + CONTEXT_S + "s context");
+  "Preview ±" + CONTEXT_S + "s");
+  const previewBtn = el("button", { type: "button", class: "window-preview",
+    title: "Play the current in/out window from its start to its end; saved bounds stay unchanged" },
+  "Preview window");
   const original = Array.isArray(s.original_window) ? s.original_window :
     (!s.window_edited ? [s.target_in, s.target_out] : null);
   const resetBoundsBtn = el("button", { type: "button", class: "reset-bounds",
@@ -404,7 +407,7 @@ function card(s) {
   const winEdit = el("div", { class: "window-edit" }, [
     el("div", { class: "window-field" }, [el("label", {}, [document.createTextNode("in"), inIn]), markIn]),
     el("div", { class: "window-field" }, [el("label", {}, [document.createTextNode("out"), outIn]), markOut]),
-    contextBtn, resetBoundsBtn,
+    resetBoundsBtn, previewBtn, contextBtn,
   ]);
   let windowPending = false;
   let statusPending = false;
@@ -420,6 +423,7 @@ function card(s) {
     markIn.disabled = disabled || mediaBroken;
     markOut.disabled = disabled || mediaBroken;
     contextBtn.disabled = mediaBroken;
+    previewBtn.disabled = mediaBroken;
     resetBoundsBtn.disabled = disabled || !original;
     if (selectBtn) selectBtn.disabled = disabled;
     if (rejectBtn) rejectBtn.disabled = disabled;
@@ -503,7 +507,7 @@ function card(s) {
   markOut.addEventListener("click", () => markAt(outIn));
 
   // One active stop boundary: the saved interval (it follows saves) or the
-  // temporary ±10s context. A native seek outside it releases it.
+  // explicit window/context preview. A native seek outside it releases it.
   let stop = null;
   const stopFrom = () => (stop.kind === "interval" ? s.target_in : stop.from);
   const stopEnd = () => (stop.kind === "interval" ? s.target_out : stop.end);
@@ -513,6 +517,7 @@ function card(s) {
     stop = null;
     video.pause();
     if (ended.kind === "context") cardMsg(msg, "context preview ended; saved bounds unchanged", false);
+    if (ended.kind === "window") cardMsg(msg, "window preview ended; saved bounds unchanged", false);
   };
   const watchStop = () => {
     checkStop();
@@ -533,11 +538,11 @@ function card(s) {
       mediaBroken = true;
       stop = null;
       refreshCardControls();
-      cardMsg(msg, "This source cannot play in this browser; marks and context preview are unavailable.", true);
+      cardMsg(msg, "This source cannot play in this browser; marks and previews are unavailable.", true);
     });
   }
-  contextBtn.addEventListener("click", async () => {
-    if (contextBtn.disabled) return;
+  const previewWindow = async (padding) => {
+    if (mediaBroken) return;
     if (!Number.isFinite(video.duration) || video.readyState < 1) {
       cardMsg(msg, "media is not ready; play or seek the video first", true);
       return;
@@ -557,19 +562,25 @@ function card(s) {
       cardMsg(msg, "in must be before source duration (" + fmt(video.duration) + "s)", true);
       return;
     }
-    const from = Math.max(0, ti - CONTEXT_S);
-    const end = Math.min(video.duration, to + CONTEXT_S);
+    const from = Math.max(0, ti - padding);
+    const end = Math.min(video.duration, to + padding);
+    const kind = padding ? "context" : "window";
     stop = null;
     video.currentTime = from;
-    stop = { kind: "context", from, end };
+    const active = { kind, from, end };
+    stop = active;
     try {
       await video.play();
-      cardMsg(msg, "previewing context " + fmt(from) + "–" + fmt(end) + "s; saved bounds unchanged", false);
+      if (stop === active) cardMsg(msg, "previewing " + kind + " " + fmt(from) + "–" + fmt(end) + "s; saved bounds unchanged", false);
     } catch (err) {
-      stop = null;
-      cardMsg(msg, "couldn't play the context preview: " + err.message, true);
+      if (stop === active) {
+        stop = null;
+        cardMsg(msg, "couldn't play the " + kind + " preview: " + err.message, true);
+      }
     }
-  });
+  };
+  previewBtn.addEventListener("click", () => previewWindow(0));
+  contextBtn.addEventListener("click", () => previewWindow(CONTEXT_S));
   meta.append(winEdit);
 
   // The select-and-approve gate. Update the card in place (no full re-render) so

@@ -280,6 +280,67 @@ function playableVideo(harness, overrides = {}) {
   return video;
 }
 
+test("Preview window sits between Reset bounds and Preview ±10s and plays the visible interval without saving", async () => {
+  const harness = await boot([slice("a", "alpha", { media_url: "/media/a.mp4", target_in: 45, target_out: 55 })]);
+  const video = playableVideo(harness, { currentTime: 80 });
+  const editor = findNode(harness.nodes.list, (node) => node.attributes.class === "window-edit");
+  assert.deepEqual(editor.children.filter((node) => node.tag === "button").map(textOf),
+    ["Reset bounds", "Preview window", "Preview ±10s"]);
+  cardInput(harness, "in").value = "50";
+  cardInput(harness, "out").value = "65";
+  const src = video.src;
+  await button(harness, "Preview window").listeners.click({});
+  assert.equal(video.currentTime, 50); // rewind from after the interval
+  assert.equal(video.paused, false);
+  video.currentTime = 64.9;
+  video.listeners.timeupdate({});
+  assert.equal(video.paused, false);
+  video.currentTime = 65;
+  video.listeners.timeupdate({});
+  assert.equal(video.paused, true);
+  assert.match(textOf(cardMessage(harness)), /window preview ended/);
+  video.currentTime = 5;
+  await button(harness, "Preview window").listeners.click({});
+  assert.equal(video.currentTime, 50); // fast-forward from before the interval
+  assert.equal(video.src, src);
+  assert.equal(harness.requests.length, 0);
+});
+
+test("Preview window refuses invalid or unavailable media and remains available on terminal cards", async () => {
+  const harness = await boot([slice("a", "alpha", { media_url: "/media/a.mp4", status: "handed_off" })]);
+  const video = playableVideo(harness, { currentTime: 7 });
+  assert.equal(button(harness, "Preview window").disabled, false);
+  cardInput(harness, "in").value = "9";
+  cardInput(harness, "out").value = "8";
+  await button(harness, "Preview window").listeners.click({});
+  assert.equal(video.currentTime, 7);
+  assert.equal(video.plays, 0);
+  assert.match(textOf(cardMessage(harness)), /out must exceed in/);
+  video.listeners.error({});
+  assert.equal(button(harness, "Preview window").disabled, true);
+});
+
+test("switching previews ignores an older play rejection and keeps the latest stop boundary", async () => {
+  const harness = await boot([slice("a", "alpha", { media_url: "/media/a.mp4", target_in: 20, target_out: 30 })]);
+  const first = deferred();
+  const video = playableVideo(harness);
+  let calls = 0;
+  video.play = function () {
+    this.paused = false;
+    this.listeners.play({});
+    return ++calls === 1 ? first.promise : Promise.resolve();
+  };
+  const older = button(harness, "Preview ±10s").listeners.click({});
+  await button(harness, "Preview window").listeners.click({});
+  first.reject(new Error("interrupted by a new seek"));
+  await older;
+  assert.match(textOf(cardMessage(harness)), /previewing window 20–30s/);
+  video.currentTime = 30;
+  video.listeners.timeupdate({});
+  assert.equal(video.paused, true);
+  assert.equal(harness.requests.length, 0);
+});
+
 test("Mark start saves the playhead immediately without touching playback", async () => {
   const harness = await boot([slice("a", "alpha", { media_url: "/media/a.mp4", target_in: 2, target_out: 8 })]);
   const video = playableVideo(harness, { currentTime: 4.25, paused: false });
@@ -323,7 +384,7 @@ test("marks wait for loaded media and never write without it", async () => {
   const cards = harness.nodes.list.children;
   const noMedia = (text) => findNode(cards[1], (node) => node.tag === "button" && textOf(node) === text);
   assert.equal(noMedia("Mark start").disabled, true);
-  assert.equal(noMedia("Preview ±10s context").disabled, true);
+  assert.equal(noMedia("Preview ±10s").disabled, true);
 });
 
 test("context preview plays clamped ±10s around the interval and stops at its end", async () => {
@@ -331,7 +392,7 @@ test("context preview plays clamped ±10s around the interval and stops at its e
     slice("a", "alpha", { media_url: "/media/a.mp4", target_in: 4, target_out: 95 }),
   ]);
   const video = playableVideo(harness, { duration: 100 });
-  await button(harness, "Preview ±10s context").listeners.click({});
+  await button(harness, "Preview ±10s").listeners.click({});
   assert.equal(video.currentTime, 0); // clamped at the source start
   assert.equal(video.paused, false);
   assert.equal(harness.requests.length, 0); // no write of any kind
@@ -349,7 +410,7 @@ test("context preview plays clamped ±10s around the interval and stops at its e
 test("context preview stops 10s after the end and the saved interval stops at its end", async () => {
   const harness = await boot([slice("a", "alpha", { media_url: "/media/a.mp4", target_in: 20, target_out: 30 })]);
   const video = playableVideo(harness, { duration: 100 });
-  await button(harness, "Preview ±10s context").listeners.click({});
+  await button(harness, "Preview ±10s").listeners.click({});
   assert.equal(video.currentTime, 10);
   video.currentTime = 39.9;
   harness.frames.shift()();
@@ -380,7 +441,7 @@ test("visual review P2: context uses the visible edited interval after a refused
   const request = await nextRequest(harness);
   request.resolve(response({ detail: "source duration could not be verified" }, false, 422));
   await saving;
-  await button(harness, "Preview ±10s context").listeners.click({});
+  await button(harness, "Preview ±10s").listeners.click({});
   assert.equal(video.currentTime, 40);
   video.currentTime = 65;
   video.listeners.timeupdate({});
@@ -396,13 +457,13 @@ test("visual review P2: context rejects invalid visible bounds without playing",
   const video = playableVideo(harness, { duration: 100, currentTime: 7 });
   cardInput(harness, "in").value = "50";
   cardInput(harness, "out").value = "40";
-  await button(harness, "Preview ±10s context").listeners.click({});
+  await button(harness, "Preview ±10s").listeners.click({});
   assert.equal(video.currentTime, 7);
   assert.equal(video.plays, 0);
   assert.match(textOf(cardMessage(harness)), /out must exceed in/);
   cardInput(harness, "in").value = "101";
   cardInput(harness, "out").value = "120";
-  await button(harness, "Preview ±10s context").listeners.click({});
+  await button(harness, "Preview ±10s").listeners.click({});
   assert.equal(video.plays, 0);
   assert.match(textOf(cardMessage(harness)), /source duration/);
 });
@@ -410,7 +471,7 @@ test("visual review P2: context rejects invalid visible bounds without playing",
 test("focused review P2: context clamps an ASR end beyond the container duration", async () => {
   const harness = await boot([slice("a", "alpha", { media_url: "/media/a.mp4", target_in: 90, target_out: 100.4 })]);
   const video = playableVideo(harness, { duration: 100 });
-  await button(harness, "Preview ±10s context").listeners.click({});
+  await button(harness, "Preview ±10s").listeners.click({});
   assert.equal(video.currentTime, 80);
   assert.equal(video.paused, false);
   video.currentTime = 100;
@@ -472,7 +533,7 @@ test("visual review P2: Reset bounds is unavailable for terminal or unknown orig
 test("a native seek outside the context preview releases its stop", async () => {
   const harness = await boot([slice("a", "alpha", { media_url: "/media/a.mp4", target_in: 20, target_out: 30 })]);
   const video = playableVideo(harness, { duration: 100 });
-  await button(harness, "Preview ±10s context").listeners.click({});
+  await button(harness, "Preview ±10s").listeners.click({});
   video.currentTime = 80;
   video.listeners.seeking({});
   video.currentTime = 81;
@@ -484,7 +545,7 @@ test("handed-off cards keep context preview but refuse marks", async () => {
   const harness = await boot([slice("a", "alpha", { media_url: "/media/a.mp4", status: "handed_off" })]);
   assert.equal(button(harness, "Mark start").disabled, true);
   assert.equal(button(harness, "Mark end").disabled, true);
-  assert.equal(button(harness, "Preview ±10s context").disabled, false);
+  assert.equal(button(harness, "Preview ±10s").disabled, false);
 });
 
 test("method badges name the actual method and unresolved refinement needs review", async () => {

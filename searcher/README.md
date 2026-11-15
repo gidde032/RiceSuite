@@ -266,8 +266,10 @@ and saved human window edits survive re-scoring, even after **Reset status**.
 **Reset bounds** restores the original suggested/created interval without
 changing review status, reloading media or clearing re-score protection. Originals
 survive edits and reloads; this action is unavailable for older edited segments
-whose originals cannot be recovered. **Preview ±10s context** uses the current
-visible in/out fields, including valid edits after a failed save. Browsing combines
+whose originals cannot be recovered. **Preview ±10s** uses the current
+visible in/out fields, including valid edits after a failed save. **Preview window**
+sits between Reset bounds and Preview ±10s and plays just that visible interval
+from start to end without saving or reloading the player. Browsing combines
 status, source, and All/Manual/Scored filters. Manual segments appear first by
 creation time; scored segments follow by descending score. **Send selected** sends
 the entire selected profile, including items hidden by filters, in that same order.

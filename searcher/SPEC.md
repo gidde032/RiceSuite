@@ -113,7 +113,7 @@ files only.
   rejected with a precise error and is never silently clamped. **Amended
   2026-11-15 (§14.3):** a successful save keeps the player, its playhead, and its
   play/pause state; playback from inside the saved interval stops at the saved
-  end, so preview and export still agree. Cards add **Preview ±10s context** and
+  end, so preview and export still agree. Cards add **Preview ±10s** and
   **Mark start / Mark end**. This is the human gate. The UI
   shows one profile at a time: a profile select in the topbar and a Profiles
   page listing name, version, sources, candidates, and selected per profile
@@ -630,7 +630,11 @@ interval.
 
 ### 14.3 Review-card context and playhead controls
 
-- Add **Preview ±10s context** to each Review card. It temporarily plays from
+- **Preview window** sits between **Reset bounds** and **Preview ±10s**. It seeks
+  the existing player to the visible selected start, plays to the visible end
+  (clamped to the media extent), then stops. It saves nothing and remains
+  available for terminal cards with playable media, just like context preview.
+- Add **Preview ±10s** to each Review card. It temporarily plays from
   ten seconds before the chosen start through ten seconds after the chosen end,
   clamped to the media extent, and stops at the contextual end. This does not
   change saved boundaries, scores or selection. It is not a pair of seek buttons.

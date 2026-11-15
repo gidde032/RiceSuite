@@ -17,7 +17,7 @@ All notable changes to RiceSearcher are documented here. This project adheres to
   Identical final intervals become one candidate that keeps every proposal.
 - Schema v5 adds per-slice boundary provenance; existing rows keep their ids and
   scores and show no method. Offline scoring is unchanged.
-- Review cards add **Preview ±10s context** and **Mark start / Mark end**. Saves no
+- Review cards add **Preview ±10s** and **Mark start / Mark end**. Saves no
   longer reload the player, so the playhead and play state survive. A hand-edited
   interval shows "edited by hand" beside its original provenance.
 - The packaged example profile and the scorer prompt no longer favor a clip length.
@@ -30,6 +30,9 @@ All notable changes to RiceSearcher are documented here. This project adheres to
   including after a refused save. **Reset bounds** restores the persisted
   original without changing status/playback or removing human-edit protection;
   **Reset status** names the existing return-to-candidate action explicitly.
+- **Preview window** seeks and plays the visible selected interval, then stops,
+  without saving. It sits between Reset bounds and the shortened **Preview ±10s**
+  label; both previews use the existing native player.
 
 ### Added — RiceSuite #96
 
