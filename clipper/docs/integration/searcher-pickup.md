@@ -22,22 +22,24 @@ files here and writes local files to the separate RicePoster handoff.
 
 ## What RiceSearcher writes (consumed here)
 
-One directory per batch under the inbox; `clip_<pos>.mp4` files (each the padded
-window of a source) + `manifest.json` written **last** (atomicity signal):
+One directory per batch under the inbox; `clip_<pos>.mp4` files (each exactly the
+reviewed interval of a source) + `manifest.json` written **last** (atomicity signal):
 
 ```json
 { "schema_version": 1, "batch_id": "batch_...", "created_at": "...Z",
   "producer": "ricesearcher",
   "clips": [ { "file": "clip_1.mp4", "position": 1, "source_title": "...",
-    "source_window": {...}, "clip": {"duration": 34, "target_in": 2, "target_out": 32},
+    "source_window": {...}, "clip": {"duration": 30, "target_in": 0, "target_out": 30},
     "transcript": "...", "score": 0.8, "rationale": "...", "rights_risk": "med",
     "beat_profile_version": "..." } ] }
 ```
 
-The clip file **is** the padded window; `clip.target_in/target_out` are the intended
-cut relative to the clip start. RiceClipper v1 does not trim (SPEC D5), so the
-padded clip is reviewed/captioned/rendered as-is; the intended-cut metadata is
-carried for future use.
+The clip file **is** the reviewed interval, clamped to the source extent
+(Searcher ADR-001 Q4, amended 2026-09-20). `source_window` pad and target fields
+both equal the exported bounds, and `clip.target_in/target_out` are `0` through
+the exported duration. Searcher's candidate padding is review metadata and is never
+exported. RiceClipper v1 does not trim (SPEC D5), so the clip is
+reviewed/captioned/rendered as-is.
 
 ## Behavior (`app/searcher_pickup.py`, `POST /api/pull-from-searcher`, "Pull from RiceSearcher" button)
 
@@ -52,7 +54,7 @@ carried for future use.
 - **Durable custody before purge:** each clip's bytes, probe result, and complete
   Searcher manifest metadata are written into its job directory before the source
   batch is removed. Imported jobs recover as `ready` after a server restart;
-  Clipper still creates its own word timings and does not auto-trim the padded clip.
+  Clipper still creates its own word timings and does not auto-trim the clip.
   Failed intake remains retryable without creating duplicate jobs.
 - The ingested clips become normal review jobs; the human reviews and renders,
   then "Send to RicePoster" writes the separate Clipper→Poster stage as before.

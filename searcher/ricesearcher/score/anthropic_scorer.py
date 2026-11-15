@@ -1,8 +1,10 @@
 """Anthropic-backed scorer (FR-4, D4).
 
-``build_prompt`` and ``parse_response`` are pure and unit-tested; only the network
-call in ``score`` is lazy-imported and untested (``# pragma: no cover``). The
-scorer only *reads* — it generates scores, it posts nothing.
+``build_prompt`` and ``parse_response`` are pure and unit-tested. ``request`` is
+Searcher's one Anthropic call site: scoring and the #23 discovery and boundary
+refinement stages (``extract/boundaries.py``) all use it, and it records each
+call's reported usage. The scorer only *reads* — it generates scores, it posts
+nothing.
 """
 
 from __future__ import annotations
@@ -10,12 +12,15 @@ from __future__ import annotations
 import json
 import math
 import os
+import time
+from dataclasses import dataclass
 
 from ricesuite.anthropic_client import close_client, create_client
 
 from ricesearcher.beat.profile import BeatProfile
 from ricesearcher.models import CandidateWindow
 from ricesearcher.score.base import ScoredResult
+from ricesearcher.score.usage import CallUsage, record_message
 
 # Scoring is a bounded shortlist-ranking task, so default to the lowest-cost model
 # (maintainer decision): claude-haiku-5-5 (RiceSuite #75). Override with
@@ -38,8 +43,10 @@ class ScorerParseError(RuntimeError):
 def build_prompt(windows: list[CandidateWindow], profile: BeatProfile) -> str:
     """Build the scoring prompt from the beat profile and the shortlist."""
     lines = [
-        "You score short interview/podcast excerpts for how clippable they are "
-        "for a specific social-media beat. Return ONLY a JSON array.",
+        "You score interview/podcast excerpts for how clippable they are for a "
+        "specific social-media beat. Judge whether each excerpt is a complete, "
+        "self-contained moment; its length alone is not a reason to score it "
+        "higher or lower. Return ONLY a JSON array.",
         "",
         f"# Beat: {profile.name}",
         profile.brief,
@@ -168,11 +175,87 @@ def require_credentials() -> None:
     )
 
 
-class AnthropicScorer:
-    """Score candidate windows with an Anthropic model."""
+def resolve_model(model: str | None = None) -> str:
+    """The override, else ``RICESEARCHER_SCORER_MODEL``, else the default."""
+    return model or os.getenv(_MODEL_ENV) or _DEFAULT_MODEL
+
+
+@dataclass
+class ModelReply:
+    """The text blocks of one response and that call's usage record."""
+
+    text: str
+    usage: CallUsage
+
+
+def request(
+    model: str,
+    prompt: str,
+    *,
+    stage: str,
+    usage_log: list[CallUsage] | None = None,
+) -> ModelReply:
+    """Send one user prompt and return the response text.
+
+    The call's usage is appended to ``usage_log`` even when the request fails,
+    so failed attempts stay visible. A missing credential raises before any
+    request and records nothing.
+    """
+    require_credentials()
+    client = create_client(
+        api_key=os.getenv("ANTHROPIC_API_KEY") or None,
+        auth_token=os.getenv("ANTHROPIC_AUTH_TOKEN") or None,
+    )
+    record = CallUsage(stage=stage, model=model)
+    started = time.monotonic()
+    try:
+        message = client.messages.create(
+            model=model,
+            max_tokens=_MAX_TOKENS,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        record_message(record, message)
+    except Exception as exc:
+        record.error = type(exc).__name__
+        raise
+    finally:
+        record.elapsed_s = round(time.monotonic() - started, 3)
+        if usage_log is not None:
+            usage_log.append(record)
+        close_client(client)
+    text = "".join(block.text for block in message.content if block.type == "text")
+    return ModelReply(text=text, usage=record)
+
+
+class AnthropicModelClient:
+    """Discovery and refinement requests through the shared call site.
+
+    The model resolves exactly as the scorer's does, so all three stages use
+    the same model unless the caller passes a different one.
+    """
 
     def __init__(self, model: str | None = None) -> None:
-        self.model = model or os.getenv(_MODEL_ENV) or _DEFAULT_MODEL
+        self.model = resolve_model(model)
+
+    @property
+    def model_name(self) -> str:
+        return self.model
+
+    def complete(self, prompt: str, *, stage: str, usage_log: list[CallUsage]) -> str:
+        return request(self.model, prompt, stage=stage, usage_log=usage_log).text
+
+
+class AnthropicScorer:
+    """Score candidate windows with an Anthropic model.
+
+    Pass ``usage_log`` to collect one ``CallUsage`` per scoring call.
+    """
+
+    def __init__(
+        self, model: str | None = None, usage_log: list[CallUsage] | None = None
+    ) -> None:
+        self.model = resolve_model(model)
+        self.usage_log = usage_log
 
     @property
     def model_name(self) -> str:
@@ -180,21 +263,13 @@ class AnthropicScorer:
 
     def score(
         self, windows: list[CandidateWindow], profile: BeatProfile
-    ) -> list[ScoredResult]:  # pragma: no cover - live network path
+    ) -> list[ScoredResult]:
         if not windows:
             return []
-        require_credentials()
-        client = create_client(
-            api_key=os.getenv("ANTHROPIC_API_KEY") or None,
-            auth_token=os.getenv("ANTHROPIC_AUTH_TOKEN") or None,
+        reply = request(
+            self.model,
+            build_prompt(windows, profile),
+            stage="scoring",
+            usage_log=self.usage_log,
         )
-        try:
-            message = client.messages.create(
-                model=self.model,
-                max_tokens=_MAX_TOKENS,
-                messages=[{"role": "user", "content": build_prompt(windows, profile)}],
-            )
-        finally:
-            close_client(client)
-        text = "".join(block.text for block in message.content if block.type == "text")
-        return parse_response(text, len(windows))
+        return parse_response(reply.text, len(windows))

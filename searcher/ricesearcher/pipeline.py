@@ -22,14 +22,23 @@ from ricesearcher.dedup.annotate import (
     annotate_duplicates,
 )
 from ricesearcher.dedup.base import Embedder
+from ricesearcher.extract.boundaries import BoundaryReport, ModelClient, build_moments
 from ricesearcher.extract.prefilter import DEFAULT_TOP_K, prefilter
 from ricesearcher.library.cache import MediaCache
 from ricesearcher.library.store import Library
-from ricesearcher.models import CandidateSlice, SliceStatus, Source, SourceKind
+from ricesearcher.models import (
+    CandidateSlice,
+    CandidateWindow,
+    SliceStatus,
+    Source,
+    SourceKind,
+)
 from ricesearcher.score.base import Scorer
 from ricesearcher.transcribe.base import Transcriber
 
 DEFAULT_PAD_S = 2.0
+SCORE_BATCH = DEFAULT_TOP_K  # windows per scoring request
+PREFILTER = "heuristic-prefilter"
 _RIGHTS_BY_KIND = {SourceKind.YOUTUBE: "med", SourceKind.LOCAL: "low"}
 
 
@@ -197,6 +206,20 @@ def _slice_id(
     return f"{source_id}:{profile_id}:{in_ms}-{out_ms}"
 
 
+def _score_batches(
+    scorer: Scorer, windows: list[CandidateWindow], profile: BeatProfile
+) -> list:
+    """Score every window, at most ``SCORE_BATCH`` per request, in order."""
+    results = []
+    for i in range(0, len(windows), SCORE_BATCH):
+        batch = windows[i : i + SCORE_BATCH]
+        scored = scorer.score(batch, profile)
+        if len(scored) != len(batch):
+            raise RuntimeError("the scorer did not return one result per window")
+        results.extend(scored)
+    return results
+
+
 def extract_and_score(
     source: Source,
     *,
@@ -205,16 +228,39 @@ def extract_and_score(
     library: Library,
     top_k: int = DEFAULT_TOP_K,
     pad_s: float = DEFAULT_PAD_S,
+    model_client: ModelClient | None = None,
+    report: BoundaryReport | None = None,
 ) -> list[CandidateSlice]:
-    """Prefilter → score → persist candidate slices for one source (FR-3/4/5).
+    """Find intervals → score their exact text → persist (FR-3/4/5, SPEC §14).
 
-    Each slice carries scorer padding around its initial in/out for review context.
-    The editable target becomes the exact export interval (ADR Q4 amendment).
-    Slice ids are deterministic, so re-scoring a source updates its slices in place
-    rather than duplicating them.
+    With ``model_client`` (the online path), model discovery and boundary
+    refinement find the intervals (``extract/boundaries.py``) and ``report``
+    receives the route, fallback, refinement and usage account. Without it (the
+    explicit offline path), the heuristic prefilter shortlists ``top_k``
+    windows. Either way the scorer scores the exact final intervals in separate
+    requests, so a changed interval never inherits an earlier score.
+
+    Each slice carries review padding around its initial in/out; the editable
+    target is the exact export interval (ADR Q4 amendment). Slice ids are
+    deterministic, so re-scoring a source updates its slices in place rather than
+    duplicating them, and identical final intervals are one candidate.
     """
-    windows = prefilter(source.words, profile, source_id=source.id, top_k=top_k)
-    results = scorer.score(windows, profile)
+    extractions: list[dict]
+    if model_client is None:
+        windows = prefilter(source.words, profile, source_id=source.id, top_k=top_k)
+        extractions = [{"version": 1, "methods": [PREFILTER]} for _ in windows]
+    else:
+        moments = build_moments(
+            source.words,
+            profile,
+            source_id=source.id,
+            source_end=source.duration_s,
+            client=model_client,
+            report=report,
+        )
+        windows = [m.window for m in moments]
+        extractions = [m.extraction for m in moments]
+    results = _score_batches(scorer, windows, profile)
     created = _now_iso()
     rights = _RIGHTS_BY_KIND.get(source.kind, "med")
     # Bound padding by the later of the reported duration and the last word's
@@ -224,7 +270,7 @@ def extract_and_score(
     duration = max(source.duration_s, last_word_end)
 
     slices: list[CandidateSlice] = []
-    for window, result in zip(windows, results, strict=True):
+    for window, result, extraction in zip(windows, results, extractions, strict=True):
         target_in, target_out = window.start, window.end
         pad_out = target_out + pad_s
         if duration:
@@ -248,6 +294,7 @@ def extract_and_score(
                 rights_risk=rights,
                 status=SliceStatus.CANDIDATE,
                 created_at=created,
+                extraction=extraction,
             )
         )
 

@@ -128,6 +128,7 @@ def _slice_dto(
         "origin": s.origin,
         "window_edited": s.window_edited,
         "created_at": s.created_at,
+        "extraction": s.extraction,
     }
 
 

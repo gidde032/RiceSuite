@@ -1,7 +1,7 @@
 {
-  "version": "2026-09-03",
+  "version": "2026-11-15",
   "name": "example-beat",
-  "brief": "Example beat: a two-person interview or podcast. A moment is clippable when it is emotionally or comedically self-contained and would make a strong 15-45s vertical clip on its own. Favor: candid chemistry or banter between the guests, relationship or backstory reveals, surprising or vulnerable admissions, genuinely funny one-liners, quotable statements about their work, and warm teasing. Avoid: interview logistics, long interviewer monologue, dead air or filler, off-topic tangents, and anything that only makes sense with lots of missing context.",
+  "brief": "Example beat: a two-person interview or podcast. A moment is clippable when it is emotionally or comedically self-contained and would make a strong vertical clip on its own, at whatever length its setup and payoff need. Favor: candid chemistry or banter between the guests, relationship or backstory reveals, surprising or vulnerable admissions, genuinely funny one-liners, quotable statements about their work, and warm teasing. Avoid: interview logistics, long interviewer monologue, dead air or filler, off-topic tangents, and anything that only makes sense with lots of missing context.",
   "keywords": [
     "love", "married", "marriage", "wedding", "engaged", "relationship",
     "boyfriend", "girlfriend", "husband", "wife", "song", "album", "music",
@@ -10,7 +10,7 @@
   ],
   "positive_examples": [
     "A candid, laughing exchange where one guest teases the other about how they met.",
-    "A short, quotable line about working together that reveals something personal.",
+    "A quotable line about working together that reveals something personal.",
     "An unexpectedly vulnerable admission about the relationship that lands emotionally."
   ],
   "negative_examples": [

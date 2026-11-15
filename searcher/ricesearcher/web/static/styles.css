@@ -109,10 +109,13 @@ select, input[type="number"] {
 .badge.offline { border-style: dotted; border-color: var(--rice); color: var(--rice); }
 .badge.status-selected { border-color: var(--rice); color: var(--rice); }
 .badge.status-rejected { border-color: var(--danger); color: var(--danger); }
+/* Unresolved automatic refinement: a dashed danger outline that persists. */
+.badge.needs-review { border-style: dashed; border-color: var(--danger); color: var(--danger); }
 
 .window-edit { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .window-edit label { color: var(--muted); font-size: 13px; display: flex; gap: 6px; align-items: center; }
 .window-edit input { width: 84px; }
+.window-field { display: flex; align-items: center; gap: 8px; }
 
 .actions { display: flex; gap: 10px; margin-top: auto; flex-wrap: wrap; }
 button {

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Any
 
 
 class SourceKind(StrEnum):
@@ -77,10 +78,14 @@ class CandidateWindow:
 class CandidateSlice:
     """A scored candidate slice in the library (SPEC §6, FR-4/FR-5).
 
-    ``pad_in``/``pad_out`` retain the scorer's original context. The reviewable
-    ``target_in``/``target_out`` become the exact export interval (ADR Q4
-    amendment). Dedup fields stay null until Phase 3; ``rights_risk`` defaults
-    from the source kind.
+    ``pad_in``/``pad_out`` are review metadata a fixed margin around the
+    initial interval; the scorer never sees them. The reviewable
+    ``target_in``/``target_out`` are the exact export interval (ADR Q4
+    amendment). ``extraction`` records how an automatic interval was found
+    (RiceSuite #23): discovery methods, refinement outcomes, the review flag and
+    each coalesced proposal's model claims. It is ``{}`` on rows scored before
+    that provenance existed, so legacy rows never claim the new method. Dedup
+    fields stay null until Phase 3; ``rights_risk`` defaults from the source kind.
     """
 
     id: str
@@ -105,6 +110,7 @@ class CandidateSlice:
     created_at: str = ""
     origin: str = "scored"
     window_edited: bool = False
+    extraction: dict[str, Any] = field(default_factory=dict)
 
 
 def slice_order(s: CandidateSlice) -> tuple[int, float, str, str]:

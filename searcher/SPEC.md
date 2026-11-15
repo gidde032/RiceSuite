@@ -4,6 +4,10 @@
 > The expanded web-workspace behavior in §13 was ratified 2026-10-22;
 > its Split workspace reference and implementation plan were settled through
 > the final Q10–Q12 answers on 2026-10-22.
+> The automatic-boundary and Review-control amendment in §14 was ratified
+> 2026-11-15 for RiceSuite #23. Its implementation is under review on the #23
+> branch; maintainer visual acceptance of new clips is still pending, so its
+> presence is not a claim that the new behavior has shipped.
 > Boundary
 > contract is `ADR-001.md` (ratified and reconciled against live sibling code).
 > This document is the
@@ -47,7 +51,7 @@ files only.
 | D1 | Discovery source & acquisition | **yt-dlp pull (URL/channel) + local watch-folder**, one thin acquisition layer → shared pipeline; search-query acquisition deferred to [#15](https://github.com/gidde032/RiceSearcher/issues/15) |
 | D2 | Niche definition | Versioned **beat-profile**: NL brief + few-shot good/bad exemplars; many **saved profiles**, one JSON file each (D9) |
 | D3 | Transcription ownership | **RiceSearcher owns it** via local faster-whisper; source captions optional, never depended on |
-| D4 | Scoring | **Hybrid**: heuristic prefilter shortlists windows → LLM scores + explains the shortlist. An explicit `score --offline` mode ranks by the heuristic score alone, with no network call, and records `scorer_model = "heuristic-offline"` ([#2](https://github.com/gidde032/RiceSearcher/issues/2)) |
+| D4 | Scoring | **Hybrid**: heuristic prefilter shortlists windows → LLM scores + explains the shortlist. An explicit `score --offline` mode ranks by the heuristic score alone, with no network call, and records `scorer_model = "heuristic-offline"` ([#2](https://github.com/gidde032/RiceSearcher/issues/2)). **Amended 2026-11-15 (§14):** online scoring finds intervals with full-transcript model discovery and bounded boundary refinement, then the LLM scores each exact interval separately; offline scoring keeps the heuristic prefilter |
 | D5 | Library store | **SQLite** slice index + **content-addressed disk cache** for source/clips |
 | D6 | Moment dedup | Hybrid (intra-source time-overlap + cross-source transcript embedding), **advisory-only — never filters, discards, or blocks** |
 | D7 | Interface | **CLI + Slate web workspace** for intake, scoring, source inspection, manual segments, review, and handoff; expanded behavior ratified 2026-10-22 in §13 |
@@ -66,6 +70,10 @@ files only.
 - **FR-3 — Shortlist (D4).** A heuristic prefilter scans the transcript and emits
   candidate windows (entity mentions, turn/laughter/sentiment/quotable signals)
   with cheap feature scores. The LLM never sees the whole transcript.
+  **Amended 2026-11-15 (§14):** this remains the explicit offline path and the
+  identified fallback for a failed discovery section. Online scoring sends the
+  whole transcript to model discovery when it fits the request budget, and
+  overlapping sections otherwise.
 - **FR-4 — Score (D4, D2).** An LLM scores + explains each shortlisted window
   against the versioned beat-profile, producing a clippability score (0–1) and a
   short rationale. The `profile_id`, beat-profile version, and model id are
@@ -80,9 +88,10 @@ files only.
   scores share one `score` sort order within a profile; the ordering policy for
   mixed profiles is open in [#5](https://github.com/gidde032/RiceSearcher/issues/5).
 - **FR-5 — Store scored slices (D5, ADR Q3/Q4).** Each scored candidate slice is
-  written to the SQLite library with the schema in §6, including an original
-  **padded context window** and editable **target in/out**. Once reviewed, target
-  in/out are the authoritative export bounds. Rows are
+  written to the SQLite library with the schema in §6, including **review
+  padding** metadata and editable **target in/out**. Target in/out are the
+  authoritative export bounds; the padding is a fixed margin for review context,
+  is never scorer context, and is never exported. Rows are
   partitioned by `profile_id`; one source may hold slices under several profiles.
 - **FR-6 — Dedup signal (D6).** For each new slice, compute an intra-source
   overlap check and a cross-source transcript-embedding similarity; attach a
@@ -101,9 +110,11 @@ files only.
   rationale + duplicate annotation), lets the human edit in/out anywhere within
   the source, and **select** slices for handoff. There is no artificial maximum
   duration. A non-finite, negative, out-of-source, empty, or inverted interval is
-  rejected with a precise error and is never silently clamped. After a successful
-  save, the player reloads the selected interval so preview and export agree. This
-  is the human gate. The UI
+  rejected with a precise error and is never silently clamped. **Amended
+  2026-11-15 (§14.3):** a successful save keeps the player, its playhead, and its
+  play/pause state; playback from inside the saved interval stops at the saved
+  end, so preview and export still agree. Cards add **Preview ±10s context** and
+  **Mark start / Mark end**. This is the human gate. The UI
   shows one profile at a time: a profile select in the topbar and a Profiles
   page listing name, version, sources, candidates, and selected per profile
   (D9). A slice whose version differs from its profile file is marked stale.
@@ -170,6 +181,9 @@ files only.
   RiceClipper 85%.)
 - **Scoring cost:** LLM sees only shortlisted windows; target **≤ N tokens per
   30-min episode** — N fixed after the Phase-2 skeleton measures real shortlist size.
+  **Amended 2026-11-15 (§14):** online discovery may see the whole transcript.
+  One discovery prompt is at most 60,000 UTF-8 bytes, a practical request budget
+  rather than a token estimate or provider limit; no N is fixed yet.
 - **Pull latency:** on-demand pull of one ~30-min source completes transcription +
   scoring within a target measured at Phase 2 (dominated by faster-whisper on CPU).
 - **Local-first:** no cloud storage; SQLite + local disk only. Media cache is
@@ -211,10 +225,17 @@ at write time.
 - **Provenance:** `source_id` (FK → `sources`).
 - **Profile (D9):** `profile_id` (file stem of the profile; legacy rows carry
   `example-beat` after the schema v3 migration).
-- **Window (ADR Q4 amended):** `pad_in`, `pad_out` retain the scorer's original
-  context window on the source timeline. `target_in`, `target_out` are editable at
-  review and become the authoritative final export interval. They may span any
+- **Window (ADR Q4 amended):** `pad_in`, `pad_out` are review metadata: a fixed
+  margin around the initial interval on the source timeline. The scorer never
+  sees them and handoff never exports them. `target_in`, `target_out` are editable
+  at review and become the authoritative final export interval. They may span any
   non-empty interval within the source.
+- **Boundary provenance (schema v5, §14):** `extraction` is a JSON object with
+  the discovery `methods` (`model-full`, `model-chunk`, `heuristic-fallback`, or
+  `heuristic-prefilter`), the refinement outcomes (`refined`,
+  `needs_more_context`, `refinement_failed`), `needs_review`, the discovery and
+  refinement `model`, and one record per coalesced proposal with its model
+  claims. Rows scored before v5 hold `{}`: their method was not recorded.
 - **Content:** `transcript_span` (text), `transcript_words` (word timings ref).
 - **Score (D4):** `score` (0–1), `rationale`, `heuristic_features`,
   `beat_profile_version`, `scorer_model`.
@@ -524,3 +545,111 @@ Required by Finn when selecting Split workspace:
   busy, error, and long-content states. Screenshots supplement computed geometry
   and style assertions. The implementation plan must wire these checks into CI
   without weakening existing gates or any pillar's coverage floor.
+
+## 14. Automatic boundaries and Review controls (ratified 2026-11-15)
+
+**Approved contract; implemented on the #23 branch, pending review and maintainer
+visual acceptance.** Delivery is owned by RiceSuite
+[#23](https://github.com/gidde032/RiceSuite/issues/23). This amendment supersedes
+the heuristic-only online discovery description in D4, FR-3 and §5, and the
+player-reload requirement in FR-8; those passages carry amendment notes.
+
+Implemented settings (`ricesearcher/extract/boundaries.py`): a 60,000-byte
+discovery prompt budget; four-word timestamp references; 480 s sections that
+overlap by the 180 s ceiling; at most 12–30 full-request proposals (one per two
+minutes) and 8 per section; refinement context of at most 45 s per side and
+1,000 words; a refined interval must share 40% of the shorter of it and the
+proposal. Intervals pad into adjacent silence by at most 0.5 s before and 1 s
+after, never past half the gap to a neighbor word. Scoring requests hold at most
+12 windows each.
+
+### 14.1 Discovery, refinement and exact scoring
+
+- Online scoring uses **full-transcript discovery with fine timestamp
+  references, then a separate bounded boundary-refinement call**. Refinement
+  checks the opening, necessary setup, payoff and ending of the same proposed
+  moment. Resolve model boundaries to real source-word timings and validate
+  finite, ordered, source-bounded intervals before scoring.
+- Score the exact final interval and its intersecting source-word text in a
+  separate scoring stage. A discovery or refinement claim is not a score or
+  human playback label. Preserve the meaning and provenance of existing scores;
+  do not silently stamp old candidates as having used the new method.
+- Use the full transcript when it fits a documented practical request budget.
+  An oversized transcript or failed full request uses bounded overlapping
+  chunks, with enough overlap to contain a moment up to the automatic ceiling.
+  Record actual discovery method, retries, fallback and refinement outcome.
+- Model requests have bounded retries: one application retry after an invalid
+  or failed attempt. Retain successful proposals across retries and fallback;
+  do not silently lose an entire source section. A chunk that still fails uses
+  an explicitly identified deterministic fallback for that chunk. Missing
+  credentials surface as an error, never a successful model/fallback run.
+- If refinement fails after its retry, or reports necessary setup/payoff beyond
+  its bounded context, keep the **original discovered interval**, score that
+  interval, and show a visible unrefined/needs-review flag. Preserve other
+  successful results. Do not present an unresolved refinement as complete.
+- Explicit offline scoring retains its heuristic behavior and visible
+  `heuristic-offline` identity, with no model request or credential required.
+
+### 14.2 Length, variety, identity and data protection
+
+- A worthwhile, self-contained moment contains its necessary setup and payoff.
+  Primary success needs no adjustment or only a few seconds trimmed; roughly
+  10–15 seconds of trimming is moderate success. Scores alone cannot prove this.
+- Meaningful clips **under 12 seconds are allowed**; there is no inherited
+  12-second minimum. About 90 seconds is a soft target and 180 seconds is the
+  automatic safety ceiling. Human-edited and manual intervals retain the
+  existing source-bounded contract without an artificial duration maximum.
+- There is no minimum score or requirement to fill candidate capacity. Keep
+  low-rated candidates available. Meaningful shorter/nested/overlapping moments
+  may coexist; avoid flooding a story with near-identical proposals.
+- Coalesce identical final source/profile intervals before scoring while
+  retaining their proposal provenance. This is candidate identity, not a change
+  to advisory duplicate annotations: near-overlap annotations do not hide,
+  remove, block or lower a stored segment's ranking.
+- Preserve source/profile partitioning, old scores, and every manual, edited,
+  reviewed, selected and handed-off protection on re-score and migration.
+  Ordinary scoring never edits existing profiles. Packaged examples and the
+  generic prompt use length-neutral language consistent with this section.
+  Any separately authorized profile maintenance remains narrowly scoped;
+  changing its version marks old scores stale without automatically rescoring.
+
+### 14.3 Review-card context and playhead controls
+
+- Add **Preview ±10s context** to each Review card. It temporarily plays from
+  ten seconds before the chosen start through ten seconds after the chosen end,
+  clamped to the media extent, and stops at the contextual end. This does not
+  change saved boundaries, scores or selection. It is not a pair of seek buttons.
+- Add **Mark start** and **Mark end** using the current source-video playhead,
+  like the Sources inspector. Each valid mark saves immediately, as typed time
+  changes do. Do not introduce a staged Save/Cancel workflow.
+- Reuse source-bounded validation. Failed edits retain typed values and show a
+  precise error; persisted boundaries change only on success. A successful mark
+  must preserve the playhead and playback state rather than reload/jump the
+  source. Normal interval preview must continue to reflect saved boundaries.
+- Preserve native video controls, the existing Slate styles and responsive card
+  geometry, keyboard accessibility, visible method/review-status labels and
+  pending-mutation/terminal-item protections. Use actual method names rather
+  than anonymous X/Y/Z labels in review material. Do not auto-select or hand off.
+
+### 14.4 Verification and delivery boundary
+
+- Verify full/chunk budget dispatch, retry bounds, cross-chunk moments, section
+  failures, missing credentials, invalid timestamps, short moments, duplicate
+  coalescence, original-interval retention and exact scoring text. Prove
+  successful-result and human-edit preservation with disposable fixtures.
+- Test the new Review controls against real rendered production UI and synthetic
+  media, including source-edge clamping, automatic stop, native seeking,
+  immediate saves, invalid edits, playback continuity, keyboard use, responsive
+  placement and selection/handoff races. Keep all existing gates and floors.
+- Reconcile the affected spec/ADR, scorer-context/padding and handoff docs in
+  the same delivery. Review padding is not a substitute for correcting the
+  saved interval; handoff still exports the exact reviewed bytes.
+- Implement on a focused isolated branch; open a draft PR after the first
+  coherent green commit; run three cold reviews (correctness, contracts and
+  standing skeptic), repair accepted findings with fail-before-fix regressions,
+  and return a green-CI draft PR. Do not claim human playback validation from
+  transcript checks, model scores or CI.
+- The initiating agent independently reviews the returned PR before the
+  maintainer visually tests new clips. Marking ready, merging and release remain
+  maintainer-only. Use a closing keyword only when the actual issue acceptance
+  requirements are satisfied; never close the issue merely for starting work.

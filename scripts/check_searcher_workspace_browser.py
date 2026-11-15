@@ -80,6 +80,13 @@ REQUIRED_SCENARIOS = {
     "segment-mark-grouping",
     "narrow-detail-hides-tools",
     "profiles-inset-alignment",
+    "review-context-preview-clamp-stop",
+    "review-marks-preserve-playback",
+    "review-mark-validation",
+    "review-saved-interval-stop",
+    "review-boundary-pending-terminal",
+    "review-boundary-keyboard-geometry",
+    "review-method-labels",
 }
 
 PROFILES = [
@@ -136,9 +143,70 @@ SLICES = [
     }
     for n in range(5)
 ]
+# Review boundary controls (RiceSuite #23): edges of the 12 s synthetic MP4.
+_REFINED = {
+    "methods": ["model-full"],
+    "refinement": ["refined"],
+    "needs_review": False,
+    "model": "fixture-model",
+}
+_UNREFINED = {
+    "methods": ["model-chunk"],
+    "refinement": ["needs_more_context"],
+    "needs_review": True,
+    "model": "fixture-model",
+}
+BOUNDARY_SLICES = [
+    {
+        **SLICES[3],
+        "id": "ctx-start",
+        "target_in": 1,
+        "target_out": 1.5,
+        "created_at": "2026-11-15T00:00:01Z",
+        "extraction": _REFINED,
+    },
+    {
+        **SLICES[3],
+        "id": "ctx-end",
+        "target_in": 10,
+        "target_out": 11.5,
+        "created_at": "2026-11-15T00:00:02Z",
+        "extraction": _UNREFINED,
+    },
+    {
+        **SLICES[3],
+        "id": "terminal",
+        "status": "handed_off",
+        "created_at": "2026-11-15T00:00:03Z",
+        "extraction": {},
+    },
+    {
+        **SLICES[3],
+        "id": "no-media",
+        "media_url": None,
+        "created_at": "2026-11-15T00:00:04Z",
+        "extraction": {},
+    },
+]
 
 
-def attach(page, scenario="normal", run_state=None, receipts=None):
+def window_reply(request):
+    """The production window PATCH contract against the 12 s fixture."""
+    data = json.loads(request.request.post_data)
+    start, end = data["target_in"], data["target_out"]
+    if start >= end:
+        request.fulfill(status=422, json={"detail": "target_out must exceed target_in"})
+    elif end > 12:
+        request.fulfill(
+            status=422,
+            json={"detail": "target_out must not exceed source duration (12s)"},
+        )
+    else:
+        sid = request.request.url.rsplit("/", 2)[-2]
+        request.fulfill(json={"id": sid, "target_in": start, "target_out": end})
+
+
+def attach(page, scenario="normal", run_state=None, receipts=None, hold=None):
     errors, mutations = [], []
     page.on("pageerror", lambda error: errors.append(str(error)))
     page.on(
@@ -255,6 +323,11 @@ def attach(page, scenario="normal", run_state=None, receipts=None):
                         "stage": "scoring",
                     }
                 request.fulfill(json=run_state["run"])
+            elif path.endswith("/window") and request.request.method == "PATCH":
+                if hold is not None:
+                    hold.append(request)
+                else:
+                    window_reply(request)
             elif path.endswith("/manual"):
                 manual = {
                     **SLICES[0],
@@ -280,6 +353,8 @@ def attach(page, scenario="normal", run_state=None, receipts=None):
                 rows = (
                     []
                     if scenario == "empty" or query.get("profile", [""])[0] == "other"
+                    else BOUNDARY_SLICES
+                    if scenario == "boundaries"
                     else SLICES + saved
                 )
                 rows = [
@@ -434,6 +509,225 @@ def check_review_repairs(browser, result):
             "source-filter-refresh-preserves-choice",
         ]
     )
+
+
+def _boundary_page(browser, width=1366, height=900, hold=None):
+    page = browser.new_page(viewport={"width": width, "height": height})
+    errors, mutations = attach(page, "boundaries", hold=hold)
+    page.goto("http://127.0.0.1:8966/?status=")
+    page.locator('[data-slice-id="ctx-start"] video').wait_for()
+    page.wait_for_function(
+        "[...document.querySelectorAll('video')].every(v => v.readyState >= 2)"
+    )
+    return page, errors, mutations
+
+
+def _card(page, sid):
+    return page.locator(f'[data-slice-id="{sid}"]')
+
+
+def _windows(mutations):
+    return [json.loads(body) for path, body in mutations if path.endswith("/window")]
+
+
+def check_review_boundary_controls(browser, result):
+    """SPEC §14.3: real playback, marks and context on the production Review page."""
+    page, errors, mutations = _boundary_page(browser)
+    # Context preview clamps to the media start and stops 10 s after the end.
+    card = _card(page, "ctx-start")
+    video = card.locator("video")
+    video.evaluate("v => { window.ctxVideo = v; v.muted = true; v.playbackRate = 4; }")
+    card.get_by_role("button", name="Preview ±10s context").click()
+    assert video.evaluate("v => !v.paused && v.currentTime < 1"), video.evaluate(
+        "v => v.currentTime"
+    )
+    page.wait_for_function("window.ctxVideo.paused", timeout=10000)
+    stopped = video.evaluate("v => ({t: v.currentTime, ended: v.ended})")
+    assert 11.5 <= stopped["t"] < 11.85 and not stopped["ended"], stopped
+    assert "context preview ended" in card.locator(".card-msg").inner_text()
+    # The other edge clamps to the media end.
+    end_card = _card(page, "ctx-end")
+    end_video = end_card.locator("video")
+    end_video.evaluate(
+        "v => { window.endVideo = v; v.muted = true; v.playbackRate = 4; }"
+    )
+    end_card.get_by_role("button", name="Preview ±10s context").click()
+    assert end_video.evaluate("v => v.currentTime < 1")
+    page.wait_for_function("window.endVideo.paused", timeout=10000)
+    assert end_video.evaluate("v => v.currentTime") >= 11.9
+    assert _windows(mutations) == []  # context preview never writes
+    assert card.locator("input").nth(0).input_value() == "1"
+    assert card.locator("input").nth(1).input_value() == "1.5"
+    result["scenarios"].append("review-context-preview-clamp-stop")
+
+    assert not errors, errors
+    page.close()
+
+    # Marks save immediately; the same element keeps its playhead and play state.
+    page, errors, mutations = _boundary_page(browser)
+    card = _card(page, "ctx-start")
+    video = card.locator("video")
+    video.evaluate("v => { window.ctxVideo = v; v.muted = true; }")
+    video.evaluate("v => { v.currentTime = 6; }")  # native seek past the saved end
+    page.wait_for_function(
+        "window.ctxVideo.currentTime === 6 && !window.ctxVideo.seeking"
+    )
+    card.get_by_role("button", name="Mark end").click()
+    page.wait_for_function(
+        "document.querySelector('[data-slice-id=ctx-start] .card-msg').textContent === 'window saved'"
+    )
+    assert _windows(mutations)[-1] == {"target_in": 1, "target_out": 6}
+    assert video.evaluate(
+        "v => v.paused && v.currentTime === 6 && v === window.ctxVideo"
+    )
+    assert card.locator(".win").inner_text() == "selected 1–6s"
+    video.evaluate("async v => { v.currentTime = 2.5; await v.play(); }")
+    page.wait_for_function("window.ctxVideo.currentTime > 2.6")
+    src = video.evaluate("v => v.currentSrc")
+    card.get_by_role("button", name="Mark start").click()
+    page.wait_for_function(
+        "document.querySelector('[data-slice-id=ctx-start] .win').textContent !== 'selected 1–6s'"
+    )
+    start = _windows(mutations)[-1]["target_in"]
+    assert 2.6 < start < 4 and _windows(mutations)[-1]["target_out"] == 6
+    state = video.evaluate(
+        "v => ({same: v === window.ctxVideo, src: v.currentSrc, paused: v.paused, t: v.currentTime})"
+    )
+    assert state["same"] and state["src"] == src and not state["paused"], state
+    assert state["t"] >= start, state
+    result["scenarios"].append("review-marks-preserve-playback")
+    # Ordinary playback stops at the newly saved end, with no media reload.
+    page.wait_for_function("window.ctxVideo.paused", timeout=10000)
+    t = video.evaluate("v => v.currentTime")
+    assert 6 <= t < 6.35, t
+    assert video.evaluate("v => v.currentSrc").endswith("#t=1")
+    result["scenarios"].append("review-saved-interval-stop")
+
+    # Refused mark: playhead before the saved start.
+    video.evaluate("v => { v.currentTime = 0.5; }")
+    page.wait_for_function(
+        "window.ctxVideo.currentTime === 0.5 && !window.ctxVideo.seeking"
+    )
+    saved_label = card.locator(".win").inner_text()
+    card.get_by_role("button", name="Mark end").click()
+    card.get_by_text("target_out must exceed target_in").wait_for()
+    assert card.locator("input").nth(1).input_value() == "0.5"
+    assert card.locator(".win").inner_text() == saved_label
+    # A typed value past the source is refused with the duration named.
+    card.locator("input").nth(1).fill("20")
+    card.locator("input").nth(1).press("Enter")
+    card.get_by_text("target_out must not exceed source duration (12s)").wait_for()
+    assert card.locator("input").nth(1).input_value() == "20"
+    assert card.locator(".win").inner_text() == saved_label
+    result["scenarios"].append("review-mark-validation")
+
+    # Actual method names and the persistent needs-review flag.
+    assert (
+        _card(page, "ctx-start").locator(".badge.method").inner_text()
+        == "full-transcript discovery + boundary refinement"
+    )
+    assert _card(page, "ctx-start").locator(".badge.needs-review").count() == 0
+    flag = _card(page, "ctx-end").locator(".badge.needs-review").inner_text()
+    assert flag == "unrefined · needs review (refiner needed more context)", flag
+    assert _card(page, "terminal").locator(".badge.method").count() == 0
+    # Only the two deliberate refusals reach the console.
+    assert len(errors) == 2 and all("422" in e for e in errors), errors
+    page.close()
+    result["scenarios"].append("review-method-labels")
+
+    # Pending writes block repeats and handoff; terminal and missing media refuse marks.
+    held = []
+    page, errors, mutations = _boundary_page(browser, hold=held)
+    card = _card(page, "ctx-start")
+    card.locator("video").evaluate("v => { v.currentTime = 1.2; }")
+    page.wait_for_function(
+        "document.querySelector('[data-slice-id=ctx-start] video').currentTime === 1.2"
+    )
+    card.get_by_role("button", name="Mark start").click()
+    page.wait_for_function(
+        "document.querySelector('[data-slice-id=ctx-start] .mark-start').disabled"
+    )
+    assert card.get_by_role("button", name="Mark end").is_disabled()
+    assert card.get_by_role("button", name="Select").is_disabled()
+    assert page.locator("#handoffBtn").is_disabled()
+    card.get_by_role("button", name="Mark start").click(force=True)
+    assert len(_windows(mutations)) == 1 and len(held) == 1
+    window_reply(held.pop())
+    page.wait_for_function(
+        "!document.querySelector('[data-slice-id=ctx-start] .mark-start').disabled"
+    )
+    assert len(_windows(mutations)) == 1
+    for sid in ("terminal", "no-media"):
+        other = _card(page, sid)
+        assert other.get_by_role("button", name="Mark start").is_disabled()
+        assert other.get_by_role("button", name="Mark end").is_disabled()
+    assert (
+        not _card(page, "terminal")
+        .get_by_role("button", name="Preview ±10s context")
+        .is_disabled()
+    )
+    assert (
+        _card(page, "no-media")
+        .get_by_role("button", name="Preview ±10s context")
+        .is_disabled()
+    )
+    assert not errors, errors
+    page.close()
+    result["scenarios"].append("review-boundary-pending-terminal")
+
+    # Keyboard use and responsive placement at the narrowest and wide layouts.
+    for width in (320, 390, 900, 1366):
+        page, errors, mutations = _boundary_page(browser, width=width, height=900)
+        assert_no_overflow(page)
+        card = _card(page, "ctx-start")
+        boxes = card.evaluate("""c => {
+          const r = e => e.getBoundingClientRect().toJSON();
+          const [i, o] = c.querySelectorAll('.window-edit input');
+          return {card: r(c), in: r(i), out: r(o), start: r(c.querySelector('.mark-start')), end: r(c.querySelector('.mark-end')), ctx: r(c.querySelector('.context-preview')), video: r(c.querySelector('video')), controls: c.querySelector('video').controls};
+        }""")
+        for name in ("start", "end", "ctx"):
+            box = boxes[name]
+            assert (
+                box["height"] >= 36
+                and box["left"] >= boxes["card"]["left"]
+                and box["right"] <= boxes["card"]["right"] + 0.5
+            ), (width, name, boxes)
+        assert (
+            abs(boxes["start"]["top"] - boxes["in"]["top"]) < 12
+            and boxes["start"]["left"] > boxes["in"]["left"]
+        ), boxes
+        assert (
+            abs(boxes["end"]["top"] - boxes["out"]["top"]) < 12
+            and boxes["end"]["left"] > boxes["out"]["left"]
+        ), boxes
+        assert boxes["controls"]
+        if width == 1366:
+            card.locator("video").evaluate("v => { v.currentTime = 1.25; }")
+            page.wait_for_function(
+                "document.querySelector('[data-slice-id=ctx-start] video').currentTime === 1.25"
+            )
+            card.locator("input").nth(0).focus()
+            page.keyboard.press("Tab")
+            assert card.locator(".mark-start").evaluate(
+                "e => e === document.activeElement"
+            )
+            assert (
+                card.locator(".mark-start").evaluate(
+                    "e => getComputedStyle(e).outlineStyle"
+                )
+                != "none"
+            )
+            page.keyboard.press("Enter")
+            page.wait_for_function(
+                "document.querySelector('[data-slice-id=ctx-start] .card-msg').textContent === 'window saved'"
+            )
+            assert _windows(mutations)[-1] == {"target_in": 1.25, "target_out": 1.5}
+            assert card.locator(".mark-start").evaluate(
+                "e => e === document.activeElement"
+            )
+        assert not errors, errors
+        page.close()
+    result["scenarios"].append("review-boundary-keyboard-geometry")
 
 
 def check_primary_actions(browser, result):
@@ -995,6 +1289,7 @@ def check(output: Path, channel: str | None = None):
                 ]
             )
             check_review_repairs(browser, result)
+            check_review_boundary_controls(browser, result)
             check_primary_actions(browser, result)
             page = browser.new_page(
                 viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True

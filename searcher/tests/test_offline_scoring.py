@@ -96,7 +96,15 @@ def test_slices_marks_offline_rows_only(offline_env: str, monkeypatch, capsys) -
     assert "offl" in capsys.readouterr().out
 
     # Re-scoring with an LLM scorer replaces the candidates and drops the marker.
-    monkeypatch.setattr(cli, "AnthropicScorer", lambda model=None: FakeScorer())
+    from tests.boundary_fakes import ScriptedClient
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fixture-key")
+    monkeypatch.setattr(
+        cli, "AnthropicScorer", lambda model=None, usage_log=None: FakeScorer()
+    )
+    monkeypatch.setattr(
+        cli, "AnthropicModelClient", lambda model=None: ScriptedClient()
+    )
     assert cli.main(["score", offline_env, "--profile", "example-beat"]) == 0
     capsys.readouterr()
     assert cli.main(["slices", "--profile", "example-beat"]) == 0

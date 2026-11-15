@@ -5,6 +5,22 @@ All notable changes to RiceSearcher are documented here. This project adheres to
 
 ## [Unreleased]
 
+### Changed — RiceSuite #23 (automatic boundaries and Review controls)
+
+- Online scoring (CLI and workspace) now finds moments with full-transcript model
+  discovery and a separate bounded boundary-refinement request per moment, then
+  scores each exact final interval. Oversized or failed full requests use
+  overlapping 480 s sections; a section that still fails after one retry uses an
+  identified heuristic fallback. Missing credentials stop the run before any request.
+- An unresolved refinement keeps the original discovered interval with a visible
+  "needs review" flag. Clips under 12 s are allowed; 180 s is the automatic ceiling.
+  Identical final intervals become one candidate that keeps every proposal.
+- Schema v5 adds per-slice boundary provenance; existing rows keep their ids and
+  scores and show no method. Offline scoring is unchanged.
+- Review cards add **Preview ±10s context** and **Mark start / Mark end**. Saves no
+  longer reload the player, so the playhead and play state survive.
+- The packaged example profile and the scorer prompt no longer favor a clip length.
+
 ### Added — RiceSuite #96
 
 - Sources intake, serial process-lifetime batches with explicit stage retries and

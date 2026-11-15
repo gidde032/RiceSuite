@@ -8,6 +8,7 @@ import pytest
 
 from ricesearcher import cli
 from ricesearcher.acquire.watchfolder import WatchFolderAcquirer
+from tests.boundary_fakes import ScriptedClient
 from tests.conftest import FakeScorer, FakeTranscriber
 
 
@@ -25,12 +26,27 @@ def pulled_source(tmp_path: Path, media_file: Path, monkeypatch) -> str:
         return lib.list_sources()[0].id
 
 
+def _online(monkeypatch, scorer=None, client=None) -> ScriptedClient:
+    """Fake the online stages; a fixture credential passes the preflight."""
+    client = client or ScriptedClient()
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fixture-key")
+    monkeypatch.setattr(
+        cli,
+        "AnthropicScorer",
+        lambda model=None, usage_log=None: scorer or FakeScorer(),
+    )
+    monkeypatch.setattr(cli, "AnthropicModelClient", lambda model=None: client)
+    return client
+
+
 def test_score_then_slices(pulled_source: str, monkeypatch, capsys) -> None:
-    monkeypatch.setattr(cli, "AnthropicScorer", lambda model=None: FakeScorer())
+    client = _online(monkeypatch)
     rc = cli.main(["score", pulled_source[:12], "--profile", "example-beat"])
     assert rc == 0
     out = capsys.readouterr().out
     assert "scored" in out and "fake-model" in out
+    assert "boundaries: full-transcript discovery; 1 proposals" in out
+    assert [stage for stage, _ in client.calls] == ["discovery", "refinement"]
 
     assert cli.main(["slices", "--profile", "example-beat"]) == 0
     listing = capsys.readouterr().out
@@ -39,7 +55,7 @@ def test_score_then_slices(pulled_source: str, monkeypatch, capsys) -> None:
 
 def test_score_unknown_source_errors(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.setenv("RICESEARCHER_DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setattr(cli, "AnthropicScorer", lambda model=None: FakeScorer())
+    _online(monkeypatch)
     assert cli.main(["score", "deadbeef", "--profile", "example-beat"]) == 2
     assert "no source" in capsys.readouterr().err
 
@@ -53,7 +69,7 @@ def test_score_reports_clean_error_on_scorer_failure(
         def score(self, windows, profile):
             raise RuntimeError("api down")
 
-    monkeypatch.setattr(cli, "AnthropicScorer", lambda model=None: BoomScorer())
+    _online(monkeypatch, scorer=BoomScorer())
     rc = cli.main(["score", pulled_source[:12], "--profile", "example-beat"])
     assert rc == 2
     assert "error" in capsys.readouterr().err.lower()
@@ -77,3 +93,29 @@ def test_score_without_api_key_names_the_missing_variable(
     err = capsys.readouterr().err
     assert "ANTHROPIC_API_KEY is not set" in err
     assert "credentials.env" in err
+
+
+def test_score_without_api_key_makes_no_model_request(
+    pulled_source: str, tmp_path: Path, monkeypatch, capsys
+) -> None:
+    client = _online(monkeypatch)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    monkeypatch.chdir(tmp_path)
+    assert cli.main(["score", pulled_source[:12], "--profile", "example-beat"]) == 2
+    assert client.calls == []
+    assert "ANTHROPIC_API_KEY is not set" in capsys.readouterr().err
+
+
+def test_offline_score_makes_no_model_request(
+    pulled_source: str, monkeypatch, capsys
+) -> None:
+    client = _online(monkeypatch)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    rc = cli.main(
+        ["score", pulled_source[:12], "--profile", "example-beat", "--offline"]
+    )
+    assert rc == 0
+    assert client.calls == []
+    out = capsys.readouterr().out
+    assert "heuristic-offline" in out and "boundaries:" not in out
