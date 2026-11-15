@@ -18,7 +18,8 @@ All notable changes to RiceSearcher are documented here. This project adheres to
 - Schema v5 adds per-slice boundary provenance; existing rows keep their ids and
   scores and show no method. Offline scoring is unchanged.
 - Review cards add **Preview ±10s context** and **Mark start / Mark end**. Saves no
-  longer reload the player, so the playhead and play state survive.
+  longer reload the player, so the playhead and play state survive. A hand-edited
+  interval shows "edited by hand" beside its original provenance.
 - The packaged example profile and the scorer prompt no longer favor a clip length.
 
 ### Added — RiceSuite #96

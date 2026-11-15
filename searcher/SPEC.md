@@ -558,10 +558,13 @@ Implemented settings (`ricesearcher/extract/boundaries.py`): a 60,000-byte
 discovery prompt budget; four-word timestamp references; 480 s sections that
 overlap by the 180 s ceiling; at most 12–30 full-request proposals (one per two
 minutes) and 8 per section; refinement context of at most 45 s per side and
-1,000 words; a refined interval must share 40% of the shorter of it and the
-proposal. Intervals pad into adjacent silence by at most 0.5 s before and 1 s
-after, never past half the gap to a neighbor word. Scoring requests hold at most
-12 windows each.
+1,000 words. A refined interval must keep at least half of the proposal, and the
+proposal must be at least a third of the refined interval; otherwise it counts as
+a different moment. Intervals pad into adjacent silence by at most 0.5 s before
+and 1 s after, never past half the gap to a neighbor word. Scoring requests hold
+at most 12 windows each and get one application retry. A card whose interval a
+person edited shows "edited by hand": its provenance describes the original
+interval.
 
 ### 14.1 Discovery, refinement and exact scoring
 

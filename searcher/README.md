@@ -38,7 +38,7 @@ pull ──► score ──► dedup ──► review ──► handoff ──�
    that check fails or needs more context, the original interval stays and the
    card shows "needs review". The Anthropic API then scores each exact final
    interval from 0 to 1 and gives a one-sentence rationale. Clips can be short;
-   about 90 s is typical and 180 s is the automatic ceiling. With `--offline`, no
+   about 90 s is a soft target and 180 s is the automatic ceiling. With `--offline`, no
    model is used: a heuristic prefilter splits the transcript into utterances (a
    silence over 1.2 s ends one), merges them into windows of 12–45 s, ranks them
    by the profile's keywords, questions, laughter, exclamations, and length fit,

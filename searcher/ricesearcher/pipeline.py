@@ -33,6 +33,7 @@ from ricesearcher.models import (
     Source,
     SourceKind,
 )
+from ricesearcher.score.anthropic_scorer import MissingCredentialsError
 from ricesearcher.score.base import Scorer
 from ricesearcher.transcribe.base import Transcriber
 
@@ -209,13 +210,28 @@ def _slice_id(
 def _score_batches(
     scorer: Scorer, windows: list[CandidateWindow], profile: BeatProfile
 ) -> list:
-    """Score every window, at most ``SCORE_BATCH`` per request, in order."""
+    """Score every window, at most ``SCORE_BATCH`` per request, in order.
+
+    Each request gets one application retry (SPEC §14.1). A request that still
+    fails raises, so the caller keeps the previous candidates. A missing
+    credential is never retried.
+    """
     results = []
     for i in range(0, len(windows), SCORE_BATCH):
         batch = windows[i : i + SCORE_BATCH]
-        scored = scorer.score(batch, profile)
-        if len(scored) != len(batch):
-            raise RuntimeError("the scorer did not return one result per window")
+        for attempt in (1, 2):
+            try:
+                scored = scorer.score(batch, profile)
+                if len(scored) != len(batch):
+                    raise RuntimeError(
+                        "the scorer did not return one result per window"
+                    )
+                break
+            except MissingCredentialsError:
+                raise
+            except Exception:
+                if attempt == 2:
+                    raise
         results.extend(scored)
     return results
 

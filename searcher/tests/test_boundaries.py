@@ -325,7 +325,6 @@ def test_proposal_times_resolve_to_real_word_edges_with_silence_padding():
         [TranscriptWord("a", 0.0, math.inf)],
         [TranscriptWord("a", 2.0, 1.0)],
         [TranscriptWord("a", -1.0, 1.0)],
-        [TranscriptWord("a", 2.0, 2.5), TranscriptWord("b", 1.0, 1.5)],
     ],
 )
 def test_invalid_transcript_timings_raise_a_clear_error(bad):
@@ -528,3 +527,54 @@ def test_discovery_section_prompts_say_what_they_cover():
     starts = [covers(p) for p in client.prompts("discovery")]
     assert starts == sorted(starts) and starts[0] == 0.0
     assert "another section covers it" in client.prompts("discovery")[1]
+
+
+# -- Review repairs (PR #100 cold review) -----------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("proposal", "answer", "label"),
+    [
+        ((20, 119), (40, 40), "collapse to one word"),
+        ((100, 139), (124, 163), "shift by 60%"),
+        ((20, 59), (0, 149), "expand far past the moment"),
+    ],
+)
+def test_refinement_must_keep_the_same_moment(proposal, answer, label):
+    """Skeptic + correctness MEDIUM: shorter-interval overlap passed these."""
+    ws = words(400)
+    _, _, moments, _ = _refine_with(lambda p: refined(*answer), ws, proposal)
+    [m] = moments
+    assert m.extraction["refinement"] == ["refinement_failed"], label
+    assert m.window.start == pytest.approx(ws[proposal[0]].start - 0.05), label
+    assert m.extraction["needs_review"] is True
+
+
+@pytest.mark.parametrize(
+    ("proposal", "answer"),
+    [((40, 119), (0, 119)), ((40, 119), (52, 107)), ((40, 119), (30, 150))],
+)
+def test_refinement_may_add_setup_or_trim_the_same_moment(proposal, answer):
+    ws = words(400)
+    _, _, moments, _ = _refine_with(lambda p: refined(*answer), ws, proposal)
+    [m] = moments
+    assert m.extraction["refinement"] == ["refined"]
+    assert m.window.text == " ".join(w.text for w in ws[answer[0] : answer[1] + 1])
+
+
+def test_slightly_unordered_word_starts_are_clamped_not_rejected():
+    """Correctness LOW: the offline prefilter tolerates small ASR regressions."""
+    ws = words(40)
+    ws[10] = TranscriptWord(ws[10].text, ws[9].start - 0.01, ws[10].end)
+    moments, _ = build(ws, ScriptedClient())
+    [m] = moments
+    assert m.window.text == " ".join(w.text for w in ws)
+
+
+def test_proposals_over_the_cap_are_reported():
+    """Skeptic LOW: over-cap drops must not be silent."""
+    ws = words(200)
+    many = json.dumps([moment(ws[i].start, ws[i + 3].end) for i in range(0, 60, 4)])
+    _, report = build(ws, ScriptedClient(discovery=lambda _p: many))
+    assert report.sections[0]["attempts"][0]["rejected"] == {"over_cap": 3}
+    assert "3 proposals over the request cap" in report.describe()

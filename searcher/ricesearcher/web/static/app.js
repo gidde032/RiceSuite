@@ -357,6 +357,12 @@ function card(s) {
       el("span", { class: "badge" }, s.origin === "manual" ? "manual / unscored" : "heur " + s.heuristic_score.toFixed(2)),
       ...extractionBadges(s.extraction),
     ];
+    // Provenance, flag, score and transcript describe the original interval.
+    if (s.window_edited && s.origin !== "manual") {
+      kids.push(el("span", { class: "badge edited",
+        title: "A person changed this interval; the method, review flag, score and transcript describe the original interval." },
+      "edited by hand"));
+    }
     if (offline) {
       kids.push(el("span", { class: "badge offline", title: "scored offline by the heuristic prefilter; not LLM-scored" },
         "offline score"));
@@ -443,7 +449,12 @@ function card(s) {
       }
       const d = await res.json();
       // Keep the player untouched: its playhead and play/pause state survive.
+      // A new end at or before the playhead (Mark end while playing) releases
+      // the interval stop instead of pausing on the next frame.
       s.target_in = d.target_in; s.target_out = d.target_out;
+      s.window_edited = true;
+      if (stop && stop.kind === "interval" && video.currentTime >= s.target_out - 0.05) stop = null;
+      renderBadges();
       inIn.value = fmt(d.target_in); outIn.value = fmt(d.target_out);
       windowLabel.replaceChildren(document.createTextNode(
         "selected " + fmt(d.target_in) + "–" + fmt(d.target_out) + "s"));

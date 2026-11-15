@@ -66,7 +66,10 @@ TAIL_PAD_S = 1.0
 # Refinement.
 CONTEXT_S = 45.0
 CONTEXT_WORDS = 1_000
-MIN_SHARED = 0.4  # a refined interval keeps this share of the shorter interval
+# Same-moment guard: a refined interval keeps at least half of the proposal, and
+# the proposal is at least a third of the refined interval (at most 3x growth).
+MIN_KEPT = 0.5
+MIN_SHARE = 1 / 3
 CHECK_CHARS = 300
 REFINE_WORKERS = 4
 
@@ -119,7 +122,8 @@ def parameters() -> dict[str, float]:
         "tail_pad_s": TAIL_PAD_S,
         "context_s": CONTEXT_S,
         "context_words": CONTEXT_WORDS,
-        "min_shared": MIN_SHARED,
+        "min_kept": MIN_KEPT,
+        "min_share": round(MIN_SHARE, 4),
     }
 
 
@@ -238,6 +242,13 @@ class BoundaryReport:
             parts.append(
                 f"heuristic fallback in {len(self.fallback_sections)} sections"
             )
+        over_cap = sum(
+            a["rejected"].get("over_cap", 0)
+            for s in self.sections
+            for a in s["attempts"]
+        )
+        if over_cap:
+            parts.append(f"{over_cap} proposals over the request cap")
         r = self.refinement
         parts.append(
             f"refinement {r.get(REFINED, 0)} refined, "
@@ -266,20 +277,23 @@ class _Words:
         # The later of the media duration and the transcript extent bounds every
         # interval, so an ASR/container disagreement never clips a final word.
         self.end_bound = max(source_end if math.isfinite(source_end) else 0.0, last_end)
-        self.starts = [w.start for w in self.words]
-        previous = 0.0
         for w in self.words:
             if not (
                 math.isfinite(w.start)
                 and math.isfinite(w.end)
                 and 0.0 <= w.start <= w.end
-                and w.start >= previous
             ):
                 raise ValueError(
                     "transcript word timings must be finite, ordered and "
                     "non-negative; transcribe the source again"
                 )
-            previous = w.start
+        # ASR can emit a start slightly before the previous one. Keep the text
+        # order and clamp the start forward, as the offline prefilter tolerates.
+        previous = 0.0
+        for k, w in enumerate(self.words):
+            if w.start < previous:
+                self.words[k] = TranscriptWord(w.text, previous, max(w.end, previous))
+            previous = self.words[k].start
 
     def nearest(self, t: float, lo: int, hi: int, *, edge: str) -> tuple[int, float]:
         """The word in ``lo..hi`` whose start (or end) is nearest ``t``."""
@@ -920,8 +934,8 @@ def resolve_refinement(
     if target_out - target_in > MAX_S:
         raise ValueError(f"refined interval exceeds {MAX_S:.0f}s")
     shared = min(target_out, proposal.target_out) - max(target_in, proposal.target_in)
-    shorter = min(target_out - target_in, proposal.target_out - proposal.target_in)
-    if shared <= 0 or shared / shorter < MIN_SHARED:
+    proposed = proposal.target_out - proposal.target_in
+    if shared < MIN_KEPT * proposed or shared < MIN_SHARE * (target_out - target_in):
         raise ValueError("refinement moved to a different moment")
     return Refinement(REFINED, first, last + 1, target_in, target_out, checks=checks)
 

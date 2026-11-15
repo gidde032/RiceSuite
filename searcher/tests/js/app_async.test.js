@@ -647,3 +647,41 @@ test("a terminal publication error names the published batch and stops observati
   assert.doesNotMatch(textOf(harness.nodes.progress), /1 \/ 1 handed off/);
   assert.equal(harness.timers.size, 0);
 });
+
+test("Mark end during playback saves without pausing the video", async () => {
+  // Skeptic MEDIUM (PR #100): the interval stop followed the new end at the playhead.
+  const harness = await boot([slice("a", "alpha", { media_url: "/media/a.mp4", target_in: 2, target_out: 8 })]);
+  const video = playableVideo(harness, { currentTime: 3 });
+  await video.play();
+  video.currentTime = 5;
+  const saving = button(harness, "Mark end").listeners.click({});
+  const request = await nextRequest(harness);
+  request.resolve(response({ target_in: 2, target_out: 5 }));
+  await new Promise((resolve) => setImmediate(resolve));
+  await saving;
+  video.currentTime = 5.1;
+  video.listeners.timeupdate({});
+  while (harness.frames.length) harness.frames.shift()();
+  assert.equal(video.paused, false);
+  assert.equal(video.pauses, 0);
+});
+
+test("a hand-edited window says its provenance describes the original interval", async () => {
+  // Skeptic + correctness LOW (PR #100): method badges went stale after an edit.
+  const extraction = { methods: ["model-full"], refinement: ["refined"], needs_review: false };
+  const harness = await boot([
+    slice("a", "alpha", { extraction, window_edited: true }),
+    slice("b", "alpha", { extraction, media_url: "/media/b.mp4" }),
+  ]);
+  const [a, b] = harness.nodes.list.children;
+  const edited = (card) => findNode(card, (node) => node.attributes.class === "badge edited");
+  assert.equal(textOf(edited(a)), "edited by hand");
+  assert.equal(edited(b), null);
+  playableVideo(harness, { currentTime: 4 });
+  const saving = findNode(b, (node) => node.tag === "button" && textOf(node) === "Mark start").listeners.click({});
+  const request = await nextRequest(harness);
+  request.resolve(response({ target_in: 4, target_out: 8 }));
+  await new Promise((resolve) => setImmediate(resolve));
+  await saving;
+  assert.equal(textOf(edited(b)), "edited by hand");
+});

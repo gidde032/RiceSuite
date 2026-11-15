@@ -99,8 +99,12 @@ def test_online_scoring_scores_the_exact_refined_text(tmp_path: Path) -> None:
 
 def test_coalesced_duplicates_are_scored_once_with_both_proposals(tmp_path) -> None:
     source = _source()
+    ws = source.words
+    overlapping = json.dumps(
+        [moment(ws[0].start, ws[39].end), moment(ws[10].start, ws[49].end)]
+    )
     client = ScriptedClient(
-        discovery=lambda _p: _two(source), refinement=lambda _p: refined(20, 119)
+        discovery=lambda _p: overlapping, refinement=lambda _p: refined(0, 49)
     )
     with Library(tmp_path / "lib.sqlite3") as lib:
         lib.upsert_source(source)
@@ -302,3 +306,61 @@ def test_unreadable_provenance_reads_as_not_recorded(tmp_path) -> None:
     conn.close()
     with Library(db) as lib:
         assert lib.get_slice("x").extraction == {}
+
+
+class FlakyScorer(RecordingScorer):
+    def __init__(self, failures: int) -> None:
+        super().__init__()
+        self.failures = failures
+
+    def score(self, windows, profile):
+        if self.failures:
+            self.failures -= 1
+            self.batches.append([])
+            raise RuntimeError("malformed scores")
+        return super().score(windows, profile)
+
+
+def test_a_failed_scoring_request_gets_one_application_retry(tmp_path) -> None:
+    """Correctness MEDIUM: SPEC §14.1 bounds every model request to one retry."""
+    source = _source()
+    with Library(tmp_path / "lib.sqlite3") as lib:
+        lib.upsert_source(source)
+        client = ScriptedClient(discovery=lambda _p: _two(source))
+        slices, scorer, _ = _score(lib, source, client, FlakyScorer(1))
+        assert len(slices) == 2 and len(scorer.batches) == 2
+
+        before = {s.id for s in lib.list_slices(profile_id="p")}
+        twice = FlakyScorer(2)
+        with pytest.raises(RuntimeError, match="malformed scores"):
+            _score(lib, source, ScriptedClient(lambda _p: _two(source)), twice)
+        assert len(twice.batches) == 2  # bounded: no third request
+        assert {s.id for s in lib.list_slices(profile_id="p")} == before
+
+
+def test_missing_credentials_during_scoring_are_not_retried(tmp_path) -> None:
+    class Denied(RecordingScorer):
+        def score(self, windows, profile):
+            self.batches.append([])
+            raise MissingCredentialsError("no key")
+
+    source = _source()
+    with Library(tmp_path / "lib.sqlite3") as lib:
+        lib.upsert_source(source)
+        denied = Denied()
+        with pytest.raises(MissingCredentialsError):
+            _score(lib, source, ScriptedClient(lambda _p: _two(source)), denied)
+    assert len(denied.batches) == 1
+
+
+def test_refinement_cannot_merge_two_distinct_moments(tmp_path) -> None:
+    """Skeptic MEDIUM: widening both proposals into one story is rejected."""
+    source = _source()
+    client = ScriptedClient(
+        discovery=lambda _p: _two(source), refinement=lambda _p: refined(20, 119)
+    )
+    with Library(tmp_path / "lib.sqlite3") as lib:
+        lib.upsert_source(source)
+        slices, _, _ = _score(lib, source, client)
+    assert len(slices) == 2
+    assert {s.extraction["refinement"][0] for s in slices} == {"refinement_failed"}

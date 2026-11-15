@@ -603,6 +603,27 @@ def check_review_boundary_controls(browser, result):
     assert video.evaluate("v => v.currentSrc").endswith("#t=1")
     result["scenarios"].append("review-saved-interval-stop")
 
+    # Mark end during playback saves and keeps playing past the new end.
+    video.evaluate("async v => { v.currentTime = 3; await v.play(); }")
+    page.wait_for_function("window.ctxVideo.currentTime > 3.3")
+    before = card.locator(".win").inner_text()
+    card.get_by_role("button", name="Mark end").click()
+    page.wait_for_function(
+        "before => document.querySelector('[data-slice-id=ctx-start] .win').textContent !== before",
+        arg=before,
+    )
+    end = _windows(mutations)[-1]["target_out"]
+    page.wait_for_timeout(400)
+    state = video.evaluate(
+        "v => ({paused: v.paused, t: v.currentTime, same: v === window.ctxVideo})"
+    )
+    assert state["same"] and not state["paused"] and state["t"] > end + 0.2, (
+        end,
+        state,
+    )
+    assert card.locator(".badge.edited").inner_text() == "edited by hand"
+    video.evaluate("v => v.pause()")
+
     # Refused mark: playhead before the saved start.
     video.evaluate("v => { v.currentTime = 0.5; }")
     page.wait_for_function(
