@@ -10,18 +10,16 @@ RiceSuite combines the three Rice pillars into one local app:
 | [`clipper/`](clipper/) | RiceClipper | Caption / header / 9:16 crop / music / photo clips → **human review + render** |
 | [`poster/`](poster/) | RicePoster | Pull clips → generate captions → **human post / schedule** to Instagram/TikTok |
 
-One `rice` command starts a Slate front door with Search / Clip / Post tabs and
+One `rice` command starts RiceSuite, one site with Search / Clip / Post tabs and
 three supervised pillar processes that share one Python environment. Login once with Poster's session manager and start posting immediately.
 Batches move automatically from Search to Clip over filesystem handoffs. You send each rendered batch with **Send to RicePoster**,
-and you pull it into Post with **Pull from Clipper**. All three human judgement
-gates stay, and nothing is ever posted automatically. The design contract is
+and you pull it into Post with **Pull from Clipper**. There are three human judgment
+checkpoints, and nothing is ever posted automatically. The design contract is
 [ADR-001](docs/adr/ADR-001-ricesuite-consolidation.md).
 
 ## Status
 
-RiceSuite is the supported app for daily use. Burn-in passed on 2026-10-05.
-The original repositories (`gidde032/RiceSearcher`, `gidde032/RiceClipper`,
-`gidde032/RicePoster`) are superseded and get no fixes. Open Issues and pull
+RiceSuite is the supported app. The original repositories (`gidde032/RiceSearcher`, `gidde032/RiceClipper`, `gidde032/RicePoster`) are superseded and get no fixes. Open Issues and pull
 requests here.
 
 ## Run
@@ -109,12 +107,6 @@ python scripts/check_searcher_workspace_browser.py
 
 The checker fails when the browser is unavailable. `--browser-channel chrome`
 may use a locally installed Chrome with a throwaway profile; CI installs Chromium.
-
-## Slate styling
-
-The common Slate palette and base rules are in `ricesuite/shell/slate.css`.
-Each page loads that asset before its own stylesheet; see
-[Slate ownership](docs/design/slate-ownership.md) for routes and overrides.
 
 ## History
 
